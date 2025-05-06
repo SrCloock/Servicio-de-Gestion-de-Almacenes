@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Clientes | Eurobag</title>
+  <link rel="stylesheet" href="styleCliente.css">
+  <script defer src="clientes.js"></script>
+</head>
+<body class="dashboard-body">
+  <header class="top-menu">
+    <img src="img/eurobag-logo.jpg" class="logo" alt="Eurobag">
+    <div class="icon">🧾<span>Cliente</span></div>
+    <div class="icon">📋<span>Potencial</span></div>
+    <div class="icon">🗓️<span>Calend.</span></div>
+    <div class="icon">💲<span>Gastos</span></div>
+  </header>
+
+  <main class="clientes-section">
+    <div class="filtros">
+      <label>Nombre: <input type="text" id="filtroNombre" placeholder="Buscar..."></label>
+      <label>Filtro:
+      <select id="tipoFiltro">
+  <option value="codigo">Código</option>
+  <option value="cliente">Cliente</option>
+  <option value="domicilio">Domicilio</option>
+  <option value="municipio">Municipio</option>
+  <option value="provincia">Provincia</option>
+  <option value="cp">C.P.</option>
+  <option value="tlf">Tlf</option>
+  <option value="fax">Fax</option>
+  <option value="email">Email</option>
+  <option value="tipo">Tipo</option>
+</select>
+
+      </label>
+      <input type="text" id="valorFiltro" placeholder="Valor">
+      <select id="empresaFiltro">
+        <option>EUROBAG & FILM, S.L.</option>
+        <option>RAFAEL RUIZ MORENO, S.L.</option>
+      </select>
+      <button onclick="filtrarClientes()">BUSCAR</button>
+    </div>
+
+    <table id="tablaClientes">
+      <thead>
+        <tr>
+          <th></th>
+          <th onclick="ordenarTabla(1)">Código</th>
+          <th onclick="ordenarTabla(2)">Cliente</th>
+          <th>Domicilio</th>
+          <th onclick="ordenarTabla(4)">Municipio</th>
+          <th onclick="ordenarTabla(5)">Provincia</th>
+          <th>C.P.</th>
+          <th>Tlf</th>
+          <th>Fax</th>
+          <th>Email</th>
+          <th>Tipo</th>
+        </tr>
+      </thead>
+      <tbody id="cuerpoTabla">
+        <!-- Aquí se cargan los datos -->
+      </tbody>
+    </table>
+
+<button class="btn-estadistica">ESTADÍSTICA</button>
+  </main>
+</body>
+</html>
