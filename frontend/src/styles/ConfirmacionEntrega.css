@@ -1,0 +1,183 @@
+.confirmacion-entrega-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 30px;
+    background-color: white;
+    min-height: 100vh;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    box-shadow: 0 0 20px rgba(0,0,0,0.1);
+  }
+  
+  .confirmacion-entrega-container h2 {
+    color: #1a4e8a;
+    text-align: center;
+    margin-bottom: 30px;
+    font-size: 24px;
+    font-weight: bold;
+  }
+  
+  .detalle-pedido {
+    background-color: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 30px;
+  }
+  
+  .detalle-pedido h3 {
+    color: #1a4e8a;
+    margin-bottom: 15px;
+    font-size: 20px;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 10px;
+  }
+  
+  .info-cliente {
+    margin-bottom: 15px;
+  }
+  
+  .info-cliente p {
+    margin: 5px 0;
+    color: #333;
+  }
+  
+  .tabla-articulos {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 14px;
+  }
+  
+  .tabla-articulos th {
+    background-color: #1a4e8a;
+    color: white;
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: bold;
+  }
+  
+  .tabla-articulos td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #e0e0e0;
+    color: #333;
+  }
+  
+  .tabla-articulos tr:nth-child(even) {
+    background-color: #f1f1f1;
+  }
+  
+  .seccion-firma {
+    background-color: #f8f9fa;
+    padding: 25px;
+    border-radius: 8px;
+    margin-top: 30px;
+  }
+  
+  .seccion-firma h4 {
+    color: #1a4e8a;
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 18px;
+  }
+  
+  .firma-container {
+    margin-bottom: 25px;
+  }
+  
+  .firma-container label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: bold;
+    color: #495057;
+    font-size: 16px;
+  }
+  
+  .firma-container input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ced4da;
+    border-radius: 5px;
+    font-size: 16px;
+    max-width: 400px;
+    margin: 0 auto;
+    display: block;
+  }
+  
+  .btn-confirmar {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 15px 30px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 18px;
+    transition: all 0.3s;
+    display: block;
+    margin: 20px auto 0;
+  }
+  
+  .btn-confirmar:hover {
+    background-color: #218838;
+  }
+  
+  .btn-confirmar:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+  }
+  
+  .mensaje-exito {
+    text-align: center;
+    padding: 30px;
+    background-color: #e6f7e6;
+    border-radius: 8px;
+    border: 1px solid #28a745;
+  }
+  
+  .mensaje-exito h3 {
+    color: #28a745;
+    margin-bottom: 20px;
+    font-size: 22px;
+  }
+  
+  .detalle-entrega {
+    text-align: left;
+    max-width: 500px;
+    margin: 0 auto 25px;
+    padding: 15px;
+    background-color: white;
+    border-radius: 5px;
+  }
+  
+  .detalle-entrega p {
+    margin: 10px 0;
+    color: #333;
+  }
+  
+  .detalle-entrega strong {
+    color: #1a4e8a;
+  }
+  
+  .btn-generar-factura {
+    background-color: #17a2b8;
+    color: white;
+    border: none;
+    padding: 12px 25px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 16px;
+    transition: all 0.3s;
+    display: inline-block;
+    margin-top: 15px;
+  }
+  
+  .btn-generar-factura:hover {
+    background-color: #138496;
+  }
+  
+  .cargando {
+    text-align: center;
+    padding: 50px;
+    font-size: 18px;
+    color: #666;
+  }

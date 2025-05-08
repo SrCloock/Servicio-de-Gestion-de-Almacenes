@@ -20,7 +20,208 @@ const dbConfig = {
     requestTimeout: 60000     // ⏰ 60 segundos en lugar de 15
   }
 };
+// ================== ENDPOINTS NUEVOS ================== //
 
+// 1. Pedidos de compra pendientes
+app.get('/pedidosCompraPendientes', async (req, res) => {
+  try {
+    const result = await poolGlobal.request().query(`
+      SELECT 
+        c.NumeroPedido, c.FechaPedido, c.CodigoProveedor, p.Nombre AS NombreProveedor,
+        l.CodigoArticulo, l.DescripcionArticulo, l.UnidadesPedidas, l.UnidadesPendientes
+      FROM CabeceraPedidoProveedor c
+      JOIN LineasPedidoProveedor l ON 
+        c.CodigoEmpresa = l.CodigoEmpresa 
+        AND c.EjercicioPedido = l.EjercicioPedido 
+        AND c.SeriePedido = l.SeriePedido 
+        AND c.NumeroPedido = l.NumeroPedido
+      JOIN Proveedores p ON p.CodigoProveedor = c.CodigoProveedor
+      WHERE l.UnidadesPendientes > 0
+      ORDER BY c.FechaPedido DESC
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR PEDIDOS COMPRA]', err);
+    res.status(500).json({ error: 'Error al obtener pedidos de compra' });
+  }
+});
+
+// 2. Registrar entrada de stock
+app.post('/registrarEntradaStock', async (req, res) => {
+  const { codigoArticulo, cantidad, numeroPedido, ubicacion } = req.body;
+
+  try {
+    // Actualizar línea de pedido
+    await poolGlobal.request().query(`
+      UPDATE LineasPedidoProveedor
+      SET UnidadesPendientes = UnidadesPendientes - ${cantidad}
+      WHERE NumeroPedido = ${numeroPedido} AND CodigoArticulo = '${codigoArticulo}'
+    `);
+
+    // Registrar movimiento de stock
+    await poolGlobal.request().query(`
+      INSERT INTO MovimientosStock (CodigoArticulo, Cantidad, Ubicacion, TipoMovimiento, Fecha)
+      VALUES ('${codigoArticulo}', ${cantidad}, '${ubicacion}', 'ENTRADA_COMPRA', GETDATE())
+    `);
+
+    // Verificar si el pedido está completo
+    const pendientes = await poolGlobal.request().query(`
+      SELECT SUM(UnidadesPendientes) AS TotalPendientes
+      FROM LineasPedidoProveedor
+      WHERE NumeroPedido = ${numeroPedido}
+    `);
+
+    if (pendientes.recordset[0].TotalPendientes <= 0) {
+      // Generar albarán de entrada
+      await poolGlobal.request().query(`
+        INSERT INTO AlbaranesEntrada (NumeroPedido, Fecha, Estado)
+        VALUES (${numeroPedido}, GETDATE(), 'COMPLETADO')
+      `);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[ERROR ENTRADA STOCK]', err);
+    res.status(500).json({ error: 'Error al registrar entrada' });
+  }
+});
+
+// 3. Generar PDF y enviar por correo
+app.post('/generarComprobanteEntrega', async (req, res) => {
+  const { albaran, cliente, firmas } = req.body;
+  const pdfPath = `./tmp/comprobante_${albaran.numero}.pdf`;
+
+  // Crear PDF
+  const doc = new PDFDocument();
+  doc.pipe(fs.createWriteStream(pdfPath));
+  
+  // Contenido del PDF
+  doc.fontSize(18).text('COMPROBANTE DE ENTREGA', { align: 'center' });
+  doc.moveDown();
+  doc.fontSize(12).text(`Albarán: ${albaran.numero}`, { align: 'left' });
+  doc.text(`Cliente: ${cliente.nombre}`);
+  doc.text(`Fecha: ${new Date().toLocaleDateString()}`);
+  doc.moveDown();
+
+  // Detalles del albarán
+  doc.fontSize(14).text('Detalles:', { underline: true });
+  albaran.lineas.forEach(linea => {
+    doc.text(`- ${linea.articulo}: ${linea.cantidad} unidades`);
+  });
+
+  // Firmas
+  doc.moveDown(2);
+  doc.text('Firma del Cliente: ________________________', { align: 'left' });
+  doc.moveDown();
+  doc.text('Firma del Repartidor: ________________________', { align: 'left' });
+
+  doc.end();
+
+  // Configurar correo (ejemplo con Gmail)
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: 'tuemail@gmail.com',
+      pass: 'tucontraseña'
+    }
+  });
+
+  const mailOptions = {
+    from: 'tuemail@gmail.com',
+    to: ['cliente@email.com', 'almacen@empresa.com'],
+    subject: `Comprobante de entrega ${albaran.numero}`,
+    text: `Adjunto encontrará el comprobante de entrega para el albarán ${albaran.numero}`,
+    attachments: [{ path: pdfPath }]
+  };
+
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      console.error('Error enviando correo:', error);
+      return res.status(500).json({ error: 'Error al enviar correo' });
+    }
+    res.json({ success: true, pdfUrl: pdfPath });
+  });
+});
+
+
+// Obtener todos los artículos con su stock por ubicación
+app.get('/articulosConStock', async (req, res) => {
+  try {
+    const result = await poolGlobal.request().query(`
+      SELECT 
+        a.CodigoArticulo,
+        a.DescripcionArticulo,
+        s.Ubicacion,
+        s.UnidadSaldo as Stock
+      FROM Articulos a
+      LEFT JOIN AcumuladoStockUbicacion s ON a.CodigoArticulo = s.CodigoArticulo
+      WHERE s.UnidadSaldo > 0
+      ORDER BY a.DescripcionArticulo
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR ARTICULOS CON STOCK]', err);
+    res.status(500).json({ error: 'Error al obtener artículos' });
+  }
+});
+
+// Registrar movimiento entre almacenes
+app.post('/moverStock', async (req, res) => {
+  const { codigoArticulo, desdeUbicacion, haciaUbicacion, cantidad } = req.body;
+
+  try {
+    // 1. Verificar stock disponible
+    const stockResult = await poolGlobal.request()
+      .input('codigoArticulo', sql.VarChar, codigoArticulo)
+      .input('ubicacion', sql.VarChar, desdeUbicacion)
+      .query(`
+        SELECT UnidadSaldo FROM AcumuladoStockUbicacion
+        WHERE CodigoArticulo = @codigoArticulo AND Ubicacion = @ubicacion
+      `);
+
+    if (!stockResult.recordset[0] || stockResult.recordset[0].UnidadSaldo < cantidad) {
+      return res.status(400).json({ error: 'Stock insuficiente' });
+    }
+
+    // 2. Registrar movimiento (transacción)
+    await poolGlobal.request().query(`
+      BEGIN TRANSACTION;
+      
+      -- Descontar de ubicación origen
+      UPDATE AcumuladoStockUbicacion
+      SET UnidadSaldo = UnidadSaldo - ${cantidad}
+      WHERE CodigoArticulo = '${codigoArticulo}' AND Ubicacion = '${desdeUbicacion}';
+      
+      -- Añadir a ubicación destino (o crear registro si no existe)
+      IF EXISTS (SELECT 1 FROM AcumuladoStockUbicacion 
+                 WHERE CodigoArticulo = '${codigoArticulo}' AND Ubicacion = '${haciaUbicacion}')
+      BEGIN
+        UPDATE AcumuladoStockUbicacion
+        SET UnidadSaldo = UnidadSaldo + ${cantidad}
+        WHERE CodigoArticulo = '${codigoArticulo}' AND Ubicacion = '${haciaUbicacion}';
+      END
+      ELSE
+      BEGIN
+        INSERT INTO AcumuladoStockUbicacion (CodigoArticulo, Ubicacion, UnidadSaldo)
+        VALUES ('${codigoArticulo}', '${haciaUbicacion}', ${cantidad});
+      END
+      
+      -- Registrar histórico
+      INSERT INTO MovimientosStock (CodigoArticulo, Cantidad, DesdeUbicacion, HaciaUbicacion, TipoMovimiento)
+      VALUES ('${codigoArticulo}', ${cantidad}, '${desdeUbicacion}', '${haciaUbicacion}', 'TRASPASO');
+      
+      COMMIT TRANSACTION;
+    `);
+
+    res.json({ success: true });
+  } catch (err) {
+    await poolGlobal.request().query('ROLLBACK TRANSACTION;');
+    console.error('[ERROR MOVER STOCK]', err);
+    res.status(500).json({ error: 'Error al mover stock' });
+  }
+});
+
+// ================== ENDPOINTS EXISTENTES  ================== //
 // ✅ Endpoint de login
 app.post('/login', async (req, res) => {
   const { usuario, contrasena } = req.body;

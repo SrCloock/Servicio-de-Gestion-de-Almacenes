@@ -1,0 +1,22 @@
+.recepcion-page {
+    padding: 20px;
+    font-family: sans-serif;
+  }
+  
+  .articulo-card {
+    border: 1px solid #ccc;
+    padding: 10px;
+    margin-bottom: 15px;
+  }
+  
+  .ubicacion-selector {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  
+  .asignaciones {
+    margin-top: 10px;
+    font-size: 0.9em;
+  }
+  
