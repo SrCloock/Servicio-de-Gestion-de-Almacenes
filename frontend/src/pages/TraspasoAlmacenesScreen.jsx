@@ -15,18 +15,42 @@ function TraspasoAlmacenesScreen() {
 
   useEffect(() => {
     setArticulos([
-      { codigo: 'ART001', nombre: 'Tornillos' },
-      { codigo: 'ART002', nombre: 'Tuercas' },
-      { codigo: 'ART003', nombre: 'Arandelas' }
+      { codigo: 'TRN-6X50', nombre: 'Tornillo hexagonal 6x50 mm' },
+      { codigo: 'TRC-M8', nombre: 'Tuerca M8 galvanizada' },
+      { codigo: 'TUB-ALU-20', nombre: 'Tubo aluminio 20mm' },
+      { codigo: 'BRD-40', nombre: 'Brida de acero 40mm' },
+      { codigo: 'VLV-1/2', nombre: 'Válvula de bola 1/2"' },
+      { codigo: 'CBL-2.5', nombre: 'Cable eléctrico 2.5mm' },
+      { codigo: 'INT-16A', nombre: 'Interruptor 16A' },
+      { codigo: 'TUB-PVC-25', nombre: 'Tubo PVC 25mm' },
+      { codigo: 'FUS-10A', nombre: 'Fusible 10A' },
+      { codigo: 'CHP-30', nombre: 'Chapas acero 30x30cm' },
+      { codigo: 'PNL-AL-2', nombre: 'Panel aluminio 2mm' },
+      { codigo: 'TRN-INOX-5', nombre: 'Tornillo inoxidable 5x20' },
+      { codigo: 'TUB-CU-15', nombre: 'Tubo cobre 15mm' },
+      { codigo: 'CODO-15', nombre: 'Codo cobre 15mm' },
+      { codigo: 'VLV-ESF-3/4', nombre: 'Válvula esférica 3/4"' }
     ]);
   }, []);
-
+  
   useEffect(() => {
     if (traspasoData.articulo) {
       const ubicacionesMock = {
-        ART001: ['A1', 'A2', 'A3'],
-        ART002: ['B1', 'B2'],
-        ART003: ['C1']
+        'TRN-6X50': ['Almacén principal - Pasillo 1', 'Estantería central - Zona B'],
+        'TRC-M8': ['Pasillo 3 - Estante alto', 'Mostrador principal'],
+        'TUB-ALU-20': ['Zona de carga - Estantería metálica', 'Almacén metales'],
+        'BRD-40': ['Almacén auxiliar', 'Pasillo 2 - Estante medio'],
+        'VLV-1/2': ['Almacén principal - Pasillo 2', 'Mostrador fontanería'],
+        'CBL-2.5': ['Almacén eléctrico - Rack 1', 'Mostrador principal'],
+        'INT-16A': ['Caja de interruptores', 'Pasillo eléctrico'],
+        'TUB-PVC-25': ['Exterior - Estantería PVC', 'Almacén fontanería'],
+        'FUS-10A': ['Caja de fusibles', 'Pasillo eléctrico'],
+        'CHP-30': ['Almacén metales - Zona A', 'Zona de corte'],
+        'PNL-AL-2': ['Almacén metales - Zona B', 'Zona de carga'],
+        'TRN-INOX-5': ['Pasillo 4 - Estante bajo', 'Mostrador herrajes'],
+        'TUB-CU-15': ['Almacén fontanería', 'Mostrador fontanería'],
+        'CODO-15': ['Almacén fontanería', 'Pasillo 1 - Estante alto'],
+        'VLV-ESF-3/4': ['Mostrador fontanería', 'Almacén principal']
       };
       setUbicaciones(ubicacionesMock[traspasoData.articulo] || []);
       setTraspasoData((prev) => ({ ...prev, origen: '', destino: '' }));

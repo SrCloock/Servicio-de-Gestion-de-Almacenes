@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import '../styles/EntradaStockCompras.css';
 import { useNavigate } from 'react-router-dom';
+
 function EntradaStockCompras() {
   const [paquetes, setPaquetes] = useState([]);
   const [paqueteSeleccionado, setPaqueteSeleccionado] = useState(null);
@@ -8,6 +9,7 @@ function EntradaStockCompras() {
   const [asignaciones, setAsignaciones] = useState({});
   const [mostrarUbicaciones, setMostrarUbicaciones] = useState(null);
   const [mostrarCompletados, setMostrarCompletados] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const savedData = localStorage.getItem('entradaStockData');
@@ -45,6 +47,63 @@ function EntradaStockCompras() {
             { id: 4, codigo: 'BRD-40', descripcion: 'Brida de acero 40mm', cantidad: 30 },
             { id: 5, codigo: 'VLV-1/2', descripcion: 'Válvula de bola 1/2"', cantidad: 25 },
           ]
+        },
+        // Nuevos paquetes añadidos
+        {
+          id: 3,
+          proveedor: 'Materiales de Construcción Pérez',
+          fechaRecepcion: '17/05/2023',
+          estado: 'pendiente',
+          articulos: [
+            { id: 6, codigo: 'CEM-25KG', descripcion: 'Cemento gris 25kg', cantidad: 40 },
+            { id: 7, codigo: 'ARENA-20KG', descripcion: 'Arena fina 20kg', cantidad: 30 },
+            { id: 8, codigo: 'GRAVA-20KG', descripcion: 'Grava 20kg', cantidad: 30 },
+            { id: 9, codigo: 'YESO-5KG', descripcion: 'Yeso 5kg', cantidad: 20 }
+          ]
+        },
+        {
+          id: 4,
+          proveedor: 'Electricidad Moderna S.A.',
+          fechaRecepcion: '18/05/2023',
+          estado: 'pendiente',
+          articulos: [
+            { id: 10, codigo: 'CBL-1.5', descripcion: 'Cable eléctrico 1.5mm', cantidad: 100 },
+            { id: 11, codigo: 'CBL-2.5', descripcion: 'Cable eléctrico 2.5mm', cantidad: 80 },
+            { id: 12, codigo: 'INT-10A', descripcion: 'Interruptor 10A', cantidad: 25 },
+            { id: 13, codigo: 'FUS-16A', descripcion: 'Fusible 16A', cantidad: 30 }
+          ]
+        },
+        {
+          id: 5,
+          proveedor: 'Fontanería Rápida',
+          fechaRecepcion: '19/05/2023',
+          estado: 'pendiente',
+          articulos: [
+            { id: 14, codigo: 'TUB-PVC-32', descripcion: 'Tubo PVC 32mm', cantidad: 25 },
+            { id: 15, codigo: 'CODO-PVC-32', descripcion: 'Codo PVC 32mm', cantidad: 15 },
+            { id: 16, codigo: 'VLV-ESF-1', descripcion: 'Válvula esférica 1"', cantidad: 10 }
+          ]
+        },
+        // Paquetes completados de ejemplo
+        {
+          id: 6,
+          proveedor: 'Herrería López',
+          fechaRecepcion: '10/05/2023',
+          estado: 'completado',
+          articulos: [
+            { id: 17, codigo: 'CHP-20X20', descripcion: 'Chapa acero 20x20cm', cantidad: 50 },
+            { id: 18, codigo: 'PNL-AC-3', descripcion: 'Panel acero 3mm', cantidad: 10 }
+          ]
+        },
+        {
+          id: 7,
+          proveedor: 'Suministros Industriales',
+          fechaRecepcion: '12/05/2023',
+          estado: 'completado',
+          articulos: [
+            { id: 19, codigo: 'TRN-INOX-4', descripcion: 'Tornillo inoxidable 4x20', cantidad: 200 },
+            { id: 20, codigo: 'TRN-INOX-6', descripcion: 'Tornillo inoxidable 6x30', cantidad: 150 }
+          ]
         }
       ];
 
@@ -53,7 +112,12 @@ function EntradaStockCompras() {
         'Estantería central - Zona B',
         'Pasillo 3 - Estante alto',
         'Zona de carga - Estantería metálica',
-        'Almacén auxiliar'
+        'Almacén auxiliar',
+        'Almacén exterior - Área A',
+        'Pasillo eléctrico - Estante 2',
+        'Zona de fontanería',
+        'Almacén materiales pesados',
+        'Mostrador principal'
       ];
 
       setPaquetes(mockPaquetes);
@@ -121,102 +185,44 @@ function EntradaStockCompras() {
     return articulo.cantidad - asignado;
   };
 
-const guardarAsignaciones = (completar = false) => {
-  if (completar) {
-    const nuevoPaquetes = paquetes.map(p =>
-      p.id === paqueteSeleccionado.id ? { ...p, estado: 'completado' } : p
-    );
-    setPaquetes(nuevoPaquetes);
-    localStorage.setItem('entradaStockData', JSON.stringify({ paquetes: nuevoPaquetes, ubicaciones }));
-  }
-  setPaqueteSeleccionado(null);
-  setAsignaciones({});
-};
-
-
+  const guardarAsignaciones = (completar = false) => {
+    if (completar) {
+      const nuevoPaquetes = paquetes.map(p =>
+        p.id === paqueteSeleccionado.id ? { ...p, estado: 'completado' } : p
+      );
+      setPaquetes(nuevoPaquetes);
+      localStorage.setItem('entradaStockData', JSON.stringify({ paquetes: nuevoPaquetes, ubicaciones }));
+    }
+    setPaqueteSeleccionado(null);
+    setAsignaciones({});
+  };
 
   const paquetesPendientes = paquetes.filter(p => p.estado === 'pendiente');
   const paquetesCompletados = paquetes.filter(p => p.estado === 'completado');
 
   return (
     <div className="entrada-stock-container">
-    <div className="entrada-stock-header">
-  <h2>📦 Entrada de Stock - Recepción de Compras</h2>
- <button
-  onClick={() => {
-    console.log("Intentando navegar...");
-    navigate('/PedidosScreen');
-  }}
-  className="btn-volver-menu"
->
-  🔙 Volver
-</button>
+      <div className="entrada-stock-header">
+        <h2>📦 Entrada de Stock - Recepción de Compras</h2>
+        <button onClick={() => navigate('/PedidosScreen')} className="btn-volver-menu">🔙 Volver</button>
+        <div className="bubble bubble1"></div>
+        <div className="bubble bubble2"></div>
+      </div>
 
-
-
-  <div className="bubble bubble1"></div>
-  <div className="bubble bubble2"></div>
-</div>
-
-<button
-  onClick={() => {
-    // Elimina datos principales
-    localStorage.removeItem('entradaStockData');
-
-    // Elimina todas las asignaciones previas
-    Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('asignaciones-')) {
-        localStorage.removeItem(key);
-      }
-    });
-
-    // Vuelve a guardar datos mock con paquetes nuevos
-    const mockPaquetes = [
-      {
-        id: 1,
-        proveedor: 'Ferretería Industrial S.L.',
-        fechaRecepcion: '15/05/2023',
-        estado: 'pendiente',
-        articulos: [
-          { id: 1, codigo: 'TRN-6X50', descripcion: 'Tornillo hexagonal 6x50 mm', cantidad: 150 },
-          { id: 2, codigo: 'TRC-M8', descripcion: 'Tuerca M8 galvanizada', cantidad: 200 },
-          { id: 3, codigo: 'TUB-ALU-20', descripcion: 'Tubo aluminio 20mm', cantidad: 50 },
-        ]
-      },
-      {
-        id: 2,
-        proveedor: 'Suministros Técnicos García',
-        fechaRecepcion: '16/05/2023',
-        estado: 'pendiente',
-        articulos: [
-          { id: 4, codigo: 'BRD-40', descripcion: 'Brida de acero 40mm', cantidad: 30 },
-          { id: 5, codigo: 'VLV-1/2', descripcion: 'Válvula de bola 1/2"', cantidad: 25 },
-        ]
-      }
-    ];
-
-    const mockUbicaciones = [
-      'Almacén principal - Pasillo 1',
-      'Estantería central - Zona B',
-      'Pasillo 3 - Estante alto',
-      'Zona de carga - Estantería metálica',
-      'Almacén auxiliar'
-    ];
-
-    const dataToSave = {
-      paquetes: mockPaquetes,
-      ubicaciones: mockUbicaciones
-    };
-
-    localStorage.setItem('entradaStockData', JSON.stringify(dataToSave));
-    window.location.reload();
-  }}
-  className="btn-reiniciar"
->
-  🔄 Reiniciar datos
-</button>
-
-
+      <button
+        onClick={() => {
+          localStorage.removeItem('entradaStockData');
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('asignaciones-')) {
+              localStorage.removeItem(key);
+            }
+          });
+          window.location.reload();
+        }}
+        className="btn-reiniciar"
+      >
+        🔄 Reiniciar datos
+      </button>
 
       {!paqueteSeleccionado ? (
         <div className="contenedor-principal">

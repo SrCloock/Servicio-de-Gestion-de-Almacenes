@@ -10,6 +10,7 @@ import EstadisticasClientePage from './pages/EstadisticasClientePage';
 import TraspasoAlmacenesScreen from './pages/TraspasoAlmacenesScreen';
 import PreparacionPedidos from './pages/PreparacionPedidos';
 import EntradaStockCompras from './pages/EntradaStockCompras';
+import ConfirmacionEntrega from './pages/ConfirmacionEntrega';
 
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
       <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/preparacion" element={<PreparacionPedidos />} />
       <Route path="/entrada" element={<EntradaStockCompras />} />
+      <Route path="/confirmacion-entrega" element={<ConfirmacionEntrega />} />
     </Routes>
   );
 }

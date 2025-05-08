@@ -290,7 +290,7 @@ function GestionRutas({ rutas }) {
   };
 
   const abrirPantallaFirmas = (ruta) => {
-    navigate('/Firmar', { state: { ruta } });
+    navigate('/confirmacion-entrega', { state: { pedido: ruta } });
   };
 
   return (
