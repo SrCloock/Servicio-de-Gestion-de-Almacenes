@@ -14,7 +14,6 @@ function ConfirmacionEntrega() {
     if (location.state?.pedido) {
       setPedido(location.state.pedido);
     } else {
-      // Intentar cargar desde localStorage si no hay state
       const savedPedidos = JSON.parse(localStorage.getItem('preparacionPedidosData'))?.pedidos || [];
       const foundPedido = savedPedidos.find(p => p.id.toString() === id);
       if (foundPedido) {

@@ -148,3 +148,74 @@ html, body, #root {
 .lineas-table tbody tr:nth-child(even) {
   background-color: #c0ebe7;
 }
+
+.rutas-content {
+  padding: 20px;
+  background-color: #f8f8f8;
+}
+
+.ruta-card {
+  background-color: white;     /* Fondo blanco */
+  color: black;                /* Texto negro */
+  border-radius: 10px;
+  padding: 15px;
+  margin-bottom: 15px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
+.ruta-card h4,
+.ruta-card p,
+.ruta-card ul,
+.ruta-card li {
+  color: black;                /* Asegura que todo el texto sea negro */
+}
+
+.ruta-card ul {
+  list-style: disc;
+  padding-left: 20px;
+}
+
+.ruta-card button {
+  margin-top: 10px;
+  background-color: #009688;
+  color: white;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ruta-card button:hover {
+  background-color: #00796b;
+}
+.btn-traspaso {
+  margin-left: 10px;
+  padding: 8px 12px;
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.btn-traspaso:hover {
+  background-color: #2980b9;
+}
+
+.btn-opcion {
+  background-color: #4caf50;
+  color: white;
+  margin: 5px 5px 0 0;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background 0.3s ease;
+}
+
+.btn-opcion:hover {
+  background-color: #388e3c;
+}
+
+

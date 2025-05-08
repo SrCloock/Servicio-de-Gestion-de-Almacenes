@@ -1,12 +1,17 @@
 ﻿import React, { useState, useEffect } from 'react';
 import '../styles/PedidosScreen.css';
+import { useNavigate, useLocation } from 'react-router-dom';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 function PedidosScreen() {
+  const navigate = useNavigate();
   const [pedidos, setPedidos] = useState([]);
   const [expanded, setExpanded] = useState(null);
   const [ubicaciones, setUbicaciones] = useState([]);
   const [lineaSeleccionada, setLineaSeleccionada] = useState(null);
   const [expediciones, setExpediciones] = useState({});
+  const [mostrarRutas, setMostrarRutas] = useState(false);
 
   useEffect(() => {
     const fetchPedidos = async () => {
@@ -94,9 +99,8 @@ function PedidosScreen() {
       });
 
       const result = await response.json();
-
       if (!result.success) {
-        alert('Error al actualizar en la base de datos.');
+        alert('Error al actualizar en la base de datos: ' + (result.error || ''));
         return;
       }
 
@@ -121,101 +125,209 @@ function PedidosScreen() {
     }
   };
 
+  const rutasDemo = [
+    {
+      id: 1,
+      cliente: 'Ferretería El Clavo',
+      direccion: 'Calle Herramientas 12',
+      albaran: 'ALB0001',
+      articulos: [
+        { nombre: 'Tornillos', cantidad: 100 },
+        { nombre: 'Tuercas', cantidad: 50 }
+      ]
+    },
+    {
+      id: 2,
+      cliente: 'Construcciones López',
+      direccion: 'Av. Cemento 45',
+      albaran: 'ALB0002',
+      articulos: [
+        { nombre: 'Cemento 25kg', cantidad: 10 }
+      ]
+    }
+  ];
+
   return (
     <div className="pedidos-container">
       <div className="pedidos-header">
         <h2>Pedidos Activos</h2>
+        <button onClick={() => setMostrarRutas(!mostrarRutas)} className="btn-rutas">
+          {mostrarRutas ? '🔙 Volver a Pedidos' : '📦 Gestión de Rutas'}
+        </button>
+        <button onClick={() => navigate('/traspaso')} className="btn-traspaso">
+          🏭 Traspaso entre Almacenes
+        </button>
+        <button onClick={() => navigate('/preparacion')} className="btn-opcion">
+          📋 Preparación de Pedidos
+        </button>
+        <button onClick={() => navigate('/entrada')} className="btn-opcion">
+          📥 Entrada de Stock
+        </button>
         <div className="bubble bubble1"></div>
         <div className="bubble bubble2"></div>
       </div>
 
-      <div className="pedidos-content">
-        {pedidos.map((pedido, index) => (
-          <div key={index} className="pedido-card">
-            <div className="pedido-header">
-              <span>Pedido: {pedido.numeroPedido}</span>
-              <span>Serie: {pedido.serie}</span>
-            </div>
-            <div className="pedido-details">
-              <div><strong>Cliente:</strong> {pedido.razonSocial}</div>
-              <div><strong>Dirección:</strong> {pedido.domicilio}</div>
-              <div><strong>Municipio:</strong> {pedido.municipio}</div>
-              {pedido.observaciones && (
-                <div><strong>Obs:</strong> {pedido.observaciones}</div>
+      {!mostrarRutas && (
+        <div className="pedidos-content">
+          {pedidos.map((pedido, index) => (
+            <div key={index} className="pedido-card">
+              <div className="pedido-header">
+                <span>Pedido: {pedido.numeroPedido}</span>
+                <span>Serie: {pedido.serie}</span>
+              </div>
+              <div className="pedido-details">
+                <div><strong>Cliente:</strong> {pedido.razonSocial}</div>
+                <div><strong>Dirección:</strong> {pedido.domicilio}</div>
+                <div><strong>Municipio:</strong> {pedido.municipio}</div>
+                {pedido.observaciones && (
+                  <div><strong>Obs:</strong> {pedido.observaciones}</div>
+                )}
+              </div>
+              <div className="toggle-button">
+                <button onClick={() => toggleExpand(index)}>
+                  {expanded === index ? '▲ Ocultar líneas' : '▼ Ver líneas'}
+                </button>
+              </div>
+              {expanded === index && (
+                <table className="lineas-table">
+                  <thead>
+                    <tr>
+                      <th>Artículo</th>
+                      <th>Descripción</th>
+                      <th>Pedidas</th>
+                      <th>Pendientes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pedido.articulos.map((art, i) => (
+                      <React.Fragment key={i}>
+                        <tr onClick={() => handleLineaClick(art.codigoArticulo)} style={{ cursor: 'pointer' }}>
+                          <td className="td-izquierda">{art.codigoArticulo}</td>
+                          <td className="td-izquierda">{art.descripcionArticulo}</td>
+                          <td className="td-centrado">{art.unidadesPedidas}</td>
+                          <td className="td-centrado">{art.unidadesPendientes}</td>
+                        </tr>
+                        {lineaSeleccionada === art.codigoArticulo && (
+                          <tr>
+                            <td colSpan="4">
+                              <strong>Ubicación:</strong>
+                              <select value={expediciones[art.codigoArticulo]?.ubicacion || ''} onChange={(e) => handleChangeUbicacion(art.codigoArticulo, e.target.value)}>
+                                {ubicaciones.map((ubi, idx) => (
+                                  <option key={idx} value={ubi.ubicacion}>
+                                    {ubi.ubicacion} - {ubi.unidadSaldo} uds
+                                  </option>
+                                ))}
+                              </select>
+                              <div style={{ marginTop: '10px' }}>
+                                <strong>Unidades a expedir:</strong>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={expediciones[art.codigoArticulo]?.cantidad || ''}
+                                  onChange={(e) => handleChangeCantidad(art.codigoArticulo, e.target.value)}
+                                  style={{ marginLeft: '10px', width: '80px' }}
+                                />
+                                <button onClick={() => expedirLinea(index, i, art.codigoArticulo)} style={{ marginLeft: '20px' }}>
+                                  Validar Expedición
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
+          ))}
+        </div>
+      )}
 
-            <div className="toggle-button">
-              <button onClick={() => toggleExpand(index)}>
-                {expanded === index ? '▲ Ocultar líneas' : '▼ Ver líneas'}
-              </button>
-            </div>
+      {mostrarRutas && <GestionRutas rutas={rutasDemo} />}
+    </div>
+  );
+}
 
-            {expanded === index && (
-              <table className="lineas-table">
-                <thead>
-                  <tr>
-                    <th>Artículo</th>
-                    <th>Descripción</th>
-                    <th>Pedidas</th>
-                    <th>Pendientes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pedido.articulos.map((art, i) => (
-                    <React.Fragment key={i}>
-                      <tr
-                        onClick={() => handleLineaClick(art.codigoArticulo)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        <td className="td-izquierda">{art.codigoArticulo}</td>
-                        <td className="td-izquierda">{art.descripcionArticulo}</td>
-                        <td className="td-centrado">{art.unidadesPedidas}</td>
-                        <td className="td-centrado">{art.unidadesPendientes}</td>
-                      </tr>
+// --------------------- GESTIÓN DE RUTAS ---------------------
+function GestionRutas({ rutas }) {
+  const navigate = useNavigate();
+  const location = useLocation();
 
-                      {lineaSeleccionada === art.codigoArticulo && (
-                        <tr>
-                          <td colSpan="4">
-                            <strong>Ubicación:</strong>
-                            <select
-                              value={expediciones[art.codigoArticulo]?.ubicacion || ''}
-                              onChange={(e) => handleChangeUbicacion(art.codigoArticulo, e.target.value)}
-                            >
-                              {ubicaciones.map((ubi, idx) => (
-                                <option key={idx} value={ubi.ubicacion}>
-                                  {ubi.ubicacion} - {ubi.unidadSaldo} uds
-                                </option>
-                              ))}
-                            </select>
+  const firmaCliente = location.state?.firmaCliente || '';
+  const firmaRepartidor = location.state?.firmaRepartidor || '';
+  const rutaFirmada = location.state?.rutaFirmada || null;
 
-                            <div style={{ marginTop: '10px' }}>
-                              <strong>Unidades a expedir:</strong>
-                              <input
-                                type="number"
-                                min="1"
-                                value={expediciones[art.codigoArticulo]?.cantidad || ''}
-                                onChange={(e) => handleChangeCantidad(art.codigoArticulo, e.target.value)}
-                                style={{ marginLeft: '10px', width: '80px' }}
-                              />
-                              <button
-                                onClick={() => expedirLinea(index, i, art.codigoArticulo)}
-                                style={{ marginLeft: '20px' }}
-                              >
-                                Validar Expedición
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        ))}
-      </div>
+  const generarPDF = (ruta) => {
+    const doc = new jsPDF();
+
+    doc.setFontSize(18);
+    doc.text(`Albarán: ${ruta.albaran}`, 14, 20);
+    doc.setFontSize(12);
+    doc.text(`Cliente: ${ruta.cliente}`, 14, 30);
+    doc.text(`Dirección: ${ruta.direccion}`, 14, 38);
+    doc.text('Artículos entregados:', 14, 48);
+
+    doc.autoTable({
+      startY: 52,
+      head: [['Artículo', 'Cantidad']],
+      body: ruta.articulos.map(a => [a.nombre, a.cantidad])
+    });
+
+    const finalY = doc.lastAutoTable.finalY || 70;
+
+    if (firmaCliente) {
+      doc.text(`Firma Cliente:`, 14, finalY + 20);
+      doc.addImage(firmaCliente, 'PNG', 14, finalY + 25, 60, 20);
+    }
+
+    if (firmaRepartidor) {
+      doc.text(`Firma Repartidor:`, 14, finalY + 50);
+      doc.addImage(firmaRepartidor, 'PNG', 14, finalY + 55, 60, 20);
+    }
+
+    doc.save(`Entrega_${ruta.albaran}.pdf`);
+  };
+
+  const abrirPantallaFirmas = (ruta) => {
+    navigate('/Firmar', { state: { ruta } });
+  };
+
+  return (
+    <div className="rutas-content">
+      <h3>Entregas Asignadas a Tu Ruta</h3>
+      {rutas.map((ruta) => (
+        <div key={ruta.id} className="ruta-card">
+          <h4>Albarán: {ruta.albaran}</h4>
+          <p><strong>Cliente:</strong> {ruta.cliente}</p>
+          <p><strong>Dirección:</strong> {ruta.direccion}</p>
+          <ul>
+            {ruta.articulos.map((a, idx) => (
+              <li key={idx}>{a.nombre} - {a.cantidad} uds</li>
+            ))}
+          </ul>
+
+          {rutaFirmada?.id === ruta.id && (
+            <>
+              <div>
+                <strong>Firma Cliente:</strong>
+                <br />
+                <img src={firmaCliente} alt="Firma Cliente" style={{ border: '1px solid #ccc', width: 200, height: 80 }} />
+              </div>
+              <div>
+                <strong>Firma Repartidor:</strong>
+                <br />
+                <img src={firmaRepartidor} alt="Firma Repartidor" style={{ border: '1px solid #ccc', width: 200, height: 80 }} />
+              </div>
+              <button onClick={() => generarPDF(ruta)}>📄 Generar PDF</button>
+            </>
+          )}
+
+          {rutaFirmada?.id !== ruta.id && (
+            <button onClick={() => abrirPantallaFirmas(ruta)}>✍ Firmar Entrega</button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

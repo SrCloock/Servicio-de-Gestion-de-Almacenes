@@ -7,9 +7,10 @@ import ClientesPage from './pages/ClientesPage';
 import DashboardPage from './pages/DashboardPage';
 import FichaClientePage from './pages/FichaClientePage';
 import EstadisticasClientePage from './pages/EstadisticasClientePage';
-import EntradaStockCompras from './pages/EntradaStockCompras';
+import TraspasoAlmacenesScreen from './pages/TraspasoAlmacenesScreen';
 import PreparacionPedidos from './pages/PreparacionPedidos';
-import ConfirmacionEntrega from './pages/ConfirmacionEntrega';
+import EntradaStockCompras from './pages/EntradaStockCompras';
+
 
 function App() {
   return (
@@ -20,9 +21,10 @@ function App() {
       <Route path="/clientes" element={<ClientesPage />} />
       <Route path="/clientes/ficha" element={<FichaClientePage />} />
       <Route path="/estadisticasCliente" element={<EstadisticasClientePage />} />
-      <Route path="/entrada-stock" element={<EntradaStockCompras />} />
-      <Route path="/preparacion-pedidos" element={<PreparacionPedidos />} />
-      <Route path="/confirmar-entrega/:id" element={<ConfirmacionEntrega />} />
+      <Route path="/traspaso" element={<TraspasoAlmacenesScreen />} />
+      <Route path="/dashboard" element={<DashboardPage />} />
+      <Route path="/preparacion" element={<PreparacionPedidos />} />
+      <Route path="/entrada" element={<EntradaStockCompras />} />
     </Routes>
   );
 }

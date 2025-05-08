@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import '../styles/EntradaStockCompras.css';
-
+import { useNavigate } from 'react-router-dom';
 function EntradaStockCompras() {
   const [paquetes, setPaquetes] = useState([]);
   const [paqueteSeleccionado, setPaqueteSeleccionado] = useState(null);
@@ -9,15 +9,21 @@ function EntradaStockCompras() {
   const [mostrarUbicaciones, setMostrarUbicaciones] = useState(null);
   const [mostrarCompletados, setMostrarCompletados] = useState(false);
 
-  // Cargar datos del localStorage al inicio
   useEffect(() => {
     const savedData = localStorage.getItem('entradaStockData');
+
     if (savedData) {
-      const { paquetes: savedPaquetes, ubicaciones: savedUbicaciones } = JSON.parse(savedData);
-      setPaquetes(savedPaquetes);
-      setUbicaciones(savedUbicaciones);
-    } else {
-      // Mock de datos iniciales
+      try {
+        const { paquetes: savedPaquetes, ubicaciones: savedUbicaciones } = JSON.parse(savedData);
+        setPaquetes(savedPaquetes);
+        setUbicaciones(savedUbicaciones);
+      } catch (e) {
+        console.error("Error al leer localStorage, limpiando datos:", e);
+        localStorage.removeItem('entradaStockData');
+      }
+    }
+
+    if (!savedData || !paquetes.length) {
       const mockPaquetes = [
         {
           id: 1,
@@ -55,13 +61,10 @@ function EntradaStockCompras() {
     }
   }, []);
 
-  // Guardar datos en localStorage cuando cambian
   useEffect(() => {
-    const dataToSave = {
-      paquetes,
-      ubicaciones
-    };
+    const dataToSave = { paquetes, ubicaciones };
     localStorage.setItem('entradaStockData', JSON.stringify(dataToSave));
+    console.log("📦 Paquetes guardados:", paquetes);
   }, [paquetes, ubicaciones]);
 
   const seleccionarPaquete = (paquete) => {
@@ -76,12 +79,7 @@ function EntradaStockCompras() {
       if (!nuevasAsignaciones[articuloId]) {
         nuevasAsignaciones[articuloId] = [];
       }
-      
-      // Verificar que no exista ya una ubicación vacía
-      const tieneVacia = nuevasAsignaciones[articuloId].some(
-        u => u.ubicacion === '' || u.cantidad === 0
-      );
-      
+      const tieneVacia = nuevasAsignaciones[articuloId].some(u => u.ubicacion === '' || u.cantidad === 0);
       if (!tieneVacia) {
         nuevasAsignaciones[articuloId].push({
           ubicacion: ubicaciones[0],
@@ -89,7 +87,6 @@ function EntradaStockCompras() {
           id: Date.now()
         });
       }
-      
       return nuevasAsignaciones;
     });
   };
@@ -120,53 +117,117 @@ function EntradaStockCompras() {
 
   const calcularPendiente = (articulo) => {
     if (!asignaciones[articulo.id]) return articulo.cantidad;
-    const asignado = asignaciones[articulo.id].reduce((sum, u) => sum + (Number(u.cantidad) || 0), 0);  // Corregido
+    const asignado = asignaciones[articulo.id].reduce((sum, u) => sum + (Number(u.cantidad) || 0), 0);
     return articulo.cantidad - asignado;
   };
-  
 
-  const guardarAsignaciones = (completar = false) => {
-    if (completar) {
-      const nuevoPaquetes = paquetes.map(p => 
-        p.id === paqueteSeleccionado.id ? { ...p, estado: 'completado' } : p
-      );
-      setPaquetes(nuevoPaquetes);
-    }
-    
-    setPaqueteSeleccionado(null);
-    setAsignaciones({});
-  };
+const guardarAsignaciones = (completar = false) => {
+  if (completar) {
+    const nuevoPaquetes = paquetes.map(p =>
+      p.id === paqueteSeleccionado.id ? { ...p, estado: 'completado' } : p
+    );
+    setPaquetes(nuevoPaquetes);
+    localStorage.setItem('entradaStockData', JSON.stringify({ paquetes: nuevoPaquetes, ubicaciones }));
+  }
+  setPaqueteSeleccionado(null);
+  setAsignaciones({});
+};
+
+
 
   const paquetesPendientes = paquetes.filter(p => p.estado === 'pendiente');
   const paquetesCompletados = paquetes.filter(p => p.estado === 'completado');
 
   return (
     <div className="entrada-stock-container">
-      <h2>Entrada de Stock - Recepción de Compras</h2>
-      
+    <div className="entrada-stock-header">
+  <h2>📦 Entrada de Stock - Recepción de Compras</h2>
+ <button
+  onClick={() => {
+    console.log("Intentando navegar...");
+    navigate('/PedidosScreen');
+  }}
+  className="btn-volver-menu"
+>
+  🔙 Volver
+</button>
+
+
+
+  <div className="bubble bubble1"></div>
+  <div className="bubble bubble2"></div>
+</div>
+
+<button
+  onClick={() => {
+    // Elimina datos principales
+    localStorage.removeItem('entradaStockData');
+
+    // Elimina todas las asignaciones previas
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('asignaciones-')) {
+        localStorage.removeItem(key);
+      }
+    });
+
+    // Vuelve a guardar datos mock con paquetes nuevos
+    const mockPaquetes = [
+      {
+        id: 1,
+        proveedor: 'Ferretería Industrial S.L.',
+        fechaRecepcion: '15/05/2023',
+        estado: 'pendiente',
+        articulos: [
+          { id: 1, codigo: 'TRN-6X50', descripcion: 'Tornillo hexagonal 6x50 mm', cantidad: 150 },
+          { id: 2, codigo: 'TRC-M8', descripcion: 'Tuerca M8 galvanizada', cantidad: 200 },
+          { id: 3, codigo: 'TUB-ALU-20', descripcion: 'Tubo aluminio 20mm', cantidad: 50 },
+        ]
+      },
+      {
+        id: 2,
+        proveedor: 'Suministros Técnicos García',
+        fechaRecepcion: '16/05/2023',
+        estado: 'pendiente',
+        articulos: [
+          { id: 4, codigo: 'BRD-40', descripcion: 'Brida de acero 40mm', cantidad: 30 },
+          { id: 5, codigo: 'VLV-1/2', descripcion: 'Válvula de bola 1/2"', cantidad: 25 },
+        ]
+      }
+    ];
+
+    const mockUbicaciones = [
+      'Almacén principal - Pasillo 1',
+      'Estantería central - Zona B',
+      'Pasillo 3 - Estante alto',
+      'Zona de carga - Estantería metálica',
+      'Almacén auxiliar'
+    ];
+
+    const dataToSave = {
+      paquetes: mockPaquetes,
+      ubicaciones: mockUbicaciones
+    };
+
+    localStorage.setItem('entradaStockData', JSON.stringify(dataToSave));
+    window.location.reload();
+  }}
+  className="btn-reiniciar"
+>
+  🔄 Reiniciar datos
+</button>
+
+
+
       {!paqueteSeleccionado ? (
         <div className="contenedor-principal">
           <div className="lista-paquetes">
             <h3>Paquetes pendientes de ubicación</h3>
             {paquetesPendientes.length > 0 ? (
               paquetesPendientes.map(paquete => (
-                <div 
-                  key={paquete.id} 
-                  className="paquete-card"
-                  onClick={() => seleccionarPaquete(paquete)}
-                >
-                  <div className="fila">
-                    <span className="etiqueta">Proveedor:</span>
-                    <span className="valor">{paquete.proveedor}</span>
-                  </div>
-                  <div className="fila">
-                    <span className="etiqueta">Fecha:</span>
-                    <span className="valor">{paquete.fechaRecepcion}</span>
-                  </div>
-                  <div className="fila">
-                    <span className="etiqueta">Artículos:</span>
-                    <span className="valor">{paquete.articulos.length}</span>
-                  </div>
+                <div key={paquete.id} className="paquete-card" onClick={() => seleccionarPaquete(paquete)}>
+                  <div className="fila"><span className="etiqueta">Proveedor:</span><span className="valor">{paquete.proveedor}</span></div>
+                  <div className="fila"><span className="etiqueta">Fecha:</span><span className="valor">{paquete.fechaRecepcion}</span></div>
+                  <div className="fila"><span className="etiqueta">Artículos:</span><span className="valor">{paquete.articulos.length}</span></div>
                 </div>
               ))
             ) : (
@@ -181,26 +242,11 @@ function EntradaStockCompras() {
             </div>
             {mostrarCompletados && paquetesCompletados.length > 0 ? (
               paquetesCompletados.map(paquete => (
-                <div 
-                  key={paquete.id} 
-                  className="paquete-card completado"
-                >
-                  <div className="fila">
-                    <span className="etiqueta">Proveedor:</span>
-                    <span className="valor">{paquete.proveedor}</span>
-                  </div>
-                  <div className="fila">
-                    <span className="etiqueta">Fecha:</span>
-                    <span className="valor">{paquete.fechaRecepcion}</span>
-                  </div>
-                  <div className="fila">
-                    <span className="etiqueta">Artículos:</span>
-                    <span className="valor">{paquete.articulos.length}</span>
-                  </div>
-                  <div className="fila">
-                    <span className="etiqueta">Estado:</span>
-                    <span className="valor estado-completo">COMPLETADO</span>
-                  </div>
+                <div key={paquete.id} className="paquete-card completado">
+                  <div className="fila"><span className="etiqueta">Proveedor:</span><span className="valor">{paquete.proveedor}</span></div>
+                  <div className="fila"><span className="etiqueta">Fecha:</span><span className="valor">{paquete.fechaRecepcion}</span></div>
+                  <div className="fila"><span className="etiqueta">Artículos:</span><span className="valor">{paquete.articulos.length}</span></div>
+                  <div className="fila"><span className="etiqueta">Estado:</span><span className="valor estado-completo">COMPLETADO</span></div>
                 </div>
               ))
             ) : mostrarCompletados && (
@@ -210,15 +256,13 @@ function EntradaStockCompras() {
         </div>
       ) : (
         <div className="detalle-paquete">
-          <button onClick={() => guardarAsignaciones(false)} className="btn-volver">
-            ← Volver a paquetes
-          </button>
-          
+          <button onClick={() => guardarAsignaciones(false)} className="btn-volver">← Volver a paquetes</button>
+
           <div className="encabezado-paquete">
             <h3>Paquete de {paqueteSeleccionado.proveedor}</h3>
             <p className="fecha">Fecha recepción: {paqueteSeleccionado.fechaRecepcion}</p>
           </div>
-          
+
           <div className="tabla-contenedor">
             <table className="tabla-articulos">
               <thead>
@@ -237,20 +281,14 @@ function EntradaStockCompras() {
                   return (
                     <React.Fragment key={articulo.id}>
                       <tr>
-                        <td className="columna-codigo">{articulo.codigo}</td>
-                        <td className="columna-descripcion">{articulo.descripcion}</td>
-                        <td className="columna-cantidad">{articulo.cantidad}</td>
-                        <td className="columna-ubicaciones">
-                          {asignaciones[articulo.id]?.length || 0}
-                        </td>
-                        <td className={`columna-pendiente ${pendiente === 0 ? 'completo' : 'pendiente'}`}>
-                          {pendiente}
-                        </td>
-                        <td className="columna-acciones">
-                          <button 
-                            onClick={() => setMostrarUbicaciones(
-                              mostrarUbicaciones === articulo.id ? null : articulo.id
-                            )}
+                        <td>{articulo.codigo}</td>
+                        <td>{articulo.descripcion}</td>
+                        <td>{articulo.cantidad}</td>
+                        <td>{asignaciones[articulo.id]?.length || 0}</td>
+                        <td className={pendiente === 0 ? 'completo' : 'pendiente'}>{pendiente}</td>
+                        <td>
+                          <button
+                            onClick={() => setMostrarUbicaciones(mostrarUbicaciones === articulo.id ? null : articulo.id)}
                             className="btn-ubicar"
                             disabled={pendiente === 0}
                           >
@@ -258,36 +296,28 @@ function EntradaStockCompras() {
                           </button>
                         </td>
                       </tr>
-                      
                       {mostrarUbicaciones === articulo.id && (
                         <tr className="ubicaciones-row">
                           <td colSpan="6">
                             <div className="ubicaciones-container">
-                              <button 
-                                onClick={() => agregarUbicacion(articulo.id)} 
+                              <button
+                                onClick={() => agregarUbicacion(articulo.id)}
                                 className="btn-agregar"
                                 disabled={pendiente === 0}
                               >
                                 + Añadir ubicación
                               </button>
-                              
-                              {asignaciones[articulo.id]?.map((ubicacion) => (
+                              {asignaciones[articulo.id]?.map(ubicacion => (
                                 <div key={ubicacion.id} className="ubicacion-item">
                                   <select
                                     value={ubicacion.ubicacion}
-                                    onChange={(e) => cambiarUbicacion(
-                                      articulo.id, 
-                                      ubicacion.id, 
-                                      'ubicacion', 
-                                      e.target.value
-                                    )}
+                                    onChange={(e) => cambiarUbicacion(articulo.id, ubicacion.id, 'ubicacion', e.target.value)}
                                     className="select-ubicacion"
                                   >
                                     {ubicaciones.map(ubi => (
                                       <option key={ubi} value={ubi}>{ubi}</option>
                                     ))}
                                   </select>
-                                  
                                   <input
                                     type="number"
                                     min="0"
@@ -301,7 +331,6 @@ function EntradaStockCompras() {
                                     placeholder="Cantidad"
                                     className="input-cantidad"
                                   />
-                                  
                                   <button
                                     onClick={() => eliminarUbicacion(articulo.id, ubicacion.id)}
                                     className="btn-eliminar"
@@ -310,10 +339,8 @@ function EntradaStockCompras() {
                                   </button>
                                 </div>
                               ))}
-                              
                               <div className="resumen">
-                                <strong>Total asignado:</strong> 
-                                {asignaciones[articulo.id]?.reduce((sum, u) => sum + (Number(u.cantidad) || 0), 0) || 0} / {articulo.cantidad}
+                                <strong>Total asignado:</strong> {asignaciones[articulo.id]?.reduce((sum, u) => sum + (Number(u.cantidad) || 0), 0) || 0} / {articulo.cantidad}
                               </div>
                             </div>
                           </td>
@@ -325,22 +352,11 @@ function EntradaStockCompras() {
               </tbody>
             </table>
           </div>
-          
+
           <div className="acciones">
-            <button 
-              onClick={() => guardarAsignaciones(false)}
-              className="btn-guardar"
-            >
-              Guardar cambios
-            </button>
-            
+            <button onClick={() => guardarAsignaciones(false)} className="btn-guardar">Guardar cambios</button>
             {paqueteSeleccionado.articulos.every(art => calcularPendiente(art) === 0) && (
-              <button 
-                onClick={() => guardarAsignaciones(true)}
-                className="btn-completar"
-              >
-                Marcar como completado
-              </button>
+              <button onClick={() => guardarAsignaciones(true)} className="btn-completar">Marcar como completado</button>
             )}
           </div>
         </div>

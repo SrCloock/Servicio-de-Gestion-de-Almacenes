@@ -1,0 +1,12 @@
+.firma-screen {
+  padding: 20px;
+  text-align: center;
+}
+
+.firma-canvas {
+  border: 2px solid #444;
+  width: 100%;
+  max-width: 600px;
+  height: 200px;
+  margin-bottom: 20px;
+}
