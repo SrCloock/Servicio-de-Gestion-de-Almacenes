@@ -40,7 +40,6 @@ function ConfirmacionEntrega() {
     if (datosCliente.nombre.trim() && datosCliente.dni.trim()) {
       setConfirmado(true);
       
-      // Simular envío del resguardo
       setTimeout(() => {
         alert(`Resguardo enviado por correo a ${datosCliente.nombre}`);
       }, 1500);

@@ -349,7 +349,6 @@ font-weight: bold;
 .tachado {
 text-decoration: line-through;
 }
-  /* Correcciones para alineación de columnas */
 .tabla-articulos th, 
 .tabla-articulos td {
   vertical-align: middle;
@@ -364,7 +363,7 @@ text-decoration: line-through;
   padding: 12px 15px;
 }
 
-/* Asegurar que el botón de cargar mantenga su estilo cuando está completado */
+
 .btn-cargar.completado {
   background-color: #28a745;
   cursor: pointer;
@@ -374,7 +373,6 @@ text-decoration: line-through;
   background-color: #218838;
 }
 
-/* Mejorar el espaciado en las celdas */
 .tabla-articulos td {
   padding: 12px 15px;
 }

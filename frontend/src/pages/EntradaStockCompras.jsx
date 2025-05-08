@@ -48,7 +48,6 @@ function EntradaStockCompras() {
             { id: 5, codigo: 'VLV-1/2', descripcion: 'Válvula de bola 1/2"', cantidad: 25 },
           ]
         },
-        // Nuevos paquetes añadidos
         {
           id: 3,
           proveedor: 'Materiales de Construcción Pérez',
@@ -84,7 +83,6 @@ function EntradaStockCompras() {
             { id: 16, codigo: 'VLV-ESF-1', descripcion: 'Válvula esférica 1"', cantidad: 10 }
           ]
         },
-        // Paquetes completados de ejemplo
         {
           id: 6,
           proveedor: 'Herrería López',

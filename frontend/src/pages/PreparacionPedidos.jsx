@@ -11,7 +11,6 @@ function PreparacionPedidos() {
 
   const cargarDatosMock = () => {
     const mockPedidos = [
-      // Pedidos pendientes originales
       {
         id: 1025,
         cliente: 'Construcciones Díaz S.L.',
@@ -33,7 +32,6 @@ function PreparacionPedidos() {
           { id: 5, codigo: 'VLV-1/2', descripcion: 'Válvula de bola 1/2"', cantidad: 5, completado: 0 },
         ]
       },
-      // Nuevos pedidos pendientes
       {
         id: 1027,
         cliente: 'Electricidad Moderna S.A.',
@@ -57,7 +55,6 @@ function PreparacionPedidos() {
           { id: 12, codigo: 'TRN-INOX-5', descripcion: 'Tornillo inoxidable 5x20', cantidad: 100, completado: 0 }
         ]
       },
-      // Pedidos completados
       {
         id: 1021,
         cliente: 'Fontanería Rápida',
