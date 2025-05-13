@@ -35,6 +35,25 @@ function LoginPage() {
         background: 'linear-gradient(180deg, #009688 0%, #4db6ac 100%)',
         position: 'relative'
       }}>
+        {/* Logo Ferretería Luque */}
+        <div style={{
+          position: 'absolute', 
+          top: '50%', 
+          left: '50%', 
+          transform: 'translate(-50%, -50%)',
+          width: '150px',
+          height: '150px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <img 
+            src="/img/logo-ferreteria-luque.png" 
+            alt="Ferretería Luque" 
+            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+          />
+        </div>
+        
         {/* Burbuja 1 */}
         <div style={{
           position: 'absolute', top: '40px', left: '20px', width: '80px', height: '80px',
@@ -46,15 +65,6 @@ function LoginPage() {
           position: 'absolute', top: '100px', right: '30px', width: '60px', height: '60px',
           borderRadius: '50%', backgroundColor: 'rgba(255, 255, 255, 0.07)'
         }}></div>
-
-     <div style={{
-  position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-  backgroundColor: 'white', borderRadius: '50%', width: '90px', height: '90px',
-  display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden'
-}}>
-  <img src="/img/icono-persona.png" alt="Icono persona" style={{ width: '60%', height: '60%' }} />
-</div>
-
       </div>
 
       <div style={{
@@ -62,10 +72,10 @@ function LoginPage() {
         borderTopLeftRadius: '30px', borderTopRightRadius: '30px', boxShadow: '0 -5px 15px rgba(0,0,0,0.1)'
       }}>
         <form onSubmit={handleSubmit} autoComplete="off">
-          <h2 style={{ textAlign: 'center', marginBottom: '30px', color: '#333' }}>Login</h2>
+          <h2 style={{ textAlign: 'center', marginBottom: '30px', color: '#333' }}>Iniciar Sesión</h2>
 
           <div style={{ marginBottom: '25px' }}>
-            <label htmlFor="usuario" style={{ color: '#555' }}>User</label>
+            <label htmlFor="usuario" style={{ color: '#555' }}>Usuario</label>
             <div style={{ display: 'flex', alignItems: 'center', borderBottom: '2px solid #ccc' }}>
               <i className="fas fa-user" style={{ marginRight: '10px', color: '#888' }}></i>
               <input
@@ -73,6 +83,7 @@ function LoginPage() {
                 type="text"
                 value={usuario}
                 onChange={e => setUsuario(e.target.value)}
+                placeholder="Ingrese su usuario"
                 required
                 style={{
                   border: 'none',
@@ -86,7 +97,7 @@ function LoginPage() {
           </div>
 
           <div style={{ marginBottom: '30px' }}>
-            <label htmlFor="contrasena" style={{ color: '#555' }}>Password</label>
+            <label htmlFor="contrasena" style={{ color: '#555' }}>Contraseña</label>
             <div style={{ display: 'flex', alignItems: 'center', borderBottom: '2px solid #ccc' }}>
               <i className="fas fa-lock" style={{ marginRight: '10px', color: '#888' }}></i>
               <input
@@ -94,6 +105,7 @@ function LoginPage() {
                 type="password"
                 value={contrasena}
                 onChange={e => setContrasena(e.target.value)}
+                placeholder="Ingrese su contraseña"
                 required
                 style={{
                   border: 'none',

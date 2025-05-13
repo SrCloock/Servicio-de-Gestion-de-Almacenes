@@ -1,78 +1,227 @@
 .traspaso-container {
-  padding: 30px;
-  background: #fff;
-  min-height: 100vh;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
   position: relative;
+  overflow: hidden;
 }
 
 .traspaso-header {
-  background: linear-gradient(to right, #009688, #4db6ac);
-  padding: 20px;
-  color: white;
-  border-radius: 12px;
-  position: relative;
-  text-align: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 30px;
+  position: relative;
+}
+
+.traspaso-header h2 {
+  color: #2c3e50;
+  margin: 0;
 }
 
 .btn-volver {
-  position: absolute;
-  top: 20px;
-  left: 20px;
-  background-color: #ffffff;
+  background-color: #3498db;
+  color: white;
   border: none;
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 10px 15px;
+  border-radius: 5px;
   cursor: pointer;
-  color: #009688;
-  font-weight: bold;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-volver:hover {
+  background-color: #2980b9;
+}
+
+.traspaso-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
 }
 
 .traspaso-form {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 15px;
-  max-width: 400px;
-  margin: auto;
+  background: #f9f9f9;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
-.traspaso-form select,
+.traspaso-form h3 {
+  margin-top: 0;
+  color: #2c3e50;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.search-box {
+  margin-bottom: 15px;
+}
+
+.search-box input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
+}
+
+.traspaso-form select, 
 .traspaso-form input {
   width: 100%;
   padding: 10px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
+  margin-bottom: 15px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
 }
 
-.traspaso-form button {
-  padding: 10px;
-  background-color: #009688;
+.form-row {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.form-group {
+  flex: 1;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+  color: #555;
+}
+
+.btn-agregar {
+  background-color: #2ecc71;
   color: white;
   border: none;
-  border-radius: 6px;
+  padding: 10px 15px;
+  border-radius: 5px;
   cursor: pointer;
+  font-size: 16px;
+  align-self: flex-end;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-agregar:hover {
+  background-color: #27ae60;
+}
+
+.traspasos-pendientes {
+  background: #f9f9f9;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.traspasos-pendientes h3 {
+  margin-top: 0;
+  color: #2c3e50;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.traspasos-table {
   width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
 }
 
-.traspaso-form button:hover {
-  background-color: #00796b;
+.traspasos-table th, 
+.traspasos-table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
 }
 
+.traspasos-table th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+}
+
+.btn-modificar, 
+.btn-eliminar {
+  padding: 5px 10px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 5px;
+}
+
+.btn-modificar {
+  background-color: #f39c12;
+  color: white;
+}
+
+.btn-modificar:hover {
+  background-color: #e67e22;
+}
+
+.btn-eliminar {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.btn-eliminar:hover {
+  background-color: #c0392b;
+}
+
+.btn-confirmar {
+  background-color: #2ecc71;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  width: 100%;
+  justify-content: center;
+}
+
+.btn-confirmar:hover {
+  background-color: #27ae60;
+}
+
+.no-traspasos {
+  text-align: center;
+  color: #7f8c8d;
+  font-style: italic;
+  padding: 20px;
+}
+
+/* Bubbles background */
 .bubble {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
   position: absolute;
+  border-radius: 50%;
+  background-color: rgba(52, 152, 219, 0.1);
+  z-index: -1;
 }
 
 .bubble1 {
-  top: -20px;
-  left: -20px;
+  width: 200px;
+  height: 200px;
+  top: -50px;
+  right: -50px;
 }
 
 .bubble2 {
-  bottom: -20px;
-  right: -20px;
+  width: 150px;
+  height: 150px;
+  bottom: -30px;
+  left: -30px;
 }
