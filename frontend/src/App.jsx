@@ -11,7 +11,8 @@ import TraspasoAlmacenesScreen from './pages/TraspasoAlmacenesScreen';
 import PreparacionPedidos from './pages/PreparacionPedidos';
 import EntradaStockCompras from './pages/EntradaStockCompras';
 import ConfirmacionEntrega from './pages/ConfirmacionEntrega';
-
+import GestionRutas from './pages/GestionRutas'; 
+import DetalleAlbaran from './pages/DetalleAlbaran';
 
 function App() {
   return (
@@ -26,7 +27,10 @@ function App() {
       <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/preparacion" element={<PreparacionPedidos />} />
       <Route path="/entrada" element={<EntradaStockCompras />} />
+      <Route path="/rutas" element={<GestionRutas />} />
       <Route path="/confirmacion-entrega" element={<ConfirmacionEntrega />} />
+      <Route path="/detalle-albaran" element={<DetalleAlbaran />} /> 
+
     </Routes>
   );
 }

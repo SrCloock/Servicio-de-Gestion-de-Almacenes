@@ -1,7 +1,15 @@
 ﻿const express = require('express');
 const cors = require('cors');
 const sql = require('mssql');
+const multer = require('multer');
+const nodemailer = require('nodemailer');
+const path = require('path');
+const fs = require('fs');
+const cron = require('node-cron');
+const fetch = require('node-fetch'); // 👈 necesario fuera del navegador
 
+const upload = multer();
+const router = express.Router();
 const app = express();
 const PORT = 3000;
 
@@ -20,6 +28,9 @@ const dbConfig = {
     requestTimeout: 60000     // ⏰ 60 segundos en lugar de 15
   }
 };
+
+require('./cronJobs');
+
 
 // ✅ Endpoint de login
 app.post('/login', async (req, res) => {
@@ -362,27 +373,43 @@ app.get('/cobrosCliente', async (req, res) => {
 app.get('/pedidosPendientes', async (req, res) => {
   try {
     const result = await poolGlobal.request().query(`
-      SELECT 
-        c.RazonSocial,
-        c.Domicilio,
-        c.Municipio,
-        c.ObservacionesPedido,
-        l.CodigoArticulo,
-        l.DescripcionArticulo,
-        l.UnidadesPedidas, 
-        l.UnidadesPendientes,
-        l.CodigoEmpresa,
-        l.EjercicioPedido, 
-        l.SeriePedido, 
-        l.NumeroPedido 
-      FROM CabeceraPedidoCliente c
-      LEFT JOIN LineasPedidoCliente l ON 
-        c.CodigoEmpresa = l.CodigoEmpresa 
-        AND c.EjercicioPedido = l.EjercicioPedido 
-        AND c.SeriePedido = l.SeriePedido 
-        AND c.NumeroPedido = l.NumeroPedido
-      WHERE l.UnidadesPendientes > 0
-      ORDER BY l.NumeroPedido DESC
+SELECT 
+  c.RazonSocial,
+  c.Domicilio,
+  c.Municipio,
+  c.ObservacionesPedido,
+  c.Obra,
+  l.CodigoArticulo,
+  l.DescripcionArticulo,
+  l.UnidadesPedidas, 
+  l.UnidadesPendientes,
+  l.CodigoEmpresa,
+  l.EjercicioPedido, 
+  l.SeriePedido, 
+  l.NumeroPedido,
+  l.CodigoAlmacen,
+  a.CodigoAlternativo 
+FROM CabeceraPedidoCliente c
+LEFT JOIN LineasPedidoCliente l 
+  ON c.CodigoEmpresa = l.CodigoEmpresa 
+  AND c.EjercicioPedido = l.EjercicioPedido 
+  AND c.SeriePedido = l.SeriePedido 
+  AND c.NumeroPedido = l.NumeroPedido 
+
+  LEFT JOIN Articulos a ON a.CodigoArticulo = l.CodigoArticulo 
+  and a.codigoEmpresa = c.CodigoEmpresa
+
+WHERE c.Estado = 0 -- Estado pendiente
+AND NOT EXISTS (
+  SELECT 1
+  FROM LineasAlbaranCliente la
+  WHERE 
+    la.CodigoEmpresa = l.CodigoEmpresa AND
+    la.EjercicioPedido = l.EjercicioPedido AND
+    ISNULL(la.SeriePedido, '') = ISNULL(l.SeriePedido, '') AND
+    la.NumeroPedido = l.NumeroPedido
+)
+ORDER BY c.FechaPedido DESC
     `);
 
     // Agrupar por pedido
@@ -405,12 +432,15 @@ app.get('/pedidosPendientes', async (req, res) => {
         };
       }
 
-      pedidosAgrupados[key].articulos.push({
-        codigoArticulo: row.CodigoArticulo,
-        descripcionArticulo: row.DescripcionArticulo,
-        unidadesPedidas: row.UnidadesPedidas,
-        unidadesPendientes: row.UnidadesPendientes
-      });
+   pedidosAgrupados[key].articulos.push({
+  codigoArticulo: row.CodigoArticulo,
+  descripcionArticulo: row.DescripcionArticulo,
+  unidadesPedidas: row.UnidadesPedidas,
+  unidadesPendientes: row.UnidadesPendientes,
+  codigoAlmacen: row.CodigoAlmacen,
+ codigoAlternativo: row.CodigoAlternativo
+});
+
     });
 
     res.json(Object.values(pedidosAgrupados));
@@ -420,7 +450,7 @@ app.get('/pedidosPendientes', async (req, res) => {
   }
 });
 
-// ✅ Endpoint para obtener ubicaciones donde hay stock para un artículo
+// ✅ Endpoint para obtener ubicaciones y partidas donde hay stock para un artículo
 app.get('/ubicacionesArticulo', async (req, res) => {
   const { codigoArticulo } = req.query;
 
@@ -432,90 +462,236 @@ app.get('/ubicacionesArticulo', async (req, res) => {
     const request = poolGlobal.request();
     request.input('CodigoArticulo', sql.VarChar, codigoArticulo);
 
-    // Obtener ubicaciones
-    const ubicacionesQuery = await request.query(`
-      SELECT DISTINCT Ubicacion
+    // Obtener ubicaciones y partidas distintas con stock
+    const ubicacionesPartidasQuery = await request.query(`
+      SELECT DISTINCT Ubicacion, Partida
       FROM MovimientoStock
       WHERE CodigoArticulo = @CodigoArticulo
     `);
 
-    const ubicaciones = ubicacionesQuery.recordset.map(row => row.Ubicacion);
+    const ubicacionesPartidas = ubicacionesPartidasQuery.recordset;
 
-    // Obtener stock en esas ubicaciones
-    const stockPromises = ubicaciones.map(async ubicacion => {
-      const stockResult = await poolGlobal.request().query(`
+    // Obtener stock para cada combinación de ubicación y partida
+    const stockPromises = ubicacionesPartidas.map(async row => {
+      const { Ubicacion, Partida } = row;
+
+      const requestDetalle = poolGlobal.request();
+      requestDetalle.input('CodigoArticulo', sql.VarChar, codigoArticulo);
+      requestDetalle.input('Ubicacion', sql.VarChar, Ubicacion);
+      if (Partida !== null) {
+        requestDetalle.input('Partida', sql.VarChar, Partida);
+      }
+
+      const stockResult = await requestDetalle.query(`
         SELECT UnidadSaldo
         FROM AcumuladoStockUbicacion
-        WHERE CodigoArticulo = '${codigoArticulo}' AND Ubicacion = '${ubicacion}'
+        WHERE CodigoArticulo = @CodigoArticulo AND Ubicacion = @Ubicacion
+        ${Partida !== null ? "AND Partida = @Partida" : "AND Partida IS NULL"}
       `);
 
       return {
-        ubicacion,
+        ubicacion: Ubicacion,
+        partida: Partida || null,
         unidadSaldo: stockResult.recordset[0]?.UnidadSaldo || 0
       };
     });
 
-    const stockPorUbicacion = await Promise.all(stockPromises);
+    const stockPorUbicacionPartida = await Promise.all(stockPromises);
 
-    res.json(stockPorUbicacion);
+    res.json(stockPorUbicacionPartida);
   } catch (err) {
     console.error('[ERROR UBICACIONES ARTICULO]', err);
     res.status(500).json({ success: false, mensaje: 'Error al obtener ubicaciones del artículo' });
   }
 });
 
+
 app.post('/actualizarLineaPedido', async (req, res) => {
-  const { codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, cantidadExpedida } = req.body;
+  const {
+    codigoEmpresa,
+    ejercicio,
+    serie,
+    numeroPedido,
+    codigoArticulo,
+    cantidadExpedida,
+    ubicacion,
+    partida // puede ser null
+  } = req.body;
 
   if (
     codigoEmpresa == null ||
     ejercicio == null ||
     numeroPedido == null ||
     codigoArticulo == null ||
-    cantidadExpedida == null
+    cantidadExpedida == null ||
+    ubicacion == null
   ) {
     return res.status(400).json({ success: false, mensaje: 'Datos incompletos para la actualización.' });
   }
 
   try {
-    const request = poolGlobal.request();
-    request.input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
-    request.input('ejercicio', sql.SmallInt, ejercicio);
-    request.input('numeroPedido', sql.Int, numeroPedido);
-    request.input('codigoArticulo', sql.VarChar, codigoArticulo);
-    request.input('cantidadExpedida', sql.Decimal(18, 4), cantidadExpedida);
+const request = poolGlobal.request();
+request.input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
+request.input('ejercicio', sql.SmallInt, ejercicio);
+request.input('numeroPedido', sql.Int, numeroPedido);
+request.input('codigoArticulo', sql.VarChar, codigoArticulo);
+request.input('cantidadExpedida', sql.Decimal(18, 4), cantidadExpedida);
+request.input('ubicacion', sql.VarChar, ubicacion);
+request.input('serie', sql.VarChar, serie || '');
+if (partida) request.input('partida', sql.VarChar, partida);
 
-    let query = `
-      UPDATE LineasPedidoCliente
-      SET UnidadesPendientes = UnidadesPendientes - @cantidadExpedida
-      WHERE 
-        CodigoEmpresa = @codigoEmpresa AND
-        EjercicioPedido = @ejercicio AND
-        NumeroPedido = @numeroPedido AND
-        CodigoArticulo = @codigoArticulo
-    `;
+const updatePedidoQuery = `
+  UPDATE LineasPedidoCliente
+  SET UnidadesPendientes = UnidadesPendientes - @cantidadExpedida
+  WHERE 
+    CodigoEmpresa = @codigoEmpresa AND
+    EjercicioPedido = @ejercicio AND
+    NumeroPedido = @numeroPedido AND
+    CodigoArticulo = @codigoArticulo AND
+    SeriePedido = ISNULL(@serie, '')
+`;
 
-    if (serie && serie.trim() !== '') {
-      request.input('serie', sql.VarChar, serie);
-      query += ' AND SeriePedido = @serie';
-    } else {
-      query += ' AND SeriePedido IS NULL';
-    }
+const result = await request.query(updatePedidoQuery);
+console.log('[UPDATE PEDIDO] Filas afectadas:', result.rowsAffected);
 
-    console.log('[DEBUG] Ejecutando query con datos:', { codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, cantidadExpedida });
 
-    await request.query(query);
 
-    res.json({ success: true, mensaje: 'Línea actualizada correctamente.' });
-  } catch (err) {
-    console.error('[ERROR AL ACTUALIZAR LINEA PEDIDO]', err);
-    res.status(500).json({
-      success: false,
-      mensaje: 'Error al actualizar la línea del pedido.',
-      error: err.message
+    // 🔹 2. Descontar unidades del stock (tabla AcumuladoStockUbicacion)
+    const stockUpdateRequest = poolGlobal.request();
+    stockUpdateRequest.input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
+    stockUpdateRequest.input('ejercicio', sql.SmallInt, ejercicio);
+    stockUpdateRequest.input('codigoArticulo', sql.VarChar, codigoArticulo);
+    stockUpdateRequest.input('ubicacion', sql.VarChar, ubicacion);
+    stockUpdateRequest.input('cantidadExpedida', sql.Decimal(18, 4), cantidadExpedida);
+ stockUpdateRequest.input('partida', sql.VarChar, partida || '');
+
+const datosLinea = await poolGlobal.request()
+  .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+  .input('ejercicio', sql.SmallInt, ejercicio)
+  .input('numeroPedido', sql.Int, numeroPedido)
+  .input('codigoArticulo', sql.VarChar, codigoArticulo)
+  .input('serie', sql.VarChar, serie || '')
+  .query(`
+    SELECT TOP 1 Precio
+    FROM LineasPedidoCliente
+    WHERE 
+      CodigoEmpresa = @codigoEmpresa AND
+      EjercicioPedido = @ejercicio AND
+      NumeroPedido = @numeroPedido AND
+      CodigoArticulo = @codigoArticulo AND
+      (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+  `);
+
+const precioUnitario = datosLinea.recordset[0]?.Precio || 0;
+
+const movimientoRequest = poolGlobal.request();
+movimientoRequest.input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
+movimientoRequest.input('ejercicio', sql.SmallInt, ejercicio);
+movimientoRequest.input('codigoArticulo', sql.VarChar, codigoArticulo);
+movimientoRequest.input('ubicacion', sql.VarChar, ubicacion);
+movimientoRequest.input('cantidadExpedida', sql.Decimal(18, 4), cantidadExpedida);
+movimientoRequest.input('partida', sql.VarChar, partida || '');
+// Obtener CódigoAlmacen real de la ubicación y partida
+const almacenQuery = await poolGlobal.request()
+  .input('codigoArticulo', sql.VarChar, codigoArticulo)
+  .input('ubicacion', sql.VarChar, ubicacion)
+  .input('partida', sql.VarChar, partida || '')
+  .query(`
+    SELECT TOP 1 CodigoAlmacen, TipoUnidadMedida_
+    FROM AcumuladoStockUbicacion
+    WHERE CodigoArticulo = @codigoArticulo
+      AND Ubicacion = @ubicacion
+      AND ISNULL(LTRIM(RTRIM(Partida)), '') = ISNULL(LTRIM(RTRIM(@partida)), '')
+  `);
+
+const codigoAlmacen = almacenQuery.recordset[0]?.CodigoAlmacen || '';
+const unidadMedida = almacenQuery.recordset[0]?.UnidadMedida1_ || '';
+
+movimientoRequest.input('codigoAlmacen', sql.VarChar, codigoAlmacen);
+movimientoRequest.input('unidadMedida', sql.VarChar, unidadMedida);
+
+movimientoRequest.input('codigoColor', sql.VarChar, ''); // si no usas colores, vacío
+movimientoRequest.input('codigoTalla', sql.VarChar, ''); // igual
+movimientoRequest.input('precioMedio', sql.Decimal(18, 4), precioUnitario);
+movimientoRequest.input('importe', sql.Decimal(18, 4), precioUnitario * cantidadExpedida);
+
+
+
+const fechaActual = new Date();
+const periodo = fechaActual.getMonth() + 1;
+
+movimientoRequest.input('fecha', sql.DateTime, fechaActual);
+movimientoRequest.input('periodo', sql.Int, periodo);
+
+
+await movimientoRequest.query(`
+INSERT INTO MovimientoStock (
+  CodigoEmpresa,
+  Ejercicio,
+  Periodo,
+  Fecha,
+  TipoMovimiento,
+  CodigoArticulo,
+  CodigoAlmacen,
+  UnidadMedida1_, 
+  CodigoColor_,
+  CodigoTalla01_,
+  PrecioMedio,
+  Importe,
+  Ubicacion,
+  Partida,
+  Unidades
+)
+VALUES (
+  @codigoEmpresa,
+  @ejercicio,
+  @periodo,
+  @fecha,
+  2,
+  @codigoArticulo,
+  @codigoAlmacen,
+  @unidadMedida,
+  @codigoColor,
+  @codigoTalla,
+  @precioMedio,
+  @importe,
+  @ubicacion,
+  @partida,
+  @cantidadExpedida
+)
+
+
+
+`);
+
+
+    // 🔹 3. Devolver ubicaciones actualizadas
+    const stockQuery = poolGlobal.request();
+    stockQuery.input('codigoArticulo', sql.VarChar, codigoArticulo);
+    const ubicacionesResult = await stockQuery.query(`
+      SELECT Ubicacion, Partida, UnidadSaldo
+      FROM AcumuladoStockUbicacion
+      WHERE CodigoArticulo = @codigoArticulo
+        AND UnidadSaldo > 0
+    `);
+
+    res.json({
+      success: true,
+      mensaje: 'Línea y stock actualizados correctamente.',
+      stockActualizado: ubicacionesResult.recordset
     });
+
+  } catch (err) {
+console.error('[ERROR AL ACTUALIZAR LINEA PEDIDO]', err);
+res.status(500).json({
+  success: false,
+  mensaje: 'Error al actualizar la línea del pedido o el stock.',
+  error: err.message,
+  detalle: err.stack   // 🔍 Añade esto para tener más información
+});
   }
 });
+
 
 
 
@@ -564,6 +740,315 @@ app.post('/traspasoAlmacen', async (req, res) => {
   }
 });
 
+app.post('/generarAlbaranDesdePedido', async (req, res) => {
+  const { codigoEmpresa, ejercicio, serie, numeroPedido } = req.body;
+
+  if (!codigoEmpresa || !ejercicio || numeroPedido == null) {
+    return res.status(400).json({ success: false, mensaje: 'Faltan datos del pedido.' });
+  }
+
+  try {
+    // 1. Obtener siguiente número de albarán
+    const nextAlbaran = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .query(`
+        SELECT ISNULL(MAX(NumeroAlbaran), 0) + 1 AS SiguienteNumero
+        FROM CabeceraAlbaranCliente
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioAlbaran = @ejercicio
+          AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
+      `);
+
+    const numeroAlbaran = nextAlbaran.recordset[0].SiguienteNumero;
+
+    // 2. Obtener cabecera del pedido
+    const request = poolGlobal.request();
+    request.input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
+    request.input('ejercicio', sql.SmallInt, ejercicio);
+    request.input('numeroPedido', sql.Int, numeroPedido);
+    request.input('serie', sql.VarChar, serie || '');
+
+    const cabeceraPedido = await request.query(`
+      SELECT TOP 1 *
+      FROM CabeceraPedidoCliente
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND EjercicioPedido = @ejercicio
+        AND NumeroPedido = @numeroPedido
+        AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+    `);
+
+    if (cabeceraPedido.recordset.length === 0) {
+      return res.status(404).json({ success: false, mensaje: 'Pedido no encontrado.' });
+    }
+
+    const cab = cabeceraPedido.recordset[0];
+
+    // 3. Obtener líneas del pedido
+    const lineas = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .input('serie', sql.VarChar, serie || '')
+      .query(`
+        SELECT *
+        FROM LineasPedidoCliente
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioPedido = @ejercicio
+          AND NumeroPedido = @numeroPedido
+          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+      `);
+
+    const totalLineas = lineas.recordset.length;
+   const importeLiquido = cab.ImporteLiquido || 0;
+
+
+    // 4. Insertar cabecera del albarán con totales
+    const insertCabecera = poolGlobal.request();
+    insertCabecera.input('codigoEmpresa', sql.SmallInt, cab.CodigoEmpresa);
+    insertCabecera.input('ejercicio', sql.SmallInt, cab.EjercicioPedido);
+    insertCabecera.input('serie', sql.VarChar, cab.SeriePedido || '');
+    insertCabecera.input('numeroAlbaran', sql.Int, numeroAlbaran);
+    insertCabecera.input('codigoCliente', sql.VarChar, cab.CodigoCliente);
+    insertCabecera.input('razonSocial', sql.VarChar, cab.RazonSocial);
+    insertCabecera.input('domicilio', sql.VarChar, cab.Domicilio);
+    insertCabecera.input('municipio', sql.VarChar, cab.Municipio);
+    insertCabecera.input('fecha', sql.DateTime, new Date());
+    insertCabecera.input('numeroLineas', sql.Int, totalLineas);
+    insertCabecera.input('importeLiquido', sql.Decimal(18, 4), importeLiquido);
+
+    await insertCabecera.query(`
+      INSERT INTO CabeceraAlbaranCliente (
+        CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+        CodigoCliente, RazonSocial, Domicilio, Municipio, FechaAlbaran,
+        NumeroLineas, ImporteLiquido
+      ) VALUES (
+        @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
+        @codigoCliente, @razonSocial, @domicilio, @municipio, @fecha,
+        @numeroLineas, @importeLiquido
+      )
+    `);
+
+// 5. Insertar líneas en el albarán
+const promises = lineas.recordset.map((linea, index) => {
+  const insertLinea = poolGlobal.request();
+  insertLinea.input('codigoEmpresa', sql.SmallInt, linea.CodigoEmpresa);
+  insertLinea.input('ejercicio', sql.SmallInt, ejercicio);
+  insertLinea.input('serie', sql.VarChar, serie || '');
+  insertLinea.input('numeroAlbaran', sql.Int, numeroAlbaran);
+  insertLinea.input('orden', sql.SmallInt, index + 1);
+  insertLinea.input('codigoArticulo', sql.VarChar, linea.CodigoArticulo);
+  insertLinea.input('descripcionArticulo', sql.VarChar, linea.DescripcionArticulo);
+  insertLinea.input('unidades', sql.Decimal(18, 4), linea.UnidadesPedidas);
+  insertLinea.input('precio', sql.Decimal(18, 4), linea.Precio);
+  insertLinea.input('codigoAlmacen', sql.VarChar, linea.CodigoAlmacen || '');
+insertLinea.input('partida', sql.VarChar, linea.Partida || '');
+  insertLinea.input('porcentajeDescuento', sql.Decimal(5, 2), linea['%Descuento'] || 0);
+  insertLinea.input('importeDescuento', sql.Decimal(18, 4), linea.ImporteDescuento || 0);
+  insertLinea.input('importeBruto', sql.Decimal(18, 4), linea.ImporteBruto || 0);
+  insertLinea.input('importeNeto', sql.Decimal(18, 4), linea.ImporteNeto || 0);
+  insertLinea.input('ImporteLiquido', sql.Decimal(18, 4), linea.ImporteLiquido || 0);
+
+  return insertLinea.query(`
+    INSERT INTO LineasAlbaranCliente (
+      CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+      Orden, CodigoArticulo, DescripcionArticulo, Unidades, Precio,
+      CodigoAlmacen, Partida, [%Descuento], ImporteDescuento,
+      ImporteBruto, ImporteNeto,ImporteLiquido
+    ) VALUES (
+      @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
+      @orden, @codigoArticulo, @descripcionArticulo, @unidades, @precio,
+      @codigoAlmacen, @partida, @porcentajeDescuento, @importeDescuento,
+      @importeBruto, @importeNeto, @ImporteLiquido
+    )
+  `);
+});
+
+
+    await Promise.all(promises);
+
+    // 6. Marcar pedido como servido
+    await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .input('serie', sql.VarChar, serie || '')
+      .query(`
+        UPDATE CabeceraPedidoCliente
+        SET Estado = 2
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioPedido = @ejercicio
+          AND NumeroPedido = @numeroPedido
+          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+      `);
+
+    res.json({ success: true, mensaje: 'Albarán generado y pedido marcado como servido.' });
+  } catch (err) {
+    console.error('[ERROR GENERAR ALBARÁN]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al generar albarán.', error: err.message });
+  }
+});
+app.get('/albaranesPendientes', async (req, res) => {
+  try {
+    const cabeceras = await poolGlobal.request().query(`
+      SELECT 
+        *
+      FROM CabeceraAlbaranCliente
+      WHERE StatusFacturado = 0
+      ORDER BY FechaAlbaran DESC
+    `);
+
+    const resultados = [];
+
+    for (const cab of cabeceras.recordset) {
+      const lineas = await poolGlobal.request().query(`
+        SELECT DescripcionArticulo AS nombre, Unidades AS cantidad
+        FROM LineasAlbaranCliente
+        WHERE CodigoEmpresa = ${cab.CodigoEmpresa} 
+          AND NumeroAlbaran = ${cab.NumeroAlbaran} 
+          AND SerieAlbaran = '${cab.SerieAlbaran}' 
+          AND EjercicioAlbaran = ${cab.EjercicioAlbaran}
+      `);
+
+ resultados.push({
+  id: `${cab.NumeroAlbaran}-${cab.SerieAlbaran}`,
+  albaran: `${cab.SerieAlbaran}-${cab.NumeroAlbaran}`,
+  cliente: cab.RazonSocial,
+  direccion: `${cab.Domicilio}, ${cab.Municipio}`,
+  articulos: lineas.recordset,
+  importeLiquido: cab.ImporteLiquido,
+  FechaAlbaran: cab.FechaAlbaran 
+});
+    }
+
+    res.json(resultados);
+  } catch (err) {
+    console.error('[ERROR OBTENER ALBARANES PENDIENTES]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener albaranes pendientes', error: err.message });
+  }
+});
+
+
+// Endpoint para recibir el PDF y enviarlo por correo
+app.post('/enviar-pdf-albaran', upload.single('pdf'), async (req, res) => {
+  const to = req.body.to || 'sergitaberner@hotmail.es';
+  const pdfBuffer = req.file?.buffer;
+  const pdfName = req.file?.originalname || 'albaran.pdf';
+
+  if (!pdfBuffer) {
+    return res.status(400).json({ success: false, mensaje: 'No se recibió el archivo PDF' });
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: 'sergitabernerrsalle@gmail.com',
+        pass: 'zffu ydpx mxwh sqkw' // contraseña de aplicación
+      }
+    });
+
+    await transporter.sendMail({
+      from: 'Ferretería Luque <sergitabernerrsalle@gmail.com>',
+      to,
+      subject: 'Entrega de Albarán',
+      text: 'Adjunto encontrarás el PDF con el detalle del albarán entregado.',
+      attachments: [
+        {
+          filename: pdfName,
+          content: pdfBuffer
+        }
+      ]
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[ERROR ENVÍO EMAIL]', error);
+    res.status(500).json({ success: false, mensaje: 'Error al enviar correo.', error: error.message });
+  }
+});
+
+app.post('/ubicacionesMultiples', async (req, res) => {
+  const { articulos } = req.body;
+
+  if (!Array.isArray(articulos) || articulos.length === 0) {
+    return res.status(400).json({ success: false, mensaje: 'Lista de artículos requerida.' });
+  }
+
+  try {
+    const resultados = {};
+
+    for (const codigoArticulo of articulos) {
+      const request = poolGlobal.request();
+      request.input('CodigoArticulo', sql.VarChar, codigoArticulo);
+
+      const ubicacionesQuery = await request.query(`
+        SELECT DISTINCT Ubicacion, Partida
+        FROM MovimientoStock
+        WHERE CodigoArticulo = @CodigoArticulo
+      `);
+
+      const ubicaciones = await Promise.all(
+        ubicacionesQuery.recordset.map(async ({ Ubicacion, Partida }) => {
+          const r = poolGlobal.request();
+          r.input('CodigoArticulo', sql.VarChar, codigoArticulo);
+          r.input('Ubicacion', sql.VarChar, Ubicacion);
+          if (Partida !== null) r.input('Partida', sql.VarChar, Partida);
+
+          const stock = await r.query(`
+            SELECT UnidadSaldo
+            FROM AcumuladoStockUbicacion
+            WHERE CodigoArticulo = @CodigoArticulo AND Ubicacion = @Ubicacion
+            ${Partida !== null ? "AND Partida = @Partida" : "AND Partida IS NULL"}
+          `);
+
+          return {
+            ubicacion: Ubicacion,
+            partida: Partida || null,
+            unidadSaldo: stock.recordset[0]?.UnidadSaldo || 0
+          };
+        })
+      );
+
+      resultados[codigoArticulo] = ubicaciones.filter(u => u.unidadSaldo > 0);
+    }
+
+    res.json(resultados);
+  } catch (err) {
+    console.error('[ERROR MULTI UBICACIONES]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener múltiples ubicaciones' });
+  }
+});
+
+app.post('/marcarPedidoCompletado', async (req, res) => {
+  const { codigoEmpresa, ejercicio, numeroPedido, serie } = req.body;
+
+  if (!codigoEmpresa || !ejercicio || !numeroPedido) {
+    return res.status(400).json({ success: false, mensaje: 'Faltan datos del pedido.' });
+  }
+
+  try {
+    await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .input('serie', sql.VarChar, serie || '')
+      .query(`
+        UPDATE CabeceraPedidoCliente
+        SET Estado = 1
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioPedido = @ejercicio
+          AND NumeroPedido = @numeroPedido
+          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+      `);
+
+    res.json({ success: true, mensaje: 'Pedido marcado como completado.' });
+  } catch (err) {
+    console.error('[ERROR MARCAR COMPLETADO]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al marcar pedido como completado.', error: err.message });
+  }
+});
 
 
 // 🖥️ Levantar servidor
