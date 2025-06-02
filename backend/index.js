@@ -400,6 +400,7 @@ LEFT JOIN LineasPedidoCliente l
   and a.codigoEmpresa = c.CodigoEmpresa
 
 WHERE c.Estado = 0 -- Estado pendiente
+  AND c.SeriePedido = 'FERRETERIA' -- 🛠️ FILTRO POR SERIE FERRETERIA
 AND NOT EXISTS (
   SELECT 1
   FROM LineasAlbaranCliente la

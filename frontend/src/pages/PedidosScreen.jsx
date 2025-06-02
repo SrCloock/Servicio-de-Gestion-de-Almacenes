@@ -154,11 +154,14 @@ function PedidosScreen() {
     const pedido = pedidos[pedidoIndex];
     const linea = pedido.articulos[lineaIndex];
 
-    // Validación mejorada del código de barras
-    const codigoEscaneado = prompt(`Escanea el código de barras para ${linea.descripcionArticulo} (Código esperado: ${linea.codigoAlternativo})`);
+    // Validación modificada para aceptar ambos códigos
+    const codigoEscaneado = prompt(`Escanea el código para ${linea.descripcionArticulo}`);
     
-    if (codigoEscaneado !== linea.codigoAlternativo) {
-      alert(`❌ Código incorrecto. Esperado: ${linea.codigoAlternativo}`);
+    if (codigoEscaneado !== linea.codigoAlternativo && 
+        codigoEscaneado !== linea.codigoArticulo) {
+      alert(`❌ Código incorrecto. Valores aceptados: 
+            ${linea.codigoAlternativo} (barras) o 
+            ${linea.codigoArticulo} (artículo)`);
       return;
     }
 
@@ -368,10 +371,13 @@ function PedidosScreen() {
                   <button
                     onClick={() => {
                       const codigoEscaneado = prompt("Escanea o introduce el código de barras:");
-                      if (codigoEscaneado === art.codigoAlternativo) {
+                      if (codigoEscaneado === art.codigoAlternativo|| 
+                          codigoEscaneado === art.codigoArticulo) {
                         expedirLinea(pedidoIndex, i, art.codigoArticulo);
                       } else {
-                        alert(`❌ Código incorrecto. Esperado: ${art.codigoAlternativo}`);
+                        alert(`❌ Código incorrecto. Valores aceptados: 
+                              ${art.codigoAlternativo} (barras) o 
+                              ${art.codigoArticulo} (artículo)`);
                       }
                     }}
                     style={{
