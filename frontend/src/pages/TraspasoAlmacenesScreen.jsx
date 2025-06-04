@@ -315,7 +315,6 @@ const TraspasoAlmacenesScreen = () => {
                   }}
                   onFocus={() => setShowArticleDropdown(true)}
                   className="search-input"
-                  style={{ color: '#333' }}
                 />
                 
                 {showArticleDropdown && (
