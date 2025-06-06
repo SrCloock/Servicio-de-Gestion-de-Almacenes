@@ -1,5 +1,4 @@
-﻿// src/pages/TraspasoAlmacenesScreen.jsx
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/TraspasoAlmacenesScreen.css';
 
@@ -34,8 +33,9 @@ const TraspasoAlmacenesScreen = () => {
   const [busqueda, setBusqueda] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState('pendientes'); // 'pendientes' o 'historial'
+  const [activeTab, setActiveTab] = useState('pendientes');
   const [showArticleDropdown, setShowArticleDropdown] = useState(false);
+  const [articulosSinStock, setArticulosSinStock] = useState([]);
   
   const [traspasoData, setTraspasoData] = useState({
     articulo: '',
@@ -46,11 +46,11 @@ const TraspasoAlmacenesScreen = () => {
     cantidad: ''
   });
 
-  // Datos mock
+  // Datos mock (incluye artículos sin stock y con stock negativo)
   useEffect(() => {
     setIsLoading(true);
     setTimeout(() => {
-      setArticulos([
+      const mockArticulos = [
         { codigo: 'TRN-6X50', nombre: 'Tornillo hexagonal 6x50 mm', almacenes: ['Principal', 'Secundario'], stock: 1500 },
         { codigo: 'TRC-M8', nombre: 'Tuerca M8 galvanizada', almacenes: ['Principal', 'Taller'], stock: 3200 },
         { codigo: 'TUB-ALU-20', nombre: 'Tubo aluminio 20mm', almacenes: ['Metales', 'Principal'], stock: 480 },
@@ -60,10 +60,20 @@ const TraspasoAlmacenesScreen = () => {
         { codigo: 'BRZ-1/4', nombre: 'Brida zincada 1/4"', almacenes: ['Taller', 'Secundario'], stock: 420 },
         { codigo: 'JUN-RED-32', nombre: 'Junta tórica roja 32mm', almacenes: ['Principal', 'Hidráulica'], stock: 950 },
         { codigo: 'TUB-PVC-40', nombre: 'Tubo PVC 40mm presión', almacenes: ['Fontanería', 'Plásticos'], stock: 350 },
-        { codigo: 'VAL-RET-20', nombre: 'Válvula retención 20mm', almacenes: ['Fontanería', 'Principal'], stock: 180 }
-      ]);
-
+        { codigo: 'VAL-RET-20', nombre: 'Válvula retención 20mm', almacenes: ['Fontanería', 'Principal'], stock: 180 },
+        // Artículos especiales
+        { codigo: 'ART-SIN-STOCK', nombre: 'Artículo sin stock', almacenes: ['Principal'], stock: 0 },
+        { codigo: 'ART-NEGATIVO', nombre: 'Artículo con stock negativo', almacenes: ['Principal'], stock: -50 },
+        { codigo: 'ART-NUEVO', nombre: 'Artículo nuevo sin ubicación', almacenes: ['Principal'], stock: 0 }
+      ];
+      
+      setArticulos(mockArticulos);
       setAlmacenes(['Principal', 'Secundario', 'Taller', 'Metales', 'Fontanería', 'Plásticos', 'Hidráulica', 'Químicos']);
+      
+      // Artículos sin ubicación definida (sin stock)
+      setArticulosSinStock([
+        { codigo: 'ART-NUEVO', nombre: 'Artículo nuevo sin ubicación', almacenes: ['Principal'], stock: 0 }
+      ]);
       
       // Mock de historial
       setTraspasosHistorial([
@@ -103,30 +113,40 @@ const TraspasoAlmacenesScreen = () => {
       ).slice(0, 10)
     : articulos.slice(0, 10);
 
-  // Manejar selección de artículo
+  // Manejar selección de artículo (con manejo de artículos sin stock)
   const handleSelectArticulo = (codigo) => {
+    const articulo = articulos.find(a => a.codigo === codigo);
     setTraspasoData({...traspasoData, articulo: codigo});
     setBusqueda(codigo);
     setShowArticleDropdown(false);
+    
+    // Si es un artículo sin stock, establecer ubicación por defecto
+    if (articulosSinStock.some(a => a.codigo === codigo)) {
+      setTraspasoData(prev => ({
+        ...prev,
+        almacenOrigen: 'Principal',
+        ubicacionOrigen: 'Zona descarga'
+      }));
+    }
   };
 
   // Cargar ubicaciones cuando se selecciona artículo y almacén origen
   useEffect(() => {
     if (traspasoData.articulo && traspasoData.almacenOrigen) {
       const ubicacionesMock = {
-        'Principal': ['Pasillo 1-Est.A', 'Pasillo 2-Est.B', 'Pasillo 3-Est.C', 'Mostrador N'],
-        'Secundario': ['Est.A-N1', 'Est.B-N2', 'Zona Carga-P3', 'Sector 5-R4'],
-        'Taller': ['Banco 1-C2', 'Banco 2-C4', 'Alm. Taller', 'Herramientas'],
-        'Metales': ['Rack 1-N3', 'Rack 2-N1', 'Zona Corte', 'Perfiles'],
-        'Fontanería': ['Est. Font-C3', 'Mostrador', 'Cajón 5'],
-        'Plásticos': ['Zona PVC', 'Est. C-N4', 'Rack 3-A1'],
-        'Hidráulica': ['Est. H1-C2', 'Est. H2-C4', 'Cajones'],
-        'Químicos': ['Armario Seguro', 'Est. Q1-N2', 'Zona Ventilada']
+        'Principal': ['Pasillo 1-Est.A', 'Pasillo 2-Est.B', 'Pasillo 3-Est.C', 'Mostrador N', 'Zona descarga'],
+        'Secundario': ['Est.A-N1', 'Est.B-N2', 'Zona Carga-P3', 'Sector 5-R4', 'Zona descarga'],
+        'Taller': ['Banco 1-C2', 'Banco 2-C4', 'Alm. Taller', 'Herramientas', 'Zona descarga'],
+        'Metales': ['Rack 1-N3', 'Rack 2-N1', 'Zona Corte', 'Perfiles', 'Zona descarga'],
+        'Fontanería': ['Est. Font-C3', 'Mostrador', 'Cajón 5', 'Zona descarga'],
+        'Plásticos': ['Zona PVC', 'Est. C-N4', 'Rack 3-A1', 'Zona descarga'],
+        'Hidráulica': ['Est. H1-C2', 'Est. H2-C4', 'Cajones', 'Zona descarga'],
+        'Químicos': ['Armario Seguro', 'Est. Q1-N2', 'Zona Ventilada', 'Zona descarga']
       };
       setUbicacionesOrigen(ubicacionesMock[traspasoData.almacenOrigen] || []);
       // Mantener la ubicación si ya estaba seleccionada y sigue disponible
       if (!ubicacionesMock[traspasoData.almacenOrigen]?.includes(traspasoData.ubicacionOrigen)) {
-        setTraspasoData(prev => ({ ...prev, ubicacionOrigen: '' }));
+        setTraspasoData(prev => ({ ...prev, ubicacionOrigen: 'Zona descarga' }));
       }
     }
   }, [traspasoData.articulo, traspasoData.almacenOrigen]);
@@ -135,14 +155,14 @@ const TraspasoAlmacenesScreen = () => {
   useEffect(() => {
     if (traspasoData.almacenDestino) {
       const ubicacionesMock = {
-        'Principal': ['Pasillo 1-Est.A', 'Pasillo 2-Est.B', 'Pasillo 3-Est.C', 'Mostrador N'],
-        'Secundario': ['Est.A-N1', 'Est.B-N2', 'Zona Carga-P3', 'Sector 5-R4'],
-        'Taller': ['Banco 1-C2', 'Banco 2-C4', 'Alm. Taller', 'Herramientas'],
-        'Metales': ['Rack 1-N3', 'Rack 2-N1', 'Zona Corte', 'Perfiles'],
-        'Fontanería': ['Est. Font-C3', 'Mostrador', 'Cajón 5'],
-        'Plásticos': ['Zona PVC', 'Est. C-N4', 'Rack 3-A1'],
-        'Hidráulica': ['Est. H1-C2', 'Est. H2-C4', 'Cajones'],
-        'Químicos': ['Armario Seguro', 'Est. Q1-N2', 'Zona Ventilada']
+        'Principal': ['Pasillo 1-Est.A', 'Pasillo 2-Est.B', 'Pasillo 3-Est.C', 'Mostrador N', 'Zona descarga'],
+        'Secundario': ['Est.A-N1', 'Est.B-N2', 'Zona Carga-P3', 'Sector 5-R4', 'Zona descarga'],
+        'Taller': ['Banco 1-C2', 'Banco 2-C4', 'Alm. Taller', 'Herramientas', 'Zona descarga'],
+        'Metales': ['Rack 1-N3', 'Rack 2-N1', 'Zona Corte', 'Perfiles', 'Zona descarga'],
+        'Fontanería': ['Est. Font-C3', 'Mostrador', 'Cajón 5', 'Zona descarga'],
+        'Plásticos': ['Zona PVC', 'Est. C-N4', 'Rack 3-A1', 'Zona descarga'],
+        'Hidráulica': ['Est. H1-C2', 'Est. H2-C4', 'Cajones', 'Zona descarga'],
+        'Químicos': ['Armario Seguro', 'Est. Q1-N2', 'Zona Ventilada', 'Zona descarga']
       };
       setUbicacionesDestino(ubicacionesMock[traspasoData.almacenDestino] || []);
       // Mantener la ubicación si ya estaba seleccionada y sigue disponible
@@ -177,9 +197,11 @@ const TraspasoAlmacenesScreen = () => {
 
     const articuloInfo = articulos.find(a => a.codigo === articulo);
     
-    if (cantidadNum > articuloInfo.stock) {
-      alert(`Stock insuficiente. Disponible: ${articuloInfo.stock} unidades`);
-      return;
+    // Mostrar advertencia para stock negativo pero permitir continuar
+    if (articuloInfo.stock < 0) {
+      if (!window.confirm(`⚠️ Este artículo tiene stock negativo (${articuloInfo.stock}). ¿Desea continuar con el traspaso?`)) {
+        return;
+      }
     }
     
     setTraspasosPendientes([...traspasosPendientes, {
@@ -320,17 +342,26 @@ const TraspasoAlmacenesScreen = () => {
                 {showArticleDropdown && (
                   <div className="article-dropdown">
                     {articulosFiltrados.length > 0 ? (
-                      articulosFiltrados.map((art) => (
-                        <div 
-                          key={art.codigo} 
-                          className="dropdown-item"
-                          onClick={() => handleSelectArticulo(art.codigo)}
-                        >
-                          <div className="article-code">{art.codigo}</div>
-                          <div className="article-name">{art.nombre}</div>
-                          <div className="article-stock">Stock: {art.stock}</div>
-                        </div>
-                      ))
+                      articulosFiltrados.map((art) => {
+                        const isSinStock = articulosSinStock.some(a => a.codigo === art.codigo);
+                        const isNegativo = art.stock < 0;
+                        
+                        return (
+                          <div 
+                            key={art.codigo} 
+                            className={`dropdown-item ${isSinStock ? 'no-stock' : ''} ${isNegativo ? 'negative-stock' : ''}`}
+                            onClick={() => handleSelectArticulo(art.codigo)}
+                          >
+                            <div className="article-code">{art.codigo}</div>
+                            <div className="article-name">{art.nombre}</div>
+                            <div className="article-stock">
+                              Stock: {art.stock}
+                              {isSinStock && <span className="stock-warning"> (Sin ubicación)</span>}
+                              {isNegativo && <span className="stock-warning"> (Stock negativo)</span>}
+                            </div>
+                          </div>
+                        );
+                      })
                     ) : (
                       <div className="dropdown-empty">No se encontraron artículos</div>
                     )}
@@ -423,7 +454,6 @@ const TraspasoAlmacenesScreen = () => {
                   onChange={handleCantidadChange}
                   className="quantity-input"
                   onKeyDown={(e) => {
-                    // Bloquear caracteres no numéricos
                     if (['e', 'E', '+', '-', '.'].includes(e.key)) {
                       e.preventDefault();
                     }

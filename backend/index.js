@@ -463,7 +463,7 @@ app.get('/ubicacionesArticulo', async (req, res) => {
     const request = poolGlobal.request();
     request.input('CodigoArticulo', sql.VarChar, codigoArticulo);
 
-    // Obtener ubicaciones y partidas distintas con stock
+    // Obtener ubicaciones y partidas (incluyendo stock negativo)
     const ubicacionesPartidasQuery = await request.query(`
       SELECT DISTINCT Ubicacion, Partida
       FROM MovimientoStock
@@ -472,7 +472,7 @@ app.get('/ubicacionesArticulo', async (req, res) => {
 
     const ubicacionesPartidas = ubicacionesPartidasQuery.recordset;
 
-    // Obtener stock para cada combinación de ubicación y partida
+    // Obtener stock para cada combinación de ubicación y partida (incluyendo negativo)
     const stockPromises = ubicacionesPartidas.map(async row => {
       const { Ubicacion, Partida } = row;
 
@@ -498,6 +498,15 @@ app.get('/ubicacionesArticulo', async (req, res) => {
     });
 
     const stockPorUbicacionPartida = await Promise.all(stockPromises);
+
+    // Si no hay ubicaciones, devolver ubicación por defecto
+    if (stockPorUbicacionPartida.length === 0) {
+      stockPorUbicacionPartida.push({
+        ubicacion: "Zona descarga",
+        partida: null,
+        unidadSaldo: 0
+      });
+    }
 
     res.json(stockPorUbicacionPartida);
   } catch (err) {
