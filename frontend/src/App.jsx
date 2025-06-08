@@ -23,7 +23,6 @@ function App() {
       <Route path="/PedidosScreen" element={<PedidosScreen />} />
       <Route path="/clientes" element={<ClientesPage />} />
       <Route path="/clientes/ficha" element={<FichaClientePage />} />
-      <Route path="/inventario" element={<InventarioScreen />} />
       <Route path="/estadisticasCliente" element={<EstadisticasClientePage />} />
       <Route path="/traspaso" element={<TraspasoAlmacenesScreen />} />
       <Route path="/dashboard" element={<DashboardPage />} />
@@ -31,8 +30,8 @@ function App() {
       <Route path="/entrada" element={<EntradaStockCompras />} />
       <Route path="/rutas" element={<GestionRutas />} />
       <Route path="/confirmacion-entrega" element={<ConfirmacionEntrega />} />
-      <Route path="/detalle-albaran" element={<DetalleAlbaran />} /> 
-
+      <Route path="/detalle-albaran" element={<DetalleAlbaran />} />
+      <Route path="/inventario" element={<InventarioScreen />} />
     </Routes>
   );
 }

@@ -16,7 +16,7 @@ html, body, #root {
   justify-content: flex-start;
 }
 
-/* Alineación izquierda */
+/* Alineaciï¿½n izquierda */
 .td-izquierda {
   text-align: left !important;
 }
@@ -240,3 +240,37 @@ html, body, #root {
 }
 
 
+/* Estilos para navegaciÃ³n */
+.navigation-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn-nav {
+  padding: 8px 15px;
+  background-color: #4db6ac;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-nav:hover {
+  background-color: #009688;
+}
+
+/* Colores para estados de stock */
+.no-stock {
+  background-color: #ffebee !important; /* Rojo claro para sin stock */
+}
+
+.negative-stock {
+  background-color: #fff3e0 !important; /* Naranja claro para stock negativo */
+}

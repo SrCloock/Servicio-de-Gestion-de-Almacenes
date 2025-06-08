@@ -43,6 +43,22 @@ function PedidosScreen() {
               esZonaDescarga: primeraUbic.ubicacion === "Zona descarga"
             };
           }
+          // Forzar "Zona descarga" para artículos sin stock
+          else {
+            nuevasExpediciones[art] = {
+              ubicacion: "Zona descarga",
+              partida: null,
+              cantidad: "0",
+              esZonaDescarga: true
+            };
+            
+            // Añadir manualmente la ubicación
+            ubicacionesJson[art] = [{
+              ubicacion: "Zona descarga",
+              partida: null,
+              unidadSaldo: 0
+            }];
+          }
         }
 
         setUbicaciones(ubicacionesJson);
@@ -64,36 +80,40 @@ function PedidosScreen() {
   const handleLineaClick = async (codigoArticulo, unidadesPendientes) => {
     try {
       const response = await fetch(`http://localhost:3000/ubicacionesArticulo?codigoArticulo=${encodeURIComponent(codigoArticulo)}`);
-      const data = await response.json();
+      let data = await response.json();
       
-      if (data.length > 0) {
-        const ubicacionesConStock = data.filter(ubi => ubi.unidadSaldo > 0);
-        
-        if (ubicacionesConStock.length > 0) {
-          const primeraUbicacion = ubicacionesConStock[0];
-          setUbicaciones(prev => ({
-            ...prev,
-            [codigoArticulo]: ubicacionesConStock
-          }));
-          
-          setLineaSeleccionada(codigoArticulo);
-          setExpediciones(prev => {
-            if (prev[codigoArticulo]) return prev;
-            
-            return {
-              ...prev,
-              [codigoArticulo]: {
-                ubicacion: primeraUbicacion.ubicacion,
-                partida: primeraUbicacion.partida || null,
-                cantidad: Math.min(primeraUbicacion.unidadSaldo, unidadesPendientes).toString(),
-                esZonaDescarga: primeraUbicacion.ubicacion === "Zona descarga"
-              }
-            };
-          });
-        } else {
-          alert('No hay stock disponible para este artículo');
-        }
+      // Si no hay ubicaciones, forzar "Zona descarga"
+      if (data.length === 0) {
+        data = [{
+          ubicacion: "Zona descarga",
+          partida: null,
+          unidadSaldo: 0
+        }];
       }
+      
+      const ubicacionesConStock = data.filter(ubi => ubi.unidadSaldo > 0);
+      
+      setUbicaciones(prev => ({
+        ...prev,
+        [codigoArticulo]: data
+      }));
+      
+      setLineaSeleccionada(codigoArticulo);
+      setExpediciones(prev => {
+        const stockDisponible = ubicacionesConStock.length > 0 
+          ? Math.min(ubicacionesConStock[0].unidadSaldo, unidadesPendientes)
+          : 0;
+        
+        return {
+          ...prev,
+          [codigoArticulo]: {
+            ubicacion: data[0].ubicacion,
+            partida: data[0].partida || null,
+            cantidad: stockDisponible.toString(),
+            esZonaDescarga: data[0].ubicacion === "Zona descarga"
+          }
+        };
+      });
     } catch (error) {
       console.error('Error al obtener ubicaciones:', error);
     }
@@ -300,116 +320,137 @@ function PedidosScreen() {
       );
     }
 
-    return lineasFiltradas.map((art, i) => (
-      <React.Fragment key={i}>
-        <tr onClick={() => art.unidadesPendientes > 0 && handleLineaClick(art.codigoArticulo, art.unidadesPendientes)} 
-            style={{ cursor: art.unidadesPendientes > 0 ? 'pointer' : 'default' }}>
-          <td className="td-izquierda">
-            {art.codigoArticulo}
-            <div className="codigo-alternativo">
-              Código: {art.codigoAlternativo || 'N/A'}
-            </div>
-          </td>
-          <td className="td-izquierda">{art.codigoAlmacen || '-'}</td>
-          <td className="td-izquierda">
-            {art.descripcionArticulo}
-            <div style={{ fontSize: '12px', color: '#666' }}>
-              {art.unidadMedida} • {art.agrupacion}
-            </div>
-          </td>
-          <td className="td-centrado">{art.unidadesPedidas}</td>
-          <td className="td-centrado">
-            {art.completada ? (
-              '✔'
-            ) : (
-              <div style={{ marginTop: '4px' }}>
-                <select
-                  value={JSON.stringify({
-                    ubicacion: expediciones[art.codigoArticulo]?.ubicacion || '',
-                    partida: expediciones[art.codigoArticulo]?.partida || null,
-                  })}
-                  onChange={(e) => handleChangeUbicacion(art.codigoArticulo, e.target.value, art.unidadesPendientes)}
-                  style={{ width: '100%', fontSize: '12px' }}
-                >
-                  {(ubicaciones[art.codigoArticulo] || []).map((ubi, idx) => {
-                    const isZonaDescarga = ubi.ubicacion === "Zona descarga";
-                    return (
-                      <option
-                        key={idx}
-                        value={JSON.stringify({
-                          ubicacion: ubi.ubicacion,
-                          partida: ubi.partida || null
-                        })}
-                        style={isZonaDescarga ? { color: 'red' } : {}}
-                      >
-                        {ubi.ubicacion}
-                        {ubi.partida ? ` - Partida ${ubi.partida}` : ''} - {ubi.unidadSaldo} uds
-                        {isZonaDescarga ? ' (Zona Descarga)' : ''}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-            )}
-          </td>
-          <td className="td-centrado">
-            {art.completada ? '✔' : art.unidadesPendientes}
-          </td>
-        </tr>
-        {lineaSeleccionada === art.codigoArticulo && (
-          <tr>
-            <td colSpan="6" style={{ backgroundColor: '#f9f9f9' }}>
-              <div style={{ padding: '10px' }}>
-                <div>
-                  <strong>Unidades a expedir:</strong>
-                  <input
-                    type="number"
-                    min="1"
-                    max={Math.min(
-                      art.unidadesPendientes,
-                      (ubicaciones[art.codigoArticulo] || []).find(
-                        u => u.ubicacion === expediciones[art.codigoArticulo]?.ubicacion &&
-                             (u.partida || null) === (expediciones[art.codigoArticulo]?.partida || null)
-                      )?.unidadSaldo || 0
-                    )}
-                    value={expediciones[art.codigoArticulo]?.cantidad || ''}
-                    onChange={(e) => handleChangeCantidad(art.codigoArticulo, e.target.value)}
-                    style={{ 
-                      marginLeft: '10px', 
-                      width: '80px',
-                      border: expediciones[art.codigoArticulo]?.esZonaDescarga ? '2px solid red' : '1px solid #ccc'
-                    }}
-                  />
-                  <button
-                    onClick={() => expedirLinea(pedidoIndex, i, art.codigoArticulo)}
-                    style={{
-                      marginLeft: '20px',
-                      backgroundColor: '#4CAF50',
-                      color: 'white',
-                      border: 'none',
-                      padding: '5px 15px',
-                      borderRadius: '4px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Validar Línea
-                  </button>
-                </div>
+    return lineasFiltradas.map((art, i) => {
+      const ubicacionesArt = ubicaciones[art.codigoArticulo] || [];
+      const stockTotal = ubicacionesArt.reduce((sum, ubi) => sum + ubi.unidadSaldo, 0);
+      const sinStock = stockTotal <= 0 && art.unidadesPendientes > 0;
+      const stockNegativo = stockTotal < 0;
+      
+      return (
+        <React.Fragment key={i}>
+          <tr 
+            onClick={() => art.unidadesPendientes > 0 && handleLineaClick(art.codigoArticulo, art.unidadesPendientes)} 
+            style={{ cursor: art.unidadesPendientes > 0 ? 'pointer' : 'default' }}
+            className={sinStock ? 'no-stock' : stockNegativo ? 'negative-stock' : ''}
+          >
+            <td className="td-izquierda">
+              {art.codigoArticulo}
+              <div className="codigo-alternativo">
+                Código: {art.codigoAlternativo || 'N/A'}
               </div>
             </td>
+            <td className="td-izquierda">{art.codigoAlmacen || '-'}</td>
+            <td className="td-izquierda">
+              {art.descripcionArticulo}
+              <div style={{ fontSize: '12px', color: '#666' }}>
+                {art.unidadMedida} • {art.agrupacion}
+              </div>
+            </td>
+            <td className="td-centrado">{art.unidadesPedidas}</td>
+            <td className="td-centrado">
+              {art.completada ? (
+                '✔'
+              ) : (
+                <div style={{ marginTop: '4px' }}>
+                  <select
+                    value={JSON.stringify({
+                      ubicacion: expediciones[art.codigoArticulo]?.ubicacion || '',
+                      partida: expediciones[art.codigoArticulo]?.partida || null,
+                    })}
+                    onChange={(e) => handleChangeUbicacion(art.codigoArticulo, e.target.value, art.unidadesPendientes)}
+                    style={{ width: '100%', fontSize: '12px' }}
+                  >
+                    {(ubicacionesArt || []).map((ubi, idx) => {
+                      const isZonaDescarga = ubi.ubicacion === "Zona descarga";
+                      return (
+                        <option
+                          key={idx}
+                          value={JSON.stringify({
+                            ubicacion: ubi.ubicacion,
+                            partida: ubi.partida || null
+                          })}
+                          style={isZonaDescarga ? { color: 'red' } : {}}
+                        >
+                          {ubi.ubicacion}
+                          {ubi.partida ? ` - Partida ${ubi.partida}` : ''} - {ubi.unidadSaldo} uds
+                          {isZonaDescarga ? ' (Zona Descarga)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
+            </td>
+            <td className="td-centrado">
+              {art.completada ? '✔' : art.unidadesPendientes}
+            </td>
           </tr>
-        )}
-      </React.Fragment>
-    ));
+          {lineaSeleccionada === art.codigoArticulo && (
+            <tr>
+              <td colSpan="6" style={{ backgroundColor: '#f9f9f9' }}>
+                <div style={{ padding: '10px' }}>
+                  <div>
+                    <strong>Unidades a expedir:</strong>
+                    <input
+                      type="number"
+                      min="1"
+                      max={Math.min(
+                        art.unidadesPendientes,
+                        (ubicaciones[art.codigoArticulo] || []).find(
+                          u => u.ubicacion === expediciones[art.codigoArticulo]?.ubicacion &&
+                               (u.partida || null) === (expediciones[art.codigoArticulo]?.partida || null)
+                        )?.unidadSaldo || 0
+                      )}
+                      value={expediciones[art.codigoArticulo]?.cantidad || ''}
+                      onChange={(e) => handleChangeCantidad(art.codigoArticulo, e.target.value)}
+                      style={{ 
+                        marginLeft: '10px', 
+                        width: '80px',
+                        border: expediciones[art.codigoArticulo]?.esZonaDescarga ? '2px solid red' : '1px solid #ccc'
+                      }}
+                    />
+                    <button
+                      onClick={() => expedirLinea(pedidoIndex, i, art.codigoArticulo)}
+                      style={{
+                        marginLeft: '20px',
+                        backgroundColor: '#4CAF50',
+                        color: 'white',
+                        border: 'none',
+                        padding: '5px 15px',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Validar Línea
+                    </button>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          )}
+        </React.Fragment>
+      );
+    });
   };
 
   return (
     <div className="pedidos-container" style={{ maxWidth: '95%', margin: '0 auto' }}>
       <div className="pedidos-header">
         <h2>Pedidos Pendientes</h2>
-        <button onClick={() => navigate('/rutas')} className="btn-rutas">
-          📦 Gestión de Rutas
-        </button>
+        <div className="navigation-buttons">
+          <button onClick={() => navigate('/rutas')} className="btn-nav">
+            📦 Rutas
+          </button>
+          <button onClick={() => navigate('/traspaso')} className="btn-nav">
+            🔄 Traspasos
+          </button>
+          <button onClick={() => navigate('/inventario')} className="btn-nav">
+            📊 Inventario
+          </button>
+          <button onClick={() => navigate('/')} className="btn-nav">
+            🏠 Inicio
+          </button>
+        </div>
         <div className="bubble bubble1"></div>
         <div className="bubble bubble2"></div>
       </div>

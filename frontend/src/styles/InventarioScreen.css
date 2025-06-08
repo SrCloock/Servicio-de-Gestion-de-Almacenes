@@ -130,3 +130,28 @@
   border-radius: 10px;
   box-shadow: 0 4px 10px rgba(0,0,0,0.08);
 }
+
+/* Estilos para navegación */
+.navigation-buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.btn-nav {
+  padding: 8px 15px;
+  background-color: #4db6ac;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-nav:hover {
+  background-color: #009688;
+}

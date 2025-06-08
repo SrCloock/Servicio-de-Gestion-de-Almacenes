@@ -312,12 +312,20 @@ const TraspasoAlmacenesScreen = () => {
             </h1>
           </div>
           
-          <button 
-            onClick={() => navigate('/PedidosScreen')}
-            className="btn-volver"
-          >
-            <Icon name="arrowLeft" /> Menú
-          </button>
+          <div className="navigation-buttons">
+            <button onClick={() => navigate('/rutas')} className="btn-nav">
+              📦 Rutas
+            </button>
+            <button onClick={() => navigate('/pedidos')} className="btn-nav">
+              📝 Pedidos
+            </button>
+            <button onClick={() => navigate('/inventario')} className="btn-nav">
+              📊 Inventario
+            </button>
+            <button onClick={() => navigate('/')} className="btn-nav">
+              🏠 Inicio
+            </button>
+          </div>
         </div>
         
         {/* Contenido principal */}

@@ -1,37 +1,20 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import '../styles/InventarioScreen.css';
 
 const InventarioScreen = () => {
+  const navigate = useNavigate();
   const [inventario, setInventario] = useState([]);
-  const [conStock, setConStock] = useState([]);
-  const [sinStock, setSinStock] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtro, setFiltro] = useState('');
-  const [orden, setOrden] = useState({ campo: 'codigo', direccion: 'asc' });
-  const [paginaActual, setPaginaActual] = useState(1);
-  const articulosPorPagina = 30;
+  const [orden, setOrden] = useState('codigo');
 
   useEffect(() => {
     const fetchInventario = async () => {
       try {
         const response = await fetch('http://localhost:3000/inventario');
         const data = await response.json();
-        
-        // Filtrar y clasificar
-        const conStockTemp = [];
-        const sinStockTemp = [];
-        
-        data.forEach(item => {
-          if (item.stock === 0) {
-            sinStockTemp.push(item);
-          } else {
-            conStockTemp.push(item);
-          }
-        });
-        
         setInventario(data);
-        setConStock(conStockTemp);
-        setSinStock(sinStockTemp);
       } catch (error) {
         console.error('Error cargando inventario:', error);
       } finally {
@@ -48,48 +31,36 @@ const InventarioScreen = () => {
     return 'normal';
   };
 
-  // Filtrar y ordenar
-  const conStockFiltrado = conStock
+  const inventarioFiltrado = inventario
     .filter(item => 
       item.codigo.toLowerCase().includes(filtro.toLowerCase()) ||
       item.descripcion.toLowerCase().includes(filtro.toLowerCase())
     )
     .sort((a, b) => {
-      let cmp = 0;
-      if (orden.campo === 'codigo') {
-        cmp = a.codigo.localeCompare(b.codigo);
-      } else if (orden.campo === 'descripcion') {
-        cmp = a.descripcion.localeCompare(b.descripcion);
-      } else if (orden.campo === 'stock') {
-        cmp = a.stock - b.stock;
-      }
-      return orden.direccion === 'asc' ? cmp : -cmp;
+      if (orden === 'codigo') return a.codigo.localeCompare(b.codigo);
+      if (orden === 'descripcion') return a.descripcion.localeCompare(b.descripcion);
+      if (orden === 'stock') return a.stock - b.stock;
+      return 0;
     });
-
-  const sinStockFiltrado = sinStock
-    .filter(item => 
-      item.codigo.toLowerCase().includes(filtro.toLowerCase()) ||
-      item.descripcion.toLowerCase().includes(filtro.toLowerCase())
-    );
-
-  // Paginación
-  const indexUltimoArticulo = paginaActual * articulosPorPagina;
-  const indexPrimerArticulo = indexUltimoArticulo - articulosPorPagina;
-  const articulosActuales = conStockFiltrado.slice(indexPrimerArticulo, indexUltimoArticulo);
-  const totalPaginas = Math.ceil(conStockFiltrado.length / articulosPorPagina);
-
-  const cambiarPagina = (numeroPagina) => setPaginaActual(numeroPagina);
-
-  const cambiarOrden = (campo) => {
-    setOrden(prev => ({
-      campo,
-      direccion: prev.campo === campo && prev.direccion === 'asc' ? 'desc' : 'asc'
-    }));
-  };
 
   return (
     <div className="inventario-container">
       <h1>Inventario Global</h1>
+      
+      <div className="navigation-buttons">
+        <button onClick={() => navigate('/rutas')} className="btn-nav">
+          📦 Rutas
+        </button>
+        <button onClick={() => navigate('/pedidos')} className="btn-nav">
+          📝 Pedidos
+        </button>
+        <button onClick={() => navigate('/traspaso')} className="btn-nav">
+          🔄 Traspasos
+        </button>
+        <button onClick={() => navigate('/')} className="btn-nav">
+          🏠 Inicio
+        </button>
+      </div>
       
       <div className="inventario-controls">
         <input
@@ -97,106 +68,54 @@ const InventarioScreen = () => {
           placeholder="Buscar por código o descripción..."
           value={filtro}
           onChange={(e) => setFiltro(e.target.value)}
-          className="search-input-large"
+          className="search-input"
         />
+        
+        <select
+          value={orden}
+          onChange={(e) => setOrden(e.target.value)}
+          className="sort-select"
+        >
+          <option value="codigo">Ordenar por Código</option>
+          <option value="descripcion">Ordenar por Descripción</option>
+          <option value="stock">Ordenar por Stock</option>
+        </select>
       </div>
       
       {loading ? (
         <div className="loading">Cargando inventario...</div>
       ) : (
-        <>
-          <div className="inventario-seccion">
-            <h2>Artículos con Stock ({conStockFiltrado.length})</h2>
-            <table className="inventario-table">
-              <thead>
-                <tr>
-                  <th onClick={() => cambiarOrden('codigo')}>
-                    Código {orden.campo === 'codigo' && (orden.direccion === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th onClick={() => cambiarOrden('descripcion')}>
-                    Descripción {orden.campo === 'descripcion' && (orden.direccion === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th onClick={() => cambiarOrden('stock')}>
-                    Stock {orden.campo === 'stock' && (orden.direccion === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {articulosActuales.map((item, index) => (
-                  <tr 
-                    key={index} 
-                    className={`estado-${getEstadoStock(item.stock)}`}
-                  >
-                    <td>{item.codigo}</td>
-                    <td>{item.descripcion}</td>
-                    <td>{item.stock}</td>
-                    <td>
-                      {getEstadoStock(item.stock) === 'negativo' ? 'Stock negativo' : 'En stock'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            
-            {/* Paginación */}
-            <div className="paginacion">
-              <button 
-                onClick={() => cambiarPagina(paginaActual - 1)} 
-                disabled={paginaActual === 1}
+        <table className="inventario-table">
+          <thead>
+            <tr>
+              <th>Código Artículo</th>
+              <th>Descripción</th>
+              <th>Stock Total</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {inventarioFiltrado.map((item, index) => (
+              <tr 
+                key={index} 
+                className={`estado-${getEstadoStock(item.stock)}`}
               >
-                &lt; Anterior
-              </button>
-              
-              {Array.from({ length: Math.min(5, totalPaginas) }, (_, i) => {
-                const start = Math.max(1, paginaActual - 2);
-                return start + i;
-              }).map(num => (
-                <button
-                  key={num}
-                  onClick={() => cambiarPagina(num)}
-                  className={paginaActual === num ? 'active' : ''}
-                >
-                  {num}
-                </button>
-              ))}
-              
-              <button 
-                onClick={() => cambiarPagina(paginaActual + 1)} 
-                disabled={paginaActual === totalPaginas}
-              >
-                Siguiente &gt;
-              </button>
-            </div>
-          </div>
-          
-          <div className="inventario-seccion">
-            <h2>Artículos sin Stock ({sinStockFiltrado.length})</h2>
-            <table className="inventario-table">
-              <thead>
-                <tr>
-                  <th>Código</th>
-                  <th>Descripción</th>
-                  <th>Stock</th>
-                  <th>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sinStockFiltrado.map((item, index) => (
-                  <tr 
-                    key={index} 
-                    className="estado-sin-stock"
-                  >
-                    <td>{item.codigo}</td>
-                    <td>{item.descripcion}</td>
-                    <td>{item.stock}</td>
-                    <td>Sin stock</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+                <td>{item.codigo}</td>
+                <td>{item.descripcion}</td>
+                <td>{item.stock}</td>
+                <td>
+                  {getEstadoStock(item.stock) === 'sin-stock' && 'Sin stock'}
+                  {getEstadoStock(item.stock) === 'negativo' && 'Stock negativo'}
+                  {getEstadoStock(item.stock) === 'normal' && 'En stock'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      
+      {!loading && inventarioFiltrado.length === 0 && (
+        <div className="no-results">No se encontraron artículos</div>
       )}
     </div>
   );
