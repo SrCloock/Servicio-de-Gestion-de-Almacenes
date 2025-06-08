@@ -939,6 +939,181 @@ app.get('/albaranesPendientes', async (req, res) => {
   }
 });
 
+// Obtener todos los artículos con stock
+app.get('/articulos', async (req, res) => {
+  try {
+    const result = await poolGlobal.request().query(`
+      SELECT 
+        a.CodigoArticulo AS codigo,
+        a.DescripcionArticulo AS nombre,
+        COALESCE(SUM(asu.UnidadSaldo), 0) AS stock
+      FROM Articulos a
+      LEFT JOIN AcumuladoStockUbicacion asu ON a.CodigoArticulo = asu.CodigoArticulo
+      GROUP BY a.CodigoArticulo, a.DescripcionArticulo
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR ARTICULOS]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener artículos' });
+  }
+});
+
+// Obtener inventario consolidado
+app.get('/inventario', async (req, res) => {
+  try {
+    const result = await poolGlobal.request().query(`
+      SELECT 
+        a.CodigoArticulo AS codigo,
+        a.DescripcionArticulo AS descripcion,
+        COALESCE(SUM(asu.UnidadSaldo), 0) AS stock
+      FROM Articulos a
+      LEFT JOIN AcumuladoStockUbicacion asu ON a.CodigoArticulo = asu.CodigoArticulo
+      GROUP BY a.CodigoArticulo, a.DescripcionArticulo
+      ORDER BY a.CodigoArticulo
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR INVENTARIO]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener inventario' });
+  }
+});
+
+// Obtener historial de traspasos (últimos 30 días)
+app.get('/traspasos/historial', async (req, res) => {
+  const dias = req.query.dias || 30;
+  
+  try {
+    const result = await poolGlobal.request()
+      .input('dias', sql.Int, dias)
+      .query(`
+        SELECT 
+          Fecha,
+          Articulo,
+          AlmacenOrigen,
+          UbicacionOrigen,
+          AlmacenDestino,
+          UbicacionDestino,
+          Cantidad,
+          Estado
+        FROM TraspasosHistorial
+        WHERE Fecha >= DATEADD(day, -@dias, GETDATE())
+        ORDER BY Fecha DESC
+      `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR HISTORIAL TRASPASOS]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener historial' });
+  }
+});
+
+// Obtener almacenes
+app.get('/almacenes', async (req, res) => {
+  try {
+    const result = await poolGlobal.request().query(`
+      SELECT DISTINCT CodigoAlmacen AS codigo, DescripcionAlmacen AS nombre
+      FROM Almacenes
+      ORDER BY DescripcionAlmacen
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR ALMACENES]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener almacenes' });
+  }
+});
+
+// Obtener ubicaciones de un almacén
+app.get('/ubicaciones', async (req, res) => {
+  const { almacen } = req.query;
+  
+  if (!almacen) {
+    return res.status(400).json({ success: false, mensaje: 'Almacén requerido' });
+  }
+  
+  try {
+    const result = await poolGlobal.request()
+      .input('almacen', sql.VarChar, almacen)
+      .query(`
+        SELECT DISTINCT Ubicacion
+        FROM AcumuladoStockUbicacion
+        WHERE CodigoAlmacen = @almacen
+        ORDER BY Ubicacion
+      `);
+    
+    const ubicaciones = result.recordset.map(row => row.Ubicacion);
+    res.json(ubicaciones);
+  } catch (err) {
+    console.error('[ERROR UBICACIONES]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener ubicaciones' });
+  }
+});
+
+// Confirmar traspasos
+app.post('/traspasos/confirmar', async (req, res) => {
+  const traspasos = req.body;
+  
+  if (!Array.isArray(traspasos) || traspasos.length === 0) {
+    return res.status(400).json({ success: false, mensaje: 'Datos inválidos' });
+  }
+  
+  try {
+    for (const traspaso of traspasos) {
+      const { articulo, almacenOrigen, ubicacionOrigen, almacenDestino, ubicacionDestino, cantidad } = traspaso;
+      
+      // 1. Restar del origen
+      await poolGlobal.request()
+        .input('articulo', sql.VarChar, articulo)
+        .input('almacenOrigen', sql.VarChar, almacenOrigen)
+        .input('ubicacionOrigen', sql.VarChar, ubicacionOrigen)
+        .input('cantidad', sql.Int, cantidad)
+        .query(`
+          UPDATE AcumuladoStockUbicacion
+          SET UnidadSaldo = UnidadSaldo - @cantidad
+          WHERE CodigoArticulo = @articulo
+            AND CodigoAlmacen = @almacenOrigen
+            AND Ubicacion = @ubicacionOrigen
+        `);
+        
+      // 2. Sumar al destino
+      await poolGlobal.request()
+        .input('articulo', sql.VarChar, articulo)
+        .input('almacenDestino', sql.VarChar, almacenDestino)
+        .input('ubicacionDestino', sql.VarChar, ubicacionDestino)
+        .input('cantidad', sql.Int, cantidad)
+        .query(`
+          UPDATE AcumuladoStockUbicacion
+          SET UnidadSaldo = UnidadSaldo + @cantidad
+          WHERE CodigoArticulo = @articulo
+            AND CodigoAlmacen = @almacenDestino
+            AND Ubicacion = @ubicacionDestino
+        `);
+        
+      // 3. Registrar en historial
+      await poolGlobal.request()
+        .input('fecha', sql.Date, new Date())
+        .input('articulo', sql.VarChar, articulo)
+        .input('almacenOrigen', sql.VarChar, almacenOrigen)
+        .input('ubicacionOrigen', sql.VarChar, ubicacionOrigen)
+        .input('almacenDestino', sql.VarChar, almacenDestino)
+        .input('ubicacionDestino', sql.VarChar, ubicacionDestino)
+        .input('cantidad', sql.Int, cantidad)
+        .query(`
+          INSERT INTO TraspasosHistorial (
+            Fecha, Articulo, AlmacenOrigen, UbicacionOrigen,
+            AlmacenDestino, UbicacionDestino, Cantidad
+          ) VALUES (
+            @fecha, @articulo, @almacenOrigen, @ubicacionOrigen,
+            @almacenDestino, @ubicacionDestino, @cantidad
+          )
+        `);
+    }
+    
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[ERROR CONFIRMAR TRASPASOS]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al confirmar traspasos' });
+  }
+});
+
 
 // Endpoint para recibir el PDF y enviarlo por correo
 app.post('/enviar-pdf-albaran', upload.single('pdf'), async (req, res) => {

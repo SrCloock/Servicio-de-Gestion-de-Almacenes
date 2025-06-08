@@ -13,6 +13,7 @@ import EntradaStockCompras from './pages/EntradaStockCompras';
 import ConfirmacionEntrega from './pages/ConfirmacionEntrega';
 import GestionRutas from './pages/GestionRutas'; 
 import DetalleAlbaran from './pages/DetalleAlbaran';
+import InventarioScreen from './pages/InventarioScreen';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
       <Route path="/PedidosScreen" element={<PedidosScreen />} />
       <Route path="/clientes" element={<ClientesPage />} />
       <Route path="/clientes/ficha" element={<FichaClientePage />} />
+      <Route path="/inventario" element={<InventarioScreen />} />
       <Route path="/estadisticasCliente" element={<EstadisticasClientePage />} />
       <Route path="/traspaso" element={<TraspasoAlmacenesScreen />} />
       <Route path="/dashboard" element={<DashboardPage />} />

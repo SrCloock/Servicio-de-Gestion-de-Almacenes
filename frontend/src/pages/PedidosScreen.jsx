@@ -8,9 +8,7 @@ function PedidosScreen() {
   const [ubicaciones, setUbicaciones] = useState({});
   const [lineaSeleccionada, setLineaSeleccionada] = useState(null);
   const [expediciones, setExpediciones] = useState({});
-  const [mostrarRutas, setMostrarRutas] = useState(false);
   const [pedidoViewModes, setPedidoViewModes] = useState({});
-  const [albaranes, setAlbaranes] = useState([]);
   
   useEffect(() => {
     const fetchPedidos = async () => {
@@ -37,7 +35,12 @@ function PedidosScreen() {
             nuevasExpediciones[art] = {
               ubicacion: primeraUbic.ubicacion,
               partida: primeraUbic.partida || null,
-              cantidad: primeraUbic.unidadSaldo.toString()
+              cantidad: Math.min(
+                primeraUbic.unidadSaldo,
+                data.flatMap(p => p.articulos)
+                  .find(a => a.codigoArticulo === art)?.unidadesPendientes || 0
+              ).toString(),
+              esZonaDescarga: primeraUbic.ubicacion === "Zona descarga"
             };
           }
         }
@@ -82,7 +85,8 @@ function PedidosScreen() {
               [codigoArticulo]: {
                 ubicacion: primeraUbicacion.ubicacion,
                 partida: primeraUbicacion.partida || null,
-                cantidad: Math.min(primeraUbicacion.unidadSaldo, unidadesPendientes).toString()
+                cantidad: Math.min(primeraUbicacion.unidadSaldo, unidadesPendientes).toString(),
+                esZonaDescarga: primeraUbicacion.ubicacion === "Zona descarga"
               }
             };
           });
@@ -95,25 +99,25 @@ function PedidosScreen() {
     }
   };
 
-  const handleChangeUbicacion = (codigoArticulo, value) => {
+  const handleChangeUbicacion = (codigoArticulo, value, unidadesPendientes) => {
     const { ubicacion, partida } = JSON.parse(value);
     const ubicacionesArticulo = ubicaciones[codigoArticulo] || [];
-    const ubicacionSel = ubicacionesArticulo.find(u =>
-      u.ubicacion === ubicacion &&
+    const ubicacionSel = ubicacionesArticulo.find(u => 
+      u.ubicacion === ubicacion && 
       (u.partida || null) === (partida || null)
     );
 
+    // Calcular cantidad máxima (mínimo entre stock y pendientes)
+    const stockDisponible = ubicacionSel?.unidadSaldo || 0;
+    const cantidadMaxima = Math.min(stockDisponible, unidadesPendientes);
+    
     setExpediciones({
       ...expediciones,
       [codigoArticulo]: {
         ubicacion,
         partida,
-        cantidad: ubicacionSel
-          ? Math.min(
-              ubicacionSel.unidadSaldo,
-              pedidos.flatMap(p => p.articulos).find(a => a.codigoArticulo === codigoArticulo)?.unidadesPendientes || 0
-            ).toString()
-          : '0'
+        cantidad: cantidadMaxima.toString(),
+        esZonaDescarga: ubicacion === "Zona descarga"
       }
     });
   };
@@ -214,7 +218,6 @@ function PedidosScreen() {
       alert('Error al conectar con el servidor');
     }
   };
-
 
   const togglePedidoViewMode = (pedidoId) => {
     setPedidoViewModes(prev => {
@@ -325,21 +328,26 @@ function PedidosScreen() {
                     ubicacion: expediciones[art.codigoArticulo]?.ubicacion || '',
                     partida: expediciones[art.codigoArticulo]?.partida || null,
                   })}
-                  onChange={(e) => handleChangeUbicacion(art.codigoArticulo, e.target.value)}
+                  onChange={(e) => handleChangeUbicacion(art.codigoArticulo, e.target.value, art.unidadesPendientes)}
                   style={{ width: '100%', fontSize: '12px' }}
                 >
-                  {(ubicaciones[art.codigoArticulo] || []).map((ubi, idx) => (
-                    <option
-                      key={idx}
-                      value={JSON.stringify({
-                        ubicacion: ubi.ubicacion,
-                        partida: ubi.partida || null
-                      })}
-                    >
-                      {ubi.ubicacion}
-                      {ubi.partida ? ` - Partida ${ubi.partida}` : ''} - {ubi.unidadSaldo} uds
-                    </option>
-                  ))}
+                  {(ubicaciones[art.codigoArticulo] || []).map((ubi, idx) => {
+                    const isZonaDescarga = ubi.ubicacion === "Zona descarga";
+                    return (
+                      <option
+                        key={idx}
+                        value={JSON.stringify({
+                          ubicacion: ubi.ubicacion,
+                          partida: ubi.partida || null
+                        })}
+                        style={isZonaDescarga ? { color: 'red' } : {}}
+                      >
+                        {ubi.ubicacion}
+                        {ubi.partida ? ` - Partida ${ubi.partida}` : ''} - {ubi.unidadSaldo} uds
+                        {isZonaDescarga ? ' (Zona Descarga)' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}
@@ -366,20 +374,14 @@ function PedidosScreen() {
                     )}
                     value={expediciones[art.codigoArticulo]?.cantidad || ''}
                     onChange={(e) => handleChangeCantidad(art.codigoArticulo, e.target.value)}
-                    style={{ marginLeft: '10px', width: '80px' }}
+                    style={{ 
+                      marginLeft: '10px', 
+                      width: '80px',
+                      border: expediciones[art.codigoArticulo]?.esZonaDescarga ? '2px solid red' : '1px solid #ccc'
+                    }}
                   />
                   <button
-                    onClick={() => {
-                      const codigoEscaneado = prompt("Escanea o introduce el código de barras:");
-                      if (codigoEscaneado === art.codigoAlternativo|| 
-                          codigoEscaneado === art.codigoArticulo) {
-                        expedirLinea(pedidoIndex, i, art.codigoArticulo);
-                      } else {
-                        alert(`❌ Código incorrecto. Valores aceptados: 
-                              ${art.codigoAlternativo} (barras) o 
-                              ${art.codigoArticulo} (artículo)`);
-                      }
-                    }}
+                    onClick={() => expedirLinea(pedidoIndex, i, art.codigoArticulo)}
                     style={{
                       marginLeft: '20px',
                       backgroundColor: '#4CAF50',
@@ -413,141 +415,58 @@ function PedidosScreen() {
       </div>
 
       <div className="pedidos-content">
-        {mostrarRutas ? (
-          <GestionRutas rutas={albaranes} />
-        ) : (
-          pedidos.map((pedido, index) => (
-            <div key={index} className="pedido-card" style={{ padding: '10px', marginBottom: '15px' }}>
-              <div className="pedido-header">
-                <div className="pedido-info">
-                  Empresa: {pedido.codigoEmpresa} | Ejercicio: {pedido.ejercicio} | Pedido: {pedido.numeroPedido} | Serie: {pedido.serie || '—'}
-                </div>
+        {pedidos.map((pedido, index) => (
+          <div key={index} className="pedido-card" style={{ padding: '10px', marginBottom: '15px' }}>
+            <div className="pedido-header">
+              <div className="pedido-info">
+                Empresa: {pedido.codigoEmpresa} | Ejercicio: {pedido.ejercicio} | Pedido: {pedido.numeroPedido} | Serie: {pedido.serie || '—'}
               </div>
-              <div className="pedido-details">
-                <div><strong>Cliente:</strong> {pedido.razonSocial}</div>
-                <div><strong>Obra:</strong> {pedido.Obra || 'No especificada'}</div>
-                <div><strong>Dirección:</strong> {pedido.domicilio}</div>
-                <div><strong>Municipio:</strong> {pedido.municipio}</div>
-                {pedido.observaciones && (
-                  <div><strong>Obs:</strong> {pedido.observaciones}</div>
-                )}
-              </div>
-              
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-                <button
-                  onClick={() => togglePedidoViewMode(pedido.numeroPedido)}
-                  style={{
-                    padding: '5px 10px',
-                    backgroundColor: '#2196F3',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    minWidth: '250px'
-                  }}
-                >
-                  {getButtonText(pedidoViewModes[pedido.numeroPedido])}
-                </button>
-              </div>
-              
-              <table className="lineas-table">
-                <thead>
-                  <tr>
-                    <th>Artículo</th>
-                    <th>Almacén</th>
-                    <th>Descripción</th>
-                    <th>Pedidas</th>
-                    <th>Ubicaciones</th>
-                    <th>Pendientes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {renderLineasPedido(pedido, index)}
-                </tbody>
-              </table>
             </div>
-          ))
-        )}
+            <div className="pedido-details">
+              <div><strong>Cliente:</strong> {pedido.razonSocial}</div>
+              <div><strong>Obra:</strong> {pedido.Obra || 'No especificada'}</div>
+              <div><strong>Dirección:</strong> {pedido.domicilio}</div>
+              <div><strong>Municipio:</strong> {pedido.municipio}</div>
+              {pedido.observaciones && (
+                <div><strong>Obs:</strong> {pedido.observaciones}</div>
+              )}
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+              <button
+                onClick={() => togglePedidoViewMode(pedido.numeroPedido)}
+                style={{
+                  padding: '5px 10px',
+                  backgroundColor: '#2196F3',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  minWidth: '250px'
+                }}
+              >
+                {getButtonText(pedidoViewModes[pedido.numeroPedido])}
+              </button>
+            </div>
+            
+            <table className="lineas-table">
+              <thead>
+                <tr>
+                  <th>Artículo</th>
+                  <th>Almacén</th>
+                  <th>Descripción</th>
+                  <th>Pedidas</th>
+                  <th>Ubicaciones</th>
+                  <th>Pendientes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {renderLineasPedido(pedido, index)}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </div>
-    </div>
-  );
-}
-
-// --------------------- GESTIÓN DE RUTAS ---------------------
-function GestionRutas({ rutas }) {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const generarPDF = (ruta) => {
-    const doc = new jsPDF();
-    doc.setFontSize(18);
-    doc.text(`Albarán: ${ruta.albaran}`, 14, 20);
-    doc.setFontSize(12);
-    doc.text(`Cliente: ${ruta.cliente}`, 14, 30);
-    doc.text(`Dirección: ${ruta.direccion}`, 14, 38);
-
-    doc.text('Artículos entregados:', 14, 48);
-    
-    doc.autoTable({
-      startY: 52,
-      head: [['Artículo', 'Cantidad']],
-      body: ruta.articulos.map(a => [a.nombre, a.cantidad])
-    });
-
-    const finalY = doc.lastAutoTable.finalY || 70;
-
-    if (location.state?.firmaCliente) {
-      doc.text('Firma Cliente:', 14, finalY + 20);
-      doc.addImage(location.state.firmaCliente, 'PNG', 14, finalY + 25, 60, 20);
-    }
-
-    if (location.state?.firmaRepartidor) {
-      doc.text('Firma Repartidor:', 14, finalY + 50);
-      doc.addImage(location.state.firmaRepartidor, 'PNG', 14, finalY + 55, 60, 20);
-    }
-
-    doc.save(`Entrega_${ruta.albaran}.pdf`);
-  };
-
-  const abrirPantallaFirmas = (ruta) => {
-    navigate('/confirmacion-entrega', { state: { pedido: ruta } });
-  };
-
-  return (
-    <div className="rutas-content">
-      <h3>Entregas Asignadas a Tu Ruta</h3>
-      {rutas.map((ruta) => (
-        <div key={ruta.id} className="ruta-card">
-          <h4>Albarán: {ruta.albaran}</h4>
-          <p><strong>Cliente:</strong> {ruta.cliente}</p>
-          <p><strong>Dirección:</strong> {ruta.direccion}</p>
-          <ul>
-            {ruta.articulos.map((a, idx) => (
-              <li key={idx}>{a.nombre} - {a.cantidad} uds</li>
-            ))}
-          </ul>
-
-          {location.state?.rutaFirmada?.id === ruta.id && (
-            <>
-              <div>
-                <strong>Firma Cliente:</strong>
-                <br />
-                <img src={location.state.firmaCliente} alt="Firma Cliente" style={{ border: '1px solid #ccc', width: 200, height: 80 }} />
-              </div>
-              <div>
-                <strong>Firma Repartidor:</strong>
-                <br />
-                <img src={location.state.firmaRepartidor} alt="Firma Repartidor" style={{ border: '1px solid #ccc', width: 200, height: 80 }} />
-              </div>
-              <button onClick={() => generarPDF(ruta)}>📄 Generar PDF</button>
-            </>
-          )}
-
-          {(!location.state?.rutaFirmada || location.state.rutaFirmada.id !== ruta.id) && (
-            <button onClick={() => abrirPantallaFirmas(ruta)}>✍ Firmar Entrega</button>
-          )}
-        </div>
-      ))}
     </div>
   );
 }

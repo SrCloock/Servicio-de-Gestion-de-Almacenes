@@ -36,6 +36,7 @@ const TraspasoAlmacenesScreen = () => {
   const [activeTab, setActiveTab] = useState('pendientes');
   const [showArticleDropdown, setShowArticleDropdown] = useState(false);
   const [articulosSinStock, setArticulosSinStock] = useState([]);
+  const [articulosNegativos, setArticulosNegativos] = useState([]);
   
   const [traspasoData, setTraspasoData] = useState({
     articulo: '',
@@ -46,63 +47,59 @@ const TraspasoAlmacenesScreen = () => {
     cantidad: ''
   });
 
-  // Datos mock (incluye artículos sin stock y con stock negativo)
+  // Obtener artículos reales del backend
   useEffect(() => {
-    setIsLoading(true);
-    setTimeout(() => {
-      const mockArticulos = [
-        { codigo: 'TRN-6X50', nombre: 'Tornillo hexagonal 6x50 mm', almacenes: ['Principal', 'Secundario'], stock: 1500 },
-        { codigo: 'TRC-M8', nombre: 'Tuerca M8 galvanizada', almacenes: ['Principal', 'Taller'], stock: 3200 },
-        { codigo: 'TUB-ALU-20', nombre: 'Tubo aluminio 20mm', almacenes: ['Metales', 'Principal'], stock: 480 },
-        { codigo: 'BRD-40', nombre: 'Brida de acero 40mm', almacenes: ['Principal', 'Taller'], stock: 250 },
-        { codigo: 'VLV-1/2', nombre: 'Válvula de bola 1/2"', almacenes: ['Fontanería', 'Principal'], stock: 120 },
-        { codigo: 'CNC-5M', nombre: 'Conector rápido para tubo 5mm', almacenes: ['Fontanería', 'Principal'], stock: 780 },
-        { codigo: 'BRZ-1/4', nombre: 'Brida zincada 1/4"', almacenes: ['Taller', 'Secundario'], stock: 420 },
-        { codigo: 'JUN-RED-32', nombre: 'Junta tórica roja 32mm', almacenes: ['Principal', 'Hidráulica'], stock: 950 },
-        { codigo: 'TUB-PVC-40', nombre: 'Tubo PVC 40mm presión', almacenes: ['Fontanería', 'Plásticos'], stock: 350 },
-        { codigo: 'VAL-RET-20', nombre: 'Válvula retención 20mm', almacenes: ['Fontanería', 'Principal'], stock: 180 },
-        // Artículos especiales
-        { codigo: 'ART-SIN-STOCK', nombre: 'Artículo sin stock', almacenes: ['Principal'], stock: 0 },
-        { codigo: 'ART-NEGATIVO', nombre: 'Artículo con stock negativo', almacenes: ['Principal'], stock: -50 },
-        { codigo: 'ART-NUEVO', nombre: 'Artículo nuevo sin ubicación', almacenes: ['Principal'], stock: 0 }
-      ];
-      
-      setArticulos(mockArticulos);
-      setAlmacenes(['Principal', 'Secundario', 'Taller', 'Metales', 'Fontanería', 'Plásticos', 'Hidráulica', 'Químicos']);
-      
-      // Artículos sin ubicación definida (sin stock)
-      setArticulosSinStock([
-        { codigo: 'ART-NUEVO', nombre: 'Artículo nuevo sin ubicación', almacenes: ['Principal'], stock: 0 }
-      ]);
-      
-      // Mock de historial
-      setTraspasosHistorial([
-        {
-          id: 1,
-          fecha: '2023-05-15',
-          articulo: 'TRN-6X50',
-          nombreArticulo: 'Tornillo hexagonal 6x50 mm',
-          almacenOrigen: 'Principal',
-          ubicacionOrigen: 'Pasillo 1-Est.A',
-          almacenDestino: 'Taller',
-          ubicacionDestino: 'Banco 1-C2',
-          cantidad: 100
-        },
-        {
-          id: 2,
-          fecha: '2023-05-10',
-          articulo: 'VLV-1/2',
-          nombreArticulo: 'Válvula de bola 1/2"',
-          almacenOrigen: 'Fontanería',
-          ubicacionOrigen: 'Mostrador',
-          almacenDestino: 'Principal',
-          ubicacionDestino: 'Pasillo 3-Est.C',
-          cantidad: 50
-        }
-      ]);
-      
-      setIsLoading(false);
-    }, 300);
+    const fetchArticulos = async () => {
+      setIsLoading(true);
+      try {
+        const response = await fetch('http://localhost:3000/articulos');
+        const data = await response.json();
+        
+        // Identificar artículos sin stock o en negativo
+        const sinStock = [];
+        const negativos = [];
+        
+        const articulosConEstado = data.map(art => {
+          if (art.stock === 0) {
+            sinStock.push(art.codigo);
+            return { ...art, estado: 'sin-stock' };
+          } else if (art.stock < 0) {
+            negativos.push(art.codigo);
+            return { ...art, estado: 'negativo' };
+          }
+          return { ...art, estado: 'normal' };
+        });
+        
+        setArticulos(articulosConEstado);
+        setArticulosSinStock(sinStock);
+        setArticulosNegativos(negativos);
+        
+        // Obtener almacenes reales
+        const almacenesResponse = await fetch('http://localhost:3000/almacenes');
+        setAlmacenes(await almacenesResponse.json());
+        
+      } catch (error) {
+        console.error("Error cargando datos", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchArticulos();
+  }, []);
+
+  // Obtener historial (últimos 30 días)
+  useEffect(() => {
+    const fetchHistorial = async () => {
+      try {
+        const response = await fetch('http://localhost:3000/traspasos/historial?dias=30');
+        setTraspasosHistorial(await response.json());
+      } catch (error) {
+        console.error("Error cargando historial", error);
+      }
+    };
+    
+    fetchHistorial();
   }, []);
 
   // Filtrar artículos por búsqueda (mostrar max 10)
@@ -121,7 +118,7 @@ const TraspasoAlmacenesScreen = () => {
     setShowArticleDropdown(false);
     
     // Si es un artículo sin stock, establecer ubicación por defecto
-    if (articulosSinStock.some(a => a.codigo === codigo)) {
+    if (articulosSinStock.includes(codigo)) {
       setTraspasoData(prev => ({
         ...prev,
         almacenOrigen: 'Principal',
@@ -133,49 +130,57 @@ const TraspasoAlmacenesScreen = () => {
   // Cargar ubicaciones cuando se selecciona artículo y almacén origen
   useEffect(() => {
     if (traspasoData.articulo && traspasoData.almacenOrigen) {
-      const ubicacionesMock = {
-        'Principal': ['Pasillo 1-Est.A', 'Pasillo 2-Est.B', 'Pasillo 3-Est.C', 'Mostrador N', 'Zona descarga'],
-        'Secundario': ['Est.A-N1', 'Est.B-N2', 'Zona Carga-P3', 'Sector 5-R4', 'Zona descarga'],
-        'Taller': ['Banco 1-C2', 'Banco 2-C4', 'Alm. Taller', 'Herramientas', 'Zona descarga'],
-        'Metales': ['Rack 1-N3', 'Rack 2-N1', 'Zona Corte', 'Perfiles', 'Zona descarga'],
-        'Fontanería': ['Est. Font-C3', 'Mostrador', 'Cajón 5', 'Zona descarga'],
-        'Plásticos': ['Zona PVC', 'Est. C-N4', 'Rack 3-A1', 'Zona descarga'],
-        'Hidráulica': ['Est. H1-C2', 'Est. H2-C4', 'Cajones', 'Zona descarga'],
-        'Químicos': ['Armario Seguro', 'Est. Q1-N2', 'Zona Ventilada', 'Zona descarga']
+      const fetchUbicacionesOrigen = async () => {
+        try {
+          const response = await fetch(
+            `http://localhost:3000/ubicaciones?almacen=${traspasoData.almacenOrigen}`
+          );
+          const ubicaciones = await response.json();
+          setUbicacionesOrigen(ubicaciones);
+          
+          // Mantener la ubicación si ya estaba seleccionada y sigue disponible
+          if (!ubicaciones.includes(traspasoData.ubicacionOrigen)) {
+            setTraspasoData(prev => ({ ...prev, ubicacionOrigen: 'Zona descarga' }));
+          }
+        } catch (error) {
+          console.error("Error cargando ubicaciones", error);
+        }
       };
-      setUbicacionesOrigen(ubicacionesMock[traspasoData.almacenOrigen] || []);
-      // Mantener la ubicación si ya estaba seleccionada y sigue disponible
-      if (!ubicacionesMock[traspasoData.almacenOrigen]?.includes(traspasoData.ubicacionOrigen)) {
-        setTraspasoData(prev => ({ ...prev, ubicacionOrigen: 'Zona descarga' }));
-      }
+      
+      fetchUbicacionesOrigen();
     }
   }, [traspasoData.articulo, traspasoData.almacenOrigen]);
 
   // Cargar ubicaciones cuando se selecciona almacén destino
   useEffect(() => {
     if (traspasoData.almacenDestino) {
-      const ubicacionesMock = {
-        'Principal': ['Pasillo 1-Est.A', 'Pasillo 2-Est.B', 'Pasillo 3-Est.C', 'Mostrador N', 'Zona descarga'],
-        'Secundario': ['Est.A-N1', 'Est.B-N2', 'Zona Carga-P3', 'Sector 5-R4', 'Zona descarga'],
-        'Taller': ['Banco 1-C2', 'Banco 2-C4', 'Alm. Taller', 'Herramientas', 'Zona descarga'],
-        'Metales': ['Rack 1-N3', 'Rack 2-N1', 'Zona Corte', 'Perfiles', 'Zona descarga'],
-        'Fontanería': ['Est. Font-C3', 'Mostrador', 'Cajón 5', 'Zona descarga'],
-        'Plásticos': ['Zona PVC', 'Est. C-N4', 'Rack 3-A1', 'Zona descarga'],
-        'Hidráulica': ['Est. H1-C2', 'Est. H2-C4', 'Cajones', 'Zona descarga'],
-        'Químicos': ['Armario Seguro', 'Est. Q1-N2', 'Zona Ventilada', 'Zona descarga']
+      const fetchUbicacionesDestino = async () => {
+        try {
+          const response = await fetch(
+            `http://localhost:3000/ubicaciones?almacen=${traspasoData.almacenDestino}`
+          );
+          let ubicaciones = await response.json();
+          
+          // Filtrar para no permitir "Zona descarga" como destino
+          ubicaciones = ubicaciones.filter(ubi => ubi !== "Zona descarga");
+          setUbicacionesDestino(ubicaciones);
+          
+          if (!ubicaciones.includes(traspasoData.ubicacionDestino)) {
+            setTraspasoData(prev => ({ ...prev, ubicacionDestino: '' }));
+          }
+        } catch (error) {
+          console.error("Error cargando ubicaciones", error);
+        }
       };
-      setUbicacionesDestino(ubicacionesMock[traspasoData.almacenDestino] || []);
-      // Mantener la ubicación si ya estaba seleccionada y sigue disponible
-      if (!ubicacionesMock[traspasoData.almacenDestino]?.includes(traspasoData.ubicacionDestino)) {
-        setTraspasoData(prev => ({ ...prev, ubicacionDestino: '' }));
-      }
+      
+      fetchUbicacionesDestino();
     }
   }, [traspasoData.almacenDestino]);
 
   const handleCantidadChange = (e) => {
     let value = e.target.value;
-    // Permitir solo números positivos
-    if (value === '' || (Number(value) >= 0 && Number(value) <= 9999)) {
+    // Permitir números negativos
+    if (value === '' || (Number(value) >= -9999 && Number(value) <= 9999)) {
       setTraspasoData({ ...traspasoData, cantidad: value });
     }
   };
@@ -184,8 +189,8 @@ const TraspasoAlmacenesScreen = () => {
     const { articulo, almacenOrigen, ubicacionOrigen, almacenDestino, ubicacionDestino, cantidad } = traspasoData;
     const cantidadNum = parseInt(cantidad, 10);
     
-    if (!articulo || !almacenOrigen || !ubicacionOrigen || !almacenDestino || !ubicacionDestino || !cantidad || cantidadNum <= 0) {
-      alert('Completa todos los campos. Cantidad debe ser mayor que 0');
+    if (!articulo || !almacenOrigen || !ubicacionOrigen || !almacenDestino || !ubicacionDestino || !cantidad) {
+      alert('Completa todos los campos. Cantidad debe ser un número válido');
       return;
     }
     
@@ -197,18 +202,13 @@ const TraspasoAlmacenesScreen = () => {
 
     const articuloInfo = articulos.find(a => a.codigo === articulo);
     
-    // Mostrar advertencia para stock negativo pero permitir continuar
-    if (articuloInfo.stock < 0) {
-      if (!window.confirm(`⚠️ Este artículo tiene stock negativo (${articuloInfo.stock}). ¿Desea continuar con el traspaso?`)) {
-        return;
-      }
-    }
-    
+    // Permitir traspasos negativos sin confirmación
     setTraspasosPendientes([...traspasosPendientes, {
       ...traspasoData,
       cantidad: cantidadNum,
       nombreArticulo: articuloInfo.nombre,
-      id: Date.now()
+      id: Date.now(),
+      estado: articuloInfo.estado
     }]);
 
     setTraspasoData({
@@ -255,6 +255,15 @@ const TraspasoAlmacenesScreen = () => {
     try {
       await new Promise(resolve => setTimeout(resolve, 1000));
       
+      // Enviar traspasos al backend
+      const response = await fetch('http://localhost:3000/traspasos/confirmar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(traspasosPendientes)
+      });
+      
+      if (!response.ok) throw new Error('Error al confirmar traspasos');
+
       // Agregar a historial
       const nuevosTraspasos = traspasosPendientes.map(t => ({
         ...t,
@@ -343,8 +352,8 @@ const TraspasoAlmacenesScreen = () => {
                   <div className="article-dropdown">
                     {articulosFiltrados.length > 0 ? (
                       articulosFiltrados.map((art) => {
-                        const isSinStock = articulosSinStock.some(a => a.codigo === art.codigo);
-                        const isNegativo = art.stock < 0;
+                        const isSinStock = articulosSinStock.includes(art.codigo);
+                        const isNegativo = articulosNegativos.includes(art.codigo);
                         
                         return (
                           <div 
@@ -384,8 +393,8 @@ const TraspasoAlmacenesScreen = () => {
                   className="select-input"
                 >
                   <option value="">Selecciona almacén</option>
-                  {articulos.find(a => a.codigo === traspasoData.articulo)?.almacenes.map((alm, i) => (
-                    <option key={i} value={alm}>{alm}</option>
+                  {almacenes.map((alm, i) => (
+                    <option key={i} value={alm.codigo}>{alm.nombre}</option>
                   ))}
                 </select>
               </div>
@@ -419,7 +428,7 @@ const TraspasoAlmacenesScreen = () => {
                 >
                   <option value="">Selecciona almacén</option>
                   {almacenes.map((alm, i) => (
-                    <option key={i} value={alm}>{alm}</option>
+                    <option key={i} value={alm.codigo}>{alm.nombre}</option>
                   ))}
                 </select>
               </div>
@@ -449,15 +458,9 @@ const TraspasoAlmacenesScreen = () => {
                 <input
                   type="number"
                   placeholder="0"
-                  min="0"
                   value={traspasoData.cantidad}
                   onChange={handleCantidadChange}
                   className="quantity-input"
-                  onKeyDown={(e) => {
-                    if (['e', 'E', '+', '-', '.'].includes(e.key)) {
-                      e.preventDefault();
-                    }
-                  }}
                 />
               </div>
               
@@ -505,7 +508,11 @@ const TraspasoAlmacenesScreen = () => {
                       </thead>
                       <tbody>
                         {traspasosPendientes.map((traspaso) => (
-                          <tr key={traspaso.id}>
+                          <tr 
+                            key={traspaso.id} 
+                            className={traspaso.estado === 'sin-stock' ? 'no-stock' : 
+                                      traspaso.estado === 'negativo' ? 'negative-stock' : ''}
+                          >
                             <td>
                               <div className="article-name">{traspaso.nombreArticulo}</div>
                               <div className="article-code">{traspaso.articulo}</div>
@@ -586,7 +593,11 @@ const TraspasoAlmacenesScreen = () => {
                     </thead>
                     <tbody>
                       {traspasosHistorial.map((traspaso) => (
-                        <tr key={traspaso.id}>
+                        <tr 
+                          key={traspaso.id} 
+                          className={traspaso.estado === 'sin-stock' ? 'no-stock' : 
+                                    traspaso.estado === 'negativo' ? 'negative-stock' : ''}
+                        >
                           <td>{traspaso.fecha}</td>
                           <td>
                             <div className="article-name">{traspaso.nombreArticulo}</div>
