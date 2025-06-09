@@ -1,4 +1,0 @@
-.login-body { display: flex; align-items: center; justify-content: center; height: 100vh; background: #f0f0f0; }
-.login-container { background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-.captcha-container { margin-top: 1rem; display: flex; align-items: center; gap: 10px; }
-.login-btn { margin-top: 1rem; padding: 0.5rem 1rem; background: green; color: white; border: none; cursor: pointer; }
