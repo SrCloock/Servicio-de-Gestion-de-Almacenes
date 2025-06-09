@@ -16,6 +16,17 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
+// Servir archivos estáticos del frontend
+app.use(express.static(path.join(__dirname, 'client/build')));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'client/build/index.html'));
+});
+
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+});
+
 // ⚙️ Configuración real de conexión
 const dbConfig = {
   user: 'logic',
@@ -451,71 +462,7 @@ ORDER BY c.FechaPedido DESC
   }
 });
 
-// ✅ Endpoint para obtener ubicaciones y partidas donde hay stock para un artículo
-app.get('/ubicacionesArticulo', async (req, res) => {
-  const { codigoArticulo } = req.query;
-
-  if (!codigoArticulo) {
-    return res.status(400).json({ success: false, mensaje: 'Código de artículo requerido.' });
-  }
-
-  try {
-    const request = poolGlobal.request();
-    request.input('CodigoArticulo', sql.VarChar, codigoArticulo);
-
-    // Obtener ubicaciones y partidas (incluyendo stock negativo)
-    const ubicacionesPartidasQuery = await request.query(`
-      SELECT DISTINCT Ubicacion, Partida
-      FROM MovimientoStock
-      WHERE CodigoArticulo = @CodigoArticulo
-    `);
-
-    const ubicacionesPartidas = ubicacionesPartidasQuery.recordset;
-
-    // Obtener stock para cada combinación de ubicación y partida (incluyendo negativo)
-    const stockPromises = ubicacionesPartidas.map(async row => {
-      const { Ubicacion, Partida } = row;
-
-      const requestDetalle = poolGlobal.request();
-      requestDetalle.input('CodigoArticulo', sql.VarChar, codigoArticulo);
-      requestDetalle.input('Ubicacion', sql.VarChar, Ubicacion);
-      if (Partida !== null) {
-        requestDetalle.input('Partida', sql.VarChar, Partida);
-      }
-
-      const stockResult = await requestDetalle.query(`
-        SELECT UnidadSaldo
-        FROM AcumuladoStockUbicacion
-        WHERE CodigoArticulo = @CodigoArticulo AND Ubicacion = @Ubicacion
-        ${Partida !== null ? "AND Partida = @Partida" : "AND Partida IS NULL"}
-      `);
-
-      return {
-        ubicacion: Ubicacion,
-        partida: Partida || null,
-        unidadSaldo: stockResult.recordset[0]?.UnidadSaldo || 0
-      };
-    });
-
-    const stockPorUbicacionPartida = await Promise.all(stockPromises);
-
-    // Si no hay ubicaciones, devolver ubicación por defecto
-    if (stockPorUbicacionPartida.length === 0) {
-      stockPorUbicacionPartida.push({
-        ubicacion: "Zona descarga",
-        partida: null,
-        unidadSaldo: 0
-      });
-    }
-
-    res.json(stockPorUbicacionPartida);
-  } catch (err) {
-    console.error('[ERROR UBICACIONES ARTICULO]', err);
-    res.status(500).json({ success: false, mensaje: 'Error al obtener ubicaciones del artículo' });
-  }
-});
-
-
+// ✅ Endpoint para actualizar una línea de pedido y descontar stock
 app.post('/actualizarLineaPedido', async (req, res) => {
   const {
     codigoEmpresa,
@@ -540,149 +487,113 @@ app.post('/actualizarLineaPedido', async (req, res) => {
   }
 
   try {
-const request = poolGlobal.request();
-request.input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
-request.input('ejercicio', sql.SmallInt, ejercicio);
-request.input('numeroPedido', sql.Int, numeroPedido);
-request.input('codigoArticulo', sql.VarChar, codigoArticulo);
-request.input('cantidadExpedida', sql.Decimal(18, 4), cantidadExpedida);
-request.input('ubicacion', sql.VarChar, ubicacion);
-request.input('serie', sql.VarChar, serie || '');
-if (partida) request.input('partida', sql.VarChar, partida);
+    // 🔹 1. Actualizar línea de pedido (siempre)
+    const request = poolGlobal.request();
+    request.input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
+    request.input('ejercicio', sql.SmallInt, ejercicio);
+    request.input('numeroPedido', sql.Int, numeroPedido);
+    request.input('codigoArticulo', sql.VarChar, codigoArticulo);
+    request.input('cantidadExpedida', sql.Decimal(18, 4), cantidadExpedida);
+    request.input('ubicacion', sql.VarChar, ubicacion);
+    request.input('serie', sql.VarChar, serie || '');
+    if (partida) request.input('partida', sql.VarChar, partida);
 
-const updatePedidoQuery = `
-  UPDATE LineasPedidoCliente
-  SET UnidadesPendientes = UnidadesPendientes - @cantidadExpedida
-  WHERE 
-    CodigoEmpresa = @codigoEmpresa AND
-    EjercicioPedido = @ejercicio AND
-    NumeroPedido = @numeroPedido AND
-    CodigoArticulo = @codigoArticulo AND
-    SeriePedido = ISNULL(@serie, '')
-`;
+    const updatePedidoQuery = `
+      UPDATE LineasPedidoCliente
+      SET UnidadesPendientes = UnidadesPendientes - @cantidadExpedida
+      WHERE 
+        CodigoEmpresa = @codigoEmpresa AND
+        EjercicioPedido = @ejercicio AND
+        NumeroPedido = @numeroPedido AND
+        CodigoArticulo = @codigoArticulo AND
+        SeriePedido = ISNULL(@serie, '')
+    `;
+    const result = await request.query(updatePedidoQuery);
+    console.log('[UPDATE PEDIDO] Filas afectadas:', result.rowsAffected);
 
-const result = await request.query(updatePedidoQuery);
-console.log('[UPDATE PEDIDO] Filas afectadas:', result.rowsAffected);
+    // 🔹 2. Descontar unidades del stock (solo si la ubicación NO es "Zona descarga")
+    if (ubicacion !== "Zona descarga") {
+      const stockUpdateRequest = poolGlobal.request();
+      stockUpdateRequest.input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
+      stockUpdateRequest.input('ejercicio', sql.SmallInt, ejercicio);
+      stockUpdateRequest.input('codigoArticulo', sql.VarChar, codigoArticulo);
+      stockUpdateRequest.input('ubicacion', sql.VarChar, ubicacion);
+      stockUpdateRequest.input('cantidadExpedida', sql.Decimal(18, 4), cantidadExpedida);
+      stockUpdateRequest.input('partida', sql.VarChar, partida || '');
 
+      // Obtener precio unitario
+      const datosLinea = await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('ejercicio', sql.SmallInt, ejercicio)
+        .input('numeroPedido', sql.Int, numeroPedido)
+        .input('codigoArticulo', sql.VarChar, codigoArticulo)
+        .input('serie', sql.VarChar, serie || '')
+        .query(`
+          SELECT TOP 1 Precio
+          FROM LineasPedidoCliente
+          WHERE 
+            CodigoEmpresa = @codigoEmpresa AND
+            EjercicioPedido = @ejercicio AND
+            NumeroPedido = @numeroPedido AND
+            CodigoArticulo = @codigoArticulo AND
+            (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+        `);
 
+      const precioUnitario = datosLinea.recordset[0]?.Precio || 0;
 
-    // 🔹 2. Descontar unidades del stock (tabla AcumuladoStockUbicacion)
-    const stockUpdateRequest = poolGlobal.request();
-    stockUpdateRequest.input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
-    stockUpdateRequest.input('ejercicio', sql.SmallInt, ejercicio);
-    stockUpdateRequest.input('codigoArticulo', sql.VarChar, codigoArticulo);
-    stockUpdateRequest.input('ubicacion', sql.VarChar, ubicacion);
-    stockUpdateRequest.input('cantidadExpedida', sql.Decimal(18, 4), cantidadExpedida);
- stockUpdateRequest.input('partida', sql.VarChar, partida || '');
+      // Obtener datos de ubicación para CódigoAlmacén y UnidadMedida
+      const almacenQuery = await poolGlobal.request()
+        .input('codigoArticulo', sql.VarChar, codigoArticulo)
+        .input('ubicacion', sql.VarChar, ubicacion)
+        .input('partida', sql.VarChar, partida || '')
+        .query(`
+          SELECT TOP 1 CodigoAlmacen, UnidadMedida1_
+          FROM AcumuladoStockUbicacion
+          WHERE CodigoArticulo = @codigoArticulo
+            AND Ubicacion = @ubicacion
+            AND ISNULL(LTRIM(RTRIM(Partida)), '') = ISNULL(LTRIM(RTRIM(@partida)), '')
+        `);
 
-const datosLinea = await poolGlobal.request()
-  .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-  .input('ejercicio', sql.SmallInt, ejercicio)
-  .input('numeroPedido', sql.Int, numeroPedido)
-  .input('codigoArticulo', sql.VarChar, codigoArticulo)
-  .input('serie', sql.VarChar, serie || '')
-  .query(`
-    SELECT TOP 1 Precio
-    FROM LineasPedidoCliente
-    WHERE 
-      CodigoEmpresa = @codigoEmpresa AND
-      EjercicioPedido = @ejercicio AND
-      NumeroPedido = @numeroPedido AND
-      CodigoArticulo = @codigoArticulo AND
-      (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
-  `);
+      const codigoAlmacen = almacenQuery.recordset[0]?.CodigoAlmacen || '';
+      const unidadMedida = almacenQuery.recordset[0]?.UnidadMedida1_ || '';
 
-const precioUnitario = datosLinea.recordset[0]?.Precio || 0;
+      // Insertar movimiento
+      const movimientoRequest = poolGlobal.request();
+      movimientoRequest.input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
+      movimientoRequest.input('ejercicio', sql.SmallInt, ejercicio);
+      movimientoRequest.input('periodo', sql.Int, (new Date()).getMonth() + 1);
+      movimientoRequest.input('fecha', sql.DateTime, new Date());
+      movimientoRequest.input('codigoArticulo', sql.VarChar, codigoArticulo);
+      movimientoRequest.input('codigoAlmacen', sql.VarChar, codigoAlmacen);
+      movimientoRequest.input('unidadMedida', sql.VarChar, unidadMedida);
+      movimientoRequest.input('codigoColor', sql.VarChar, '');
+      movimientoRequest.input('codigoTalla', sql.VarChar, '');
+      movimientoRequest.input('precioMedio', sql.Decimal(18, 4), precioUnitario);
+      movimientoRequest.input('importe', sql.Decimal(18, 4), precioUnitario * cantidadExpedida);
+      movimientoRequest.input('ubicacion', sql.VarChar, ubicacion);
+      movimientoRequest.input('partida', sql.VarChar, partida || '');
+      movimientoRequest.input('cantidadExpedida', sql.Decimal(18, 4), cantidadExpedida);
 
-const movimientoRequest = poolGlobal.request();
-movimientoRequest.input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
-movimientoRequest.input('ejercicio', sql.SmallInt, ejercicio);
-movimientoRequest.input('codigoArticulo', sql.VarChar, codigoArticulo);
-movimientoRequest.input('ubicacion', sql.VarChar, ubicacion);
-movimientoRequest.input('cantidadExpedida', sql.Decimal(18, 4), cantidadExpedida);
-movimientoRequest.input('partida', sql.VarChar, partida || '');
-// Obtener CódigoAlmacen real de la ubicación y partida
-const almacenQuery = await poolGlobal.request()
-  .input('codigoArticulo', sql.VarChar, codigoArticulo)
-  .input('ubicacion', sql.VarChar, ubicacion)
-  .input('partida', sql.VarChar, partida || '')
-  .query(`
-    SELECT TOP 1 CodigoAlmacen, TipoUnidadMedida_
-    FROM AcumuladoStockUbicacion
-    WHERE CodigoArticulo = @codigoArticulo
-      AND Ubicacion = @ubicacion
-      AND ISNULL(LTRIM(RTRIM(Partida)), '') = ISNULL(LTRIM(RTRIM(@partida)), '')
-  `);
+      await movimientoRequest.query(`
+        INSERT INTO MovimientoStock (
+          CodigoEmpresa, Ejercicio, Periodo, Fecha, TipoMovimiento,
+          CodigoArticulo, CodigoAlmacen, UnidadMedida1_, CodigoColor_,
+          CodigoTalla01_, PrecioMedio, Importe, Ubicacion, Partida, Unidades
+        ) VALUES (
+          @codigoEmpresa, @ejercicio, @periodo, @fecha, 2,
+          @codigoArticulo, @codigoAlmacen, @unidadMedida, @codigoColor,
+          @codigoTalla, @precioMedio, @importe, @ubicacion, @partida, @cantidadExpedida
+        )
+      `);
+    }
 
-const codigoAlmacen = almacenQuery.recordset[0]?.CodigoAlmacen || '';
-const unidadMedida = almacenQuery.recordset[0]?.UnidadMedida1_ || '';
-
-movimientoRequest.input('codigoAlmacen', sql.VarChar, codigoAlmacen);
-movimientoRequest.input('unidadMedida', sql.VarChar, unidadMedida);
-
-movimientoRequest.input('codigoColor', sql.VarChar, ''); // si no usas colores, vacío
-movimientoRequest.input('codigoTalla', sql.VarChar, ''); // igual
-movimientoRequest.input('precioMedio', sql.Decimal(18, 4), precioUnitario);
-movimientoRequest.input('importe', sql.Decimal(18, 4), precioUnitario * cantidadExpedida);
-
-
-
-const fechaActual = new Date();
-const periodo = fechaActual.getMonth() + 1;
-
-movimientoRequest.input('fecha', sql.DateTime, fechaActual);
-movimientoRequest.input('periodo', sql.Int, periodo);
-
-
-await movimientoRequest.query(`
-INSERT INTO MovimientoStock (
-  CodigoEmpresa,
-  Ejercicio,
-  Periodo,
-  Fecha,
-  TipoMovimiento,
-  CodigoArticulo,
-  CodigoAlmacen,
-  UnidadMedida1_, 
-  CodigoColor_,
-  CodigoTalla01_,
-  PrecioMedio,
-  Importe,
-  Ubicacion,
-  Partida,
-  Unidades
-)
-VALUES (
-  @codigoEmpresa,
-  @ejercicio,
-  @periodo,
-  @fecha,
-  2,
-  @codigoArticulo,
-  @codigoAlmacen,
-  @unidadMedida,
-  @codigoColor,
-  @codigoTalla,
-  @precioMedio,
-  @importe,
-  @ubicacion,
-  @partida,
-  @cantidadExpedida
-)
-
-
-
-`);
-
-
-    // 🔹 3. Devolver ubicaciones actualizadas
+    // 🔹 3. Devolver ubicaciones actualizadas (solo con saldo positivo)
     const stockQuery = poolGlobal.request();
     stockQuery.input('codigoArticulo', sql.VarChar, codigoArticulo);
     const ubicacionesResult = await stockQuery.query(`
       SELECT Ubicacion, Partida, UnidadSaldo
       FROM AcumuladoStockUbicacion
-      WHERE CodigoArticulo = @codigoArticulo
-        AND UnidadSaldo > 0
+      WHERE CodigoArticulo = @codigoArticulo AND UnidadSaldo > 0
     `);
 
     res.json({
@@ -692,15 +603,16 @@ VALUES (
     });
 
   } catch (err) {
-console.error('[ERROR AL ACTUALIZAR LINEA PEDIDO]', err);
-res.status(500).json({
-  success: false,
-  mensaje: 'Error al actualizar la línea del pedido o el stock.',
-  error: err.message,
-  detalle: err.stack   // 🔍 Añade esto para tener más información
-});
+    console.error('[ERROR AL ACTUALIZAR LINEA PEDIDO]', err);
+    res.status(500).json({
+      success: false,
+      mensaje: 'Error al actualizar la línea del pedido o el stock.',
+      error: err.message,
+      detalle: err.stack
+    });
   }
 });
+
 
 
 
