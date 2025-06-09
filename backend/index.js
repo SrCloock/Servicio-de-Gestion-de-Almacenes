@@ -6,25 +6,27 @@ const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
 const cron = require('node-cron');
-const fetch = require('node-fetch'); // 👈 necesario fuera del navegador
+const fetch = require('node-fetch');
 
 const upload = multer();
 const router = express.Router();
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+
+// Detectar si estamos corriendo dentro de pkg
+const isPkg = typeof process.pkg !== 'undefined';
+
+// Para pkg, obtener ruta base correctamente
+const basePath = isPkg ? path.dirname(process.execPath) : __dirname;
 
 app.use(cors());
 app.use(express.json());
 
-// Servir archivos estáticos del frontend
-app.use(express.static(path.join(__dirname, 'client/build')));
+// Servir archivos estáticos del frontend desde dist (Vite)
+app.use(express.static(path.join(basePath, 'dist')));
 
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'client/build/index.html'));
-});
-
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  res.sendFile(path.join(basePath, 'dist', 'index.html'));
 });
 
 // ⚙️ Configuración real de conexión

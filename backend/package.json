@@ -20,9 +20,20 @@
     "nodemailer": "^7.0.3",
     "trim-canvas": "^0.1.2"
   },
-  "pkg": {
-    "assets": [
-      "../frontend/dist/**/*"
-    ]
-  }
+"pkg": {
+  "assets": [
+    "dist/**/*"
+  ],
+  "scripts": [
+    "node_modules/express/**/*",
+    "node_modules/mssql/**/*",
+    "node_modules/cors/**/*",
+    "node_modules/multer/**/*",
+    "node_modules/node-cron/**/*",
+    "node_modules/node-fetch/**/*",
+    "node_modules/nodemailer/**/*",
+    "node_modules/trim-canvas/**/*"
+  ]
+}
+
 }
