@@ -1,0 +1,55 @@
+.ficha-cliente {
+  background: white;
+  padding: 20px;
+  max-width: 1000px;
+  margin: auto;
+  border-radius: 10px;
+}
+
+.formulario {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+}
+
+.logo {
+  height: 40px;  /* puedes ajustar a 30px, 50px, lo que prefieras */
+  margin-right: auto;
+}
+.formulario label {
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+}
+
+input, textarea {
+  padding: 6px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+}
+
+textarea {
+  resize: vertical;
+  height: 60px;
+}
+
+.botones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.botones button {
+  background-color: #294770;
+  color: white;
+  padding: 10px 20px;
+  border: 2px solid white;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.botones .guardar {
+  background-color: #1a7725;
+}

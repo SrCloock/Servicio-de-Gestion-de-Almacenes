@@ -1,0 +1,31 @@
+lo de historial 
+
+// Obtener historial de traspasos (últimos 30 días)
+app.get('/traspasos/historial', async (req, res) => {
+  const dias = req.query.dias || 30;
+  
+  try {
+    const result = await poolGlobal.request()
+      .input('dias', sql.Int, dias)
+      .query(`
+        SELECT 
+          Fecha,
+          Articulo,
+          AlmacenOrigen,
+          UbicacionOrigen,
+          AlmacenDestino,
+          UbicacionDestino,
+          Cantidad,
+          Estado
+        FROM TraspasosHistorial
+        WHERE Fecha >= DATEADD(day, -@dias, GETDATE())
+        ORDER BY Fecha DESC
+      `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR HISTORIAL TRASPASOS]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener historial' });
+  }
+});
+
+

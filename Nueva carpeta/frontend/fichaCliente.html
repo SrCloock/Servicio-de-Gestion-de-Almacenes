@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Ficha Cliente</title>
+  <link rel="stylesheet" href="styleClienteFicha.css">
+  <script defer src="fichaCliente.js"></script>
+</head>
+<body class="dashboard-body">
+  <header class="top-menu">
+     <img src="img/eurobag-logo.jpg" class="logo" alt="Eurobag">
+    <div class="icon">🧾<span>Cliente</span></div>
+    <div class="icon">📋<span>Potencial</span></div>
+    <div class="icon">🗓️<span>Calend.</span></div>
+    <div class="icon">💲<span>Gastos</span></div>
+  </header>
+
+  <main class="ficha-cliente">
+    <h2>FICHA</h2>
+    <div class="formulario">
+      <label>Empresa: <input id="empresa" disabled></label>
+      <label>Nombre: <input id="nombre"></label>
+      <label>Código: <input id="codigo" disabled></label>
+      <label>CIF: <input id="cif"></label>
+      <label>Tipo: <input id="tipo"></label>
+      <label>Contacto: <input id="contacto"></label>
+      <label>Forma de Pago: <input id="pago"></label>
+      <label>Email 1: <input id="email1"></label>
+      <label>Email 2: <input id="email2"></label>
+      <label>Teléfono: <input id="telefono"></label>
+      <label>Fax: <input id="fax"></label>
+      <label>CP: <input id="cp"></label>
+      <label>Domicilio: <input id="domicilio"></label>
+      <label>Municipio: <input id="municipio"></label>
+      <label>Provincia: <input id="provincia"></label>
+      <label>Mi Comentario CRM: <textarea id="comentarioCRM"></textarea></label>
+      <label>Otros Comentarios: <textarea id="otrosComentarios"></textarea></label>
+      <label>Comentarios ERP: <textarea id="comentariosERP"></textarea></label>
+    </div>
+
+    <div class="botones">
+<button onclick="abrirEstadisticas()">ESTADÍSTICA</button>
+      <button>RESUMEN CLI.</button>
+<button onclick="abrirNuevaVisita()">NUEVA VISITA</button>
+<button onclick="abrirNuevoPedido()">NUEVO PEDIDO</button>
+      <button class="guardar">Guardar Comentario</button>
+    </div>
+  </main>
+</body>
+</html>

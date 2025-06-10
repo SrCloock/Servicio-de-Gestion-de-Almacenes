@@ -1,0 +1,66 @@
+.clientes-section {
+  padding: 20px;
+  background-color: #fff;
+  color: black;
+}
+
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 15px;
+  align-items: center;
+}
+
+.filtros input, .filtros select {
+  padding: 8px;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+.filtros button {
+  background-color: #294770;
+  color: white;
+  padding: 10px 15px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+thead th {
+  background-color: #3c5a85;
+  color: white;
+  padding: 8px;
+  cursor: pointer;
+}
+
+tbody td {
+  padding: 8px;
+  border-bottom: 1px solid #ccc;
+}
+
+tbody tr:hover {
+  background-color: #f2f2f2;
+}
+
+.btn-estadistica {
+  margin-top: 20px;
+  background-color: #294770;
+  color: white;
+  padding: 10px 25px;
+  border-radius: 5px;
+  border: 2px solid white;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.logo {
+  height: 40px;
+  margin-right: 10px;
+}

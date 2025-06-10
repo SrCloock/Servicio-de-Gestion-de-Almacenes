@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Nuevo Pedido</title>
+  <link rel="stylesheet" href="styleNuevoPedido.css">
+  <script defer src="nuevoPedido.js"></script>
+</head>
+<body class="dashboard-body">
+  <header class="top-menu">
+    <img src="img/eurobag-logo.jpg" class="logo" alt="Eurobag">
+    <div class="icon">🧾<span>Cliente</span></div>
+    <div class="icon">📋<span>Potencial</span></div>
+    <div class="icon">🗓️<span>Calend.</span></div>
+    <div class="icon">💲<span>Gastos</span></div>
+  </header>
+
+  <main class="formulario-pedido">
+    <h2>PEDIDOS</h2>
+    <label>Nombre: <input id="nombreCliente" disabled></label>
+
+    <div class="fila">
+      <input placeholder="Código">
+      <input placeholder="Desc1">
+      <input placeholder="Desc2">
+      <input placeholder="Unidades">
+      <input placeholder="Precio">
+      <input placeholder="Código Artículo">
+      <button>BUSCAR</button>
+      <button>NUEVO ART.</button>
+      <button>AÑADIR</button>
+    </div>
+
+    <div class="tablas">
+      <div class="productos">
+        <h4>Productos</h4>
+        <!-- Aquí iría una tabla simulada con artículos -->
+        <p>[ Listado de productos aquí... ]</p>
+      </div>
+      <div class="lineas">
+        <h4>Líneas Pedido</h4>
+        <p>[ Líneas añadidas del pedido aquí... ]</p>
+      </div>
+    </div>
+
+    <div class="botones-accion">
+      <button>CREAR PEDIDO</button>
+      <button>CANCELAR PEDIDO</button>
+    </div>
+
+    <label>Observ.:</label>
+    <textarea></textarea>
+
+    <div class="suma">
+      <label>Suma:</label>
+      <input value="0" disabled>
+    </div>
+  </main>
+</body>
+</html>

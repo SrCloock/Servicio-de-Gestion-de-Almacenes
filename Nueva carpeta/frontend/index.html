@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Login | Rafael Ruiz</title>
+    <link rel="stylesheet" href="style.css">
+    <script defer src="script.js"></script>
+</head>
+<body class="login-body">
+    <div class="login-container">
+        <div class="logo-rr">
+            <img src="img/Rafael.jpg" alt="Rafael Ruiz">
+            <p>INGREDIENTES Y ENVASES PARA LA INDUSTRIA ALIMENTARIA</p>
+        </div>
+
+        <form id="login-form">
+            <label for="usuario">Usuario:</label>
+            <input type="text" id="usuario" required>
+
+            <label for="contrasena">Contraseña:</label>
+            <input type="password" id="contrasena" required>
+
+            <div class="captcha-container">
+                <canvas id="captcha" width="100" height="40"></canvas>
+                <input type="text" id="captcha-input" placeholder="Escribe el código de la imagen" required>
+            </div>
+
+            <button type="submit" class="login-btn">✔</button>
+        </form>
+
+        <div class="logo-eurobag">
+            <img src="img/eurobag-logo.jpg" alt="Eurobag">
+        </div>
+    </div>
+</body>
+</html>
