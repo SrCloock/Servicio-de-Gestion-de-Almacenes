@@ -1,5 +1,4 @@
-﻿// frontend/src/pages/TraspasoAlmacenesScreen.jsx
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/TraspasoAlmacenesScreen.css';
 
@@ -17,7 +16,8 @@ const Icon = ({ name }) => {
     hashtag: '#',
     spinner: '🔄',
     history: '📅',
-    user: '👤'
+    user: '👤',
+    download: '⬇️'
   };
   
   return <span className="icon">{icons[name]}</span>;
@@ -37,7 +37,7 @@ const TraspasoAlmacenesScreen = () => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState('pendientes');
   const [showArticleDropdown, setShowArticleDropdown] = useState(false);
-  const [usuario, setUsuario] = useState('admin'); // Usuario actual (ajustar según tu sistema)
+  const [usuario] = useState('admin'); // En un sistema real, se obtendría del contexto de autenticación
   
   const [traspasoData, setTraspasoData] = useState({
     articulo: '',
@@ -53,7 +53,7 @@ const TraspasoAlmacenesScreen = () => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        // Obtener artículos
+        // Obtener artículos con stock
         const artResponse = await fetch('http://localhost:3000/articulos');
         const artData = await artResponse.json();
         setArticulos(artData);
@@ -93,14 +93,29 @@ const TraspasoAlmacenesScreen = () => {
     setShowArticleDropdown(false);
   };
 
-  // Cargar ubicaciones cuando se selecciona artículo y almacén origen
+  // Cargar ubicaciones de origen con stock del artículo seleccionado
   useEffect(() => {
     const fetchUbicacionesOrigen = async () => {
       if (traspasoData.articulo && traspasoData.almacenOrigen) {
         try {
-          const response = await fetch(`http://localhost:3000/ubicaciones?almacen=${encodeURIComponent(traspasoData.almacenOrigen)}&articulo=${encodeURIComponent(traspasoData.articulo)}`);
-          const data = await response.json();
-          setUbicacionesOrigen(data);
+          // Si el almacén es de descarga, no necesitamos stock
+          if (traspasoData.almacenOrigen === 'DESCARGA') {
+            // Ubicaciones fijas para descarga
+            const ubicacionesDescarga = [
+              { ubicacion: 'Muelle 1', stock: 0 },
+              { ubicacion: 'Muelle 2', stock: 0 },
+              { ubicacion: 'Zona Recepción', stock: 0 },
+              { ubicacion: 'Cuarentena', stock: 0 }
+            ];
+            setUbicacionesOrigen(ubicacionesDescarga);
+          } else {
+            // Para almacenes normales, obtener ubicaciones con stock
+            const response = await fetch(
+              `http://localhost:3000/ubicaciones/stock?articulo=${traspasoData.articulo}&almacen=${traspasoData.almacenOrigen}`
+            );
+            const data = await response.json();
+            setUbicacionesOrigen(data);
+          }
         } catch (error) {
           console.error('Error al obtener ubicaciones origen:', error);
           setUbicacionesOrigen([]);
@@ -111,12 +126,16 @@ const TraspasoAlmacenesScreen = () => {
     fetchUbicacionesOrigen();
   }, [traspasoData.articulo, traspasoData.almacenOrigen]);
 
-  // Cargar ubicaciones cuando se selecciona almacén destino
+
+  
+  // Cargar ubicaciones de destino
   useEffect(() => {
     const fetchUbicacionesDestino = async () => {
       if (traspasoData.almacenDestino) {
         try {
-          const response = await fetch(`http://localhost:3000/ubicaciones?almacen=${encodeURIComponent(traspasoData.almacenDestino)}`);
+          const response = await fetch(
+            `http://localhost:3000/ubicaciones/almacen?almacen=${traspasoData.almacenDestino}`
+          );
           const data = await response.json();
           setUbicacionesDestino(data);
         } catch (error) {
@@ -152,19 +171,23 @@ const TraspasoAlmacenesScreen = () => {
 
     const articuloInfo = articulos.find(a => a.codigo === articulo);
     
-    // Verificar stock en ubicación origen
-    try {
-      const stockResponse = await fetch(`http://localhost:3000/stock?articulo=${articulo}&ubicacion=${ubicacionOrigen}`);
-      const stockData = await stockResponse.json();
-      
-      if (cantidadNum > stockData.cantidad) {
-        alert(`Stock insuficiente. Disponible: ${stockData.cantidad} unidades`);
+    // Solo verificar stock si no es zona de descarga
+    if (almacenOrigen !== 'DESCARGA') {
+      try {
+        const stockResponse = await fetch(
+          `http://localhost:3000/stock?articulo=${articulo}&almacen=${almacenOrigen}&ubicacion=${ubicacionOrigen}`
+        );
+        const stockData = await stockResponse.json();
+        
+        if (cantidadNum > stockData.cantidad) {
+          alert(`Stock insuficiente. Disponible: ${stockData.cantidad} unidades`);
+          return;
+        }
+      } catch (error) {
+        console.error('Error al verificar stock:', error);
+        alert('Error al verificar stock disponible');
         return;
       }
-    } catch (error) {
-      console.error('Error al verificar stock:', error);
-      alert('Error al verificar stock disponible');
-      return;
     }
     
     try {
@@ -173,7 +196,8 @@ const TraspasoAlmacenesScreen = () => {
         ...traspasoData,
         cantidad: cantidadNum,
         nombreArticulo: articuloInfo.nombre,
-        id: Date.now()
+        id: Date.now(),
+        esDescarga: almacenOrigen === 'DESCARGA'
       }]);
 
       setTraspasoData({
@@ -277,6 +301,20 @@ const TraspasoAlmacenesScreen = () => {
     <div className="traspaso-screen">
       <div className="traspaso-container">
         {/* Header */}
+        <div className="navigation-buttons">
+          <button onClick={() => navigate('/rutas')} className="btn-nav">
+            📦 Rutas
+          </button>
+          <button onClick={() => navigate('/PedidosScreen')} className="btn-nav">
+            📝 Pedidos
+          </button>
+          <button onClick={() => navigate('/inventario')} className="btn-nav">
+            📊 Inventario
+          </button>
+          <button onClick={() => navigate('/')} className="btn-nav">
+            🏠 Inicio
+          </button>
+        </div>
         <div className="header-card">
           <div>
             <h1 className="header-title">
@@ -375,7 +413,10 @@ const TraspasoAlmacenesScreen = () => {
                 >
                   <option value="">Selecciona ubicación</option>
                   {ubicacionesOrigen.map((ubi, i) => (
-                    <option key={i} value={ubi.codigo}>{ubi.codigo} - {ubi.descripcion}</option>
+                    <option key={i} value={ubi.ubicacion}>
+                      {ubi.ubicacion} {ubi.stock > 0 && `(${ubi.stock} uds)`}
+                      {traspasoData.almacenOrigen === 'DESCARGA' && ' [Descarga]'}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -409,7 +450,7 @@ const TraspasoAlmacenesScreen = () => {
                 >
                   <option value="">Selecciona ubicación</option>
                   {ubicacionesDestino.map((ubi, i) => (
-                    <option key={i} value={ubi.codigo}>{ubi.codigo} - {ubi.descripcion}</option>
+                    <option key={i} value={ubi}>{ubi}</option>
                   ))}
                 </select>
               </div>
@@ -482,6 +523,11 @@ const TraspasoAlmacenesScreen = () => {
                             <td>
                               <div className="article-name">{traspaso.nombreArticulo}</div>
                               <div className="article-code">{traspaso.articulo}</div>
+                              {traspaso.esDescarga && (
+                                <div className="descarga-tag">
+                                  <Icon name="download" /> Descarga
+                                </div>
+                              )}
                             </td>
                             <td>
                               <div>{traspaso.almacenOrigen}</div>
@@ -565,6 +611,11 @@ const TraspasoAlmacenesScreen = () => {
                           <td>
                             <div className="article-name">{traspaso.nombreArticulo}</div>
                             <div className="article-code">{traspaso.articulo}</div>
+                            {traspaso.almacenOrigen === 'DESCARGA' && (
+                              <div className="descarga-tag">
+                                <Icon name="download" /> Descarga
+                              </div>
+                            )}
                           </td>
                           <td>
                             <div>{traspaso.almacenOrigen}</div>

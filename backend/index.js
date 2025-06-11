@@ -373,44 +373,58 @@ app.get('/cobrosCliente', async (req, res) => {
 app.get('/pedidosPendientes', async (req, res) => {
   try {
     const result = await poolGlobal.request().query(`
-SELECT 
-  c.RazonSocial,
-  c.Domicilio,
-  c.Municipio,
-  c.ObservacionesPedido,
-  c.Obra,
-  l.CodigoArticulo,
-  l.DescripcionArticulo,
-  l.UnidadesPedidas, 
-  l.UnidadesPendientes,
-  l.CodigoEmpresa,
-  l.EjercicioPedido, 
-  l.SeriePedido, 
-  l.NumeroPedido,
-  l.CodigoAlmacen,
-  a.CodigoAlternativo 
-FROM CabeceraPedidoCliente c
-LEFT JOIN LineasPedidoCliente l 
-  ON c.CodigoEmpresa = l.CodigoEmpresa 
-  AND c.EjercicioPedido = l.EjercicioPedido 
-  AND c.SeriePedido = l.SeriePedido 
-  AND c.NumeroPedido = l.NumeroPedido 
-
-  LEFT JOIN Articulos a ON a.CodigoArticulo = l.CodigoArticulo 
-  and a.codigoEmpresa = c.CodigoEmpresa
-
-WHERE c.Estado = 0 -- Estado pendiente
-  AND c.SeriePedido = 'FERRETERIA' -- 🛠️ FILTRO POR SERIE FERRETERIA
-AND NOT EXISTS (
-  SELECT 1
-  FROM LineasAlbaranCliente la
-  WHERE 
-    la.CodigoEmpresa = l.CodigoEmpresa AND
-    la.EjercicioPedido = l.EjercicioPedido AND
-    ISNULL(la.SeriePedido, '') = ISNULL(l.SeriePedido, '') AND
-    la.NumeroPedido = l.NumeroPedido
-)
-ORDER BY c.FechaPedido DESC
+      WITH UltimosPedidos AS (
+        SELECT TOP 30 
+          c.CodigoEmpresa,
+          c.EjercicioPedido,
+          c.SeriePedido,
+          c.NumeroPedido,
+          c.RazonSocial,
+          c.Domicilio,
+          c.Municipio,
+          c.ObservacionesPedido,
+          c.NombreObra,
+          c.FechaPedido
+        FROM CabeceraPedidoCliente c
+        WHERE c.Estado = 0
+          AND c.CodigoEmpresa = 1
+        ORDER BY c.FechaPedido DESC
+      )
+      SELECT 
+        up.RazonSocial,
+        up.Domicilio,
+        up.Municipio,
+        up.ObservacionesPedido,
+        up.NombreObra,
+        l.CodigoArticulo,
+        l.DescripcionArticulo,
+        l.UnidadesPedidas, 
+        l.UnidadesPendientes,
+        l.CodigoEmpresa,
+        l.EjercicioPedido, 
+        l.SeriePedido, 
+        l.NumeroPedido,
+        l.CodigoAlmacen,
+        a.CodigoAlternativo 
+      FROM UltimosPedidos up
+      LEFT JOIN LineasPedidoCliente l 
+        ON up.CodigoEmpresa = l.CodigoEmpresa 
+        AND up.EjercicioPedido = l.EjercicioPedido 
+        AND up.SeriePedido = l.SeriePedido 
+        AND up.NumeroPedido = l.NumeroPedido 
+      LEFT JOIN Articulos a 
+        ON a.CodigoArticulo = l.CodigoArticulo 
+        AND a.CodigoEmpresa = l.CodigoEmpresa
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM LineasAlbaranCliente la
+        WHERE 
+          la.CodigoEmpresa = l.CodigoEmpresa AND
+          la.EjercicioPedido = l.EjercicioPedido AND
+          ISNULL(la.SeriePedido, '') = ISNULL(l.SeriePedido, '') AND
+          la.NumeroPedido = l.NumeroPedido
+      )
+      ORDER BY up.FechaPedido DESC
     `);
 
     // Agrupar por pedido
@@ -1251,6 +1265,22 @@ app.post('/marcarPedidoCompletado', async (req, res) => {
 
 
 // 🖥️ Levantar servidor
-app.listen(PORT, () => {
-  console.log(`✅ Backend corriendo en http://localhost:${PORT}`);
+// Por esto:
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Backend accesible en:
+  - Local: http://localhost:${PORT}
+  - Red: http://${getLocalIp()}:${PORT}`);
 });
+
+// Añade esta función para obtener tu IP local
+function getLocalIp() {
+  const interfaces = require('os').networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return '0.0.0.0';
+}
