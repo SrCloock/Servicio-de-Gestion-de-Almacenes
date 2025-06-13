@@ -1,0 +1,30 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "bin": "index.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "keywords": [],
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "mssql": "^11.0.1",
+    "multer": "^1.4.5-lts.2",
+    "ngrok": "^5.0.0-beta.2",
+    "node-cron": "^4.0.5",
+    "node-fetch": "^3.3.2",
+    "nodemailer": "^7.0.3",
+    "nodemon": "^3.1.10",
+    "trim-canvas": "^0.1.2"
+  },
+  "pkg": {
+    "assets": [
+      "../frontend/dist/**/*"
+    ]
+  }
+}
