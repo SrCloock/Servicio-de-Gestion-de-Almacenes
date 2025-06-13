@@ -1,8 +1,11 @@
-﻿import './index.css';
-import './styles/style.css';
+﻿import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import PedidosScreen from './pages/PedidosScreen';
+import './styles/style.css';
+import './styles/PedidosScreen.css';
+import './styles/TraspasoAlmacenesScreen.css';
+import './styles/InventarioScreen.css';
 import LoginPage from './pages/LoginPage';
+import PedidosScreen from './pages/PedidosScreen';
 import ClientesPage from './pages/ClientesPage';
 import DashboardPage from './pages/DashboardPage';
 import FichaClientePage from './pages/FichaClientePage';
@@ -11,7 +14,7 @@ import TraspasoAlmacenesScreen from './pages/TraspasoAlmacenesScreen';
 import PreparacionPedidos from './pages/PreparacionPedidos';
 import EntradaStockCompras from './pages/EntradaStockCompras';
 import ConfirmacionEntrega from './pages/ConfirmacionEntrega';
-import GestionRutas from './pages/GestionRutas'; 
+import GestionRutas from './pages/GestionRutas';
 import DetalleAlbaran from './pages/DetalleAlbaran';
 import InventarioScreen from './pages/InventarioScreen';
 

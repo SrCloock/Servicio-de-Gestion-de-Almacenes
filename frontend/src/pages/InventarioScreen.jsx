@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/InventarioScreen.css';
+import Navbar from '../components/Navbar';
 
 const InventarioScreen = () => {
   const navigate = useNavigate();
   const [inventario, setInventario] = useState([]);
   const [inventarioAlmacenes, setInventarioAlmacenes] = useState([]);
   const [inventarioUbicaciones, setInventarioUbicaciones] = useState([]);
+  const [categorias, setCategorias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtro, setFiltro] = useState('');
-  const [orden, setOrden] = useState('codigo');
+  const [orden, setOrden] = useState({ campo: 'codigo', direccion: 'asc' });
   const [paginaActual, setPaginaActual] = useState(1);
   const [itemsPorPagina, setItemsPorPagina] = useState(20);
   const [vistaDetallada, setVistaDetallada] = useState(false);
@@ -20,13 +22,41 @@ const InventarioScreen = () => {
     sinStock: 0,
     stockNegativo: 0
   });
+  const [ajustandoStock, setAjustandoStock] = useState(null);
+  const [nuevoStock, setNuevoStock] = useState(0);
+  const [usuarioPermisos, setUsuarioPermisos] = useState(false);
+  const [usuarioData, setUsuarioData] = useState(null);
 
+  // Obtener datos del usuario logueado
+  useEffect(() => {
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (user) {
+      setUsuarioData(user.datos);
+      setUsuarioPermisos(user.permisos?.inventario_editar || false);
+      
+      // Cargar categorías de empleado para la empresa del usuario
+      const cargarCategorias = async () => {
+        try {
+          const response = await fetch(
+            `http://localhost:3000/categorias-empleado?codigoEmpresa=${user.datos.CodigoEmpresa}`
+          );
+          const data = await response.json();
+          setCategorias(data);
+        } catch (error) {
+          console.error('Error cargando categorías:', error);
+        }
+      };
+      
+      cargarCategorias();
+    }
+  }, []);
+
+  // Cargar inventario
   useEffect(() => {
     const cargarDatos = async () => {
       try {
         setLoading(true);
         
-        // Cargar datos principales
         const [resGlobal, resAlmacenes, resUbicaciones] = await Promise.all([
           fetch('http://localhost:3000/inventario'),
           fetch('http://localhost:3000/inventario/almacenes'),
@@ -41,18 +71,12 @@ const InventarioScreen = () => {
         setInventarioAlmacenes(dataAlmacenes);
         setInventarioUbicaciones(dataUbicaciones);
         
-        // Calcular resumen
-        const conStock = dataGlobal.filter(item => item.stock > 0).length;
-        const sinStock = dataGlobal.filter(item => item.stock === 0).length;
-        const stockNegativo = dataGlobal.filter(item => item.stock < 0).length;
-        
         setResumen({
           totalArticulos: dataGlobal.length,
-          conStock,
-          sinStock,
-          stockNegativo
+          conStock: dataGlobal.filter(item => item.stock > 0).length,
+          sinStock: dataGlobal.filter(item => item.stock === 0).length,
+          stockNegativo: dataGlobal.filter(item => item.stock < 0).length
         });
-        
       } catch (error) {
         console.error('Error cargando inventario:', error);
       } finally {
@@ -62,6 +86,60 @@ const InventarioScreen = () => {
     
     cargarDatos();
   }, []);
+
+  // Función para manejar la ordenación
+  const handleOrdenar = (campo) => {
+    setOrden(prev => {
+      if (prev.campo === campo) {
+        return {
+          campo,
+          direccion: prev.direccion === 'asc' ? 'desc' : 'asc'
+        };
+      }
+      return {
+        campo,
+        direccion: 'asc'
+      };
+    });
+  };
+
+  // Función para ajustar stock
+  const handleAjustarStock = async () => {
+    if (ajustandoStock && nuevoStock !== null && usuarioData) {
+      try {
+        const response = await fetch('http://localhost:3000/ajustar-stock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            codigoArticulo: ajustandoStock.codigo,
+            nuevoStock: Number(nuevoStock),
+            usuarioId: usuarioData.CodigoCliente,
+            codigoEmpresa: usuarioData.CodigoEmpresa
+          })
+        });
+
+        const result = await response.json();
+        
+        if (response.ok) {
+          // Actualizar vista
+          setInventario(prev => prev.map(item => 
+            item.codigo === ajustandoStock.codigo 
+              ? { ...item, stock: Number(nuevoStock) } 
+              : item
+          ));
+          
+          setAjustandoStock(null);
+          setNuevoStock(0);
+          alert('Stock actualizado correctamente');
+        } else {
+          throw new Error(result.mensaje || 'Error en la actualización');
+        }
+      } catch (error) {
+        console.error('Error ajustando stock:', error);
+        alert(`Error al actualizar el stock: ${error.message}`);
+      }
+    }
+  };
 
   const toggleVistaDetallada = () => {
     setVistaDetallada(!vistaDetallada);
@@ -94,10 +172,17 @@ const InventarioScreen = () => {
       item.descripcion.toLowerCase().includes(filtro.toLowerCase())
     )
     .sort((a, b) => {
-      if (orden === 'codigo') return a.codigo.localeCompare(b.codigo);
-      if (orden === 'descripcion') return a.descripcion.localeCompare(b.descripcion);
-      if (orden === 'stock') return a.stock - b.stock;
-      return 0;
+      let comparacion = 0;
+      
+      if (orden.campo === 'codigo') {
+        comparacion = a.codigo.localeCompare(b.codigo);
+      } else if (orden.campo === 'descripcion') {
+        comparacion = a.descripcion.localeCompare(b.descripcion);
+      } else if (orden.campo === 'stock') {
+        comparacion = a.stock - b.stock;
+      }
+      
+      return orden.direccion === 'asc' ? comparacion : -comparacion;
     });
 
   // Paginación
@@ -120,9 +205,26 @@ const InventarioScreen = () => {
       .sort((a, b) => a.ubicacion.localeCompare(b.ubicacion));
   };
 
+  // Obtener nombre de categoría por código
+  const getNombreCategoria = (codigoCategoria) => {
+    const categoria = categorias.find(c => c.codigo === codigoCategoria);
+    return categoria ? categoria.nombre : 'Desconocida';
+  };
+
   return (
     <div className="inventario-container">
       <h1>Inventario Global</h1>
+      
+      {/* Mostrar información del usuario y categoría */}
+      {usuarioData && (
+        <div className="user-info">
+          <span>
+            Usuario: <strong>{usuarioData.Nombre}</strong> | 
+            Categoría: <strong>{getNombreCategoria(usuarioData.CodigoCategoriaEmpleadoLc)}</strong> | 
+            Permisos: <strong>{usuarioPermisos ? 'Administrador' : 'Consulta'}</strong>
+          </span>
+        </div>
+      )}
       
       <div className="resumen-inventario">
         <div className="resumen-item total">
@@ -143,20 +245,7 @@ const InventarioScreen = () => {
         </div>
       </div>
       
-      <div className="navigation-buttons">
-        <button onClick={() => navigate('/rutas')} className="btn-nav">
-          📦 Rutas
-        </button>
-        <button onClick={() => navigate('/PedidosScreen')} className="btn-nav">
-          📝 Pedidos
-        </button>
-        <button onClick={() => navigate('/traspaso')} className="btn-nav">
-          🔄 Traspasos
-        </button>
-        <button onClick={() => navigate('/')} className="btn-nav">
-          🏠 Inicio
-        </button>
-      </div>
+      <Navbar />
       
       <div className="inventario-controls">
         <input
@@ -171,16 +260,6 @@ const InventarioScreen = () => {
         />
         
         <div className="control-group">
-          <select
-            value={orden}
-            onChange={(e) => setOrden(e.target.value)}
-            className="sort-select"
-          >
-            <option value="codigo">Ordenar por Código</option>
-            <option value="descripcion">Ordenar por Descripción</option>
-            <option value="stock">Ordenar por Stock</option>
-          </select>
-          
           <select
             value={itemsPorPagina}
             onChange={(e) => setItemsPorPagina(Number(e.target.value))}
@@ -209,10 +288,35 @@ const InventarioScreen = () => {
             <thead>
               <tr>
                 <th style={{ width: '50px' }}></th>
-                <th>Código Artículo</th>
-                <th>Descripción</th>
-                <th>Stock Total</th>
+                <th 
+                  className="sortable-header"
+                  onClick={() => handleOrdenar('codigo')}
+                >
+                  Código Artículo 
+                  {orden.campo === 'codigo' && (
+                    <span>{orden.direccion === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </th>
+                <th 
+                  className="sortable-header"
+                  onClick={() => handleOrdenar('descripcion')}
+                >
+                  Descripción
+                  {orden.campo === 'descripcion' && (
+                    <span>{orden.direccion === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </th>
+                <th 
+                  className="sortable-header"
+                  onClick={() => handleOrdenar('stock')}
+                >
+                  Stock Total
+                  {orden.campo === 'stock' && (
+                    <span>{orden.direccion === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </th>
                 <th>Estado</th>
+                {usuarioPermisos && <th>Acciones</th>}
               </tr>
             </thead>
             <tbody>
@@ -237,6 +341,19 @@ const InventarioScreen = () => {
                         {getEstadoTexto(item.stock)}
                       </span>
                     </td>
+                    {usuarioPermisos && (
+                      <td>
+                        <button
+                          className="btn-ajustar"
+                          onClick={() => {
+                            setAjustandoStock(item);
+                            setNuevoStock(item.stock);
+                          }}
+                        >
+                          Ajustar stock
+                        </button>
+                      </td>
+                    )}
                   </tr>
                   
                   {vistaDetallada && expandedRows[item.codigo] && (
@@ -245,25 +362,23 @@ const InventarioScreen = () => {
                         <React.Fragment key={`${item.codigo}-${almacen.almacen}`}>
                           <tr className="almacen-row">
                             <td></td>
-                            <td colSpan="2">
+                            <td colSpan={usuarioPermisos ? 4 : 3}>
                               <span className="almacen-info">
                                 <strong>{almacen.nombreAlmacen}</strong> ({almacen.almacen})
                               </span>
                             </td>
                             <td>{almacen.stock}</td>
-                            <td>Almacén</td>
                           </tr>
                           
                           {getUbicacionesPorArticuloAlmacen(item.codigo, almacen.almacen).map(ubicacion => (
                             <tr key={`${item.codigo}-${almacen.almacen}-${ubicacion.ubicacion}`} className="ubicacion-row">
                               <td></td>
-                              <td colSpan="2">
+                              <td colSpan={usuarioPermisos ? 4 : 3}>
                                 <span className="ubicacion-info">
                                   {ubicacion.ubicacion}
                                 </span>
                               </td>
                               <td>{ubicacion.stock}</td>
-                              <td>Ubicación</td>
                             </tr>
                           ))}
                         </React.Fragment>
@@ -279,7 +394,6 @@ const InventarioScreen = () => {
             <div className="no-results">No se encontraron artículos</div>
           )}
           
-          {/* Paginación */}
           {totalPaginas > 1 && (
             <div className="paginacion">
               <button 
@@ -326,6 +440,44 @@ const InventarioScreen = () => {
             </div>
           )}
         </>
+      )}
+
+      {/* Modal para ajustar stock */}
+      {ajustandoStock && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>Ajustar stock</h2>
+            <p>
+              Artículo: <strong>{ajustandoStock.codigo}</strong> - {ajustandoStock.descripcion}
+            </p>
+            <p>Stock actual: {ajustandoStock.stock}</p>
+            
+            <div className="modal-control">
+              <label>Nuevo stock:</label>
+              <input
+                type="number"
+                value={nuevoStock}
+                onChange={(e) => setNuevoStock(e.target.value)}
+                min="0"
+              />
+            </div>
+            
+            <div className="modal-buttons">
+              <button 
+                className="btn-cancel"
+                onClick={() => setAjustandoStock(null)}
+              >
+                Cancelar
+              </button>
+              <button 
+                className="btn-confirm"
+                onClick={handleAjustarStock}
+              >
+                Confirmar ajuste
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
