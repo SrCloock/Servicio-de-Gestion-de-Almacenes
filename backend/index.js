@@ -8,7 +8,7 @@ const fs = require('fs');
 const cron = require('node-cron');
 const fetch = require('node-fetch');
 const os = require('os');
-const jwt = require('jsonwebtoken');
+
 
 const upload = multer();
 const app = express();
