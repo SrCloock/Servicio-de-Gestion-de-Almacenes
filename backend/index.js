@@ -13,7 +13,6 @@ const jwt = require('jsonwebtoken');
 const upload = multer();
 const app = express();
 const PORT = 3000;
-const SECRET_KEY = 'your_secret_key'; // Cambia esto por una clave segura
 
 app.use(cors());
 app.use(express.json());
@@ -44,22 +43,10 @@ async function conectarDB() {
   }
 }
 
-// Middleware de conexión y autenticación
+// Middleware de conexión a base de datos
 app.use(async (req, res, next) => {
   try {
     await conectarDB();
-    
-    // Verificar token JWT
-    const token = req.headers.authorization?.split(' ')[1];
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, SECRET_KEY);
-        req.user = decoded;
-      } catch (err) {
-        console.error('Token inválido:', err);
-      }
-    }
-    
     next();
   } catch (err) {
     console.error('Error de conexión:', err);
@@ -67,8 +54,9 @@ app.use(async (req, res, next) => {
   }
 });
 
+
 // ============================================
-// ✅ 2. Login con permisos por categoría
+// ✅ 2. Login con permisos por categoría (SIN JWT)
 // ============================================
 app.post('/login', async (req, res) => {
   const { usuario, contrasena } = req.body;
@@ -91,7 +79,7 @@ app.post('/login', async (req, res) => {
 
     if (result.recordset.length > 0) {
       const userData = result.recordset[0];
-      
+
       // Determinar permisos basados en categoría
       const permisos = {
         inventario_editar: userData.categoria === 'ADM',
@@ -101,20 +89,10 @@ app.post('/login', async (req, res) => {
         dashboard_acceso: true
       };
 
-      // Crear token JWT
-      const token = jwt.sign(
-        {
-          ...userData,
-          permisos
-        }, 
-        SECRET_KEY,
-        { expiresIn: '8h' }
-      );
-
+      // Retornar los datos del usuario y sus permisos (SIN TOKEN)
       res.json({ 
         success: true, 
         mensaje: 'Login correcto', 
-        token,
         datos: userData,
         permisos 
       });
@@ -126,6 +104,7 @@ app.post('/login', async (req, res) => {
     res.status(500).json({ success: false, mensaje: 'Error de conexión a la base de datos' });
   }
 });
+
 
 // ============================================
 // ✅ 3. Obtener categorías de empleado
