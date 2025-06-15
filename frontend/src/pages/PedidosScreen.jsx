@@ -13,17 +13,35 @@ const PedidosScreen = () => {
   const [filtroPedido, setFiltroPedido] = useState('');
   const [filtroArticulo, setFiltroArticulo] = useState('');
   const [orden, setOrden] = useState('fecha');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchPedidos = async () => {
       try {
         setLoading(true);
-        const response = await fetch('http://localhost:3000/pedidosPendientes');
+        setError('');
+        
+        // Obtener datos del usuario desde localStorage
+        const userData = JSON.parse(localStorage.getItem('userData'));
+        if (!userData || !userData.CodigoEmpresa) {
+          setError('No se encontró el código de empresa del usuario.');
+          setLoading(false);
+          return;
+        }
+        const codigoEmpresa = userData.CodigoEmpresa;
+        
+        // Hacer la petición con el código de empresa
+        const response = await fetch(`http://localhost:3000/pedidosPendientes?codigoEmpresa=${codigoEmpresa}`);
+        if (!response.ok) {
+          throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
         const data = await response.json();
         setPedidos(data);
 
+        // Extraer todos los códigos de artículos únicos
         const codigosArticulos = [...new Set(data.flatMap(p => p.articulos.map(a => a.codigoArticulo)))];
         
+        // Obtener ubicaciones para todos los artículos
         const responseUbicaciones = await fetch('http://localhost:3000/ubicacionesMultiples', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -33,6 +51,7 @@ const PedidosScreen = () => {
         const ubicacionesJson = await responseUbicaciones.json();
         setUbicaciones(ubicacionesJson);
 
+        // Inicializar expediciones con la primera ubicación disponible
         const nuevasExpediciones = {};
         for (const art of codigosArticulos) {
           const ubicacionesConStock = ubicacionesJson[art] || [];
@@ -46,6 +65,7 @@ const PedidosScreen = () => {
         }
         setExpediciones(nuevasExpediciones);
 
+        // Inicializar modos de vista para cada pedido
         const initialModes = {};
         data.forEach(pedido => {
           initialModes[pedido.numeroPedido] = 'show';
@@ -53,6 +73,7 @@ const PedidosScreen = () => {
         setPedidoViewModes(initialModes);
       } catch (error) {
         console.error('Error al obtener pedidos o ubicaciones:', error);
+        setError('Error al cargar los pedidos. Por favor, inténtalo de nuevo.');
       } finally {
         setLoading(false);
       }
@@ -82,7 +103,7 @@ const PedidosScreen = () => {
     if (!expedicion) return;
 
     const cantidadExpedida = parseInt(expedicion.cantidad, 10);
-    if (isNaN(cantidadExpedida)) return;
+    if (isNaN(cantidadExpedida) || cantidadExpedida <= 0) return;
 
     try {
       setExpedicionLoading(true);
@@ -209,7 +230,11 @@ const PedidosScreen = () => {
       </div>
       
       <div className="pedidos-content">
-        {loading ? (
+        {error ? (
+          <div className="error-pedidos">
+            <p>{error}</p>
+          </div>
+        ) : loading ? (
           <div className="loading-pedidos">
             <div className="loader"></div>
             <p>Cargando pedidos...</p>
@@ -234,7 +259,7 @@ const PedidosScreen = () => {
               
               <div className="pedido-details">
                 <div><strong>Dirección:</strong> {pedido.domicilio}, {pedido.municipio}</div>
-                <div><strong>Obra:</strong> {pedido.nombreObra || 'Sin obra especificada'}</div>
+                <div><strong>Obra:</strong> {pedido.NombreObra || 'Sin obra especificada'}</div>
                 {pedido.observacionesPedido && (
                   <div className="observaciones">
                     <strong>Observaciones:</strong> {pedido.observacionesPedido}
@@ -340,14 +365,17 @@ const PedidosScreen = () => {
                             <td className="td-centrado">
                               <button
                                 className="btn-expedir"
-                                onClick={() => handleExpedir(
-                                  pedido.codigoEmpresa,
-                                  pedido.ejercicioPedido,
-                                  pedido.seriePedido,
-                                  pedido.numeroPedido,
-                                  linea.codigoArticulo,
-                                  linea.unidadesPendientes
-                                )}
+                                onClick={(e) => {
+                                  e.stopPropagation(); // Evita que se propague el evento de clic de la fila
+                                  handleExpedir(
+                                    pedido.codigoEmpresa,
+                                    pedido.ejercicioPedido,
+                                    pedido.seriePedido,
+                                    pedido.numeroPedido,
+                                    linea.codigoArticulo,
+                                    linea.unidadesPendientes
+                                  );
+                                }}
                                 disabled={expedicionLoading || !expediciones[linea.codigoArticulo] || 
                                   parseInt(expediciones[linea.codigoArticulo]?.cantidad || 0) <= 0}
                               >

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/InventarioScreen.css';
 import Navbar from '../components/Navbar';
+import axios from 'axios';
 
 const InventarioScreen = () => {
   const navigate = useNavigate();
@@ -26,22 +27,32 @@ const InventarioScreen = () => {
   const [nuevoStock, setNuevoStock] = useState(0);
   const [usuarioPermisos, setUsuarioPermisos] = useState(false);
   const [usuarioData, setUsuarioData] = useState(null);
+  const [almacenes, setAlmacenes] = useState([]);
+  const [almacenSeleccionado, setAlmacenSeleccionado] = useState('');
 
   // Obtener datos del usuario logueado
   useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/');
+      return;
+    }
+
     const user = JSON.parse(localStorage.getItem('user'));
     if (user) {
-      setUsuarioData(user.datos);
+      setUsuarioData(user);
       setUsuarioPermisos(user.permisos?.inventario_editar || false);
       
       // Cargar categorías de empleado para la empresa del usuario
       const cargarCategorias = async () => {
         try {
-          const response = await fetch(
-            `http://localhost:3000/categorias-empleado?codigoEmpresa=${user.datos.CodigoEmpresa}`
+          const response = await axios.get(
+            `http://localhost:3000/categorias-empleado?codigoEmpresa=${user.CodigoEmpresa}`,
+            {
+              headers: { Authorization: `Bearer ${token}` }
+            }
           );
-          const data = await response.json();
-          setCategorias(data);
+          setCategorias(response.data);
         } catch (error) {
           console.error('Error cargando categorías:', error);
         }
@@ -49,33 +60,38 @@ const InventarioScreen = () => {
       
       cargarCategorias();
     }
-  }, []);
+  }, [navigate]);
 
-  // Cargar inventario
+  // Cargar inventario y almacenes
   useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
     const cargarDatos = async () => {
       try {
         setLoading(true);
         
         const [resGlobal, resAlmacenes, resUbicaciones] = await Promise.all([
-          fetch('http://localhost:3000/inventario'),
-          fetch('http://localhost:3000/inventario/almacenes'),
-          fetch('http://localhost:3000/inventario/ubicaciones')
+          axios.get('http://localhost:3000/inventario', {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          axios.get('http://localhost:3000/almacenes', {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          axios.get('http://localhost:3000/inventario/ubicaciones', {
+            headers: { Authorization: `Bearer ${token}` }
+          })
         ]);
         
-        const dataGlobal = await resGlobal.json();
-        const dataAlmacenes = await resAlmacenes.json();
-        const dataUbicaciones = await resUbicaciones.json();
-        
-        setInventario(dataGlobal);
-        setInventarioAlmacenes(dataAlmacenes);
-        setInventarioUbicaciones(dataUbicaciones);
+        setInventario(resGlobal.data);
+        setAlmacenes(resAlmacenes.data);
+        setInventarioUbicaciones(resUbicaciones.data);
         
         setResumen({
-          totalArticulos: dataGlobal.length,
-          conStock: dataGlobal.filter(item => item.stock > 0).length,
-          sinStock: dataGlobal.filter(item => item.stock === 0).length,
-          stockNegativo: dataGlobal.filter(item => item.stock < 0).length
+          totalArticulos: resGlobal.data.length,
+          conStock: resGlobal.data.filter(item => item.stock > 0).length,
+          sinStock: resGlobal.data.filter(item => item.stock === 0).length,
+          stockNegativo: resGlobal.data.filter(item => item.stock < 0).length
         });
       } catch (error) {
         console.error('Error cargando inventario:', error);
@@ -86,6 +102,22 @@ const InventarioScreen = () => {
     
     cargarDatos();
   }, []);
+
+  // Función para sincronizar inventario
+  const sincronizarInventario = async () => {
+    const token = localStorage.getItem('token');
+    try {
+      await axios.post('http://localhost:3000/sincronizar-inventario', {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      alert('Inventario sincronizado correctamente con Sage');
+      // Recargar datos
+      window.location.reload();
+    } catch (error) {
+      console.error('Error sincronizando inventario:', error);
+      alert('Error al sincronizar inventario');
+    }
+  };
 
   // Función para manejar la ordenación
   const handleOrdenar = (campo) => {
@@ -105,22 +137,19 @@ const InventarioScreen = () => {
 
   // Función para ajustar stock
   const handleAjustarStock = async () => {
+    const token = localStorage.getItem('token');
     if (ajustandoStock && nuevoStock !== null && usuarioData) {
       try {
-        const response = await fetch('http://localhost:3000/ajustar-stock', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            codigoArticulo: ajustandoStock.codigo,
-            nuevoStock: Number(nuevoStock),
-            usuarioId: usuarioData.CodigoCliente,
-            codigoEmpresa: usuarioData.CodigoEmpresa
-          })
+        const response = await axios.post('http://localhost:3000/ajustar-stock', {
+          codigoArticulo: ajustandoStock.codigo,
+          nuevoStock: Number(nuevoStock),
+          usuarioId: usuarioData.CodigoCliente,
+          codigoEmpresa: usuarioData.CodigoEmpresa
+        }, {
+          headers: { Authorization: `Bearer ${token}` }
         });
-
-        const result = await response.json();
         
-        if (response.ok) {
+        if (response.data.success) {
           // Actualizar vista
           setInventario(prev => prev.map(item => 
             item.codigo === ajustandoStock.codigo 
@@ -132,7 +161,7 @@ const InventarioScreen = () => {
           setNuevoStock(0);
           alert('Stock actualizado correctamente');
         } else {
-          throw new Error(result.mensaje || 'Error en la actualización');
+          throw new Error(response.data.mensaje || 'Error en la actualización');
         }
       } catch (error) {
         console.error('Error ajustando stock:', error);
@@ -165,12 +194,19 @@ const InventarioScreen = () => {
     return 'En stock';
   };
 
-  // Filtrar y ordenar inventario
+  // Filtrar y ordenar inventario con filtro de almacén
   const inventarioFiltrado = inventario
-    .filter(item => 
-      item.codigo.toLowerCase().includes(filtro.toLowerCase()) ||
-      item.descripcion.toLowerCase().includes(filtro.toLowerCase())
-    )
+    .filter(item => {
+      const matchTexto = item.codigo.toLowerCase().includes(filtro.toLowerCase()) ||
+        item.descripcion.toLowerCase().includes(filtro.toLowerCase());
+      
+      const matchAlmacen = almacenSeleccionado ? 
+        inventarioAlmacenes.some(a => 
+          a.codigo === item.codigo && a.almacen === almacenSeleccionado
+        ) : true;
+      
+      return matchTexto && matchAlmacen;
+    })
     .sort((a, b) => {
       let comparacion = 0;
       
@@ -220,6 +256,7 @@ const InventarioScreen = () => {
         <div className="user-info">
           <span>
             Usuario: <strong>{usuarioData.Nombre}</strong> | 
+            Empresa: <strong>{usuarioData.CodigoEmpresa}</strong> | 
             Categoría: <strong>{getNombreCategoria(usuarioData.CodigoCategoriaEmpleadoLc)}</strong> | 
             Permisos: <strong>{usuarioPermisos ? 'Administrador' : 'Consulta'}</strong>
           </span>
@@ -259,6 +296,20 @@ const InventarioScreen = () => {
           className="search-input-large"
         />
         
+        {/* Filtro por almacén */}
+        <select
+          value={almacenSeleccionado}
+          onChange={(e) => setAlmacenSeleccionado(e.target.value)}
+          className="filtro-almacen"
+        >
+          <option value="">Todos los almacenes</option>
+          {almacenes.map(alm => (
+            <option key={alm.codigo} value={alm.codigo}>
+              {alm.nombre}
+            </option>
+          ))}
+        </select>
+        
         <div className="control-group">
           <select
             value={itemsPorPagina}
@@ -277,6 +328,16 @@ const InventarioScreen = () => {
           >
             {vistaDetallada ? 'Ocultar detalles' : 'Ver detalles'}
           </button>
+          
+          {/* Botón de sincronización */}
+          {usuarioPermisos && (
+            <button 
+              onClick={sincronizarInventario}
+              className="btn-sincronizar"
+            >
+              Regularizar Inventario
+            </button>
+          )}
         </div>
       </div>
       

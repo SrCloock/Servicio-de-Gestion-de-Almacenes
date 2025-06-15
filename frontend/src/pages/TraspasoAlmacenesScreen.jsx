@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import '../styles/TraspasoAlmacenesScreen.css';
 import Navbar from '../components/Navbar';
+import axios from 'axios';
 
 const Icon = ({ name }) => {
   const icons = {
@@ -38,6 +39,7 @@ const TraspasoAlmacenesScreen = () => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState('pendientes');
   const [showArticleDropdown, setShowArticleDropdown] = useState(false);
+  const [filtroAlmacen, setFiltroAlmacen] = useState('');
   const [usuario] = useState('admin');
 
   const [traspasoData, setTraspasoData] = useState({
@@ -51,18 +53,30 @@ const TraspasoAlmacenesScreen = () => {
 
   // Obtener datos iniciales
   useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/');
+      return;
+    }
+
     const fetchData = async () => {
       setIsLoading(true);
       try {
         const [artResponse, almResponse, histResponse] = await Promise.all([
-          fetch('http://localhost:3000/articulos'),
-          fetch('http://localhost:3000/almacenes'),
-          fetch('http://localhost:3000/traspasos/historial')
+          axios.get('http://localhost:3000/articulos', {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          axios.get('http://localhost:3000/almacenes', {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          axios.get('http://localhost:3000/traspasos/historial', {
+            headers: { Authorization: `Bearer ${token}` }
+          })
         ]);
         
-        setArticulos(await artResponse.json());
-        setAlmacenes(await almResponse.json());
-        setTraspasosHistorial(await histResponse.json());
+        setArticulos(artResponse.data);
+        setAlmacenes(almResponse.data);
+        setTraspasosHistorial(histResponse.data);
       } catch (error) {
         console.error('Error al obtener datos:', error);
       } finally {
@@ -71,15 +85,23 @@ const TraspasoAlmacenesScreen = () => {
     };
     
     fetchData();
-  }, []);
+  }, [navigate]);
 
-  // Filtrar artículos
+  // Filtrar artículos con filtro de almacén
   const articulosFiltrados = busqueda 
     ? articulos.filter(art => 
         art.codigo.toLowerCase().includes(busqueda.toLowerCase()) || 
         art.nombre.toLowerCase().includes(busqueda.toLowerCase())
       ).slice(0, 10)
     : articulos.slice(0, 10);
+    
+  const articulosFiltradosPorAlmacen = filtroAlmacen
+    ? articulosFiltrados.filter(art => 
+        inventarioAlmacenes.some(a => 
+          a.codigo === art.codigo && a.almacen === filtroAlmacen
+        )
+      )
+    : articulosFiltrados;
 
   const handleSelectArticulo = (codigo) => {
     setTraspasoData({...traspasoData, articulo: codigo});
@@ -101,10 +123,13 @@ const TraspasoAlmacenesScreen = () => {
             { ubicacion: 'Cuarentena', stock: 0 }
           ]);
         } else {
-          const response = await fetch(
-            `http://localhost:3000/ubicaciones/stock?articulo=${traspasoData.articulo}&almacen=${traspasoData.almacenOrigen}`
+          const response = await axios.get(
+            `http://localhost:3000/ubicaciones/stock?articulo=${traspasoData.articulo}&almacen=${traspasoData.almacenOrigen}`,
+            {
+              headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            }
           );
-          setUbicacionesOrigen(await response.json());
+          setUbicacionesOrigen(response.data);
         }
       } catch (error) {
         console.error('Error al obtener ubicaciones origen:', error);
@@ -121,10 +146,13 @@ const TraspasoAlmacenesScreen = () => {
       if (!traspasoData.almacenDestino) return;
       
       try {
-        const response = await fetch(
-          `http://localhost:3000/ubicaciones/almacen?almacen=${traspasoData.almacenDestino}`
+        const response = await axios.get(
+          `http://localhost:3000/ubicaciones/almacen?almacen=${traspasoData.almacenDestino}`,
+          {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          }
         );
-        setUbicacionesDestino(await response.json());
+        setUbicacionesDestino(response.data);
       } catch (error) {
         console.error('Error al obtener ubicaciones destino:', error);
         setUbicacionesDestino([]);
@@ -161,13 +189,15 @@ const TraspasoAlmacenesScreen = () => {
     // Verificar stock (excepto para descarga)
     if (almacenOrigen !== 'DESCARGA') {
       try {
-        const stockResponse = await fetch(
-          `http://localhost:3000/stock?articulo=${articulo}&almacen=${almacenOrigen}&ubicacion=${ubicacionOrigen}`
+        const stockResponse = await axios.get(
+          `http://localhost:3000/stock?articulo=${articulo}&almacen=${almacenOrigen}&ubicacion=${ubicacionOrigen}`,
+          {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          }
         );
-        const stockData = await stockResponse.json();
         
-        if (cantidadNum > stockData.cantidad) {
-          alert(`Stock insuficiente. Disponible: ${stockData.cantidad} unidades`);
+        if (cantidadNum > stockResponse.data.cantidad) {
+          alert(`Stock insuficiente. Disponible: ${stockResponse.data.cantidad} unidades`);
           return;
         }
       } catch (error) {
@@ -229,32 +259,28 @@ const TraspasoAlmacenesScreen = () => {
     setIsLoading(true);
     
     try {
-      const response = await fetch('http://localhost:3000/traspasos/confirmar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          traspasos: traspasosPendientes.map(t => ({
-            articulo: t.articulo,
-            almacenOrigen: t.almacenOrigen,
-            ubicacionOrigen: t.ubicacionOrigen,
-            almacenDestino: t.almacenDestino,
-            ubicacionDestino: t.ubicacionDestino,
-            cantidad: t.cantidad,
-            usuario: usuario
-          }))
-        })
+      const response = await axios.post('http://localhost:3000/traspasos/confirmar', {
+        traspasos: traspasosPendientes.map(t => ({
+          articulo: t.articulo,
+          almacenOrigen: t.almacenOrigen,
+          ubicacionOrigen: t.ubicacionOrigen,
+          almacenDestino: t.almacenDestino,
+          ubicacionDestino: t.ubicacionDestino,
+          cantidad: t.cantidad,
+          usuario: usuario
+        }))
+      }, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       
-      const result = await response.json();
-      
-      if (response.ok) {
-        setTraspasosHistorial([...result.historial, ...traspasosHistorial]);
+      if (response.data.success) {
+        setTraspasosHistorial([...response.data.historial, ...traspasosHistorial]);
         setShowSuccess(true);
         setTraspasosPendientes([]);
         
         setTimeout(() => setShowSuccess(false), 2000);
       } else {
-        throw new Error(result.mensaje || 'Error al confirmar traspasos');
+        throw new Error(response.data.mensaje || 'Error al confirmar traspasos');
       }
     } catch (error) {
       alert('Error: ' + error.message);
@@ -290,6 +316,23 @@ const TraspasoAlmacenesScreen = () => {
         
         <Navbar />
         
+        {/* Filtro por almacén */}
+        <div className="filtro-almacen-container">
+          <label>Filtrar por almacén:</label>
+          <select
+            value={filtroAlmacen}
+            onChange={(e) => setFiltroAlmacen(e.target.value)}
+            className="filtro-almacen"
+          >
+            <option value="">Todos los almacenes</option>
+            {almacenes.map(alm => (
+              <option key={alm.codigo} value={alm.codigo}>
+                {alm.nombre}
+              </option>
+            ))}
+          </select>
+        </div>
+        
         <div className="main-grid">
           <div className="form-card">
             <div className="card-header">
@@ -317,8 +360,8 @@ const TraspasoAlmacenesScreen = () => {
                 
                 {showArticleDropdown && (
                   <div className="article-dropdown">
-                    {articulosFiltrados.length > 0 ? (
-                      articulosFiltrados.map((art) => (
+                    {articulosFiltradosPorAlmacen.length > 0 ? (
+                      articulosFiltradosPorAlmacen.map((art) => (
                         <div 
                           key={art.codigo} 
                           className="dropdown-item"

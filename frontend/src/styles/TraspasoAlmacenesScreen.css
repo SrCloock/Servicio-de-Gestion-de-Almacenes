@@ -639,4 +639,26 @@
   .compact-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+
+/* Filtro por almacén */
+.filtro-almacen-container {
+  margin-bottom: 15px;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+}
+
+.filtro-almacen-container label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.filtro-almacen {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+}
+
 }

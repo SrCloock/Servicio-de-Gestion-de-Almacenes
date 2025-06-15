@@ -14,8 +14,16 @@ function LoginPage() {
 
     try {
       const res = await axios.post("http://localhost:3000/login", { usuario, contrasena });
-      if (res.data.success) navigate('/PedidosScreen');
-      else alert("Usuario o contraseña incorrectos");
+      if (res.data.success) {
+        // Guardar token y datos de usuario
+        localStorage.setItem('token', res.data.token);
+        localStorage.setItem('user', JSON.stringify(res.data.datos));
+        localStorage.setItem('permisos', JSON.stringify(res.data.permisos));
+        
+        navigate('/PedidosScreen');
+      } else {
+        alert("Usuario o contraseña incorrectos");
+      }
     } catch (err) {
       console.error(err);
       alert("Error de conexión al servidor.");

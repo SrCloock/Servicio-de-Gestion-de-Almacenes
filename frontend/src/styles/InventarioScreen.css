@@ -382,4 +382,33 @@
     padding: 6px 10px;
     min-width: 30px;
   }
+
+/* Estilos para filtro de almacén */
+.filtro-almacen {
+  width: 100%;
+  padding: 12px 20px;
+  border: 2px solid #ced4da;
+  border-radius: 30px;
+  font-size: 16px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  margin-bottom: 15px;
+}
+
+/* Botón de sincronización */
+.btn-sincronizar {
+  padding: 10px 15px;
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.3s;
+}
+
+.btn-sincronizar:hover {
+  background-color: #219653;
+}
+
+
 }

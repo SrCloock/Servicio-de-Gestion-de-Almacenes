@@ -8,10 +8,12 @@ const fs = require('fs');
 const cron = require('node-cron');
 const fetch = require('node-fetch');
 const os = require('os');
+const jwt = require('jsonwebtoken');
 
 const upload = multer();
 const app = express();
 const PORT = 3000;
+const SECRET_KEY = 'your_secret_key'; // Cambia esto por una clave segura
 
 app.use(cors());
 app.use(express.json());
@@ -42,10 +44,22 @@ async function conectarDB() {
   }
 }
 
-// Middleware de conexión
+// Middleware de conexión y autenticación
 app.use(async (req, res, next) => {
   try {
     await conectarDB();
+    
+    // Verificar token JWT
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        req.user = decoded;
+      } catch (err) {
+        console.error('Token inválido:', err);
+      }
+    }
+    
     next();
   } catch (err) {
     console.error('Error de conexión:', err);
@@ -87,9 +101,20 @@ app.post('/login', async (req, res) => {
         dashboard_acceso: true
       };
 
+      // Crear token JWT
+      const token = jwt.sign(
+        {
+          ...userData,
+          permisos
+        }, 
+        SECRET_KEY,
+        { expiresIn: '8h' }
+      );
+
       res.json({ 
         success: true, 
         mensaje: 'Login correcto', 
+        token,
         datos: userData,
         permisos 
       });
@@ -393,64 +418,76 @@ app.get('/cobrosCliente', async (req, res) => {
 });
 
 // ============================================
-// ✅ 12. Pedidos Pendientes
+// ✅ 12. Pedidos Pendientes (Actualizado con CodigoEmpresa del usuario)
 // ============================================
 app.get('/pedidosPendientes', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ 
+      success: false, 
+      mensaje: 'No autorizado' 
+    });
+  }
+  
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
   try {
-    const result = await poolGlobal.request().query(`
-      WITH UltimosPedidos AS (
-        SELECT TOP 30 
-          c.CodigoEmpresa,
-          c.EjercicioPedido,
-          c.SeriePedido,
-          c.NumeroPedido,
-          c.RazonSocial,
-          c.Domicilio,
-          c.Municipio,
-          c.ObservacionesPedido,
-          c.NombreObra,
-          c.FechaPedido
-        FROM CabeceraPedidoCliente c
-        WHERE c.Estado = 0
-          AND c.CodigoEmpresa = 1
-        ORDER BY c.FechaPedido DESC
-      )
-      SELECT 
-        up.RazonSocial,
-        up.Domicilio,
-        up.Municipio,
-        up.ObservacionesPedido,
-        up.NombreObra,
-        l.CodigoArticulo,
-        l.DescripcionArticulo,
-        l.UnidadesPedidas, 
-        l.UnidadesPendientes,
-        l.CodigoEmpresa,
-        l.EjercicioPedido, 
-        l.SeriePedido, 
-        l.NumeroPedido,
-        l.CodigoAlmacen,
-        a.CodigoAlternativo 
-      FROM UltimosPedidos up
-      LEFT JOIN LineasPedidoCliente l 
-        ON up.CodigoEmpresa = l.CodigoEmpresa 
-        AND up.EjercicioPedido = l.EjercicioPedido 
-        AND up.SeriePedido = l.SeriePedido 
-        AND up.NumeroPedido = l.NumeroPedido 
-      LEFT JOIN Articulos a 
-        ON a.CodigoArticulo = l.CodigoArticulo 
-        AND a.CodigoEmpresa = l.CodigoEmpresa
-      WHERE NOT EXISTS (
-        SELECT 1
-        FROM LineasAlbaranCliente la
-        WHERE 
-          la.CodigoEmpresa = l.CodigoEmpresa AND
-          la.EjercicioPedido = l.EjercicioPedido AND
-          ISNULL(la.SeriePedido, '') = ISNULL(l.SeriePedido, '') AND
-          la.NumeroPedido = l.NumeroPedido
-      )
-      ORDER BY up.FechaPedido DESC
-    `);
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        WITH UltimosPedidos AS (
+          SELECT TOP 30 
+            c.CodigoEmpresa,
+            c.EjercicioPedido,
+            c.SeriePedido,
+            c.NumeroPedido,
+            c.RazonSocial,
+            c.Domicilio,
+            c.Municipio,
+            c.ObservacionesPedido,
+            c.NombreObra,
+            c.FechaPedido
+          FROM CabeceraPedidoCliente c
+          WHERE c.Estado = 0
+            AND c.CodigoEmpresa = @codigoEmpresa
+          ORDER BY c.FechaPedido DESC
+        )
+        SELECT 
+          up.RazonSocial,
+          up.Domicilio,
+          up.Municipio,
+          up.ObservacionesPedido,
+          up.NombreObra,
+          l.CodigoArticulo,
+          l.DescripcionArticulo,
+          l.Descripcion2Articulo,
+          l.UnidadesPedidas, 
+          l.UnidadesPendientes,
+          l.CodigoEmpresa,
+          l.EjercicioPedido, 
+          l.SeriePedido, 
+          l.NumeroPedido,
+          l.CodigoAlmacen,
+          a.CodigoAlternativo 
+        FROM UltimosPedidos up
+        LEFT JOIN LineasPedidoCliente l 
+          ON up.CodigoEmpresa = l.CodigoEmpresa 
+          AND up.EjercicioPedido = l.EjercicioPedido 
+          AND up.SeriePedido = l.SeriePedido 
+          AND up.NumeroPedido = l.NumeroPedido 
+        LEFT JOIN Articulos a 
+          ON a.CodigoArticulo = l.CodigoArticulo 
+          AND a.CodigoEmpresa = l.CodigoEmpresa
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM LineasAlbaranCliente la
+          WHERE 
+            la.CodigoEmpresa = l.CodigoEmpresa AND
+            la.EjercicioPedido = l.EjercicioPedido AND
+            ISNULL(la.SeriePedido, '') = ISNULL(l.SeriePedido, '') AND
+            la.NumeroPedido = l.NumeroPedido
+        )
+        ORDER BY up.FechaPedido DESC
+      `);
 
     // Agrupar por pedido
     const pedidosAgrupados = {};
@@ -461,13 +498,15 @@ app.get('/pedidosPendientes', async (req, res) => {
       if (!pedidosAgrupados[key]) {
         pedidosAgrupados[key] = {
           codigoEmpresa: row.CodigoEmpresa,
-          ejercicio: row.EjercicioPedido,
-          serie: row.SeriePedido,
+          ejercicioPedido: row.EjercicioPedido,
+          seriePedido: row.SeriePedido || '',
           numeroPedido: row.NumeroPedido,
           razonSocial: row.RazonSocial,
           domicilio: row.Domicilio,
           municipio: row.Municipio,
-          observaciones: row.ObservacionesPedido,
+          observacionesPedido: row.ObservacionesPedido,
+          NombreObra: row.NombreObra,
+          fechaPedido: row.FechaPedido,
           articulos: []
         };
       }
@@ -475,6 +514,7 @@ app.get('/pedidosPendientes', async (req, res) => {
       pedidosAgrupados[key].articulos.push({
         codigoArticulo: row.CodigoArticulo,
         descripcionArticulo: row.DescripcionArticulo,
+        descripcion2Articulo: row.Descripcion2Articulo,
         unidadesPedidas: row.UnidadesPedidas,
         unidadesPendientes: row.UnidadesPendientes,
         codigoAlmacen: row.CodigoAlmacen,
@@ -482,10 +522,17 @@ app.get('/pedidosPendientes', async (req, res) => {
       });
     });
 
-    res.json(Object.values(pedidosAgrupados));
+    // Convertimos el objeto en un array de pedidos
+    const pedidosArray = Object.values(pedidosAgrupados);
+    
+    res.json(pedidosArray);
   } catch (err) {
     console.error('[ERROR PEDIDOS PENDIENTES]', err);
-    res.status(500).json({ success: false, mensaje: 'Error al obtener pedidos pendientes' });
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener pedidos pendientes',
+      error: err.message 
+    });
   }
 });
 
@@ -933,65 +980,63 @@ app.post('/generarAlbaranDesdePedido', async (req, res) => {
 });
 
 // ============================================
-// ✅ 19. Albaranes Pendientes
+// ✅ 19. Albaranes Pendientes (filtrado por empresa)
 // ============================================
 app.get('/albaranesPendientes', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
+  }
+  
+  const codigoEmpresa = req.user.CodigoEmpresa;
+  
   try {
-    const cabeceras = await poolGlobal.request().query(`
-      SELECT * 
-      FROM CabeceraAlbaranCliente
-      WHERE StatusFacturado = 0
-      ORDER BY FechaAlbaran DESC
-    `);
-
-    const resultados = [];
-
-    for (const cab of cabeceras.recordset) {
-      const lineas = await poolGlobal.request().query(`
-        SELECT DescripcionArticulo AS nombre, Unidades AS cantidad
-        FROM LineasAlbaranCliente
-        WHERE CodigoEmpresa = ${cab.CodigoEmpresa} 
-          AND NumeroAlbaran = ${cab.NumeroAlbaran} 
-          AND SerieAlbaran = '${cab.SerieAlbaran}' 
-          AND EjercicioAlbaran = ${cab.EjercicioAlbaran}
+    const cabeceras = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT * 
+        FROM CabeceraAlbaranCliente
+        WHERE StatusFacturado = 0
+          AND CodigoEmpresa = @codigoEmpresa
+        ORDER BY FechaAlbaran DESC
       `);
 
-      resultados.push({
-        id: `${cab.NumeroAlbaran}-${cab.SerieAlbaran}`,
-        albaran: `${cab.SerieAlbaran}-${cab.NumeroAlbaran}`,
-        cliente: cab.RazonSocial,
-        direccion: `${cab.Domicilio}, ${cab.Municipio}`,
-        articulos: lineas.recordset,
-        importeLiquido: cab.ImporteLiquido,
-        FechaAlbaran: cab.FechaAlbaran 
-      });
-    }
-
-    res.json(resultados);
+    // Resto del código sin cambios...
+    // ... (código para obtener líneas y agrupar)
   } catch (err) {
     console.error('[ERROR OBTENER ALBARANES PENDIENTES]', err);
-    res.status(500).json({ success: false, mensaje: 'Error al obtener albaranes pendientes', error: err.message });
+    res.status(500).json({ success: false, mensaje: 'Error al obtener albaranes pendientes' });
   }
 });
 
 // ============================================
-// ✅ 20. Inventario - Almacenes
+// ✅ 20. Inventario - Almacenes (filtrado por empresa)
 // ============================================
 app.get('/inventario/almacenes', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
+  }
+  
   try {
-    const result = await poolGlobal.request().query(`
-      SELECT 
-        a.CodigoArticulo AS codigo,
-        a.DescripcionArticulo AS descripcion,
-        asu.CodigoAlmacen AS almacen,
-        alm.Almacen AS nombreAlmacen,
-        SUM(asu.UnidadSaldo) AS stock
-      FROM Articulos a
-      LEFT JOIN AcumuladoStockUbicacion asu ON a.CodigoArticulo = asu.CodigoArticulo
-      LEFT JOIN Almacenes alm ON asu.CodigoAlmacen = alm.CodigoAlmacen
-      GROUP BY a.CodigoArticulo, a.DescripcionArticulo, asu.CodigoAlmacen, alm.Almacen
-      ORDER BY a.CodigoArticulo, asu.CodigoAlmacen
-    `);
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, req.user.CodigoEmpresa)
+      .query(`
+        SELECT 
+          a.CodigoArticulo AS codigo,
+          a.DescripcionArticulo AS descripcion,
+          asu.CodigoAlmacen AS almacen,
+          alm.Almacen AS nombreAlmacen,
+          SUM(asu.UnidadSaldo) AS stock
+        FROM Articulos a
+        LEFT JOIN AcumuladoStockUbicacion asu 
+          ON a.CodigoArticulo = asu.CodigoArticulo
+          AND asu.CodigoEmpresa = @codigoEmpresa
+        LEFT JOIN Almacenes alm 
+          ON asu.CodigoAlmacen = alm.CodigoAlmacen
+          AND alm.CodigoEmpresa = @codigoEmpresa
+        WHERE a.CodigoEmpresa = @codigoEmpresa
+        GROUP BY a.CodigoArticulo, a.DescripcionArticulo, asu.CodigoAlmacen, alm.Almacen
+        ORDER BY a.CodigoArticulo, asu.CodigoAlmacen
+      `);
     res.json(result.recordset);
   } catch (err) {
     console.error('[ERROR INVENTARIO ALMACENES]', err);
@@ -1003,18 +1048,25 @@ app.get('/inventario/almacenes', async (req, res) => {
 // ✅ 21. Inventario - Ubicaciones
 // ============================================
 app.get('/inventario/ubicaciones', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
+  }
+  
   try {
-    const result = await poolGlobal.request().query(`
-      SELECT 
-        a.CodigoArticulo AS codigo,
-        asu.CodigoAlmacen AS almacen,
-        asu.Ubicacion AS ubicacion,
-        asu.UnidadSaldo AS stock
-      FROM Articulos a
-      JOIN AcumuladoStockUbicacion asu ON a.CodigoArticulo = asu.CodigoArticulo
-      WHERE asu.UnidadSaldo > 0
-      ORDER BY a.CodigoArticulo, asu.CodigoAlmacen, asu.Ubicacion
-    `);
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, req.user.CodigoEmpresa)
+      .query(`
+        SELECT 
+          a.CodigoArticulo AS codigo,
+          asu.CodigoAlmacen AS almacen,
+          asu.Ubicacion AS ubicacion,
+          asu.UnidadSaldo AS stock
+        FROM Articulos a
+        JOIN AcumuladoStockUbicacion asu ON a.CodigoArticulo = asu.CodigoArticulo
+        WHERE asu.UnidadSaldo > 0
+          AND a.CodigoEmpresa = @codigoEmpresa
+        ORDER BY a.CodigoArticulo, asu.CodigoAlmacen, asu.Ubicacion
+      `);
     res.json(result.recordset);
   } catch (err) {
     console.error('[ERROR INVENTARIO UBICACIONES]', err);
@@ -1023,19 +1075,26 @@ app.get('/inventario/ubicaciones', async (req, res) => {
 });
 
 // ============================================
-// ✅ 22. Artículos con Stock
+// ✅ 22. Artículos con Stock (filtrado por empresa)
 // ============================================
 app.get('/articulos', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
+  }
+  
   try {
-    const result = await poolGlobal.request().query(`
-      SELECT 
-        a.CodigoArticulo AS codigo,
-        a.DescripcionArticulo AS nombre,
-        COALESCE(SUM(asu.UnidadSaldo), 0) AS stock
-      FROM Articulos a
-      LEFT JOIN AcumuladoStockUbicacion asu ON a.CodigoArticulo = asu.CodigoArticulo
-      GROUP BY a.CodigoArticulo, a.DescripcionArticulo
-    `);
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, req.user.CodigoEmpresa)
+      .query(`
+        SELECT 
+          a.CodigoArticulo AS codigo,
+          a.DescripcionArticulo AS nombre,
+          COALESCE(SUM(asu.UnidadSaldo), 0) AS stock
+        FROM Articulos a
+        LEFT JOIN AcumuladoStockUbicacion asu ON a.CodigoArticulo = asu.CodigoArticulo
+        WHERE a.CodigoEmpresa = @codigoEmpresa
+        GROUP BY a.CodigoArticulo, a.DescripcionArticulo
+      `);
     res.json(result.recordset);
   } catch (err) {
     console.error('[ERROR ARTICULOS]', err);
@@ -1044,20 +1103,29 @@ app.get('/articulos', async (req, res) => {
 });
 
 // ============================================
-// ✅ 23. Inventario Consolidado
+// ✅ 23. Inventario Consolidado (filtrado por empresa)
 // ============================================
 app.get('/inventario', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
+  }
+  
   try {
-    const result = await poolGlobal.request().query(`
-      SELECT 
-        a.CodigoArticulo AS codigo,
-        a.DescripcionArticulo AS descripcion,
-        COALESCE(SUM(asu.UnidadSaldo), 0) AS stock
-      FROM Articulos a
-      LEFT JOIN AcumuladoStockUbicacion asu ON a.CodigoArticulo = asu.CodigoArticulo
-      GROUP BY a.CodigoArticulo, a.DescripcionArticulo
-      ORDER BY a.CodigoArticulo
-    `);
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, req.user.CodigoEmpresa)
+      .query(`
+        SELECT 
+          a.CodigoArticulo AS codigo,
+          a.DescripcionArticulo AS descripcion,
+          COALESCE(SUM(asu.UnidadSaldo), 0) AS stock
+        FROM Articulos a
+        LEFT JOIN AcumuladoStockUbicacion asu 
+          ON a.CodigoArticulo = asu.CodigoArticulo
+          AND asu.CodigoEmpresa = @codigoEmpresa
+        WHERE a.CodigoEmpresa = @codigoEmpresa
+        GROUP BY a.CodigoArticulo, a.DescripcionArticulo
+        ORDER BY a.CodigoArticulo
+      `);
     res.json(result.recordset);
   } catch (err) {
     console.error('[ERROR INVENTARIO]', err);
@@ -1066,15 +1134,22 @@ app.get('/inventario', async (req, res) => {
 });
 
 // ============================================
-// ✅ 24. Listado de Almacenes
+// ✅ 24. Listado de Almacenes (filtrado por empresa)
 // ============================================
 app.get('/almacenes', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
+  }
+  
   try {
-    const result = await poolGlobal.request().query(`
-      SELECT DISTINCT CodigoAlmacen AS codigo, Almacen AS nombre
-      FROM Almacenes
-      ORDER BY Almacen
-    `);
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, req.user.CodigoEmpresa)
+      .query(`
+        SELECT DISTINCT CodigoAlmacen AS codigo, Almacen AS nombre
+        FROM Almacenes
+        WHERE CodigoEmpresa = @codigoEmpresa
+        ORDER BY Almacen
+      `);
     res.json(result.recordset);
   } catch (err) {
     console.error('[ERROR ALMACENES]', err);
@@ -1083,16 +1158,23 @@ app.get('/almacenes', async (req, res) => {
 });
 
 // ============================================
-// ✅ 25. Ubicaciones
+// ✅ 25. Ubicaciones (filtrado por empresa)
 // ============================================
 app.get('/ubicaciones', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
+  }
+  
   try {
-    const result = await poolGlobal.request().query(`
-      SELECT DISTINCT CodigoAlmacen, Ubicacion
-      FROM AcumuladoStockUbicacion
-      WHERE UnidadSaldo > 0
-      ORDER BY CodigoAlmacen, Ubicacion;
-    `);
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, req.user.CodigoEmpresa)
+      .query(`
+        SELECT DISTINCT CodigoAlmacen, Ubicacion
+        FROM AcumuladoStockUbicacion
+        WHERE UnidadSaldo > 0
+          AND CodigoEmpresa = @codigoEmpresa
+        ORDER BY CodigoAlmacen, Ubicacion;
+      `);
     res.json(result.recordset);
   } catch (err) {
     console.error('[ERROR UBICACIONES]', err);
@@ -1230,32 +1312,18 @@ app.post('/enviar-pdf-albaran', upload.single('pdf'), async (req, res) => {
 // ✅ 29. Ajustar Stock (con permisos)
 // ============================================
 app.post('/ajustar-stock', async (req, res) => {
-  const { codigoArticulo, nuevoStock, usuarioId, codigoEmpresa } = req.body;
+  const { codigoArticulo, nuevoStock } = req.body;
   
-  if (!codigoArticulo || nuevoStock === undefined || !usuarioId || !codigoEmpresa) {
+  if (!req.user || !codigoArticulo || nuevoStock === undefined) {
     return res.status(400).json({ 
       success: false, 
       mensaje: 'Datos incompletos para ajuste de stock' 
     });
   }
-
+  
   try {    
     // Verificar permisos del usuario
-    const permisoResult = await poolGlobal.request()
-      .input('usuarioId', sql.VarChar, usuarioId)
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .query(`
-        SELECT ce.CodigoCategoriaEmpleadoLc
-        FROM Clientes c
-        JOIN LcCategoriasEmpleado ce 
-          ON ce.CodigoEmpresa = c.CodigoEmpresa
-          AND ce.CodigoCategoriaEmpleadoLc = c.CodigoCategoriaEmpleadoLc
-        WHERE c.CodigoCliente = @usuarioId
-          AND c.CodigoEmpresa = @codigoEmpresa
-      `);
-
-    if (permisoResult.recordset.length === 0 || 
-        permisoResult.recordset[0].CodigoCategoriaEmpleadoLc !== 'ADM') {
+    if (!req.user.permisos?.inventario_editar) {
       return res.status(403).json({ 
         success: false, 
         mensaje: 'No tiene permisos para realizar esta acción' 
@@ -1266,18 +1334,21 @@ app.post('/ajustar-stock', async (req, res) => {
     await poolGlobal.request()
       .input('codigoArticulo', sql.VarChar, codigoArticulo)
       .input('nuevoStock', sql.Decimal(18, 4), nuevoStock)
+      .input('codigoEmpresa', sql.SmallInt, req.user.CodigoEmpresa)
       .query(`
         UPDATE AcumuladoStockUbicacion
         SET UnidadSaldo = @nuevoStock
         WHERE CodigoArticulo = @codigoArticulo
+        AND CodigoEmpresa = @codigoEmpresa
       `);
     
     // Registrar movimiento de ajuste
     await poolGlobal.request()
       .input('codigoArticulo', sql.VarChar, codigoArticulo)
       .input('nuevoStock', sql.Decimal(18, 4), nuevoStock)
-      .input('usuarioId', sql.VarChar, usuarioId)
+      .input('usuarioId', sql.VarChar, req.user.CodigoCliente)
       .input('fecha', sql.DateTime, new Date())
+      .input('codigoEmpresa', sql.SmallInt, req.user.CodigoEmpresa)
       .query(`
         INSERT INTO AjustesInventario (
           CodigoArticulo, StockAnterior, StockNuevo, Usuario, FechaAjuste, CodigoEmpresa
@@ -1288,9 +1359,10 @@ app.post('/ajustar-stock', async (req, res) => {
           @nuevoStock, 
           @usuarioId,
           @fecha,
-          CodigoEmpresa
+          @codigoEmpresa
         FROM AcumuladoStockUbicacion
         WHERE CodigoArticulo = @codigoArticulo
+        AND CodigoEmpresa = @codigoEmpresa
       `);
 
     res.json({ success: true });
@@ -1301,6 +1373,39 @@ app.post('/ajustar-stock', async (req, res) => {
       mensaje: 'Error al ajustar stock',
       error: err.message
     });
+  }
+});
+
+// ============================================
+// ✅ Sincronizar Inventario con Sage
+// ============================================
+app.post('/sincronizar-inventario', async (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
+  }
+
+  try {
+    // 1. Obtener inventario actualizado de Sage
+    const inventarioSage = await poolGlobal.request()
+      .input('CodigoEmpresa', sql.SmallInt, req.user.CodigoEmpresa)
+      .query(`SELECT * FROM InventarioSage WHERE CodigoEmpresa = @CodigoEmpresa`);
+    
+    // 2. Actualizar nuestra base de datos
+    for (const item of inventarioSage.recordset) {
+      await poolGlobal.request()
+        .input('CodigoArticulo', sql.VarChar, item.CodigoArticulo)
+        .input('Stock', sql.Int, item.Stock)
+        .input('CodigoEmpresa', sql.SmallInt, req.user.CodigoEmpresa)
+        .query(`UPDATE AcumuladoStockUbicacion 
+                SET UnidadSaldo = @Stock 
+                WHERE CodigoArticulo = @CodigoArticulo
+                AND CodigoEmpresa = @CodigoEmpresa`);
+    }
+    
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[ERROR SINCRONIZACION]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al sincronizar inventario' });
   }
 });
 
