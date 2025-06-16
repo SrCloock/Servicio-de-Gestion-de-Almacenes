@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import '../styles/TraspasoAlmacenesScreen.css';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
+import { getAuthHeader } from '../helpers/authHelper';
 
 const Icon = ({ name }) => {
   const icons = {
@@ -53,29 +54,24 @@ const TraspasoAlmacenesScreen = () => {
 
   // Obtener datos iniciales
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      navigate('/');
-      return;
-    }
-
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const [artResponse, almResponse, histResponse] = await Promise.all([
-          axios.get('http://localhost:3000/articulos', {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
-          axios.get('http://localhost:3000/almacenes', {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
-          axios.get('http://localhost:3000/traspasos/historial', {
-            headers: { Authorization: `Bearer ${token}` }
-          })
+        const headers = getAuthHeader();
+        // Obtener artículos y almacenes
+        const [artResponse, almResponse] = await Promise.all([
+          axios.get('http://localhost:3000/articulos', { headers }),
+          axios.get('http://localhost:3000/almacenes', { headers })
         ]);
         
         setArticulos(artResponse.data);
         setAlmacenes(almResponse.data);
+        
+        // Obtener historial de traspasos
+        const histResponse = await axios.get(
+          'http://localhost:3000/traspasos/historial', 
+          { headers }
+        );
         setTraspasosHistorial(histResponse.data);
       } catch (error) {
         console.error('Error al obtener datos:', error);
@@ -97,7 +93,7 @@ const TraspasoAlmacenesScreen = () => {
     
   const articulosFiltradosPorAlmacen = filtroAlmacen
     ? articulosFiltrados.filter(art => 
-        inventarioAlmacenes.some(a => 
+        articulos.some(a => 
           a.codigo === art.codigo && a.almacen === filtroAlmacen
         )
       )
@@ -115,6 +111,7 @@ const TraspasoAlmacenesScreen = () => {
       if (!traspasoData.articulo || !traspasoData.almacenOrigen) return;
       
       try {
+        const headers = getAuthHeader();
         if (traspasoData.almacenOrigen === 'DESCARGA') {
           setUbicacionesOrigen([
             { ubicacion: 'Muelle 1', stock: 0 },
@@ -125,9 +122,7 @@ const TraspasoAlmacenesScreen = () => {
         } else {
           const response = await axios.get(
             `http://localhost:3000/ubicaciones/stock?articulo=${traspasoData.articulo}&almacen=${traspasoData.almacenOrigen}`,
-            {
-              headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-            }
+            { headers }
           );
           setUbicacionesOrigen(response.data);
         }
@@ -146,11 +141,10 @@ const TraspasoAlmacenesScreen = () => {
       if (!traspasoData.almacenDestino) return;
       
       try {
+        const headers = getAuthHeader();
         const response = await axios.get(
           `http://localhost:3000/ubicaciones/almacen?almacen=${traspasoData.almacenDestino}`,
-          {
-            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-          }
+          { headers }
         );
         setUbicacionesDestino(response.data);
       } catch (error) {
@@ -189,11 +183,10 @@ const TraspasoAlmacenesScreen = () => {
     // Verificar stock (excepto para descarga)
     if (almacenOrigen !== 'DESCARGA') {
       try {
+        const headers = getAuthHeader();
         const stockResponse = await axios.get(
           `http://localhost:3000/stock?articulo=${articulo}&almacen=${almacenOrigen}&ubicacion=${ubicacionOrigen}`,
-          {
-            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-          }
+          { headers }
         );
         
         if (cantidadNum > stockResponse.data.cantidad) {
@@ -259,22 +252,32 @@ const TraspasoAlmacenesScreen = () => {
     setIsLoading(true);
     
     try {
-      const response = await axios.post('http://localhost:3000/traspasos/confirmar', {
-        traspasos: traspasosPendientes.map(t => ({
-          articulo: t.articulo,
-          almacenOrigen: t.almacenOrigen,
-          ubicacionOrigen: t.ubicacionOrigen,
-          almacenDestino: t.almacenDestino,
-          ubicacionDestino: t.ubicacionDestino,
-          cantidad: t.cantidad,
-          usuario: usuario
-        }))
-      }, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
+      const headers = getAuthHeader();
+      const response = await axios.post(
+        'http://localhost:3000/traspasos/confirmar', 
+        {
+          traspasos: traspasosPendientes.map(t => ({
+            articulo: t.articulo,
+            almacenOrigen: t.almacenOrigen,
+            ubicacionOrigen: t.ubicacionOrigen,
+            almacenDestino: t.almacenDestino,
+            ubicacionDestino: t.ubicacionDestino,
+            cantidad: t.cantidad,
+            usuario: usuario
+          }))
+        },
+        { headers }
+      );
       
       if (response.data.success) {
-        setTraspasosHistorial([...response.data.historial, ...traspasosHistorial]);
+        // Agregar los traspasos confirmados al historial local
+        const nuevosTraspasosHistorial = traspasosPendientes.map(t => ({
+          ...t,
+          fecha: new Date().toISOString(),
+          usuario: usuario
+        }));
+        
+        setTraspasosHistorial([...nuevosTraspasosHistorial, ...traspasosHistorial]);
         setShowSuccess(true);
         setTraspasosPendientes([]);
         
@@ -593,15 +596,10 @@ const TraspasoAlmacenesScreen = () => {
                     <tbody>
                       {traspasosHistorial.map((traspaso) => (
                         <tr key={traspaso.id}>
-                          <td>{new Date(traspaso.fecha).toLocaleDateString()}</td>
+                          <td>{new Date(traspaso.fecha).toLocaleString()}</td>
                           <td>
                             <div className="article-name">{traspaso.nombreArticulo}</div>
                             <div className="article-code">{traspaso.articulo}</div>
-                            {traspaso.almacenOrigen === 'DESCARGA' && (
-                              <div className="descarga-tag">
-                                <Icon name="download" /> Descarga
-                              </div>
-                            )}
                           </td>
                           <td>
                             <div>{traspaso.almacenOrigen}</div>
@@ -614,11 +612,7 @@ const TraspasoAlmacenesScreen = () => {
                           <td>
                             <span className="quantity-badge">{traspaso.cantidad}</span>
                           </td>
-                          <td>
-                            <div className="user-info">
-                              <Icon name="user" /> {traspaso.usuario}
-                            </div>
-                          </td>
+                          <td>{traspaso.usuario}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -636,22 +630,6 @@ const TraspasoAlmacenesScreen = () => {
           </div>
         </div>
       </div>
-      
-      {showSuccess && (
-        <div className="success-notification">
-          <Icon name="check" />
-          <div>Traspasos realizados: {traspasosPendientes.length} artículos</div>
-        </div>
-      )}
-      
-      {isLoading && (
-        <div className="loading-overlay">
-          <div className="loading-card">
-            <div className="loading-spinner"></div>
-            <p className="loading-text">Procesando traspasos...</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

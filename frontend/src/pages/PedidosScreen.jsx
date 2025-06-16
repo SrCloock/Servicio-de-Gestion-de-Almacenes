@@ -1,6 +1,8 @@
 ﻿import React, { useState, useEffect } from 'react';
 import '../styles/PedidosScreen.css';
 import Navbar from '../components/Navbar';
+import axios from 'axios';
+import { getAuthHeader } from '../helpers/authHelper';
 
 const PedidosScreen = () => {
   const [pedidos, setPedidos] = useState([]);
@@ -21,40 +23,46 @@ const PedidosScreen = () => {
         setLoading(true);
         setError('');
         
-        // Obtener datos del usuario desde localStorage
-        const userData = JSON.parse(localStorage.getItem('userData'));
+        const userData = JSON.parse(localStorage.getItem('user'));
         if (!userData || !userData.CodigoEmpresa) {
           setError('No se encontró el código de empresa del usuario.');
           setLoading(false);
           return;
         }
+        
         const codigoEmpresa = userData.CodigoEmpresa;
+        const headers = getAuthHeader();
         
-        // Hacer la petición con el código de empresa
-        const response = await fetch(`http://localhost:3000/pedidosPendientes?codigoEmpresa=${codigoEmpresa}`);
-        if (!response.ok) {
-          throw new Error(`Error ${response.status}: ${response.statusText}`);
+        // Verificar headers
+        if (!headers.usuario || !headers.codigoempresa) {
+          setError('Error de autenticación. Vuelve a iniciar sesión');
+          setLoading(false);
+          return;
         }
-        const data = await response.json();
-        setPedidos(data);
-
-        // Extraer todos los códigos de artículos únicos
-        const codigosArticulos = [...new Set(data.flatMap(p => p.articulos.map(a => a.codigoArticulo)))];
         
-        // Obtener ubicaciones para todos los artículos
-        const responseUbicaciones = await fetch('http://localhost:3000/ubicacionesMultiples', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ articulos: codigosArticulos })
-        });
+        const response = await axios.get(
+          `http://localhost:3000/pedidosPendientes`,
+          { 
+            headers: headers,
+            params: { codigoEmpresa } 
+          }
+        );
+        
+        setPedidos(response.data);
 
-        const ubicacionesJson = await responseUbicaciones.json();
-        setUbicaciones(ubicacionesJson);
+        const codigosArticulos = [...new Set(response.data.flatMap(p => p.articulos.map(a => a.codigoArticulo)))];
+        
+        const responseUbicaciones = await axios.post(
+          'http://localhost:3000/ubicacionesMultiples',
+          { articulos: codigosArticulos },
+          { headers: headers }
+        );
 
-        // Inicializar expediciones con la primera ubicación disponible
+        setUbicaciones(responseUbicaciones.data);
+
         const nuevasExpediciones = {};
         for (const art of codigosArticulos) {
-          const ubicacionesConStock = ubicacionesJson[art] || [];
+          const ubicacionesConStock = responseUbicaciones.data[art] || [];
           if (ubicacionesConStock.length > 0) {
             nuevasExpediciones[art] = {
               ubicacion: ubicacionesConStock[0].ubicacion,
@@ -65,15 +73,25 @@ const PedidosScreen = () => {
         }
         setExpediciones(nuevasExpediciones);
 
-        // Inicializar modos de vista para cada pedido
         const initialModes = {};
-        data.forEach(pedido => {
+        response.data.forEach(pedido => {
           initialModes[pedido.numeroPedido] = 'show';
         });
         setPedidoViewModes(initialModes);
       } catch (error) {
         console.error('Error al obtener pedidos o ubicaciones:', error);
-        setError('Error al cargar los pedidos. Por favor, inténtalo de nuevo.');
+        
+        if (error.response) {
+          if (error.response.status === 500) {
+            setError('Error interno del servidor. Inténtalo más tarde');
+          } else if (error.response.status === 401) {
+            setError('Error de autenticación. Vuelve a iniciar sesión');
+          } else {
+            setError(`Error del servidor: ${error.response.status} ${error.response.statusText}`);
+          }
+        } else {
+          setError('Error de conexión con el servidor');
+        }
       } finally {
         setLoading(false);
       }
@@ -84,12 +102,18 @@ const PedidosScreen = () => {
 
   const handleLineaClick = async (codigoArticulo, unidadesPendientes) => {
     try {
-      const response = await fetch(`http://localhost:3000/ubicacionesArticulo?codigoArticulo=${encodeURIComponent(codigoArticulo)}`);
-      const data = await response.json();
+      const headers = getAuthHeader();
+      const response = await axios.get(
+        `http://localhost:3000/ubicacionesArticulo`,
+        {
+          headers: headers,
+          params: { codigoArticulo }
+        }
+      );
       
       setUbicaciones(prev => ({
         ...prev,
-        [codigoArticulo]: data
+        [codigoArticulo]: response.data
       }));
       
       setLineaSeleccionada(codigoArticulo);
@@ -107,10 +131,10 @@ const PedidosScreen = () => {
 
     try {
       setExpedicionLoading(true);
-      const response = await fetch('http://localhost:3000/actualizarLineaPedido', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const headers = getAuthHeader();
+      const result = await axios.post(
+        'http://localhost:3000/actualizarLineaPedido',
+        {
           codigoEmpresa,
           ejercicio,
           serie,
@@ -119,12 +143,11 @@ const PedidosScreen = () => {
           cantidadExpedida,
           ubicacion: expedicion.ubicacion,
           partida: expedicion.partida
-        })
-      });
+        },
+        { headers: headers }
+      );
 
-      const result = await response.json();
-      if (result.success) {
-        // Actualizar estado local
+      if (result.data.success) {
         const newPedidos = [...pedidos];
         const pedidoIndex = newPedidos.findIndex(p => p.numeroPedido === numeroPedido);
         if (pedidoIndex !== -1) {
@@ -159,7 +182,6 @@ const PedidosScreen = () => {
     }));
   };
 
-  // Filtrar pedidos
   const pedidosFiltrados = pedidos.filter(pedido => {
     const matchPedido = filtroPedido 
       ? pedido.numeroPedido.toString().includes(filtroPedido) || 
@@ -175,7 +197,6 @@ const PedidosScreen = () => {
     return matchPedido && matchArticulo;
   });
 
-  // Ordenar pedidos
   const pedidosOrdenados = [...pedidosFiltrados].sort((a, b) => {
     if (orden === 'fecha') return new Date(b.fechaPedido) - new Date(a.fechaPedido);
     return a.razonSocial.localeCompare(b.razonSocial);
@@ -233,6 +254,7 @@ const PedidosScreen = () => {
         {error ? (
           <div className="error-pedidos">
             <p>{error}</p>
+            <button onClick={() => window.location.reload()}>Reintentar</button>
           </div>
         ) : loading ? (
           <div className="loading-pedidos">
@@ -366,7 +388,7 @@ const PedidosScreen = () => {
                               <button
                                 className="btn-expedir"
                                 onClick={(e) => {
-                                  e.stopPropagation(); // Evita que se propague el evento de clic de la fila
+                                  e.stopPropagation();
                                   handleExpedir(
                                     pedido.codigoEmpresa,
                                     pedido.ejercicioPedido,

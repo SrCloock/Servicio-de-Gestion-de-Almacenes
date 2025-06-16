@@ -15,11 +15,9 @@ function LoginPage() {
     try {
       const res = await axios.post("http://localhost:3000/login", { usuario, contrasena });
       if (res.data.success) {
-        // Guardar token y datos de usuario
-        localStorage.setItem('token', res.data.token);
+        // Guardar datos de usuario y permisos
         localStorage.setItem('user', JSON.stringify(res.data.datos));
         localStorage.setItem('permisos', JSON.stringify(res.data.permisos));
-        
         navigate('/PedidosScreen');
       } else {
         alert("Usuario o contraseña incorrectos");
@@ -63,8 +61,14 @@ function LoginPage() {
           </div>
           
           <div className="boton-container">
-            <button type="submit" className="login-btn">
-              {loading ? '🔄' : '→'}
+            <button type="submit" className="login-btn" disabled={loading}>
+              {loading ? (
+                <span className="spinner-container">
+                  <span className="spinner"></span> Cargando...
+                </span>
+              ) : (
+                '→'
+              )}
             </button>
           </div>
         </form>

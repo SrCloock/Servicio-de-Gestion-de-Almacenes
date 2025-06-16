@@ -1,21 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import '../styles/InventarioScreen.css';
 import Navbar from '../components/Navbar';
-import axios from 'axios';
+
+const getAuthHeaders = () => {
+  const user = JSON.parse(localStorage.getItem('user'));
+  const token = localStorage.getItem('token');
+  
+  if (!user) return {};
+  
+  const headers = {
+    usuario: user.CodigoCliente || '',
+    codigoempresa: user.CodigoEmpresa || ''
+  };
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  return headers;
+};
 
 const InventarioScreen = () => {
   const navigate = useNavigate();
   const [inventario, setInventario] = useState([]);
-  const [inventarioAlmacenes, setInventarioAlmacenes] = useState([]);
-  const [inventarioUbicaciones, setInventarioUbicaciones] = useState([]);
   const [categorias, setCategorias] = useState([]);
+  const [almacenes, setAlmacenes] = useState([]);
+  const [ubicaciones, setUbicaciones] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [filtro, setFiltro] = useState('');
   const [orden, setOrden] = useState({ campo: 'codigo', direccion: 'asc' });
   const [paginaActual, setPaginaActual] = useState(1);
   const [itemsPorPagina, setItemsPorPagina] = useState(20);
-  const [vistaDetallada, setVistaDetallada] = useState(false);
   const [expandedRows, setExpandedRows] = useState({});
   const [resumen, setResumen] = useState({
     totalArticulos: 0,
@@ -27,99 +45,106 @@ const InventarioScreen = () => {
   const [nuevoStock, setNuevoStock] = useState(0);
   const [usuarioPermisos, setUsuarioPermisos] = useState(false);
   const [usuarioData, setUsuarioData] = useState(null);
-  const [almacenes, setAlmacenes] = useState([]);
   const [almacenSeleccionado, setAlmacenSeleccionado] = useState('');
+  const [viewMode, setViewMode] = useState('consolidado');
 
-  // Obtener datos del usuario logueado
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (!user) {
       navigate('/');
       return;
     }
 
-    const user = JSON.parse(localStorage.getItem('user'));
-    if (user) {
-      setUsuarioData(user);
-      setUsuarioPermisos(user.permisos?.inventario_editar || false);
+    setUsuarioData(user);
+    setUsuarioPermisos(user.permisos?.inventario_editar || false);
       
-      // Cargar categorías de empleado para la empresa del usuario
-      const cargarCategorias = async () => {
-        try {
-          const response = await axios.get(
-            `http://localhost:3000/categorias-empleado?codigoEmpresa=${user.CodigoEmpresa}`,
-            {
-              headers: { Authorization: `Bearer ${token}` }
-            }
-          );
-          setCategorias(response.data);
-        } catch (error) {
-          console.error('Error cargando categorías:', error);
-        }
-      };
+    const cargarCategorias = async () => {
+      try {
+        const headers = getAuthHeaders();
+        const response = await axios.get(
+          `http://localhost:3000/categorias-empleado?codigoEmpresa=${user.CodigoEmpresa}`,
+          { headers }
+        );
+        setCategorias(response.data);
+      } catch (error) {
+        console.error('Error cargando categorías:', error);
+        setError('Error al cargar las categorías: ' + (error.response?.data?.message || error.message));
+      }
+    };
       
-      cargarCategorias();
-    }
+    cargarCategorias();
   }, [navigate]);
 
-  // Cargar inventario y almacenes
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (!user) {
+      navigate('/');
+      return;
+    }
 
     const cargarDatos = async () => {
       try {
         setLoading(true);
+        setError('');
         
-        const [resGlobal, resAlmacenes, resUbicaciones] = await Promise.all([
-          axios.get('http://localhost:3000/inventario', {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
-          axios.get('http://localhost:3000/almacenes', {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
-          axios.get('http://localhost:3000/inventario/ubicaciones', {
-            headers: { Authorization: `Bearer ${token}` }
-          })
+        const headers = getAuthHeaders();
+        const codigoEmpresa = user.CodigoEmpresa;
+        
+        if (!headers.usuario || !headers.codigoempresa) {
+          setError('Error de autenticación. Faltan datos de usuario');
+          setLoading(false);
+          return;
+        }
+        
+        const responses = await Promise.all([
+          axios.get(`http://localhost:3000/inventario?codigoEmpresa=${codigoEmpresa}`, { headers }),
+          axios.get(`http://localhost:3000/almacenes?codigoEmpresa=${codigoEmpresa}`, { headers }),
+          axios.get(`http://localhost:3000/inventario/ubicaciones?codigoEmpresa=${codigoEmpresa}`, { headers })
         ]);
         
-        setInventario(resGlobal.data);
-        setAlmacenes(resAlmacenes.data);
-        setInventarioUbicaciones(resUbicaciones.data);
+        setInventario(responses[0].data);
+        setAlmacenes(responses[1].data);
+        setUbicaciones(responses[2].data);
         
         setResumen({
-          totalArticulos: resGlobal.data.length,
-          conStock: resGlobal.data.filter(item => item.stock > 0).length,
-          sinStock: resGlobal.data.filter(item => item.stock === 0).length,
-          stockNegativo: resGlobal.data.filter(item => item.stock < 0).length
+          totalArticulos: responses[0].data.length,
+          conStock: responses[0].data.filter(item => item.stock > 0).length,
+          sinStock: responses[0].data.filter(item => item.stock === 0).length,
+          stockNegativo: responses[0].data.filter(item => item.stock < 0).length
         });
       } catch (error) {
         console.error('Error cargando inventario:', error);
+        if (error.response) {
+          if (error.response.status === 401) {
+            setError('No autorizado. Por favor, inicia sesión de nuevo');
+          } else {
+            setError(`Error del servidor: ${error.response.status} ${error.response.statusText}`);
+          }
+        } else {
+          setError('Error de conexión con el servidor');
+        }
       } finally {
         setLoading(false);
       }
     };
     
     cargarDatos();
-  }, []);
+  }, [navigate]);
 
-  // Función para sincronizar inventario
   const sincronizarInventario = async () => {
-    const token = localStorage.getItem('token');
     try {
-      await axios.post('http://localhost:3000/sincronizar-inventario', {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      alert('Inventario sincronizado correctamente con Sage');
-      // Recargar datos
+      setLoading(true);
+      const headers = getAuthHeaders();
+      await axios.post('http://localhost:3000/sincronizar-inventario', {}, { headers });
       window.location.reload();
     } catch (error) {
       console.error('Error sincronizando inventario:', error);
-      alert('Error al sincronizar inventario');
+      setError('Error al sincronizar inventario: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Función para manejar la ordenación
   const handleOrdenar = (campo) => {
     setOrden(prev => {
       if (prev.campo === campo) {
@@ -135,22 +160,19 @@ const InventarioScreen = () => {
     });
   };
 
-  // Función para ajustar stock
   const handleAjustarStock = async () => {
-    const token = localStorage.getItem('token');
     if (ajustandoStock && nuevoStock !== null && usuarioData) {
       try {
+        setLoading(true);
+        const headers = getAuthHeaders();
         const response = await axios.post('http://localhost:3000/ajustar-stock', {
           codigoArticulo: ajustandoStock.codigo,
           nuevoStock: Number(nuevoStock),
           usuarioId: usuarioData.CodigoCliente,
           codigoEmpresa: usuarioData.CodigoEmpresa
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        }, { headers });
         
         if (response.data.success) {
-          // Actualizar vista
           setInventario(prev => prev.map(item => 
             item.codigo === ajustandoStock.codigo 
               ? { ...item, stock: Number(nuevoStock) } 
@@ -159,20 +181,16 @@ const InventarioScreen = () => {
           
           setAjustandoStock(null);
           setNuevoStock(0);
-          alert('Stock actualizado correctamente');
         } else {
           throw new Error(response.data.mensaje || 'Error en la actualización');
         }
       } catch (error) {
         console.error('Error ajustando stock:', error);
-        alert(`Error al actualizar el stock: ${error.message}`);
+        setError(`Error al actualizar el stock: ${error.message}`);
+      } finally {
+        setLoading(false);
       }
     }
-  };
-
-  const toggleVistaDetallada = () => {
-    setVistaDetallada(!vistaDetallada);
-    setExpandedRows({});
   };
 
   const toggleExpandRow = (codigo) => {
@@ -194,34 +212,57 @@ const InventarioScreen = () => {
     return 'En stock';
   };
 
-  // Filtrar y ordenar inventario con filtro de almacén
-  const inventarioFiltrado = inventario
-    .filter(item => {
-      const matchTexto = item.codigo.toLowerCase().includes(filtro.toLowerCase()) ||
-        item.descripcion.toLowerCase().includes(filtro.toLowerCase());
-      
-      const matchAlmacen = almacenSeleccionado ? 
-        inventarioAlmacenes.some(a => 
-          a.codigo === item.codigo && a.almacen === almacenSeleccionado
-        ) : true;
-      
-      return matchTexto && matchAlmacen;
-    })
-    .sort((a, b) => {
-      let comparacion = 0;
-      
-      if (orden.campo === 'codigo') {
-        comparacion = a.codigo.localeCompare(b.codigo);
-      } else if (orden.campo === 'descripcion') {
-        comparacion = a.descripcion.localeCompare(b.descripcion);
-      } else if (orden.campo === 'stock') {
-        comparacion = a.stock - b.stock;
-      }
-      
-      return orden.direccion === 'asc' ? comparacion : -comparacion;
-    });
+  const inventarioFiltrado = inventario.filter(item => {
+    const matchTexto = item.codigo.toLowerCase().includes(filtro.toLowerCase()) ||
+      item.descripcion.toLowerCase().includes(filtro.toLowerCase());
+    
+    const matchAlmacen = almacenSeleccionado ? 
+      ubicaciones.some(ubi => 
+        ubi.codigo === item.codigo && ubi.almacen === almacenSeleccionado
+      ) : true;
+    
+    return matchTexto && matchAlmacen;
+  })
+  .sort((a, b) => {
+    let comparacion = 0;
+    
+    if (orden.campo === 'codigo') {
+      comparacion = a.codigo.localeCompare(b.codigo);
+    } else if (orden.campo === 'descripcion') {
+      comparacion = a.descripcion.localeCompare(b.descripcion);
+    } else if (orden.campo === 'stock') {
+      comparacion = a.stock - b.stock;
+    }
+    
+    return orden.direccion === 'asc' ? comparacion : -comparacion;
+  });
 
-  // Paginación
+  const inventarioPorAlmacen = almacenes.map(alm => {
+    const itemsEnAlmacen = ubicaciones.filter(ubi => ubi.almacen === alm.codigo);
+    const stockTotal = itemsEnAlmacen.reduce((sum, ubi) => sum + ubi.stock, 0);
+    
+    return {
+      almacen: alm.nombre,
+      codigoAlmacen: alm.codigo,
+      cantidadArticulos: itemsEnAlmacen.length,
+      stockTotal,
+      items: itemsEnAlmacen
+    };
+  });
+
+  const ubicacionesFiltradas = ubicaciones.filter(ubi => {
+    const matchTexto = filtro 
+      ? ubi.codigo.toLowerCase().includes(filtro.toLowerCase()) || 
+        (ubi.descripcion && ubi.descripcion.toLowerCase().includes(filtro.toLowerCase()))
+      : true;
+    
+    const matchAlmacen = almacenSeleccionado 
+      ? ubi.almacen === almacenSeleccionado
+      : true;
+    
+    return matchTexto && matchAlmacen;
+  });
+
   const indexUltimoItem = paginaActual * itemsPorPagina;
   const indexPrimerItem = indexUltimoItem - itemsPorPagina;
   const itemsActuales = inventarioFiltrado.slice(indexPrimerItem, indexUltimoItem);
@@ -230,18 +271,31 @@ const InventarioScreen = () => {
   const cambiarPagina = (numeroPagina) => setPaginaActual(numeroPagina);
   
   const getAlmacenesPorArticulo = (codigo) => {
-    return inventarioAlmacenes
-      .filter(item => item.codigo === codigo)
-      .sort((a, b) => a.almacen.localeCompare(b.almacen));
+    return ubicaciones
+      .filter(ubi => ubi.codigo === codigo)
+      .reduce((acc, ubi) => {
+        const existing = acc.find(a => a.almacen === ubi.almacen);
+        if (existing) {
+          existing.stock += ubi.stock;
+        } else {
+          const almacen = almacenes.find(a => a.codigo === ubi.almacen);
+          acc.push({
+            codigo: ubi.codigo,
+            almacen: ubi.almacen,
+            nombreAlmacen: almacen ? almacen.nombre : ubi.almacen,
+            stock: ubi.stock
+          });
+        }
+        return acc;
+      }, []);
   };
 
   const getUbicacionesPorArticuloAlmacen = (codigo, almacen) => {
-    return inventarioUbicaciones
-      .filter(item => item.codigo === codigo && item.almacen === almacen)
+    return ubicaciones
+      .filter(ubi => ubi.codigo === codigo && ubi.almacen === almacen)
       .sort((a, b) => a.ubicacion.localeCompare(b.ubicacion));
   };
 
-  // Obtener nombre de categoría por código
   const getNombreCategoria = (codigoCategoria) => {
     const categoria = categorias.find(c => c.codigo === codigoCategoria);
     return categoria ? categoria.nombre : 'Desconocida';
@@ -249,9 +303,30 @@ const InventarioScreen = () => {
 
   return (
     <div className="inventario-container">
-      <h1>Inventario Global</h1>
+      <div className="inventario-header">
+        <h2>Gestión de Inventario</h2>
+        <div className="view-toggle">
+          <button 
+            className={viewMode === 'consolidado' ? 'active' : ''}
+            onClick={() => setViewMode('consolidado')}
+          >
+            Consolidado
+          </button>
+          <button 
+            className={viewMode === 'almacenes' ? 'active' : ''}
+            onClick={() => setViewMode('almacenes')}
+          >
+            Por Almacén
+          </button>
+          <button 
+            className={viewMode === 'ubicaciones' ? 'active' : ''}
+            onClick={() => setViewMode('ubicaciones')}
+          >
+            Por Ubicación
+          </button>
+        </div>
+      </div>
       
-      {/* Mostrar información del usuario y categoría */}
       {usuarioData && (
         <div className="user-info">
           <span>
@@ -284,226 +359,238 @@ const InventarioScreen = () => {
       
       <Navbar />
       
-      <div className="inventario-controls">
-        <input
-          type="text"
-          placeholder="Buscar por código o descripción..."
-          value={filtro}
-          onChange={(e) => {
-            setFiltro(e.target.value);
-            setPaginaActual(1);
-          }}
-          className="search-input-large"
-        />
-        
-        {/* Filtro por almacén */}
-        <select
-          value={almacenSeleccionado}
-          onChange={(e) => setAlmacenSeleccionado(e.target.value)}
-          className="filtro-almacen"
-        >
-          <option value="">Todos los almacenes</option>
-          {almacenes.map(alm => (
-            <option key={alm.codigo} value={alm.codigo}>
-              {alm.nombre}
-            </option>
-          ))}
-        </select>
-        
-        <div className="control-group">
-          <select
-            value={itemsPorPagina}
-            onChange={(e) => setItemsPorPagina(Number(e.target.value))}
-            className="page-select"
-          >
-            <option value={10}>10 items/pág</option>
-            <option value={20}>20 items/pág</option>
-            <option value={50}>50 items/pág</option>
-            <option value={100}>100 items/pág</option>
-          </select>
-          
-          <button 
-            onClick={toggleVistaDetallada}
-            className={`btn-view ${vistaDetallada ? 'active' : ''}`}
-          >
-            {vistaDetallada ? 'Ocultar detalles' : 'Ver detalles'}
-          </button>
-          
-          {/* Botón de sincronización */}
-          {usuarioPermisos && (
-            <button 
-              onClick={sincronizarInventario}
-              className="btn-sincronizar"
-            >
-              Regularizar Inventario
-            </button>
-          )}
+      {error ? (
+        <div className="error">
+          <p>{error}</p>
+          <button onClick={() => window.location.reload()}>Reintentar</button>
         </div>
-      </div>
-      
-      {loading ? (
-        <div className="loading">Cargando inventario...</div>
+      ) : loading ? (
+        <div className="loading">
+          <div className="loader"></div>
+          <p>Cargando inventario...</p>
+        </div>
       ) : (
-        <>
-          <table className="inventario-table">
-            <thead>
-              <tr>
-                <th style={{ width: '50px' }}></th>
-                <th 
-                  className="sortable-header"
-                  onClick={() => handleOrdenar('codigo')}
-                >
-                  Código Artículo 
-                  {orden.campo === 'codigo' && (
-                    <span>{orden.direccion === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                </th>
-                <th 
-                  className="sortable-header"
-                  onClick={() => handleOrdenar('descripcion')}
-                >
-                  Descripción
-                  {orden.campo === 'descripcion' && (
-                    <span>{orden.direccion === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                </th>
-                <th 
-                  className="sortable-header"
-                  onClick={() => handleOrdenar('stock')}
-                >
-                  Stock Total
-                  {orden.campo === 'stock' && (
-                    <span>{orden.direccion === 'asc' ? '↑' : '↓'}</span>
-                  )}
-                </th>
-                <th>Estado</th>
-                {usuarioPermisos && <th>Acciones</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {itemsActuales.map((item) => (
-                <React.Fragment key={item.codigo}>
-                  <tr className={`estado-${getEstadoStock(item.stock)}`}>
-                    <td>
-                      {vistaDetallada && (
-                        <button 
-                          onClick={() => toggleExpandRow(item.codigo)} 
-                          className="btn-expand"
-                        >
-                          {expandedRows[item.codigo] ? '▼' : '►'}
-                        </button>
-                      )}
-                    </td>
-                    <td>{item.codigo}</td>
-                    <td>{item.descripcion}</td>
-                    <td>{item.stock}</td>
-                    <td>
-                      <span className="estado-badge">
-                        {getEstadoTexto(item.stock)}
-                      </span>
-                    </td>
-                    {usuarioPermisos && (
-                      <td>
-                        <button
-                          className="btn-ajustar"
-                          onClick={() => {
-                            setAjustandoStock(item);
-                            setNuevoStock(item.stock);
-                          }}
-                        >
-                          Ajustar stock
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                  
-                  {vistaDetallada && expandedRows[item.codigo] && (
-                    <>
-                      {getAlmacenesPorArticulo(item.codigo).map(almacen => (
-                        <React.Fragment key={`${item.codigo}-${almacen.almacen}`}>
-                          <tr className="almacen-row">
-                            <td></td>
-                            <td colSpan={usuarioPermisos ? 4 : 3}>
-                              <span className="almacen-info">
-                                <strong>{almacen.nombreAlmacen}</strong> ({almacen.almacen})
-                              </span>
-                            </td>
-                            <td>{almacen.stock}</td>
-                          </tr>
-                          
-                          {getUbicacionesPorArticuloAlmacen(item.codigo, almacen.almacen).map(ubicacion => (
-                            <tr key={`${item.codigo}-${almacen.almacen}-${ubicacion.ubicacion}`} className="ubicacion-row">
-                              <td></td>
-                              <td colSpan={usuarioPermisos ? 4 : 3}>
-                                <span className="ubicacion-info">
-                                  {ubicacion.ubicacion}
-                                </span>
-                              </td>
-                              <td>{ubicacion.stock}</td>
-                            </tr>
-                          ))}
-                        </React.Fragment>
-                      ))}
-                    </>
-                  )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
-          
-          {!loading && inventarioFiltrado.length === 0 && (
-            <div className="no-results">No se encontraron artículos</div>
-          )}
-          
-          {totalPaginas > 1 && (
-            <div className="paginacion">
-              <button 
-                onClick={() => cambiarPagina(1)} 
-                disabled={paginaActual === 1}
+        <div className="inventario-content">
+          <div className="filtros-container">
+            <div className="filtro-group">
+              <label>Buscar artículo:</label>
+              <input
+                type="text"
+                placeholder="Código o descripción..."
+                value={filtro}
+                onChange={e => {
+                  setFiltro(e.target.value);
+                  setPaginaActual(1);
+                }}
+                className="filtro-input"
+              />
+            </div>
+            
+            <div className="filtro-group">
+              <label>Filtrar por almacén:</label>
+              <select
+                value={almacenSeleccionado}
+                onChange={e => setAlmacenSeleccionado(e.target.value)}
+                className="filtro-select"
               >
-                ◀◀
-              </button>
-              <button 
-                onClick={() => cambiarPagina(paginaActual - 1)} 
-                disabled={paginaActual === 1}
+                <option value="">Todos los almacenes</option>
+                {almacenes.map(alm => (
+                  <option key={`alm-${alm.codigo}`} value={alm.codigo}>{alm.nombre}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="control-group">
+              <select
+                value={itemsPorPagina}
+                onChange={(e) => setItemsPorPagina(Number(e.target.value))}
+                className="page-select"
               >
-                ◀
-              </button>
+                <option value={10}>10 items/pág</option>
+                <option value={20}>20 items/pág</option>
+                <option value={50}>50 items/pág</option>
+                <option value={100}>100 items/pág</option>
+              </select>
               
-              {Array.from({ length: Math.min(5, totalPaginas) }, (_, i) => {
-                let paginaInicio = Math.max(1, Math.min(paginaActual - 2, totalPaginas - 4));
-                if (totalPaginas <= 5) paginaInicio = 1;
-                return paginaInicio + i;
-              })
-              .filter(num => num <= totalPaginas)
-              .map(num => (
-                <button
-                  key={num}
-                  onClick={() => cambiarPagina(num)}
-                  className={paginaActual === num ? 'active' : ''}
+              {usuarioPermisos && (
+                <button 
+                  onClick={sincronizarInventario}
+                  className="btn-sincronizar"
                 >
-                  {num}
+                  Regularizar Inventario
                 </button>
-              ))}
+              )}
+            </div>
+          </div>
+          
+          {viewMode === 'consolidado' && (
+            <div className="inventario-section">
+              <h3>Inventario Consolidado</h3>
+              <div className="table-container">
+                <table className="inventario-table">
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Descripción</th>
+                      <th>Stock Total</th>
+                      <th>Estado</th>
+                      {usuarioPermisos && <th>Acciones</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itemsActuales.map((item, index) => (
+                      <tr key={`consolidado-${item.codigo}-${index}`} className={`estado-${getEstadoStock(item.stock)}`}>
+                        <td>{item.codigo}</td>
+                        <td>{item.descripcion}</td>
+                        <td className="stock-cell">{item.stock}</td>
+                        <td>
+                          <span className="estado-badge">
+                            {getEstadoTexto(item.stock)}
+                          </span>
+                        </td>
+                        {usuarioPermisos && (
+                          <td>
+                            <button
+                              className="btn-ajustar"
+                              onClick={() => {
+                                setAjustandoStock(item);
+                                setNuevoStock(item.stock);
+                              }}
+                            >
+                              Ajustar stock
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               
-              <button 
-                onClick={() => cambiarPagina(paginaActual + 1)} 
-                disabled={paginaActual === totalPaginas}
-              >
-                ▶
-              </button>
-              <button 
-                onClick={() => cambiarPagina(totalPaginas)} 
-                disabled={paginaActual === totalPaginas}
-              >
-                ▶▶
-              </button>
+              {totalPaginas > 1 && (
+                <div className="paginacion">
+                  <button 
+                    onClick={() => cambiarPagina(1)} 
+                    disabled={paginaActual === 1}
+                  >
+                    ◀◀
+                  </button>
+                  <button 
+                    onClick={() => cambiarPagina(paginaActual - 1)} 
+                    disabled={paginaActual === 1}
+                  >
+                    ◀
+                  </button>
+                  
+                  {Array.from({ length: Math.min(5, totalPaginas) }, (_, i) => {
+                    let paginaInicio = Math.max(1, Math.min(paginaActual - 2, totalPaginas - 4));
+                    if (totalPaginas <= 5) paginaInicio = 1;
+                    return paginaInicio + i;
+                  })
+                  .filter(num => num <= totalPaginas)
+                  .map(num => (
+                    <button
+                      key={`pag-${num}`}
+                      onClick={() => cambiarPagina(num)}
+                      className={paginaActual === num ? 'active' : ''}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                  
+                  <button 
+                    onClick={() => cambiarPagina(paginaActual + 1)} 
+                    disabled={paginaActual === totalPaginas}
+                  >
+                    ▶
+                  </button>
+                  <button 
+                    onClick={() => cambiarPagina(totalPaginas)} 
+                    disabled={paginaActual === totalPaginas}
+                  >
+                    ▶▶
+                  </button>
+                </div>
+              )}
             </div>
           )}
-        </>
+          
+          {viewMode === 'almacenes' && (
+            <div className="inventario-almacenes">
+              {inventarioPorAlmacen.map((almacen, almacenIndex) => (
+                <div key={`almacen-${almacen.codigoAlmacen}-${almacenIndex}`} className="almacen-card">
+                  <div className="almacen-header">
+                    <h3>{almacen.almacen}</h3>
+                    <div className="almacen-stats">
+                      <span>Artículos: {almacen.cantidadArticulos}</span>
+                      <span>Stock Total: {almacen.stockTotal}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="table-container">
+                    <table className="inventario-table">
+                      <thead>
+                        <tr>
+                          <th>Artículo</th>
+                          <th>Descripción</th>
+                          <th>Ubicación</th>
+                          <th>Stock</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {almacen.items
+                          .filter(ubi => 
+                            filtro ? ubi.codigo.toLowerCase().includes(filtro.toLowerCase()) || 
+                                    (ubi.descripcion && ubi.descripcion.toLowerCase().includes(filtro.toLowerCase())) : true
+                          )
+                          .map((ubi, ubiIndex) => (
+                            <tr key={`almacen-item-${almacen.codigoAlmacen}-${ubi.codigo}-${ubi.ubicacion}-${ubiIndex}`}>
+                              <td>{ubi.codigo}</td>
+                              <td>{ubi.descripcion}</td>
+                              <td>{ubi.ubicacion}</td>
+                              <td className="stock-cell">{ubi.stock}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {viewMode === 'ubicaciones' && (
+            <div className="inventario-section">
+              <h3>Inventario por Ubicación</h3>
+              <div className="table-container">
+                <table className="inventario-table">
+                  <thead>
+                    <tr>
+                      <th>Artículo</th>
+                      <th>Descripción</th>
+                      <th>Almacén</th>
+                      <th>Ubicación</th>
+                      <th>Stock</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ubicacionesFiltradas.map((ubi, index) => (
+                      <tr key={`ubicacion-${ubi.codigo}-${ubi.almacen}-${ubi.ubicacion}-${index}`}>
+                        <td>{ubi.codigo}</td>
+                        <td>{ubi.descripcion}</td>
+                        <td>{almacenes.find(a => a.codigo === ubi.almacen)?.nombre || ubi.almacen}</td>
+                        <td>{ubi.ubicacion}</td>
+                        <td className="stock-cell">{ubi.stock}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
-      {/* Modal para ajustar stock */}
       {ajustandoStock && (
         <div className="modal-backdrop">
           <div className="modal">

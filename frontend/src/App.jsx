@@ -1,5 +1,5 @@
 ﻿import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './styles/style.css';
 import './styles/PedidosScreen.css';
 import './styles/TraspasoAlmacenesScreen.css';
@@ -18,23 +18,85 @@ import GestionRutas from './pages/GestionRutas';
 import DetalleAlbaran from './pages/DetalleAlbaran';
 import InventarioScreen from './pages/InventarioScreen';
 
+// Componente para proteger rutas
+const ProtectedRoute = ({ children }) => {
+  const location = useLocation();
+  const userData = JSON.parse(localStorage.getItem('user'));
+  
+  if (!userData) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  
+  return children;
+};
+
 function App() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/login" />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/PedidosScreen" element={<PedidosScreen />} />
-      <Route path="/clientes" element={<ClientesPage />} />
-      <Route path="/clientes/ficha" element={<FichaClientePage />} />
-      <Route path="/estadisticasCliente" element={<EstadisticasClientePage />} />
-      <Route path="/traspaso" element={<TraspasoAlmacenesScreen />} />
-      <Route path="/dashboard" element={<DashboardPage />} />
-      <Route path="/preparacion" element={<PreparacionPedidos />} />
-      <Route path="/entrada" element={<EntradaStockCompras />} />
-      <Route path="/rutas" element={<GestionRutas />} />
-      <Route path="/confirmacion-entrega" element={<ConfirmacionEntrega />} />
-      <Route path="/detalle-albaran" element={<DetalleAlbaran />} />
-      <Route path="/inventario" element={<InventarioScreen />} />
+      
+      {/* Rutas protegidas */}
+      <Route path="/PedidosScreen" element={
+        <ProtectedRoute>
+          <PedidosScreen />
+        </ProtectedRoute>
+      } />
+      <Route path="/clientes" element={
+        <ProtectedRoute>
+          <ClientesPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/clientes/ficha" element={
+        <ProtectedRoute>
+          <FichaClientePage />
+        </ProtectedRoute>
+      } />
+      <Route path="/estadisticasCliente" element={
+        <ProtectedRoute>
+          <EstadisticasClientePage />
+        </ProtectedRoute>
+      } />
+      <Route path="/traspaso" element={
+        <ProtectedRoute>
+          <TraspasoAlmacenesScreen />
+        </ProtectedRoute>
+      } />
+      <Route path="/dashboard" element={
+        <ProtectedRoute>
+          <DashboardPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/preparacion" element={
+        <ProtectedRoute>
+          <PreparacionPedidos />
+        </ProtectedRoute>
+      } />
+      <Route path="/entrada" element={
+        <ProtectedRoute>
+          <EntradaStockCompras />
+        </ProtectedRoute>
+      } />
+      <Route path="/rutas" element={
+        <ProtectedRoute>
+          <GestionRutas />
+        </ProtectedRoute>
+      } />
+      <Route path="/confirmacion-entrega" element={
+        <ProtectedRoute>
+          <ConfirmacionEntrega />
+        </ProtectedRoute>
+      } />
+      <Route path="/detalle-albaran" element={
+        <ProtectedRoute>
+          <DetalleAlbaran />
+        </ProtectedRoute>
+      } />
+      <Route path="/inventario" element={
+        <ProtectedRoute>
+          <InventarioScreen />
+        </ProtectedRoute>
+      } />
     </Routes>
   );
 }
