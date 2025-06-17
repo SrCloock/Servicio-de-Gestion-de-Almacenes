@@ -5,27 +5,6 @@ import Navbar from '../components/Navbar';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
 
-const Icon = ({ name }) => {
-  const icons = {
-    arrowLeft: '←',
-    search: '🔍',
-    plus: '➕',
-    edit: '✏️',
-    trash: '🗑️',
-    check: '✅',
-    box: '📦',
-    warehouse: '🏭',
-    mapMarker: '📍',
-    hashtag: '#',
-    spinner: '🔄',
-    history: '📅',
-    user: '👤',
-    download: '⬇️'
-  };
-  
-  return <span className="icon">{icons[name]}</span>;
-};
-
 const TraspasoAlmacenesScreen = () => {
   const navigate = useNavigate();
   const searchRef = useRef(null);
@@ -34,15 +13,16 @@ const TraspasoAlmacenesScreen = () => {
   const [ubicacionesOrigen, setUbicacionesOrigen] = useState([]);
   const [ubicacionesDestino, setUbicacionesDestino] = useState([]);
   const [traspasosPendientes, setTraspasosPendientes] = useState([]);
-  const [traspasosHistorial, setTraspasosHistorial] = useState([]);
-  const [busqueda, setBusqueda] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState('pendientes');
   const [showArticleDropdown, setShowArticleDropdown] = useState(false);
   const [filtroAlmacen, setFiltroAlmacen] = useState('');
-  const [usuario] = useState('admin');
-
+  const [busqueda, setBusqueda] = useState('');
+  
+  // Historial de movimientos
+  const [movimientos, setMovimientos] = useState([]);
+  
   const [traspasoData, setTraspasoData] = useState({
     articulo: '',
     almacenOrigen: '',
@@ -58,21 +38,25 @@ const TraspasoAlmacenesScreen = () => {
       setIsLoading(true);
       try {
         const headers = getAuthHeader();
+        const user = JSON.parse(localStorage.getItem('user'));
+        const codigoEmpresa = user.CodigoEmpresa;
+        
         // Obtener artículos y almacenes
         const [artResponse, almResponse] = await Promise.all([
-          axios.get('http://localhost:3000/articulos', { headers }),
-          axios.get('http://localhost:3000/almacenes', { headers })
+          axios.get(`http://localhost:3000/inventario?codigoEmpresa=${codigoEmpresa}`, { headers }),
+          axios.get(`http://localhost:3000/almacenes?codigoEmpresa=${codigoEmpresa}`, { headers })
         ]);
         
         setArticulos(artResponse.data);
         setAlmacenes(almResponse.data);
         
-        // Obtener historial de traspasos
-        const histResponse = await axios.get(
-          'http://localhost:3000/traspasos/historial', 
+        // Obtener movimientos de stock
+        const movResponse = await axios.get(
+          `http://localhost:3000/movimientos?codigoEmpresa=${codigoEmpresa}&dias=30`, 
           { headers }
         );
-        setTraspasosHistorial(histResponse.data);
+        setMovimientos(movResponse.data);
+        
       } catch (error) {
         console.error('Error al obtener datos:', error);
       } finally {
@@ -83,13 +67,12 @@ const TraspasoAlmacenesScreen = () => {
     fetchData();
   }, [navigate]);
 
-  // Filtrar artículos con filtro de almacén
   const articulosFiltrados = busqueda 
     ? articulos.filter(art => 
         art.codigo.toLowerCase().includes(busqueda.toLowerCase()) || 
-        art.nombre.toLowerCase().includes(busqueda.toLowerCase())
+        (art.nombre && art.nombre.toLowerCase().includes(busqueda.toLowerCase()))
       ).slice(0, 10)
-    : articulos.slice(0, 10);
+    : [];
     
   const articulosFiltradosPorAlmacen = filtroAlmacen
     ? articulosFiltrados.filter(art => 
@@ -121,7 +104,7 @@ const TraspasoAlmacenesScreen = () => {
           ]);
         } else {
           const response = await axios.get(
-            `http://localhost:3000/ubicaciones/stock?articulo=${traspasoData.articulo}&almacen=${traspasoData.almacenOrigen}`,
+            `http://localhost:3000/stock?articulo=${traspasoData.articulo}&almacen=${traspasoData.almacenOrigen}`,
             { headers }
           );
           setUbicacionesOrigen(response.data);
@@ -253,6 +236,9 @@ const TraspasoAlmacenesScreen = () => {
     
     try {
       const headers = getAuthHeader();
+      const user = JSON.parse(localStorage.getItem('user'));
+      const usuario = user.Nombre;
+      
       const response = await axios.post(
         'http://localhost:3000/traspasos/confirmar', 
         {
@@ -270,14 +256,6 @@ const TraspasoAlmacenesScreen = () => {
       );
       
       if (response.data.success) {
-        // Agregar los traspasos confirmados al historial local
-        const nuevosTraspasosHistorial = traspasosPendientes.map(t => ({
-          ...t,
-          fecha: new Date().toISOString(),
-          usuario: usuario
-        }));
-        
-        setTraspasosHistorial([...nuevosTraspasosHistorial, ...traspasosHistorial]);
         setShowSuccess(true);
         setTraspasosPendientes([]);
         
@@ -306,15 +284,27 @@ const TraspasoAlmacenesScreen = () => {
 
   return (
     <div className="traspaso-screen">
+      {isLoading && (
+        <div className="loading-overlay">
+          <div className="loading-card">
+            <div className="loading-spinner"></div>
+            <p className="loading-text">Procesando...</p>
+          </div>
+        </div>
+      )}
+      
+      {showSuccess && (
+        <div className="success-notification">
+          <span>✓</span> Traspasos confirmados correctamente
+        </div>
+      )}
+      
       <div className="traspaso-container">
         <div className="header-card">
           <h1 className="header-title">
-            <Icon name="warehouse" />
+            <span className="icon">🏭</span>
             Traspaso entre Almacenes
           </h1>
-          <button onClick={() => navigate('/')} className="btn-volver">
-            <Icon name="arrowLeft" /> Menú
-          </button>
         </div>
         
         <Navbar />
@@ -340,13 +330,13 @@ const TraspasoAlmacenesScreen = () => {
           <div className="form-card">
             <div className="card-header">
               <h2 className="card-title">
-                <Icon name="plus" /> Nuevo Traspaso
+                <span className="icon">➕</span> Nuevo Traspaso
               </h2>
             </div>
             
             <div className="form-group">
               <label className="form-label">
-                <Icon name="box" /> Artículo
+                <span className="icon">📦</span> Artículo
               </label>
               <div className="search-container" ref={searchRef}>
                 <input
@@ -386,7 +376,7 @@ const TraspasoAlmacenesScreen = () => {
             <div className="compact-grid">
               <div className="form-group">
                 <label className="form-label">
-                  <Icon name="mapMarker" /> Almacén Origen
+                  <span className="icon">📍</span> Almacén Origen
                 </label>
                 <select
                   value={traspasoData.almacenOrigen}
@@ -398,12 +388,13 @@ const TraspasoAlmacenesScreen = () => {
                   {almacenes.map((alm) => (
                     <option key={alm.codigo} value={alm.codigo}>{alm.nombre}</option>
                   ))}
+                  <option value="DESCARGA">Zona de Descarga</option>
                 </select>
               </div>
               
               <div className="form-group">
                 <label className="form-label">
-                  <Icon name="mapMarker" /> Ubicación Origen
+                  <span className="icon">📌</span> Ubicación Origen
                 </label>
                 <select
                   value={traspasoData.ubicacionOrigen}
@@ -423,7 +414,7 @@ const TraspasoAlmacenesScreen = () => {
               
               <div className="form-group">
                 <label className="form-label">
-                  <Icon name="mapMarker" /> Almacén Destino
+                  <span className="icon">📍</span> Almacén Destino
                 </label>
                 <select
                   value={traspasoData.almacenDestino}
@@ -439,7 +430,7 @@ const TraspasoAlmacenesScreen = () => {
               
               <div className="form-group">
                 <label className="form-label">
-                  <Icon name="mapMarker" /> Ubicación Destino
+                  <span className="icon">📌</span> Ubicación Destino
                 </label>
                 <select
                   value={traspasoData.ubicacionDestino}
@@ -456,7 +447,7 @@ const TraspasoAlmacenesScreen = () => {
               
               <div className="form-group quantity-group">
                 <label className="form-label">
-                  <Icon name="hashtag" /> Cantidad
+                  <span className="icon">🔢</span> Cantidad
                 </label>
                 <input
                   type="number"
@@ -470,7 +461,7 @@ const TraspasoAlmacenesScreen = () => {
               
               <div className="form-group button-group">
                 <button onClick={agregarTraspaso} className="btn-add">
-                  <Icon name="plus" /> Agregar
+                  <span className="icon">➕</span> Agregar
                 </button>
               </div>
             </div>
@@ -514,7 +505,7 @@ const TraspasoAlmacenesScreen = () => {
                               <div className="article-code">{traspaso.articulo}</div>
                               {traspaso.esDescarga && (
                                 <div className="descarga-tag">
-                                  <Icon name="download" /> Descarga
+                                  <span className="icon">⬇️</span> Descarga
                                 </div>
                               )}
                             </td>
@@ -536,14 +527,14 @@ const TraspasoAlmacenesScreen = () => {
                                   className="btn-action btn-edit"
                                   title="Modificar"
                                 >
-                                  <Icon name="edit" />
+                                  <span className="icon">✏️</span>
                                 </button>
                                 <button 
                                   onClick={() => eliminarTraspaso(traspaso.id)}
                                   className="btn-action btn-delete"
                                   title="Eliminar"
                                 >
-                                  <Icon name="trash" />
+                                  <span className="icon">🗑️</span>
                                 </button>
                               </div>
                             </td>
@@ -554,7 +545,7 @@ const TraspasoAlmacenesScreen = () => {
                   ) : (
                     <div className="empty-state">
                       <div className="empty-icon">
-                        <Icon name="box" />
+                        <span className="icon">📦</span>
                       </div>
                       <p className="empty-description">No hay traspasos pendientes</p>
                     </div>
@@ -567,52 +558,35 @@ const TraspasoAlmacenesScreen = () => {
                     disabled={isLoading}
                     className="btn-confirm"
                   >
-                    {isLoading ? (
-                      <>
-                        <Icon name="spinner" /> Procesando...
-                      </>
-                    ) : (
-                      <>
-                        <Icon name="check" /> Confirmar Traspasos
-                      </>
-                    )}
+                    <span className="icon">✅</span> Confirmar Traspasos
                   </button>
                 )}
               </>
             ) : (
               <div className="table-container">
-                {traspasosHistorial.length > 0 ? (
-                  <table className="pending-table compact-table">
+                {movimientos.length > 0 ? (
+                  <table className="movimientos-table">
                     <thead>
                       <tr>
                         <th>Fecha</th>
                         <th>Artículo</th>
-                        <th>Origen</th>
-                        <th>Destino</th>
-                        <th>Cant</th>
+                        <th>Almacén</th>
+                        <th>Ubicación</th>
+                        <th>Cantidad</th>
+                        <th>Tipo</th>
                         <th>Usuario</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {traspasosHistorial.map((traspaso) => (
-                        <tr key={traspaso.id}>
-                          <td>{new Date(traspaso.fecha).toLocaleString()}</td>
-                          <td>
-                            <div className="article-name">{traspaso.nombreArticulo}</div>
-                            <div className="article-code">{traspaso.articulo}</div>
-                          </td>
-                          <td>
-                            <div>{traspaso.almacenOrigen}</div>
-                            <div className="location">{traspaso.ubicacionOrigen}</div>
-                          </td>
-                          <td>
-                            <div>{traspaso.almacenDestino}</div>
-                            <div className="location">{traspaso.ubicacionDestino}</div>
-                          </td>
-                          <td>
-                            <span className="quantity-badge">{traspaso.cantidad}</span>
-                          </td>
-                          <td>{traspaso.usuario}</td>
+                      {movimientos.map((movimiento) => (
+                        <tr key={movimiento.id}>
+                          <td>{new Date(movimiento.Fecha).toLocaleString()}</td>
+                          <td>{movimiento.CodigoArticulo}</td>
+                          <td>{movimiento.CodigoAlmacen}</td>
+                          <td>{movimiento.Ubicacion}</td>
+                          <td>{movimiento.Unidades}</td>
+                          <td>{movimiento.TipoMovimiento === 1 ? 'Entrada' : 'Salida'}</td>
+                          <td>{movimiento.Usuario || 'Sistema'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -620,9 +594,9 @@ const TraspasoAlmacenesScreen = () => {
                 ) : (
                   <div className="empty-state">
                     <div className="empty-icon">
-                      <Icon name="history" />
+                      <span className="icon">📅</span>
                     </div>
-                    <p className="empty-description">No hay traspasos en el historial</p>
+                    <p className="empty-description">No hay movimientos registrados</p>
                   </div>
                 )}
               </div>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import '../styles/Navbar.css';
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -7,19 +8,19 @@ const Navbar = () => {
   return (
     <div className="navigation-buttons">
       <button onClick={() => navigate('/rutas')} className="btn-nav">
-        📦 Rutas
+        <span>📦</span> Rutas
       </button>
       <button onClick={() => navigate('/PedidosScreen')} className="btn-nav">
-        📝 Pedidos
+        <span>📝</span> Pedidos
       </button>
       <button onClick={() => navigate('/traspaso')} className="btn-nav">
-        🔄 Traspasos
+        <span>🔄</span> Traspasos
       </button>
       <button onClick={() => navigate('/inventario')} className="btn-nav">
-        📊 Inventario
+        <span>📊</span> Inventario
       </button>
       <button onClick={() => navigate('/')} className="btn-nav">
-        🏠 Inicio
+        <span>🏠</span> Inicio
       </button>
     </div>
   );

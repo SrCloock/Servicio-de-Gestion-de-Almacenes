@@ -14,8 +14,13 @@ const PedidosScreen = () => {
   const [expedicionLoading, setExpedicionLoading] = useState(false);
   const [filtroPedido, setFiltroPedido] = useState('');
   const [filtroArticulo, setFiltroArticulo] = useState('');
+  const [filtroDireccion, setFiltroDireccion] = useState('');
   const [orden, setOrden] = useState('fecha');
   const [error, setError] = useState('');
+  
+  // Paginación
+  const [paginaActual, setPaginaActual] = useState(1);
+  const pedidosPorPagina = 20;
 
   useEffect(() => {
     const fetchPedidos = async () => {
@@ -33,7 +38,6 @@ const PedidosScreen = () => {
         const codigoEmpresa = userData.CodigoEmpresa;
         const headers = getAuthHeader();
         
-        // Verificar headers
         if (!headers.usuario || !headers.codigoempresa) {
           setError('Error de autenticación. Vuelve a iniciar sesión');
           setLoading(false);
@@ -57,37 +61,51 @@ const PedidosScreen = () => {
           { articulos: codigosArticulos },
           { headers: headers }
         );
-
+    
         setUbicaciones(responseUbicaciones.data);
-
+    
         const nuevasExpediciones = {};
         for (const art of codigosArticulos) {
-          const ubicacionesConStock = responseUbicaciones.data[art] || [];
+          let ubicacionesConStock = responseUbicaciones.data[art] || [];
+          ubicacionesConStock = ubicacionesConStock.filter(ubi => ubi.unidadSaldo > 0);
+
+          if (ubicacionesConStock.length === 0) {
+            ubicacionesConStock.push({
+              ubicacion: "Zona descarga",
+              partida: null,
+              unidadSaldo: Infinity
+            });
+          }
+
           if (ubicacionesConStock.length > 0) {
             nuevasExpediciones[art] = {
               ubicacion: ubicacionesConStock[0].ubicacion,
               partida: ubicacionesConStock[0].partida || null,
-              cantidad: ubicacionesConStock[0].unidadSaldo.toString()
+              cantidad: Math.min(
+                ubicacionesConStock[0].unidadSaldo,
+                response.data.flatMap(p => p.articulos)
+                  .find(a => a.codigoArticulo === art)?.unidadesPendientes || 0
+              ).toString()
             };
           }
         }
         setExpediciones(nuevasExpediciones);
-
+    
         const initialModes = {};
         response.data.forEach(pedido => {
           initialModes[pedido.numeroPedido] = 'show';
         });
         setPedidoViewModes(initialModes);
-      } catch (error) {
-        console.error('Error al obtener pedidos o ubicaciones:', error);
+      } catch (err) {
+        console.error('Error al obtener pedidos o ubicaciones:', err);
         
-        if (error.response) {
-          if (error.response.status === 500) {
+        if (err.response) {
+          if (err.response.status === 500) {
             setError('Error interno del servidor. Inténtalo más tarde');
-          } else if (error.response.status === 401) {
+          } else if (err.response.status === 401) {
             setError('Error de autenticación. Vuelve a iniciar sesión');
           } else {
-            setError(`Error del servidor: ${error.response.status} ${error.response.statusText}`);
+            setError(`Error del servidor: ${err.response.status} ${err.response.statusText}`);
           }
         } else {
           setError('Error de conexión con el servidor');
@@ -96,7 +114,7 @@ const PedidosScreen = () => {
         setLoading(false);
       }
     };
-
+    
     fetchPedidos();
   }, []);
 
@@ -111,9 +129,18 @@ const PedidosScreen = () => {
         }
       );
       
+      let ubicacionesConStock = response.data.filter(ubi => ubi.unidadSaldo > 0);
+      if (ubicacionesConStock.length === 0) {
+        ubicacionesConStock.push({
+          ubicacion: "Zona descarga",
+          partida: null,
+          unidadSaldo: Infinity
+        });
+      }
+
       setUbicaciones(prev => ({
         ...prev,
-        [codigoArticulo]: response.data
+        [codigoArticulo]: ubicacionesConStock
       }));
       
       setLineaSeleccionada(codigoArticulo);
@@ -160,6 +187,7 @@ const PedidosScreen = () => {
       }
     } catch (error) {
       console.error('Error al expedir artículo:', error);
+      alert('Error al expedir artículo: ' + error.message);
     } finally {
       setExpedicionLoading(false);
     }
@@ -194,13 +222,28 @@ const PedidosScreen = () => {
           art.descripcionArticulo.toLowerCase().includes(filtroArticulo.toLowerCase()))
       : true;
 
-    return matchPedido && matchArticulo;
+    const matchDireccion = filtroDireccion
+      ? pedido.domicilio.toLowerCase().includes(filtroDireccion.toLowerCase())
+      : true;
+
+    return matchPedido && matchArticulo && matchDireccion;
   });
 
   const pedidosOrdenados = [...pedidosFiltrados].sort((a, b) => {
     if (orden === 'fecha') return new Date(b.fechaPedido) - new Date(a.fechaPedido);
     return a.razonSocial.localeCompare(b.razonSocial);
   });
+  
+  // Paginación
+  const indexUltimoPedido = paginaActual * pedidosPorPagina;
+  const indexPrimerPedido = indexUltimoPedido - pedidosPorPagina;
+  const pedidosActuales = pedidosOrdenados.slice(indexPrimerPedido, indexUltimoPedido);
+  const totalPaginas = Math.ceil(pedidosOrdenados.length / pedidosPorPagina);
+
+  const cambiarPagina = (numeroPagina) => {
+    setPaginaActual(numeroPagina);
+    window.scrollTo(0, 0);
+  };
 
   return (
     <div className="pedidos-container">
@@ -235,6 +278,17 @@ const PedidosScreen = () => {
               className="search-input"
             />
           </div>
+
+          <div className="filtro-group">
+            <label>Buscar dirección:</label>
+            <input
+              type="text"
+              placeholder="Dirección..."
+              value={filtroDireccion}
+              onChange={e => setFiltroDireccion(e.target.value)}
+              className="search-input"
+            />
+          </div>
           
           <div className="filtro-group">
             <label>Ordenar por:</label>
@@ -266,153 +320,185 @@ const PedidosScreen = () => {
             <p>No hay pedidos pendientes</p>
           </div>
         ) : (
-          pedidosOrdenados.map(pedido => (
-            <div key={pedido.numeroPedido} className="pedido-card">
-              <div className="pedido-header">
-                <span>Pedido: {pedido.seriePedido || ''}-{pedido.numeroPedido}</span>
-                <span>{new Date(pedido.fechaPedido).toLocaleDateString()}</span>
-              </div>
-              
-              <div className="pedido-info">
-                <span className="numero-pedido">#{pedido.numeroPedido}</span>
-                <span className="fecha-pedido">{new Date(pedido.fechaPedido).toLocaleDateString()}</span>
-                <span>{pedido.razonSocial}</span>
-              </div>
-              
-              <div className="pedido-details">
-                <div><strong>Dirección:</strong> {pedido.domicilio}, {pedido.municipio}</div>
-                <div><strong>Obra:</strong> {pedido.NombreObra || 'Sin obra especificada'}</div>
-                {pedido.observacionesPedido && (
-                  <div className="observaciones">
-                    <strong>Observaciones:</strong> {pedido.observacionesPedido}
+          <>
+            {pedidosActuales.map(pedido => (
+              <div key={`${pedido.numeroPedido}-${pedido.codigoEmpresa}`} className="pedido-card">
+                <div className="pedido-info">
+                  <span className="numero-pedido">#{pedido.numeroPedido}</span>
+                  <span className="cliente">{pedido.razonSocial}</span>
+                  <span className="fecha-pedido">{new Date(pedido.fechaPedido).toLocaleDateString()}</span>
+                </div>
+                
+                <div className="pedido-details">
+                  <div><strong>Dirección:</strong> {pedido.domicilio}, {pedido.municipio}</div>
+                  <div><strong>Obra:</strong> {pedido.obra || 'Sin obra especificada'}</div>
+                  <div><strong>Entrega:</strong> {pedido.fechaEntrega ? new Date(pedido.fechaEntrega).toLocaleDateString() : 'Sin fecha especificada'}</div>
+                  {pedido.observaciones && (
+                    <div className="observaciones">
+                      <strong>Observaciones:</strong> {pedido.observaciones}
+                    </div>
+                  )}
+                </div>
+                
+                <div className="toggle-button-container">
+                  <button 
+                    onClick={() => togglePedidoView(pedido.numeroPedido)}
+                    className="btn-toggle"
+                  >
+                    {pedidoViewModes[pedido.numeroPedido] === 'show' ? 'Ocultar líneas' : 'Mostrar líneas'}
+                  </button>
+                </div>
+                
+                {pedidoViewModes[pedido.numeroPedido] === 'show' && (
+                  <div className="lineas-table-container">
+                    <table className="lineas-table">
+                      <thead>
+                        <tr>
+                          <th>Artículo</th>
+                          <th>Descripción</th>
+                          <th>Pendiente</th>
+                          <th>Ubicación</th>
+                          <th>Cantidad</th>
+                          <th>Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pedido.articulos.map((linea, index) => {
+                          let ubicacionesConStock = ubicaciones[linea.codigoArticulo] || [];
+                          ubicacionesConStock = ubicacionesConStock.filter(ubi => ubi.unidadSaldo > 0);
+                          if (ubicacionesConStock.length === 0) {
+                            ubicacionesConStock.push({
+                              ubicacion: "Zona descarga",
+                              partida: null,
+                              unidadSaldo: Infinity
+                            });
+                          }
+
+                          const tieneStock = ubicacionesConStock.some(u => u.unidadSaldo > 0);
+                          const stockNegativo = ubicacionesConStock.some(u => u.unidadSaldo < 0);
+                          
+                          return (
+                            <tr 
+                              key={index}
+                              className={`linea-pedido ${tieneStock ? 'clickable' : 'no-stock'} ${stockNegativo ? 'negative-stock' : ''}`}
+                              onClick={() => handleLineaClick(linea.codigoArticulo, linea.unidadesPendientes)}
+                            >
+                              <td className="td-izquierda">
+                                <div className="codigo-articulo">{linea.codigoArticulo}</div>
+                                <div className="codigo-alternativo">{linea.codigoAlternativo}</div>
+                              </td>
+                              <td className="td-izquierda">
+                                <div className="descripcion-articulo">{linea.descripcionArticulo}</div>
+                                <div className="detalles-articulo">{linea.descripcion2Articulo}</div>
+                              </td>
+                              <td className="td-centrado">
+                                {linea.unidadesPendientes > 0 ? (
+                                  <span>{linea.unidadesPendientes}</span>
+                                ) : (
+                                  <span className="completada-badge">COMPLETADA</span>
+                                )}
+                              </td>
+                              <td>
+                                <div className="ubicacion-select-container">
+                                  <select
+                                    value={expediciones[linea.codigoArticulo]?.ubicacion || ''}
+                                    onChange={e => handleExpedicionChange(
+                                      linea.codigoArticulo, 
+                                      'ubicacion', 
+                                      e.target.value
+                                    )}
+                                    className={`ubicacion-select ${expediciones[linea.codigoArticulo]?.ubicacion === "Zona descarga" ? 'zona-descarga' : ''}`}
+                                  >
+                                    {ubicacionesConStock.map((ubicacion, ubiIndex) => (
+                                      <option 
+                                        key={ubiIndex} 
+                                        value={ubicacion.ubicacion}
+                                        className={ubicacion.ubicacion === "Zona descarga" ? 'zona-descarga-option' : ''}
+                                      >
+                                        {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''} - 
+                                        Stock: {ubicacion.unidadSaldo === Infinity ? 'Ilimitado' : ubicacion.unidadSaldo}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={Math.min(
+                                    linea.unidadesPendientes,
+                                    expediciones[linea.codigoArticulo]?.ubicacion === "Zona descarga" 
+                                      ? linea.unidadesPendientes 
+                                      : (ubicacionesConStock.find(ubi => ubi.ubicacion === expediciones[linea.codigoArticulo]?.ubicacion)?.unidadSaldo || 0)
+                                  )}
+                                  value={expediciones[linea.codigoArticulo]?.cantidad || '0'}
+                                  onChange={e => handleExpedicionChange(
+                                    linea.codigoArticulo, 
+                                    'cantidad', 
+                                    e.target.value
+                                  )}
+                                  className={expediciones[linea.codigoArticulo]?.ubicacion === "Zona descarga" ? 'zona-descarga-input' : ''}
+                                />
+                              </td>
+                              <td className="td-centrado">
+                                <button
+                                  className="btn-expedir"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleExpedir(
+                                      pedido.codigoEmpresa,
+                                      pedido.ejercicioPedido,
+                                      pedido.seriePedido,
+                                      pedido.numeroPedido,
+                                      linea.codigoArticulo,
+                                      linea.unidadesPendientes
+                                    );
+                                  }}
+                                  disabled={expedicionLoading || !expediciones[linea.codigoArticulo] || 
+                                    parseInt(expediciones[linea.codigoArticulo]?.cantidad || 0) <= 0}
+                                >
+                                  Expedir
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
-              
-              <div className="toggle-button-container">
+            ))}
+            
+            {totalPaginas > 1 && (
+              <div className="pagination">
                 <button 
-                  onClick={() => togglePedidoView(pedido.numeroPedido)}
-                  className="btn-toggle"
+                  onClick={() => cambiarPagina(1)} 
+                  disabled={paginaActual === 1}
                 >
-                  {pedidoViewModes[pedido.numeroPedido] === 'show' ? 'Ocultar líneas' : 'Mostrar líneas'}
+                  &laquo;
+                </button>
+                
+                {Array.from({ length: totalPaginas }, (_, i) => i + 1).map(numero => (
+                  <button
+                    key={numero}
+                    onClick={() => cambiarPagina(numero)}
+                    className={paginaActual === numero ? 'active' : ''}
+                  >
+                    {numero}
+                  </button>
+                ))}
+                
+                <button 
+                  onClick={() => cambiarPagina(totalPaginas)} 
+                  disabled={paginaActual === totalPaginas}
+                >
+                  &raquo;
                 </button>
               </div>
-              
-              {pedidoViewModes[pedido.numeroPedido] === 'show' && (
-                <div className="lineas-table-container">
-                  <table className="lineas-table">
-                    <thead>
-                      <tr>
-                        <th>Artículo</th>
-                        <th>Descripción</th>
-                        <th>Pendiente</th>
-                        <th>Ubicación</th>
-                        <th>Cantidad</th>
-                        <th>Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pedido.articulos.map((linea, index) => {
-                        const tieneStock = (ubicaciones[linea.codigoArticulo] || []).some(u => u.unidadSaldo > 0);
-                        const stockNegativo = (ubicaciones[linea.codigoArticulo] || []).some(u => u.unidadSaldo < 0);
-                        
-                        return (
-                          <tr 
-                            key={index}
-                            className={`linea-pedido ${tieneStock ? 'clickable' : 'no-stock'} ${stockNegativo ? 'negative-stock' : ''}`}
-                            onClick={() => handleLineaClick(linea.codigoArticulo, linea.unidadesPendientes)}
-                          >
-                            <td className="td-izquierda">
-                              <div className="codigo-articulo">{linea.codigoArticulo}</div>
-                              <div className="codigo-alternativo">{linea.codigoAlternativo}</div>
-                            </td>
-                            <td className="td-izquierda">
-                              <div className="descripcion-articulo">{linea.descripcionArticulo}</div>
-                              <div className="detalles-articulo">{linea.descripcion2Articulo}</div>
-                            </td>
-                            <td className="td-centrado">
-                              {linea.unidadesPendientes > 0 ? (
-                                <span>{linea.unidadesPendientes}</span>
-                              ) : (
-                                <span className="completada-badge">COMPLETADA</span>
-                              )}
-                            </td>
-                            <td>
-                              <div className="ubicacion-select-container">
-                                <select
-                                  value={expediciones[linea.codigoArticulo]?.ubicacion || ''}
-                                  onChange={e => handleExpedicionChange(
-                                    linea.codigoArticulo, 
-                                    'ubicacion', 
-                                    e.target.value
-                                  )}
-                                  className={`ubicacion-select ${
-                                    expediciones[linea.codigoArticulo]?.ubicacion === "Zona descarga" ? 
-                                    'zona-descarga' : ''
-                                  }`}
-                                >
-                                  {(ubicaciones[linea.codigoArticulo] || []).map((ubicacion, ubiIndex) => (
-                                    <option 
-                                      key={ubiIndex} 
-                                      value={ubicacion.ubicacion}
-                                      className={
-                                        ubicacion.ubicacion === "Zona descarga" ? 
-                                        'zona-descarga-option' : ''
-                                      }
-                                    >
-                                      {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''} - 
-                                      Stock: {ubicacion.unidadSaldo}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            </td>
-                            <td>
-                              <input
-                                type="number"
-                                min="0"
-                                max={linea.unidadesPendientes}
-                                value={expediciones[linea.codigoArticulo]?.cantidad || '0'}
-                                onChange={e => handleExpedicionChange(
-                                  linea.codigoArticulo, 
-                                  'cantidad', 
-                                  e.target.value
-                                )}
-                                className={
-                                  expediciones[linea.codigoArticulo]?.ubicacion === "Zona descarga" ? 
-                                  'zona-descarga-input' : ''
-                                }
-                              />
-                            </td>
-                            <td className="td-centrado">
-                              <button
-                                className="btn-expedir"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleExpedir(
-                                    pedido.codigoEmpresa,
-                                    pedido.ejercicioPedido,
-                                    pedido.seriePedido,
-                                    pedido.numeroPedido,
-                                    linea.codigoArticulo,
-                                    linea.unidadesPendientes
-                                  );
-                                }}
-                                disabled={expedicionLoading || !expediciones[linea.codigoArticulo] || 
-                                  parseInt(expediciones[linea.codigoArticulo]?.cantidad || 0) <= 0}
-                              >
-                                Expedir
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          ))
+            )}
+          </>
         )}
       </div>
       

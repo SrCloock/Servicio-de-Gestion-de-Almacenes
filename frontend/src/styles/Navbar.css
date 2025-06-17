@@ -1,84 +1,68 @@
-.navbar {
-  background-color: #2c3e50;
-  color: white;
-  padding: 0 20px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+/* Estilos específicos para Navbar */
+.navigation-buttons {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
+  display: flex;
+  justify-content: center;
+  background-color: #2c3e50;
+  padding: 15px 0;
   z-index: 1000;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
-.navbar-container {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  max-width: 1200px;
-  margin: 0 auto;
-  height: 60px;
-}
-
-.navbar-logo {
-  display: flex;
-  align-items: center;
-}
-
-.logo-img {
-  height: 40px;
-  width: auto;
-}
-
-.navbar-links {
-  display: flex;
-  gap: 20px;
-}
-
-.nav-link {
-  color: #ecf0f1;
-  text-decoration: none;
-  font-size: 16px;
-  font-weight: 500;
-  padding: 8px 12px;
-  border-radius: 4px;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-}
-
-.nav-link:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-}
-
-.nav-link.active {
+.btn-nav {
+  padding: 10px 20px;
+  margin: 0 5px;
   background-color: #3498db;
   color: white;
-}
-
-.icon {
-  margin-right: 8px;
-  font-size: 18px;
-}
-
-.navbar-user {
-  display: flex;
-  align-items: center;
-}
-
-.logout-button {
-  background-color: #e74c3c;
-  color: white;
   border: none;
-  padding: 8px 15px;
-  border-radius: 4px;
+  border-radius: 5px;
   cursor: pointer;
   font-size: 14px;
-  font-weight: 500;
   display: flex;
   align-items: center;
   transition: background-color 0.3s;
 }
 
-.logout-button:hover {
-  background-color: #c0392b;
+.btn-nav:hover {
+  background-color: #2980b9;
+}
+
+.btn-nav svg {
+  margin-right: 8px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .navigation-buttons {
+    flex-wrap: wrap;
+    padding: 10px;
+  }
+  
+  .btn-nav {
+    margin: 5px;
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+  
+  .btn-nav svg {
+    margin-right: 5px;
+  }
+}
+
+@media (max-width: 480px) {
+  .navigation-buttons {
+    justify-content: space-around;
+  }
+  
+  .btn-nav span {
+    display: none;
+  }
+  
+  .btn-nav svg {
+    margin-right: 0;
+    font-size: 18px;
+  }
 }

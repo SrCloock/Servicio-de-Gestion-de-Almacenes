@@ -8,10 +8,33 @@ function GestionRutas() {
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
+  const getAuthHeaders = () => {
+    const user = JSON.parse(localStorage.getItem('user'));
+    const token = localStorage.getItem('token');
+    
+    if (!user) return {};
+    
+    const headers = {
+      usuario: user.CodigoCliente || '',
+      codigoempresa: user.CodigoEmpresa || ''
+    };
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    return headers;
+  };
+
   useEffect(() => {
     const fetchAlbaranes = async () => {
       try {
-        const response = await fetch('http://localhost:3000/albaranesPendientes');
+        const headers = getAuthHeaders();
+        
+        const response = await fetch('http://localhost:3000/albaranesPendientes', {
+          headers
+        });
+        
         if (!response.ok) throw new Error('Error al cargar albaranes');
 
         const data = await response.json();
@@ -19,7 +42,7 @@ function GestionRutas() {
         setAlbaranes(data);
       } catch (err) {
         console.error("❌ Error cargando albaranes:", err);
-        setError('No se pudieron cargar los albaranes');
+        setError('No se pudieron cargar los albaranes: ' + err.message);
       } finally {
         setLoading(false);
       }
