@@ -1,0 +1,65 @@
+.designar-rutas-container {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.designar-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 20px 0;
+}
+
+.designar-table th, .designar-table td {
+  border: 1px solid #ddd;
+  padding: 12px;
+  text-align: left;
+}
+
+.designar-table th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+}
+
+.designar-table tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.designar-table tr:hover {
+  background-color: #f1f1f1;
+}
+
+.designar-table select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.btn-guardar {
+  background-color: #4CAF50;
+  color: white;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  margin-top: 20px;
+}
+
+.btn-guardar:hover {
+  background-color: #45a049;
+}
+
+.error {
+  color: #ff0000;
+  background-color: #ffebee;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.loading {
+  text-align: center;
+  padding: 20px;
+}

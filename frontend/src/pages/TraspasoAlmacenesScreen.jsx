@@ -19,10 +19,7 @@ const TraspasoAlmacenesScreen = () => {
   const [showArticleDropdown, setShowArticleDropdown] = useState(false);
   const [filtroAlmacen, setFiltroAlmacen] = useState('');
   const [busqueda, setBusqueda] = useState('');
-  
-  // Historial de movimientos
   const [movimientos, setMovimientos] = useState([]);
-  
   const [traspasoData, setTraspasoData] = useState({
     articulo: '',
     almacenOrigen: '',
@@ -32,7 +29,6 @@ const TraspasoAlmacenesScreen = () => {
     cantidad: ''
   });
 
-  // Obtener datos iniciales
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
@@ -41,20 +37,14 @@ const TraspasoAlmacenesScreen = () => {
         const user = JSON.parse(localStorage.getItem('user'));
         const codigoEmpresa = user.CodigoEmpresa;
         
-        // Obtener artículos y almacenes
-        const [artResponse, almResponse] = await Promise.all([
+        const [artResponse, almResponse, movResponse] = await Promise.all([
           axios.get(`http://localhost:3000/inventario?codigoEmpresa=${codigoEmpresa}`, { headers }),
-          axios.get(`http://localhost:3000/almacenes?codigoEmpresa=${codigoEmpresa}`, { headers })
+          axios.get(`http://localhost:3000/almacenes?codigoEmpresa=${codigoEmpresa}`, { headers }),
+          axios.get(`http://localhost:3000/movimientos?codigoEmpresa=${codigoEmpresa}&dias=30`, { headers })
         ]);
         
         setArticulos(artResponse.data);
         setAlmacenes(almResponse.data);
-        
-        // Obtener movimientos de stock
-        const movResponse = await axios.get(
-          `http://localhost:3000/movimientos?codigoEmpresa=${codigoEmpresa}&dias=30`, 
-          { headers }
-        );
         setMovimientos(movResponse.data);
         
       } catch (error) {
@@ -69,26 +59,16 @@ const TraspasoAlmacenesScreen = () => {
 
   const articulosFiltrados = busqueda 
     ? articulos.filter(art => 
-        art.codigo.toLowerCase().includes(busqueda.toLowerCase()) || 
+        art.codigo.toLowerCase().includes(busqueda.toLowerCase())) || 
         (art.nombre && art.nombre.toLowerCase().includes(busqueda.toLowerCase()))
-      ).slice(0, 10)
-    : [];
-    
-  const articulosFiltradosPorAlmacen = filtroAlmacen
-    ? articulosFiltrados.filter(art => 
-        articulos.some(a => 
-          a.codigo === art.codigo && a.almacen === filtroAlmacen
-        )
-      )
-    : articulosFiltrados;
-
+    : articulos;
+      
   const handleSelectArticulo = (codigo) => {
     setTraspasoData({...traspasoData, articulo: codigo});
     setBusqueda(codigo);
     setShowArticleDropdown(false);
   };
 
-  // Cargar ubicaciones de origen
   useEffect(() => {
     const fetchUbicacionesOrigen = async () => {
       if (!traspasoData.articulo || !traspasoData.almacenOrigen) return;
@@ -107,7 +87,12 @@ const TraspasoAlmacenesScreen = () => {
             `http://localhost:3000/stock?articulo=${traspasoData.articulo}&almacen=${traspasoData.almacenOrigen}`,
             { headers }
           );
-          setUbicacionesOrigen(response.data);
+          
+          if (Array.isArray(response.data)) {
+            setUbicacionesOrigen(response.data);
+          } else {
+            setUbicacionesOrigen([]);
+          }
         }
       } catch (error) {
         console.error('Error al obtener ubicaciones origen:', error);
@@ -118,7 +103,6 @@ const TraspasoAlmacenesScreen = () => {
     fetchUbicacionesOrigen();
   }, [traspasoData.articulo, traspasoData.almacenOrigen]);
 
-  // Cargar ubicaciones de destino
   useEffect(() => {
     const fetchUbicacionesDestino = async () => {
       if (!traspasoData.almacenDestino) return;
@@ -150,7 +134,6 @@ const TraspasoAlmacenesScreen = () => {
     const { articulo, almacenOrigen, ubicacionOrigen, almacenDestino, ubicacionDestino, cantidad } = traspasoData;
     const cantidadNum = parseInt(cantidad, 10);
     
-    // Validaciones
     if (!articulo || !almacenOrigen || !ubicacionOrigen || !almacenDestino || !ubicacionDestino || !cantidad || cantidadNum <= 0) {
       alert('Completa todos los campos. Cantidad debe ser mayor que 0');
       return;
@@ -163,7 +146,6 @@ const TraspasoAlmacenesScreen = () => {
 
     const articuloInfo = articulos.find(a => a.codigo === articulo);
     
-    // Verificar stock (excepto para descarga)
     if (almacenOrigen !== 'DESCARGA') {
       try {
         const headers = getAuthHeader();
@@ -183,7 +165,6 @@ const TraspasoAlmacenesScreen = () => {
       }
     }
     
-    // Agregar a pendientes
     setTraspasosPendientes([...traspasosPendientes, {
       ...traspasoData,
       cantidad: cantidadNum,
@@ -192,7 +173,6 @@ const TraspasoAlmacenesScreen = () => {
       esDescarga: almacenOrigen === 'DESCARGA'
     }]);
 
-    // Resetear formulario
     setTraspasoData({
       articulo: '',
       almacenOrigen: '',
@@ -229,6 +209,16 @@ const TraspasoAlmacenesScreen = () => {
   const confirmarTraspasos = async () => {
     if (traspasosPendientes.length === 0) {
       alert('No hay traspasos pendientes');
+      return;
+    }
+
+    const valido = traspasosPendientes.every(t => 
+      t.articulo && t.almacenOrigen && t.ubicacionOrigen && 
+      t.almacenDestino && t.ubicacionDestino && t.cantidad > 0
+    );
+    
+    if (!valido) {
+      alert('Hay traspasos con datos incompletos. Revísalos antes de confirmar.');
       return;
     }
 
@@ -270,7 +260,6 @@ const TraspasoAlmacenesScreen = () => {
     }
   };
 
-  // Cerrar dropdown al hacer clic fuera
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) {
@@ -309,7 +298,6 @@ const TraspasoAlmacenesScreen = () => {
         
         <Navbar />
         
-        {/* Filtro por almacén */}
         <div className="filtro-almacen-container">
           <label>Filtrar por almacén:</label>
           <select
@@ -352,22 +340,18 @@ const TraspasoAlmacenesScreen = () => {
                 />
                 
                 {showArticleDropdown && (
-                  <div className="article-dropdown">
-                    {articulosFiltradosPorAlmacen.length > 0 ? (
-                      articulosFiltradosPorAlmacen.map((art) => (
-                        <div 
-                          key={art.codigo} 
-                          className="dropdown-item"
-                          onClick={() => handleSelectArticulo(art.codigo)}
-                        >
-                          <div className="article-code">{art.codigo}</div>
-                          <div className="article-name">{art.nombre}</div>
-                          <div className="article-stock">Stock: {art.stock}</div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="dropdown-empty">No se encontraron artículos</div>
-                    )}
+                  <div className="article-dropdown" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                    {articulosFiltrados.map((art) => (
+                      <div 
+                        key={art.codigo} 
+                        className="dropdown-item"
+                        onClick={() => handleSelectArticulo(art.codigo)}
+                      >
+                        <div className="article-code">{art.codigo}</div>
+                        <div className="article-name">{art.nombre}</div>
+                        <div className="article-stock">Stock: {art.stock}</div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -403,8 +387,8 @@ const TraspasoAlmacenesScreen = () => {
                   className="select-input"
                 >
                   <option value="">Selecciona ubicación</option>
-                  {ubicacionesOrigen.map((ubi) => (
-                    <option key={ubi.ubicacion} value={ubi.ubicacion}>
+                  {ubicacionesOrigen.map((ubi, index) => (
+                    <option key={index} value={ubi.ubicacion}>
                       {ubi.ubicacion} {ubi.stock > 0 && `(${ubi.stock} uds)`}
                       {traspasoData.almacenOrigen === 'DESCARGA' && ' [Descarga]'}
                     </option>
@@ -439,8 +423,8 @@ const TraspasoAlmacenesScreen = () => {
                   className="select-input"
                 >
                   <option value="">Selecciona ubicación</option>
-                  {ubicacionesDestino.map((ubi) => (
-                    <option key={ubi} value={ubi}>{ubi}</option>
+                  {ubicacionesDestino.map((ubi, index) => (
+                    <option key={index} value={ubi}>{ubi}</option>
                   ))}
                 </select>
               </div>

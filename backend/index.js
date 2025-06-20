@@ -32,6 +32,34 @@ const dbConfig = {
 // 🔥 Pool de conexión global
 let poolGlobal;
 
+// 🔑 MIDDLEWARE DE PERMISOS ADMIN
+function checkAdmin(req, res, next) {
+  const user = req.user;
+  
+  if (user && user.categoria === 'ADM') {
+    return next();
+  }
+  
+  res.status(403).json({ 
+    success: false, 
+    mensaje: 'Acceso restringido a administradores' 
+  });
+}
+
+// Ejemplo de uso en una ruta:
+app.get('/todos-albaranes', checkAdmin, async (req, res) => {
+  try {
+    const result = await poolGlobal.request().query(`
+      SELECT * FROM CabeceraAlbaranCliente
+      ORDER BY FechaAlbaran DESC
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR ALBARANES]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener albaranes' });
+  }
+});
+
 // ============================================
 // 🔑 MIDDLEWARE DE AUTENTICACIÓN (CORRECCIÓN FINAL)
 // ============================================
@@ -673,7 +701,6 @@ app.post('/ajustar-stock', async (req, res) => {
 app.get('/ubicacionesArticulo', async (req, res) => {
   const { codigoArticulo } = req.query;
   
-  // Verificar autenticación
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ 
       success: false, 
@@ -952,14 +979,29 @@ app.get('/ubicacionesConStock', async (req, res) => {
 // ✅ 17. Confirmar Traspasos (MODIFICADO)
 // ============================================
 app.post('/traspasos/confirmar', async (req, res) => {
-  const traspasos = req.body;
+  const traspasos = req.body.traspasos;
   const usuario = req.headers.usuario;
   const codigoEmpresa = req.user.CodigoEmpresa;
-
-  if (!Array.isArray(traspasos) || traspasos.length === 0 || !usuario || !codigoEmpresa) {
-    return res.status(400).json({ success: false, mensaje: 'Datos inválidos o incompletos' });
+  
+  // Validación robusta
+  if (!Array.isArray(traspasos) || traspasos.length === 0) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Debe enviar un array de traspasos válido' 
+    });
   }
-
+  
+  // Verificar cada traspaso
+  for (const t of traspasos) {
+    if (!t.articulo || !t.almacenOrigen || !t.ubicacionOrigen || 
+        !t.almacenDestino || !t.ubicacionDestino || !t.cantidad) {
+      return res.status(400).json({ 
+        success: false, 
+        mensaje: 'Uno o más traspasos tienen campos incompletos' 
+      });
+    }
+  }
+  
   try {
     for (const traspaso of traspasos) {
       const { articulo, almacenOrigen, ubicacionOrigen, almacenDestino, ubicacionDestino, cantidad } = traspaso;
@@ -1171,7 +1213,7 @@ app.post('/generarAlbaranDesdePedido', async (req, res) => {
 });
 
 // ============================================
-// ✅ 19. Albaranes Pendientes (filtrado por empresa)
+// ✅ 19. Albaranes Pendientes (IMPLEMENTACIÓN COMPLETA)
 // ============================================
 app.get('/albaranesPendientes', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
@@ -1181,21 +1223,64 @@ app.get('/albaranesPendientes', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
   
   try {
+    // Obtener cabeceras de albaranes
     const cabeceras = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(`
-        SELECT * 
+        SELECT 
+          NumeroAlbaran, 
+          SerieAlbaran, 
+          FechaAlbaran, 
+          CodigoCliente, 
+          RazonSocial, 
+          Domicilio, 
+          Municipio, 
+          ImporteLiquido,
+          StatusFacturado
         FROM CabeceraAlbaranCliente
         WHERE StatusFacturado = 0
           AND CodigoEmpresa = @codigoEmpresa
         ORDER BY FechaAlbaran DESC
       `);
 
-    // Resto del código sin cambios...
-    // ... (código para obtener líneas y agrupar)
+    // Obtener líneas para cada albarán
+    const albaranesConLineas = await Promise.all(cabeceras.recordset.map(async (cabecera) => {
+      const lineas = await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('ejercicio', sql.SmallInt, new Date(cabecera.FechaAlbaran).getFullYear())
+        .input('serie', sql.VarChar, cabecera.SerieAlbaran || '')
+        .input('numeroAlbaran', sql.Int, cabecera.NumeroAlbaran)
+        .query(`
+          SELECT 
+            CodigoArticulo AS codigo,
+            DescripcionArticulo AS nombre,
+            Unidades AS cantidad
+          FROM LineasAlbaranCliente
+          WHERE CodigoEmpresa = @codigoEmpresa
+            AND EjercicioAlbaran = @ejercicio
+            AND SerieAlbaran = @serie
+            AND NumeroAlbaran = @numeroAlbaran
+        `);
+
+      return {
+        id: cabecera.NumeroAlbaran,
+        albaran: `${cabecera.SerieAlbaran || ''}${cabecera.SerieAlbaran ? '-' : ''}${cabecera.NumeroAlbaran}`,
+        cliente: cabecera.RazonSocial,
+        direccion: `${cabecera.Domicilio}, ${cabecera.Municipio}`,
+        FechaAlbaran: cabecera.FechaAlbaran,
+        importeLiquido: cabecera.ImporteLiquido,
+        articulos: lineas.recordset // Agregamos las líneas
+      };
+    }));
+
+    res.json(albaranesConLineas);
   } catch (err) {
     console.error('[ERROR OBTENER ALBARANES PENDIENTES]', err);
-    res.status(500).json({ success: false, mensaje: 'Error al obtener albaranes pendientes' });
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener albaranes pendientes',
+      error: err.message 
+    });
   }
 });
 
@@ -1696,6 +1781,116 @@ app.get('/movimientos', async (req, res) => {
   } catch (err) {
     console.error('[ERROR MOVIMIENTOS STOCK]', err);
     res.status(500).json({ success: false, mensaje: 'Error al obtener movimientos' });
+  }
+});
+
+// backend/index.js (agregar estas rutas)
+
+// Nuevo endpoint para obtener empresas
+app.get('/empresas', async (req, res) => {
+  try {
+    const result = await poolGlobal.request().query(`
+      SELECT * 
+      FROM Empresas 
+      WHERE CodigoEmpresa IN (
+        SELECT CodigoEmpresa 
+        FROM lsysEmpresaAplicacion 
+        WHERE CodigoAplicacion = 'CON'
+      ) 
+      AND CodigoEmpresa <= 10000
+      ORDER BY CodigoEmpresa
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR EMPRESAS]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener empresas' });
+  }
+});
+
+// Nuevo endpoint para obtener repartidores
+app.get('/repartidores', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
+  try {
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT CodigoCliente, Nombre
+        FROM Clientes
+        WHERE CodigoCategoriaEmpleadoLc = 'rep'
+        AND CodigoEmpresa = @codigoEmpresa
+      `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR REPARTIDORES]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener repartidores' });
+  }
+});
+
+// Nuevo endpoint para asignar pedidos
+app.post('/asignarPedido', async (req, res) => {
+  const { pedidoId, repartidorId, codigoEmpresa } = req.body;
+  
+  if (!pedidoId || !repartidorId || !codigoEmpresa) {
+    return res.status(400).json({ success: false, mensaje: 'Datos incompletos' });
+  }
+
+  try {
+    await poolGlobal.request()
+      .input('pedidoId', sql.Int, pedidoId)
+      .input('repartidorId', sql.VarChar, repartidorId)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        UPDATE CabeceraPedidoCliente
+        SET CodigoRepartidor = @repartidorId
+        WHERE NumeroPedido = @pedidoId
+        AND CodigoEmpresa = @codigoEmpresa
+      `);
+    
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[ERROR ASIGNAR PEDIDO]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al asignar pedido' });
+  }
+});
+
+// Nuevo endpoint para pedidos asignados
+app.get('/pedidosAsignados', async (req, res) => {
+  const usuario = req.headers.usuario;
+  const codigoEmpresa = req.user.CodigoEmpresa;
+  
+  // Primero obtener el código del repartidor (usuario actual)
+  try {
+    const repartidor = await poolGlobal.request()
+      .input('usuario', sql.VarChar, usuario)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT CodigoCliente 
+        FROM Clientes 
+        WHERE UsuarioLogicNet = @usuario
+        AND CodigoEmpresa = @codigoEmpresa
+      `);
+    
+    if (repartidor.recordset.length === 0) {
+      return res.json([]);
+    }
+    
+    const repartidorId = repartidor.recordset[0].CodigoCliente;
+    
+    const pedidos = await poolGlobal.request()
+      .input('repartidorId', sql.VarChar, repartidorId)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT * 
+        FROM CabeceraPedidoCliente
+        WHERE CodigoRepartidor = @repartidorId
+        AND Estado = 0
+        AND CodigoEmpresa = @codigoEmpresa
+      `);
+    
+    res.json(pedidos.recordset);
+  } catch (err) {
+    console.error('[ERROR PEDIDOS ASIGNADOS]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener pedidos asignados' });
   }
 });
 

@@ -1,9 +1,10 @@
-﻿import React from 'react';
+﻿import React, { useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './styles/style.css';
 import './styles/PedidosScreen.css';
 import './styles/TraspasoAlmacenesScreen.css';
 import './styles/InventarioScreen.css';
+import './styles/DesignarRutasScreen.css';
 import LoginPage from './pages/LoginPage';
 import PedidosScreen from './pages/PedidosScreen';
 import ClientesPage from './pages/ClientesPage';
@@ -17,83 +18,133 @@ import ConfirmacionEntrega from './pages/ConfirmacionEntrega';
 import GestionRutas from './pages/GestionRutas';
 import DetalleAlbaran from './pages/DetalleAlbaran';
 import InventarioScreen from './pages/InventarioScreen';
+import PedidosAsignadosScreen from './pages/PedidosAsignadosScreen';
+import DesignarRutasScreen from './pages/DesignarRutasScreen';
+import { isAuthenticated, getCurrentUser } from './helpers/authHelper';
 
-// Componente para proteger rutas
-const ProtectedRoute = ({ children }) => {
+const ProtectedRoute = ({ children, requiredRole = null }) => {
   const location = useLocation();
-  const userData = JSON.parse(localStorage.getItem('user'));
   
-  if (!userData) {
+  if (!isAuthenticated()) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  
+  const user = getCurrentUser();
+  
+  // Verificar si se requiere un rol específico
+  if (requiredRole) {
+    const categoria = user?.CodigoCategoriaEmpleadoLc || '';
+    const roleMatches = 
+      (requiredRole === 'admin' && (categoria === 'ADM' || categoria === 'Administrador')) ||
+      (requiredRole === 'repartidor' && (categoria === 'rep' || categoria === 'Repartidor'));
+    
+    if (!roleMatches) {
+      return <Navigate to="/" replace />;
+    }
   }
   
   return children;
 };
 
 function App() {
+  useEffect(() => {
+    const handleEmpresaChange = () => {
+      console.log("Empresa cambiada - actualizando contexto de la app");
+      // Aquí puedes forzar una actualización si es necesario
+    };
+
+    window.addEventListener('empresaChanged', handleEmpresaChange);
+    
+    return () => {
+      window.removeEventListener('empresaChanged', handleEmpresaChange);
+    };
+  }, []);
+
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/login" />} />
       <Route path="/login" element={<LoginPage />} />
       
-      {/* Rutas protegidas */}
       <Route path="/PedidosScreen" element={
         <ProtectedRoute>
           <PedidosScreen />
         </ProtectedRoute>
       } />
+      
+      <Route path="/pedidos-asignados" element={
+        <ProtectedRoute requiredRole="repartidor">
+          <PedidosAsignadosScreen />
+        </ProtectedRoute>
+      } />
+      
       <Route path="/clientes" element={
         <ProtectedRoute>
           <ClientesPage />
         </ProtectedRoute>
       } />
+      
       <Route path="/clientes/ficha" element={
         <ProtectedRoute>
           <FichaClientePage />
         </ProtectedRoute>
       } />
+      
       <Route path="/estadisticasCliente" element={
         <ProtectedRoute>
           <EstadisticasClientePage />
         </ProtectedRoute>
       } />
+      
       <Route path="/traspaso" element={
         <ProtectedRoute>
           <TraspasoAlmacenesScreen />
         </ProtectedRoute>
       } />
+      
       <Route path="/dashboard" element={
         <ProtectedRoute>
           <DashboardPage />
         </ProtectedRoute>
       } />
+      
       <Route path="/preparacion" element={
         <ProtectedRoute>
           <PreparacionPedidos />
         </ProtectedRoute>
       } />
+      
       <Route path="/entrada" element={
         <ProtectedRoute>
           <EntradaStockCompras />
         </ProtectedRoute>
       } />
+      
       <Route path="/rutas" element={
         <ProtectedRoute>
           <GestionRutas />
         </ProtectedRoute>
       } />
+      
+      <Route path="/designar-rutas" element={
+        <ProtectedRoute>
+          <DesignarRutasScreen />
+        </ProtectedRoute>
+      } />
+      
       <Route path="/confirmacion-entrega" element={
         <ProtectedRoute>
           <ConfirmacionEntrega />
         </ProtectedRoute>
       } />
+      
       <Route path="/detalle-albaran" element={
         <ProtectedRoute>
           <DetalleAlbaran />
         </ProtectedRoute>
       } />
+      
       <Route path="/inventario" element={
-        <ProtectedRoute>
+        <ProtectedRoute requiredRole="admin">
           <InventarioScreen />
         </ProtectedRoute>
       } />

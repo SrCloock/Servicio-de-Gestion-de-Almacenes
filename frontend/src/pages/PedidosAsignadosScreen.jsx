@@ -1,12 +1,11 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/PedidosScreen.css';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
-import UserInfoBar from '../components/UserInfoBar';
 
-const PedidosScreen = () => {
+const PedidosAsignadosScreen = () => {
   const [pedidos, setPedidos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState({});
   const [lineaSeleccionada, setLineaSeleccionada] = useState(null);
@@ -22,49 +21,34 @@ const PedidosScreen = () => {
   const [paginaActual, setPaginaActual] = useState(1);
   const pedidosPorPagina = 20;
   
-  const [repartidores, setRepartidores] = useState([]);
-  const [pedidoAsignando, setPedidoAsignando] = useState(null);
-  const [repartidorSeleccionado, setRepartidorSeleccionado] = useState('');
   const [codigoVerificacion, setCodigoVerificacion] = useState('');
   const [lineaVerificando, setLineaVerificando] = useState(null);
-  
+
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user'));
 
+  if (!user || user.CodigoCategoriaEmpleadoLc !== 'rep') {
+    return (
+      <div className="pedidos-container">
+        <div className="error-pedidos">
+          <p>No tienes permiso para acceder a esta página</p>
+          <button onClick={() => navigate('/')}>Volver al inicio</button>
+        </div>
+      </div>
+    );
+  }
+
   useEffect(() => {
-    const fetchPedidos = async () => {
+    const fetchPedidosAsignados = async () => {
       try {
         setLoading(true);
         setError('');
         
-        const userData = JSON.parse(localStorage.getItem('user'));
-        if (!userData || !userData.CodigoEmpresa) {
-          setError('No se encontró el código de empresa del usuario.');
-          setLoading(false);
-          return;
-        }
-        
-        const codigoEmpresa = userData.CodigoEmpresa;
         const headers = getAuthHeader();
         
-        if (!headers.usuario || !headers.codigoempresa) {
-          setError('Error de autenticación. Vuelve a iniciar sesión');
-          setLoading(false);
-          return;
-        }
-        
-        const repResponse = await axios.get(
-          'http://localhost:3000/repartidores',
-          { headers }
-        );
-        setRepartidores(repResponse.data);
-        
         const response = await axios.get(
-          `http://localhost:3000/pedidosPendientes`,
-          { 
-            headers: headers,
-            params: { codigoEmpresa } 
-          }
+          'http://localhost:3000/pedidosAsignados',
+          { headers }
         );
         
         setPedidos(response.data);
@@ -113,28 +97,19 @@ const PedidosScreen = () => {
           initialModes[pedido.numeroPedido] = 'show';
         });
         setPedidoViewModes(initialModes);
+        
       } catch (err) {
-        console.error('Error al obtener pedidos:', err);
-        if (err.response) {
-          if (err.response.status === 500) {
-            setError('Error interno del servidor. Inténtalo más tarde');
-          } else if (err.response.status === 401) {
-            setError('Error de autenticación. Vuelve a iniciar sesión');
-          } else {
-            setError(`Error del servidor: ${err.response.status} ${err.response.statusText}`);
-          }
-        } else {
-          setError('Error de conexión con el servidor');
-        }
+        setError('Error al cargar pedidos asignados');
+        console.error('Error:', err);
       } finally {
         setLoading(false);
       }
     };
     
-    fetchPedidos();
+    fetchPedidosAsignados();
     
     const handleEmpresaChange = () => {
-      fetchPedidos();
+      fetchPedidosAsignados();
     };
 
     window.addEventListener('empresaChanged', handleEmpresaChange);
@@ -272,23 +247,6 @@ const PedidosScreen = () => {
     window.scrollTo(0, 0);
   };
 
-  const asignarPedido = async () => {
-    if (!pedidoAsignando || !repartidorSeleccionado) return;
-    
-    try {
-      await axios.post('http://localhost:3000/asignarPedido', {
-        pedidoId: pedidoAsignando.numeroPedido,
-        repartidorId: repartidorSeleccionado,
-        codigoEmpresa: user.CodigoEmpresa
-      });
-      alert(`Pedido #${pedidoAsignando.numeroPedido} asignado`);
-      setPedidoAsignando(null);
-    } catch (error) {
-      console.error('Error al asignar pedido:', error);
-      alert('Error al asignar pedido');
-    }
-  };
-
   const verificarYExpedir = (linea, pedido) => {
     setLineaVerificando({ linea, pedido });
   };
@@ -316,12 +274,10 @@ const PedidosScreen = () => {
 
   return (
     <div className="pedidos-container">
-      <UserInfoBar />
-      
       <div className="screen-header">
         <div className="bubble bubble1"></div>
         <div className="bubble bubble2"></div>
-        <h2>Preparación de Pedidos</h2>
+        <h2>Mis Pedidos Asignados</h2>
       </div>
       
       <div className="pedidos-controls">
@@ -386,7 +342,7 @@ const PedidosScreen = () => {
           </div>
         ) : pedidosOrdenados.length === 0 ? (
           <div className="no-pedidos">
-            <p>No hay pedidos pendientes</p>
+            <p>No hay pedidos asignados</p>
           </div>
         ) : (
           <>
@@ -396,12 +352,6 @@ const PedidosScreen = () => {
                   <span className="numero-pedido">#{pedido.numeroPedido}</span>
                   <span className="cliente">{pedido.razonSocial}</span>
                   <span className="fecha-pedido">{new Date(pedido.fechaPedido).toLocaleDateString()}</span>
-                  <button 
-                    onClick={() => setPedidoAsignando(pedido)}
-                    className="btn-asignar"
-                  >
-                    Asignar Repartidor
-                  </button>
                 </div>
                 
                 <div className="pedido-details">
@@ -581,32 +531,6 @@ const PedidosScreen = () => {
       
       <Navbar />
 
-      {pedidoAsignando && (
-        <div className="modal-asignacion">
-          <div className="modal-contenido">
-            <h3>Asignar repartidor al pedido #{pedidoAsignando.numeroPedido}</h3>
-            <select
-              value={repartidorSeleccionado}
-              onChange={(e) => setRepartidorSeleccionado(e.target.value)}
-            >
-              <option value="">Seleccionar repartidor</option>
-              {repartidores.map(rep => (
-                <option key={rep.CodigoCliente} value={rep.CodigoCliente}>
-                  {rep.Nombre}
-                </option>
-              ))}
-            </select>
-            <button 
-              onClick={asignarPedido}
-              disabled={!repartidorSeleccionado}
-            >
-              Asignar
-            </button>
-            <button onClick={() => setPedidoAsignando(null)}>Cancelar</button>
-          </div>
-        </div>
-      )}
-
       {lineaVerificando && (
         <div className="modal-verificacion">
           <div className="modal-contenido">
@@ -626,4 +550,4 @@ const PedidosScreen = () => {
   );
 };
 
-export default PedidosScreen;
+export default PedidosAsignadosScreen;

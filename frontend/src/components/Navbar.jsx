@@ -4,7 +4,8 @@ import '../styles/Navbar.css';
 
 const Navbar = () => {
   const navigate = useNavigate();
-
+  const user = JSON.parse(localStorage.getItem('user'));
+  
   return (
     <div className="navigation-buttons">
       <button onClick={() => navigate('/rutas')} className="btn-nav">
@@ -19,6 +20,13 @@ const Navbar = () => {
       <button onClick={() => navigate('/inventario')} className="btn-nav">
         <span>📊</span> Inventario
       </button>
+      
+      {user?.CodigoCategoriaEmpleadoLc === 'rep' && (
+        <button onClick={() => navigate('/pedidos-asignados')} className="btn-nav">
+          <span>📋</span> Mis Pedidos
+        </button>
+      )}
+      
       <button onClick={() => navigate('/')} className="btn-nav">
         <span>🏠</span> Inicio
       </button>

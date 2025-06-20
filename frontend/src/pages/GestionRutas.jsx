@@ -1,6 +1,9 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿﻿import React, { useState, useEffect } from 'react';
 import '../styles/GestionRutas.css';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { getAuthHeader } from '../helpers/authHelper';
+import UserInfoBar from '../components/UserInfoBar';
 
 function GestionRutas() {
   const [albaranes, setAlbaranes] = useState([]);
@@ -8,41 +11,27 @@ function GestionRutas() {
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
-  const getAuthHeaders = () => {
-    const user = JSON.parse(localStorage.getItem('user'));
-    const token = localStorage.getItem('token');
-    
-    if (!user) return {};
-    
-    const headers = {
-      usuario: user.CodigoCliente || '',
-      codigoempresa: user.CodigoEmpresa || ''
-    };
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    return headers;
-  };
-
   useEffect(() => {
     const fetchAlbaranes = async () => {
       try {
-        const headers = getAuthHeaders();
+        setLoading(true);
+        setError(null);
         
-        const response = await fetch('http://localhost:3000/albaranesPendientes', {
-          headers
-        });
+        const headers = getAuthHeader();
         
-        if (!response.ok) throw new Error('Error al cargar albaranes');
+        if (!headers.usuario || !headers.codigoempresa) {
+          throw new Error('Faltan cabeceras de autenticación. Vuelve a iniciar sesión.');
+        }
 
-        const data = await response.json();
-        console.log("✅ Albaranes reales:", data);
-        setAlbaranes(data);
+        const response = await axios.get('http://localhost:3000/albaranesPendientes', { 
+          headers: headers 
+        });
+
+        console.log("✅ Albaranes reales:", response.data);
+        setAlbaranes(response.data);
       } catch (err) {
         console.error("❌ Error cargando albaranes:", err);
-        setError('No se pudieron cargar los albaranes: ' + err.message);
+        setError(err.message || 'No se pudieron cargar los albaranes');
       } finally {
         setLoading(false);
       }
@@ -57,7 +46,9 @@ function GestionRutas() {
 
   return (
     <div className="rutas-content">
-      <div className="rutas-header">
+      <UserInfoBar />
+      
+      <div className="screen-header">
         <h2>Gestión de Rutas</h2>
         <button className="btn-volver-rutas" onClick={() => navigate('/PedidosScreen')}>
           ← Volver a Pedidos
@@ -68,21 +59,61 @@ function GestionRutas() {
 
       <h3>Entregas Asignadas a Tu Ruta</h3>
 
-      {loading && <div>Cargando albaranes...</div>}
-      {error && <div style={{ color: 'red' }}>{error}</div>}
-
-      {!loading && albaranes.length === 0 && <div>No hay albaranes para mostrar.</div>}
-
-      {albaranes.map((ruta) => (
-        <div key={ruta.id || ruta.albaran} className="ruta-card" onClick={() => abrirDetalle(ruta)}>
-          <h4>Albarán: {ruta.albaran}</h4>
-          <p><strong>Cliente:</strong> {ruta.cliente}</p>
-          <p><strong>Dirección:</strong> {ruta.direccion}</p>
-        <p><strong>Fecha:</strong> {new Date(ruta.FechaAlbaran).toLocaleDateString('es-ES')}</p>
-
-          <p><strong>Importe:</strong> {ruta.importeLiquido?.toFixed(2)} €</p>
+      {loading && (
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Cargando albaranes...</p>
         </div>
-      ))}
+      )}
+      
+      {error && <div className="error-message">{error}</div>}
+
+      {!loading && albaranes.length === 0 && (
+        <div className="no-albaranes">
+          <p>No hay albaranes pendientes de entrega</p>
+        </div>
+      )}
+
+      <div className="albaranes-grid">
+        {albaranes.map((albaran) => (
+          <div 
+            key={`${albaran.id}-${albaran.albaran}`} 
+            className="ruta-card"
+            onClick={() => abrirDetalle(albaran)}
+          >
+            <div className="card-header">
+              <h4>Albarán: {albaran.albaran}</h4>
+              <span className="fecha-albaran">
+                {new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}
+              </span>
+            </div>
+            
+            <div className="card-body">
+              <p className="cliente-info">
+                <span className="icon">👤</span> 
+                <strong>{albaran.cliente}</strong>
+              </p>
+              <p className="direccion-info">
+                <span className="icon">📍</span> 
+                {albaran.direccion}
+              </p>
+            </div>
+            
+            <div className="card-footer">
+              <div className="importe-info">
+                <span>Importe:</span>
+                <span className="importe-valor">{albaran.importeLiquido?.toFixed(2)} €</span>
+              </div>
+              <div className="articulos-info">
+                <span>Artículos:</span>
+                <span className="articulos-count">
+                  {albaran.articulos?.length || 0}
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

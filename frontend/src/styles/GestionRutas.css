@@ -9,8 +9,18 @@ html, body, #root {
   font-family: Arial, sans-serif;
 }
 
+.rutas-content {
+  min-height: 100vh;
+  background-color: white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
 /* Cabecera tipo pedidos con fondo verde degradado y burbujas */
-.rutas-header {
+.screen-header {
   width: 100%;
   height: 180px;
   background: linear-gradient(180deg, #009688 0%, #4db6ac 100%);
@@ -24,14 +34,14 @@ html, body, #root {
   justify-content: center;
 }
 
-.rutas-header h2 {
+.screen-header h2 {
   color: white;
   text-align: center;
-  font-size: 22px;
+  font-size: 28px;
   font-weight: bold;
   z-index: 1;
   margin: 0;
-  padding-top: 30px;
+  padding: 0 20px;
 }
 
 /* Burbujas decorativas */
@@ -42,32 +52,20 @@ html, body, #root {
 }
 
 .bubble1 {
-  width: 60px;
-  height: 60px;
+  width: 80px;
+  height: 80px;
   top: 20px;
-  left: 20px;
+  left: 10%;
 }
 
 .bubble2 {
-  width: 40px;
-  height: 40px;
-  top: 70px;
-  right: 30px;
+  width: 50px;
+  height: 50px;
+  top: 60px;
+  right: 15%;
 }
 
-
-/* Contenedor principal */
-.rutas-content {
-  min-height: 100vh;
-  background-color: white;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px;
-  box-sizing: border-box;
-}
-
-/* Título */
+/* TÃ­tulo */
 .rutas-content h3 {
   font-size: 24px;
   font-weight: bold;
@@ -85,6 +83,13 @@ html, body, #root {
   width: 95%;
   max-width: 800px;
   box-sizing: border-box;
+  cursor: pointer;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.ruta-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
 }
 
 .ruta-card h4 {
@@ -98,120 +103,113 @@ html, body, #root {
   margin: 4px 0;
 }
 
-.ruta-card ul {
-  list-style: disc;
-  padding-left: 20px;
-  margin: 10px 0;
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
 }
 
-.ruta-card li {
-  color: #444;
-  margin-bottom: 4px;
+.fecha-albaran {
+  font-size: 14px;
+  color: #777;
 }
 
-/* Botón dentro de ruta */
-.ruta-card button {
-  margin-top: 12px;
-  background-color: #009688;
-  color: white;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
+.card-body {
+  margin-bottom: 15px;
+}
+
+.cliente-info, .direccion-info {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.icon {
+  margin-right: 8px;
+  font-size: 16px;
+}
+
+.card-footer {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid #eee;
+  padding-top: 15px;
+}
+
+.importe-info, .articulos-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.importe-info span, .articulos-info span {
+  font-size: 14px;
+  color: #777;
+}
+
+.importe-valor {
   font-weight: bold;
-  transition: background-color 0.3s ease;
+  color: #009688;
+  font-size: 18px;
 }
 
-.ruta-card button:hover {
-  background-color: #00796b;
-}
-
-/* Estilos de botones comunes */
-.btn-traspaso {
-  margin-left: 10px;
-  padding: 8px 12px;
-  background-color: #3498db;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.btn-traspaso:hover {
-  background-color: #2980b9;
-}
-
-.btn-opcion {
-  background-color: #4caf50;
-  color: white;
-  margin: 5px 5px 0 0;
-  padding: 8px 12px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
+.articulos-count {
   font-weight: bold;
-  transition: background 0.3s ease;
-}
-
-.btn-opcion:hover {
-  background-color: #388e3c;
-}
-
-/* Firma de entregas */
-.ruta-card img {
-  border: 1px solid #ccc;
-  width: 200px;
-  height: 80px;
-  margin-top: 10px;
+  color: #2c3e50;
+  font-size: 18px;
 }
 
 /* Loading */
-.loading {
-  text-align: center;
-  font-size: 18px;
-  color: #666;
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   margin-top: 50px;
 }
 
-/* Iconos */
-.icono {
-  margin-right: 10px;
+.loading-spinner {
+  border: 5px solid #f3f3f3;
+  border-top: 5px solid #009688;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
 }
 
-/* Tablas (si usas alguna) */
-table {
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.error-message {
+  background-color: #f8d7da;
+  color: #721c24;
+  padding: 15px;
+  border-radius: 8px;
+  margin: 20px 0;
+  max-width: 800px;
+  width: 95%;
+  text-align: center;
+}
+
+.no-albaranes {
+  background-color: #d1ecf1;
+  color: #0c5460;
+  padding: 20px;
+  border-radius: 8px;
+  margin: 20px 0;
+  max-width: 800px;
+  width: 95%;
+  text-align: center;
+}
+
+.albaranes-grid {
   width: 100%;
-  border-collapse: collapse;
-  margin-top: 20px;
-}
-
-th, td {
-  padding: 12px;
-  border: 1px solid #ddd;
-  text-align: left;
-}
-
-th {
-  background-color: #b2dfdb;
-  color: #000;
-  font-size: 13px;
-}
-
-td {
-  font-size: 13px;
-}
-
-tr:nth-child(even) {
-  background-color: #c0ebe7;
-}
-
-tr:nth-child(odd) {
-  background-color: #d7f4f0;
-}
-
-tr:hover {
-  background-color: #b2dfdb;
-  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .btn-volver-rutas {
@@ -233,4 +231,3 @@ tr:hover {
   background-color: #009688;
   color: white;
 }
-

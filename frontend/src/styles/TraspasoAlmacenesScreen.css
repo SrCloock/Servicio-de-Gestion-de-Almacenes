@@ -34,24 +34,6 @@
   color: #2c3e50;
 }
 
-.btn-volver {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  background: #3498db;
-  color: white;
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  font-weight: 500;
-  font-size: 13px;
-}
-
-.btn-volver:hover {
-  background: #2980b9;
-}
-
 .filtro-almacen-container {
   margin-bottom: 15px;
   padding: 10px;
@@ -421,7 +403,7 @@
   background: white;
   border: 1px solid #ddd;
   border-radius: 6px;
-  max-height: 300px;
+  max-height: 200px;
   overflow-y: auto;
   z-index: 100;
   box-shadow: 0 3px 10px rgba(0,0,0,0.1);
@@ -683,4 +665,11 @@
   .compact-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+
+
+  /* Agregar al final del archivo */
+.article-dropdown {
+  max-height: 200px;
+  overflow-y: auto;
+}
 }

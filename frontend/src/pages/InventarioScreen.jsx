@@ -46,7 +46,7 @@ const InventarioScreen = () => {
   const [usuarioPermisos, setUsuarioPermisos] = useState(false);
   const [usuarioData, setUsuarioData] = useState(null);
   const [almacenSeleccionado, setAlmacenSeleccionado] = useState('');
-  const [viewMode, setViewMode] = useState('consolidado');
+  const [filtroTipoVista, setFiltroTipoVista] = useState('consolidado');
   const [ajusteTemporal, setAjusteTemporal] = useState({});
   const [detallesStock, setDetallesStock] = useState({});
 
@@ -343,30 +343,16 @@ const InventarioScreen = () => {
     }
   };
 
+  const getEstadoStockClass = (stock) => {
+    if (stock === 0) return 'estado-sin-stock';
+    if (stock < 0) return 'estado-negativo';
+    return 'estado-normal';
+  };
+
   return (
     <div className="inventario-container">
       <div className="inventario-header">
         <h2>Gestión de Inventario</h2>
-        <div className="view-toggle">
-          <button 
-            className={viewMode === 'consolidado' ? 'active' : ''}
-            onClick={() => setViewMode('consolidado')}
-          >
-            Consolidado
-          </button>
-          <button 
-            className={viewMode === 'almacenes' ? 'active' : ''}
-            onClick={() => setViewMode('almacenes')}
-          >
-            Por Almacén
-          </button>
-          <button 
-            className={viewMode === 'ubicaciones' ? 'active' : ''}
-            onClick={() => setViewMode('ubicaciones')}
-          >
-            Por Ubicación
-          </button>
-        </div>
       </div>
       
       {usuarioData && (
@@ -426,6 +412,19 @@ const InventarioScreen = () => {
         </div>
         
         <div className="filtro-group">
+          <label>Tipo de vista:</label>
+          <select
+            value={filtroTipoVista}
+            onChange={e => setFiltroTipoVista(e.target.value)}
+            className="filtro-select"
+          >
+            <option value="consolidado">Consolidado</option>
+            <option value="almacenes">Por Almacén</option>
+            <option value="ubicaciones">Por Ubicación</option>
+          </select>
+        </div>
+        
+        <div className="filtro-group">
           <label>Acciones:</label>
           <button 
             onClick={sincronizarInventario}
@@ -447,7 +446,7 @@ const InventarioScreen = () => {
             <p>{error}</p>
             <button onClick={() => window.location.reload()}>Reintentar</button>
           </div>
-        ) : viewMode === 'consolidado' ? (
+        ) : filtroTipoVista === 'consolidado' ? (
           <table className="inventario-table">
             <thead>
               <tr>
@@ -475,15 +474,6 @@ const InventarioScreen = () => {
                         })}
                         className="stock-input"
                       />
-                      {ajusteTemporal[item.codigo] !== undefined && (
-                        <button 
-                          onClick={() => handleRegularizar(item.codigo)}
-                          className="btn-regularizar"
-                          disabled={loading}
-                        >
-                          ✓
-                        </button>
-                      )}
                     </td>
                     <td>
                       <span className="estado-badge">{getEstadoTexto(item.stock)}</span>
@@ -532,14 +522,14 @@ const InventarioScreen = () => {
               ))}
             </tbody>
           </table>
-        ) : viewMode === 'almacenes' ? (
+        ) : filtroTipoVista === 'almacenes' ? (
           <table className="inventario-table">
             <thead>
               <tr>
                 <th>Almacén</th>
                 <th>Artículos</th>
                 <th>Stock Total</th>
-                <th>Acciones</th>
+                <th>Estado</th>
               </tr>
             </thead>
             <tbody>
@@ -548,15 +538,8 @@ const InventarioScreen = () => {
                   <td>{alm.almacen}</td>
                   <td>{alm.cantidadArticulos}</td>
                   <td>{alm.stockTotal}</td>
-                  <td>
-                    <button 
-                      onClick={() => {
-                        setAlmacenSeleccionado(alm.codigoAlmacen);
-                        setViewMode('consolidado');
-                      }}
-                    >
-                      Ver Detalle
-                    </button>
+                  <td className={getEstadoStockClass(alm.stockTotal)}>
+                    <span className="estado-badge">{getEstadoTexto(alm.stockTotal)}</span>
                   </td>
                 </tr>
               ))}
@@ -569,7 +552,7 @@ const InventarioScreen = () => {
                 <th>Ubicación</th>
                 <th>Artículo</th>
                 <th>Stock</th>
-                <th>Acciones</th>
+                <th>Estado</th>
               </tr>
             </thead>
             <tbody>
@@ -578,15 +561,8 @@ const InventarioScreen = () => {
                   <td>{ubi.almacen} - {ubi.ubicacion}</td>
                   <td>{ubi.codigo}</td>
                   <td>{ubi.stock}</td>
-                  <td>
-                    <button 
-                      onClick={() => {
-                        setFiltro(ubi.codigo);
-                        setViewMode('consolidado');
-                      }}
-                    >
-                      Ver Artículo
-                    </button>
+                  <td className={getEstadoStockClass(ubi.stock)}>
+                    <span className="estado-badge">{getEstadoTexto(ubi.stock)}</span>
                   </td>
                 </tr>
               ))}
