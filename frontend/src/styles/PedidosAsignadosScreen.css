@@ -1,61 +1,70 @@
-.rutas-content {
+.pedidos-container {
   padding: 100px 1rem 70px;
   max-width: 1400px;
   margin: 0 auto;
   min-height: 100vh;
 }
 
-.screen-header {
-  position: relative;
-  margin-bottom: 2rem;
+.error-pedidos {
+  background-color: #ffebee;
   padding: 1.5rem;
-  background-color: #f8f9fa;
   border-radius: 8px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  text-align: center;
+  margin: 2rem auto;
+  max-width: 600px;
 }
 
-.screen-header h2 {
-  color: #2c3e50;
-  margin: 0;
+.error-pedidos p {
+  color: #e74c3c;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
 }
 
-.btn-volver-rutas {
-  position: absolute;
-  top: 1.5rem;
-  right: 1.5rem;
+.error-pedidos button {
   background-color: #3498db;
   color: white;
   border: none;
-  padding: 0.5rem 1rem;
+  padding: 0.8rem 1.5rem;
   border-radius: 4px;
+  font-size: 1rem;
   cursor: pointer;
-  font-size: 0.9rem;
   transition: background-color 0.3s;
 }
 
-.btn-volver-rutas:hover {
+.error-pedidos button:hover {
   background-color: #2980b9;
 }
 
-.bubble {
-  position: absolute;
-  background-color: #3498db;
-  opacity: 0.1;
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+}
+
+.loading-spinner {
+  border: 5px solid #f3f3f3;
+  border-top: 5px solid #3498db;
   border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
 }
 
-.bubble1 {
-  width: 100px;
-  height: 100px;
-  top: -30px;
-  left: -30px;
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
-.bubble2 {
-  width: 60px;
-  height: 60px;
-  bottom: -20px;
-  right: -20px;
+.no-albaranes {
+  text-align: center;
+  padding: 2rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  margin: 2rem 0;
+  color: #7f8c8d;
 }
 
 .albaranes-grid {
@@ -149,27 +158,57 @@
   color: #2c3e50;
 }
 
-.loading-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 300px;
+.screen-header {
+  position: relative;
+  margin-bottom: 2rem;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
-.loading-spinner {
-  border: 5px solid #f3f3f3;
-  border-top: 5px solid #3498db;
+.screen-header h2 {
+  color: #2c3e50;
+  margin: 0;
+}
+
+.btn-volver-rutas {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background-color: #3498db;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.3s;
+}
+
+.btn-volver-rutas:hover {
+  background-color: #2980b9;
+}
+
+.bubble {
+  position: absolute;
+  background-color: #3498db;
+  opacity: 0.1;
   border-radius: 50%;
-  width: 50px;
-  height: 50px;
-  animation: spin 1s linear infinite;
-  margin-bottom: 1rem;
 }
 
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+.bubble1 {
+  width: 100px;
+  height: 100px;
+  top: -30px;
+  left: -30px;
+}
+
+.bubble2 {
+  width: 60px;
+  height: 60px;
+  bottom: -20px;
+  right: -20px;
 }
 
 .error-message {
@@ -181,17 +220,8 @@
   font-weight: 600;
 }
 
-.no-albaranes {
-  text-align: center;
-  padding: 2rem;
-  background-color: #f8f9fa;
-  border-radius: 8px;
-  margin: 2rem 0;
-  color: #7f8c8d;
-}
-
 @media (min-width: 768px) {
-  .rutas-content {
+  .pedidos-container {
     padding: 70px 2rem 70px;
   }
   
@@ -203,6 +233,10 @@
 @media (min-width: 1024px) {
   .albaranes-grid {
     grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .pedidos-container {
+    padding: 70px 2rem 70px;
   }
 }
 
