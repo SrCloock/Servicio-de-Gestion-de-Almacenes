@@ -307,9 +307,7 @@ const TraspasoAlmacenesScreen = () => {
           >
             <option value="">Todos los almacenes</option>
             {almacenes.map(alm => (
-              <option key={alm.codigo} value={alm.codigo}>
-                {alm.nombre}
-              </option>
+              <option key={alm.codigo} value={alm.codigo}>{alm.nombre}</option>
             ))}
           </select>
         </div>

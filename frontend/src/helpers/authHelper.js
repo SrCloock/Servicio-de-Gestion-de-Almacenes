@@ -1,9 +1,8 @@
 import axios from 'axios';
 
-// Cache para almacenar las empresas
 let empresasCache = null;
 let lastFetchTime = 0;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
+const CACHE_DURATION = 5 * 60 * 1000;
 
 export const getAuthHeader = () => {
   const userString = localStorage.getItem('user');
@@ -16,7 +15,6 @@ export const getAuthHeader = () => {
   try {
     const userData = JSON.parse(userString);
     
-    // Verificar campos críticos
     if (!userData.UsuarioLogicNet || !userData.CodigoEmpresa) {
       console.error('Datos de usuario incompletos:', userData);
       return {};
@@ -32,7 +30,6 @@ export const getAuthHeader = () => {
   }
 };
 
-// Función para obtener permisos del usuario actual
 export const getUserPermisos = () => {
   const userString = localStorage.getItem('user');
   if (!userString) return {};
@@ -41,7 +38,6 @@ export const getUserPermisos = () => {
     const user = JSON.parse(userString);
     const categoria = user.CodigoCategoriaEmpleadoLc || 'Sin categoría';
     
-    // Lógica simplificada para determinar permisos
     return {
       isAdmin: categoria === 'ADM' || categoria === 'Administrador',
       isRepartidor: categoria === 'rep' || categoria === 'Repartidor'
@@ -76,7 +72,6 @@ export const logout = () => {
 };
 
 export const getEmpresas = async () => {
-  // Devolver datos de caché si son recientes
   if (empresasCache && Date.now() - lastFetchTime < CACHE_DURATION) {
     return empresasCache;
   }
@@ -91,7 +86,6 @@ export const getEmpresas = async () => {
       headers: headers
     });
     
-    // Actualizar caché
     empresasCache = response.data;
     lastFetchTime = Date.now();
     
@@ -102,7 +96,6 @@ export const getEmpresas = async () => {
   }
 };
 
-// Limpiar caché cuando cambia el usuario
 window.addEventListener('storage', (event) => {
   if (event.key === 'user') {
     empresasCache = null;

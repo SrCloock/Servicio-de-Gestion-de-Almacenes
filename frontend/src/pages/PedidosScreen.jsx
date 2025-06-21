@@ -45,9 +45,9 @@ const PedidosScreen = () => {
         }
         
         const codigoEmpresa = userData.CodigoEmpresa;
-        const headers = getAuthHeader();
+        const authHeaders = getAuthHeader();
         
-        if (!headers.usuario || !headers.codigoempresa) {
+        if (!authHeaders.headers || !authHeaders.headers.usuario || !authHeaders.headers.codigoempresa) {
           setError('Error de autenticación. Vuelve a iniciar sesión');
           setLoading(false);
           return;
@@ -55,26 +55,26 @@ const PedidosScreen = () => {
         
         const repResponse = await axios.get(
           'http://localhost:3000/repartidores',
-          { headers }
+          authHeaders
         );
         setRepartidores(repResponse.data);
         
         const response = await axios.get(
           `http://localhost:3000/pedidosPendientes`,
-          { 
-            headers: headers,
+          {
+            ...authHeaders,
             params: { codigoEmpresa } 
           }
         );
         
         setPedidos(response.data);
         
-        const codigosArticulos = [...new Set(response.data.flatMap(p => p.articulos.map(a => a.codigoArticulo)))];
+        const codigosArticulos = [...new Set(response.data.flatMap(p => p.articulos.map(a => a.codigoArticulo))];
         
         const responseUbicaciones = await axios.post(
           'http://localhost:3000/ubicacionesMultiples',
           { articulos: codigosArticulos },
-          { headers }
+          authHeaders
         );
         
         setUbicaciones(responseUbicaciones.data);
@@ -146,11 +146,11 @@ const PedidosScreen = () => {
 
   const handleLineaClick = async (codigoArticulo, unidadesPendientes) => {
     try {
-      const headers = getAuthHeader();
+      const authHeaders = getAuthHeader();
       const response = await axios.get(
         `http://localhost:3000/ubicacionesArticulo`,
         {
-          headers: headers,
+          ...authHeaders,
           params: { codigoArticulo }
         }
       );
@@ -185,7 +185,7 @@ const PedidosScreen = () => {
 
     try {
       setExpedicionLoading(true);
-      const headers = getAuthHeader();
+      const authHeaders = getAuthHeader();
       const result = await axios.post(
         'http://localhost:3000/actualizarLineaPedido',
         {
@@ -198,7 +198,7 @@ const PedidosScreen = () => {
           ubicacion: expedicion.ubicacion,
           partida: expedicion.partida
         },
-        { headers: headers }
+        authHeaders
       );
 
       if (result.data.success) {
@@ -276,11 +276,13 @@ const PedidosScreen = () => {
     if (!pedidoAsignando || !repartidorSeleccionado) return;
     
     try {
+      const authHeaders = getAuthHeader();
       await axios.post('http://localhost:3000/asignarPedido', {
         pedidoId: pedidoAsignando.numeroPedido,
         repartidorId: repartidorSeleccionado,
         codigoEmpresa: user.CodigoEmpresa
-      });
+      }, authHeaders);
+      
       alert(`Pedido #${pedidoAsignando.numeroPedido} asignado`);
       setPedidoAsignando(null);
     } catch (error) {

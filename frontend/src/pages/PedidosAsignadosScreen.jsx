@@ -44,21 +44,21 @@ const PedidosAsignadosScreen = () => {
         setLoading(true);
         setError('');
         
-        const headers = getAuthHeader();
+        const authHeaders = getAuthHeader();
         
         const response = await axios.get(
           'http://localhost:3000/pedidosAsignados',
-          { headers }
+          authHeaders
         );
         
         setPedidos(response.data);
         
-        const codigosArticulos = [...new Set(response.data.flatMap(p => p.articulos.map(a => a.codigoArticulo)))];
+        const codigosArticulos = [...new Set(response.data.flatMap(p => p.articulos.map(a => a.codigoArticulo))];
         
         const responseUbicaciones = await axios.post(
           'http://localhost:3000/ubicacionesMultiples',
           { articulos: codigosArticulos },
-          { headers }
+          authHeaders
         );
         
         setUbicaciones(responseUbicaciones.data);
@@ -121,11 +121,11 @@ const PedidosAsignadosScreen = () => {
 
   const handleLineaClick = async (codigoArticulo, unidadesPendientes) => {
     try {
-      const headers = getAuthHeader();
+      const authHeaders = getAuthHeader();
       const response = await axios.get(
         `http://localhost:3000/ubicacionesArticulo`,
         {
-          headers: headers,
+          ...authHeaders,
           params: { codigoArticulo }
         }
       );
@@ -160,7 +160,7 @@ const PedidosAsignadosScreen = () => {
 
     try {
       setExpedicionLoading(true);
-      const headers = getAuthHeader();
+      const authHeaders = getAuthHeader();
       const result = await axios.post(
         'http://localhost:3000/actualizarLineaPedido',
         {
@@ -173,7 +173,7 @@ const PedidosAsignadosScreen = () => {
           ubicacion: expedicion.ubicacion,
           partida: expedicion.partida
         },
-        { headers: headers }
+        authHeaders
       );
 
       if (result.data.success) {
@@ -275,9 +275,9 @@ const PedidosAsignadosScreen = () => {
   return (
     <div className="pedidos-container">
       <div className="screen-header">
+        <h2>Mis Pedidos Asignados</h2>
         <div className="bubble bubble1"></div>
         <div className="bubble bubble2"></div>
-        <h2>Mis Pedidos Asignados</h2>
       </div>
       
       <div className="pedidos-controls">

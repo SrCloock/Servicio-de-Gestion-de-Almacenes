@@ -1,10 +1,5 @@
 ﻿import React, { useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import './styles/style.css';
-import './styles/PedidosScreen.css';
-import './styles/TraspasoAlmacenesScreen.css';
-import './styles/InventarioScreen.css';
-import './styles/DesignarRutasScreen.css';
 import LoginPage from './pages/LoginPage';
 import PedidosScreen from './pages/PedidosScreen';
 import ClientesPage from './pages/ClientesPage';
@@ -21,6 +16,8 @@ import InventarioScreen from './pages/InventarioScreen';
 import PedidosAsignadosScreen from './pages/PedidosAsignadosScreen';
 import DesignarRutasScreen from './pages/DesignarRutasScreen';
 import { isAuthenticated, getCurrentUser } from './helpers/authHelper';
+import Navbar from './components/Navbar';
+import UserInfoBar from './components/UserInfoBar';
 
 const ProtectedRoute = ({ children, requiredRole = null }) => {
   const location = useLocation();
@@ -31,7 +28,6 @@ const ProtectedRoute = ({ children, requiredRole = null }) => {
   
   const user = getCurrentUser();
   
-  // Verificar si se requiere un rol específico
   if (requiredRole) {
     const categoria = user?.CodigoCategoriaEmpleadoLc || '';
     const roleMatches = 
@@ -43,14 +39,21 @@ const ProtectedRoute = ({ children, requiredRole = null }) => {
     }
   }
   
-  return children;
+  return (
+    <div className="app-layout">
+      <UserInfoBar />
+      <div className="main-content">
+        {children}
+      </div>
+      <Navbar />
+    </div>
+  );
 };
 
 function App() {
   useEffect(() => {
     const handleEmpresaChange = () => {
       console.log("Empresa cambiada - actualizando contexto de la app");
-      // Aquí puedes forzar una actualización si es necesario
     };
 
     window.addEventListener('empresaChanged', handleEmpresaChange);

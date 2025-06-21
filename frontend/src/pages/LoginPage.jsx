@@ -1,6 +1,7 @@
 ﻿import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import '../styles/LoginPage.css';
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -18,11 +19,9 @@ function LoginPage() {
       const res = await axios.post("http://localhost:3000/login", { usuario, contrasena });
       
       if (res.data.success) {
-        // Guardar datos de usuario y permisos
         localStorage.setItem('user', JSON.stringify(res.data.datos));
         localStorage.setItem('permisos', JSON.stringify(res.data.permisos));
         
-        // Redirigir según el tipo de usuario
         const categoria = res.data.datos.CodigoCategoriaEmpleadoLc || '';
         if (categoria === 'rep' || categoria === 'Repartidor') {
           navigate('/pedidos-asignados');
@@ -35,7 +34,11 @@ function LoginPage() {
     } catch (err) {
       console.error(err);
       if (err.response) {
-        setError(err.response.data.mensaje || "Error de conexión al servidor");
+        if (err.response.status === 401) {
+          setError("Usuario o contraseña incorrectos");
+        } else {
+          setError(err.response.data.mensaje || "Error de conexión al servidor");
+        }
       } else if (err.request) {
         setError("No se pudo conectar al servidor. Verifica tu conexión");
       } else {

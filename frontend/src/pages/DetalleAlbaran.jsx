@@ -36,7 +36,6 @@ function DetalleAlbaran() {
       return;
     }
 
-    // Verificar si ambas firmas están completas
     if (!firmaGuardadaCliente || !firmaGuardadaRepartidor) {
       alert('Por favor, complete ambas firmas antes de enviar');
       return;
@@ -58,7 +57,6 @@ function DetalleAlbaran() {
     doc.text(`Dirección: ${albaran.direccion}`, 20, 38);
     doc.text(`Fecha: ${new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}`, 20, 46);
 
-    // Artículos entregados
     if (albaran.articulos && albaran.articulos.length > 0) {
       doc.text('Artículos entregados:', 20, 56);
       autoTable(doc, {
@@ -78,13 +76,11 @@ function DetalleAlbaran() {
 
     let finalY = doc.lastAutoTable?.finalY || 70;
     
-    // Total del albarán
     doc.setFontSize(12);
     doc.setFont(undefined, 'bold');
     doc.text(`Total del albarán: ${albaran.importeLiquido?.toFixed(2) || '0.00'} €`, 20, finalY + 10);
     doc.setFont(undefined, 'normal');
     
-    // Firmas
     doc.setFontSize(12);
     if (firmaClienteURL) {
       doc.text('Firma Cliente:', 20, finalY + 30);

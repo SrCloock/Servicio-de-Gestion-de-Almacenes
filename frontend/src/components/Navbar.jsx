@@ -1,36 +1,36 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import '../styles/Navbar.css';
 
 const Navbar = () => {
-  const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem('user'));
+  const location = useLocation();
   
+  const navItems = [
+    { path: '/dashboard', label: 'Inicio', icon: '🏠' },
+    { path: '/PedidosScreen', label: 'Pedidos', icon: '📋' },
+    { path: '/pedidos-asignados', label: 'Mis Pedidos', icon: '📦' },
+    { path: '/inventario', label: 'Inventario', icon: '📊' },
+    { path: '/traspaso', label: 'Traspasos', icon: '🔄' },
+    { path: '/rutas', label: 'Rutas', icon: '🗺️' },
+    { path: '/designar-rutas', label: 'Designar', icon: '👤' },
+    { path: '/confirmacion-entrega', label: 'Entregas', icon: '✅' },
+  ];
+
   return (
-    <div className="navigation-buttons">
-      <button onClick={() => navigate('/rutas')} className="btn-nav">
-        <span>📦</span> Rutas
-      </button>
-      <button onClick={() => navigate('/PedidosScreen')} className="btn-nav">
-        <span>📝</span> Pedidos
-      </button>
-      <button onClick={() => navigate('/traspaso')} className="btn-nav">
-        <span>🔄</span> Traspasos
-      </button>
-      <button onClick={() => navigate('/inventario')} className="btn-nav">
-        <span>📊</span> Inventario
-      </button>
-      
-      {user?.CodigoCategoriaEmpleadoLc === 'rep' && (
-        <button onClick={() => navigate('/pedidos-asignados')} className="btn-nav">
-          <span>📋</span> Mis Pedidos
-        </button>
-      )}
-      
-      <button onClick={() => navigate('/')} className="btn-nav">
-        <span>🏠</span> Inicio
-      </button>
-    </div>
+    <nav className="navbar">
+      <div className="navbar-container">
+        {navItems.map((item) => (
+          <Link 
+            key={item.path}
+            to={item.path}
+            className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}
+          >
+            <span className="nav-icon">{item.icon}</span>
+            <span className="nav-label">{item.label}</span>
+          </Link>
+        ))}
+      </div>
+    </nav>
   );
 };
 
