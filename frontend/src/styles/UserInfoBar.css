@@ -3,50 +3,94 @@
   top: 0;
   left: 0;
   width: 100%;
-  background-color: #34495e;
+  background-color: var(--dark);
   color: white;
-  padding: 0.5rem 1rem;
-  z-index: 999;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-  font-size: 0.9rem;
+  padding: 0.8rem 1rem;
+  z-index: 1000;
+  box-shadow: var(--shadow);
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
 }
 
 .user-info-content {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.8rem;
   align-items: center;
   justify-content: space-between;
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
+  width: 100%;
+}
+
+.user-info-bar span {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
 }
 
 .empresa-selector {
-  background-color: #2c3e50;
+  background-color: rgba(255, 255, 255, 0.1);
   color: white;
-  border: 1px solid #7f8c8d;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 4px;
-  padding: 0.2rem 0.5rem;
+  padding: 0.3rem 0.8rem;
   margin-left: 0.3rem;
+  transition: all 0.3s;
+  cursor: pointer;
+}
+
+.empresa-selector:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.empresa-selector:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .error-message {
-  color: #e74c3c;
-  font-weight: bold;
+  color: var(--danger);
+  font-weight: 600;
+  background-color: rgba(231, 76, 60, 0.1);
+  padding: 0.3rem 0.8rem;
+  border-radius: 4px;
 }
 
-@media (min-width: 768px) {
+@media (max-width: 768px) {
   .user-info-bar {
-    padding: 0.8rem 1.5rem;
-    font-size: 1rem;
+    font-size: 0.85rem;
+    padding: 0.6rem 0.8rem;
   }
   
   .user-info-content {
-    justify-content: flex-start;
-    gap: 1rem;
+    gap: 0.5rem;
+  }
+  
+  .user-info-bar span {
+    flex-wrap: wrap;
   }
   
   .empresa-selector {
-    padding: 0.3rem 0.8rem;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .user-info-bar {
+    font-size: 0.75rem;
+  }
+  
+  .user-info-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3rem;
+  }
+  
+  .empresa-selector {
+    margin-left: 0;
+    width: 100%;
   }
 }

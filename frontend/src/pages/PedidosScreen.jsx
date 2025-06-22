@@ -69,7 +69,7 @@ const PedidosScreen = () => {
         
         setPedidos(response.data);
         
-        const codigosArticulos = [...new Set(response.data.flatMap(p => p.articulos.map(a => a.codigoArticulo))];
+        const codigosArticulos = [...new Set(response.data.flatMap(p => p.articulos.map(a => a.codigoArticulo)))];
         
         const responseUbicaciones = await axios.post(
           'http://localhost:3000/ubicacionesMultiples',
@@ -317,7 +317,7 @@ const PedidosScreen = () => {
   };
 
   return (
-    <div className="pedidos-container">
+    <div className="pedidos-container fade-in">
       <UserInfoBar />
       
       <div className="screen-header">
@@ -430,7 +430,7 @@ const PedidosScreen = () => {
                 
                 {pedidoViewModes[pedido.numeroPedido] === 'show' && (
                   <div className="lineas-table-container">
-                    <table className="lineas-table">
+                    <table className="lineas-table responsive-table">
                       <thead>
                         <tr>
                           <th>Artículo</th>
@@ -601,10 +601,11 @@ const PedidosScreen = () => {
             <button 
               onClick={asignarPedido}
               disabled={!repartidorSeleccionado}
+              className="btn-modal-confirm"
             >
               Asignar
             </button>
-            <button onClick={() => setPedidoAsignando(null)}>Cancelar</button>
+            <button onClick={() => setPedidoAsignando(null)} className="btn-modal-cancel">Cancelar</button>
           </div>
         </div>
       )}
@@ -618,9 +619,10 @@ const PedidosScreen = () => {
               value={codigoVerificacion}
               onChange={(e) => setCodigoVerificacion(e.target.value)}
               placeholder="Ingrese código"
+              className="verification-input"
             />
-            <button onClick={confirmarVerificacion}>Confirmar</button>
-            <button onClick={() => setLineaVerificando(null)}>Cancelar</button>
+            <button onClick={confirmarVerificacion} className="btn-modal-confirm">Confirmar</button>
+            <button onClick={() => setLineaVerificando(null)} className="btn-modal-cancel">Cancelar</button>
           </div>
         </div>
       )}
@@ -628,4 +630,4 @@ const PedidosScreen = () => {
   );
 };
 
-export default PedidosScreen;
+export default React.memo(PedidosScreen);

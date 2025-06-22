@@ -1,157 +1,70 @@
-﻿import React, { useEffect } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import LoginPage from './pages/LoginPage';
-import PedidosScreen from './pages/PedidosScreen';
-import ClientesPage from './pages/ClientesPage';
-import DashboardPage from './pages/DashboardPage';
-import FichaClientePage from './pages/FichaClientePage';
-import EstadisticasClientePage from './pages/EstadisticasClientePage';
-import TraspasoAlmacenesScreen from './pages/TraspasoAlmacenesScreen';
-import PreparacionPedidos from './pages/PreparacionPedidos';
-import EntradaStockCompras from './pages/EntradaStockCompras';
-import ConfirmacionEntrega from './pages/ConfirmacionEntrega';
-import GestionRutas from './pages/GestionRutas';
-import DetalleAlbaran from './pages/DetalleAlbaran';
-import InventarioScreen from './pages/InventarioScreen';
-import PedidosAsignadosScreen from './pages/PedidosAsignadosScreen';
-import DesignarRutasScreen from './pages/DesignarRutasScreen';
-import { isAuthenticated, getCurrentUser } from './helpers/authHelper';
-import Navbar from './components/Navbar';
+﻿import React, { Suspense } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import UserInfoBar from './components/UserInfoBar';
+import Navbar from './components/Navbar';
+import LoginPage from './pages/LoginPage';
+import ProtectedRoute from './components/ProtectedRoute';
+import LoadingSpinner from './components/LoadingSpinner';
+import './styles/GlobalStyles.css';
 
-const ProtectedRoute = ({ children, requiredRole = null }) => {
-  const location = useLocation();
-  
-  if (!isAuthenticated()) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
-  }
-  
-  const user = getCurrentUser();
-  
-  if (requiredRole) {
-    const categoria = user?.CodigoCategoriaEmpleadoLc || '';
-    const roleMatches = 
-      (requiredRole === 'admin' && (categoria === 'ADM' || categoria === 'Administrador')) ||
-      (requiredRole === 'repartidor' && (categoria === 'rep' || categoria === 'Repartidor'));
-    
-    if (!roleMatches) {
-      return <Navigate to="/" replace />;
-    }
-  }
-  
-  return (
-    <div className="app-layout">
-      <UserInfoBar />
-      <div className="main-content">
-        {children}
-      </div>
-      <Navbar />
-    </div>
-  );
-};
+const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const PedidosScreen = React.lazy(() => import('./pages/PedidosScreen'));
+const PedidosAsignadosScreen = React.lazy(() => import('./pages/PedidosAsignadosScreen'));
+const InventarioScreen = React.lazy(() => import('./pages/InventarioScreen'));
+const GestionRutas = React.lazy(() => import('./pages/GestionRutas'));
+const DetalleAlbaran = React.lazy(() => import('./pages/DetalleAlbaran'));
+const TraspasoAlmacenesScreen = React.lazy(() => import('./pages/TraspasoAlmacenesScreen'));
 
 function App() {
-  useEffect(() => {
-    const handleEmpresaChange = () => {
-      console.log("Empresa cambiada - actualizando contexto de la app");
-    };
-
-    window.addEventListener('empresaChanged', handleEmpresaChange);
-    
-    return () => {
-      window.removeEventListener('empresaChanged', handleEmpresaChange);
-    };
-  }, []);
-
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/login" />} />
-      <Route path="/login" element={<LoginPage />} />
-      
-      <Route path="/PedidosScreen" element={
-        <ProtectedRoute>
-          <PedidosScreen />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/pedidos-asignados" element={
-        <ProtectedRoute requiredRole="repartidor">
-          <PedidosAsignadosScreen />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/clientes" element={
-        <ProtectedRoute>
-          <ClientesPage />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/clientes/ficha" element={
-        <ProtectedRoute>
-          <FichaClientePage />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/estadisticasCliente" element={
-        <ProtectedRoute>
-          <EstadisticasClientePage />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/traspaso" element={
-        <ProtectedRoute>
-          <TraspasoAlmacenesScreen />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/dashboard" element={
-        <ProtectedRoute>
-          <DashboardPage />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/preparacion" element={
-        <ProtectedRoute>
-          <PreparacionPedidos />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/entrada" element={
-        <ProtectedRoute>
-          <EntradaStockCompras />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/rutas" element={
-        <ProtectedRoute>
-          <GestionRutas />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/designar-rutas" element={
-        <ProtectedRoute>
-          <DesignarRutasScreen />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/confirmacion-entrega" element={
-        <ProtectedRoute>
-          <ConfirmacionEntrega />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/detalle-albaran" element={
-        <ProtectedRoute>
-          <DetalleAlbaran />
-        </ProtectedRoute>
-      } />
-      
-      <Route path="/inventario" element={
-        <ProtectedRoute requiredRole="admin">
-          <InventarioScreen />
-        </ProtectedRoute>
-      } />
-    </Routes>
+    <Router>
+      <div className="app-container">
+        <UserInfoBar />
+        <Routes>
+          <Route path="/" element={<LoginPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          
+          <Route element={<ProtectedRoute />}>
+            <Route path="/dashboard" element={
+              <Suspense fallback={<LoadingSpinner />}>
+                <Dashboard />
+              </Suspense>
+            } />
+            <Route path="/PedidosScreen" element={
+              <Suspense fallback={<LoadingSpinner />}>
+                <PedidosScreen />
+              </Suspense>
+            } />
+            <Route path="/pedidos-asignados" element={
+              <Suspense fallback={<LoadingSpinner />}>
+                <PedidosAsignadosScreen />
+              </Suspense>
+            } />
+            <Route path="/inventario" element={
+              <Suspense fallback={<LoadingSpinner />}>
+                <InventarioScreen />
+              </Suspense>
+            } />
+            <Route path="/rutas" element={
+              <Suspense fallback={<LoadingSpinner />}>
+                <GestionRutas />
+              </Suspense>
+            } />
+            <Route path="/detalle-albaran" element={
+              <Suspense fallback={<LoadingSpinner />}>
+                <DetalleAlbaran />
+              </Suspense>
+            } />
+            <Route path="/traspaso" element={
+              <Suspense fallback={<LoadingSpinner />}>
+                <TraspasoAlmacenesScreen />
+              </Suspense>
+            } />
+          </Route>
+        </Routes>
+        <Navbar />
+      </div>
+    </Router>
   );
 }
 

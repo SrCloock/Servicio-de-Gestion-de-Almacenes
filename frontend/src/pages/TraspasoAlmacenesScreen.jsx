@@ -272,7 +272,7 @@ const TraspasoAlmacenesScreen = () => {
   }, []);
 
   return (
-    <div className="traspaso-screen">
+    <div className="traspaso-screen fade-in">
       {isLoading && (
         <div className="loading-overlay">
           <div className="loading-card">
@@ -547,7 +547,7 @@ const TraspasoAlmacenesScreen = () => {
             ) : (
               <div className="table-container">
                 {movimientos.length > 0 ? (
-                  <table className="movimientos-table">
+                  <table className="movimientos-table responsive-table">
                     <thead>
                       <tr>
                         <th>Fecha</th>
@@ -590,4 +590,4 @@ const TraspasoAlmacenesScreen = () => {
   );
 };
 
-export default TraspasoAlmacenesScreen;
+export default React.memo(TraspasoAlmacenesScreen);

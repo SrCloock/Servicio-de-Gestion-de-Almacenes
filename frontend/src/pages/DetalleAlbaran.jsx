@@ -121,7 +121,7 @@ function DetalleAlbaran() {
   }
 
   return (
-    <div className="detalle-albaran">
+    <div className="detalle-albaran fade-in">
       <div className="detalle-header">
         <h2>Detalle del Albarán {albaran.albaran}</h2>
         <div className="bubble bubble1"></div>
@@ -142,7 +142,7 @@ function DetalleAlbaran() {
           <div className="articulos-section">
             <h3>Líneas del Albarán</h3>
             {albaran.articulos && albaran.articulos.length > 0 ? (
-              <table>
+              <table className="responsive-table">
                 <thead>
                   <tr>
                     <th>Artículo</th>
@@ -238,4 +238,4 @@ function DetalleAlbaran() {
   );
 }
 
-export default DetalleAlbaran;
+export default React.memo(DetalleAlbaran);

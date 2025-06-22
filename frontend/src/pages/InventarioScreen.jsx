@@ -350,7 +350,7 @@ const InventarioScreen = () => {
   };
 
   return (
-    <div className="inventario-container">
+    <div className="inventario-container fade-in">
       <div className="inventario-header">
         <h2>Gestión de Inventario</h2>
       </div>
@@ -447,7 +447,7 @@ const InventarioScreen = () => {
             <button onClick={() => window.location.reload()}>Reintentar</button>
           </div>
         ) : filtroTipoVista === 'consolidado' ? (
-          <table className="inventario-table">
+          <table className="inventario-table responsive-table">
             <thead>
               <tr>
                 <th onClick={() => handleOrdenar('codigo')}>Código {orden.campo === 'codigo' && (orden.direccion === 'asc' ? '↑' : '↓')}</th>
@@ -523,7 +523,7 @@ const InventarioScreen = () => {
             </tbody>
           </table>
         ) : filtroTipoVista === 'almacenes' ? (
-          <table className="inventario-table">
+          <table className="inventario-table responsive-table">
             <thead>
               <tr>
                 <th>Almacén</th>
@@ -546,7 +546,7 @@ const InventarioScreen = () => {
             </tbody>
           </table>
         ) : (
-          <table className="inventario-table">
+          <table className="inventario-table responsive-table">
             <thead>
               <tr>
                 <th>Ubicación</th>
@@ -598,10 +598,10 @@ const InventarioScreen = () => {
           </div>
         )}
       </div>
-
+      
       <Navbar />
     </div>
   );
 };
 
-export default InventarioScreen;
+export default React.memo(InventarioScreen);

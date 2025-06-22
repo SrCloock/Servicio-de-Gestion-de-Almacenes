@@ -3,18 +3,32 @@
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background-color: #f5f5f5;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
   padding: 1rem;
 }
 
 .login-container {
   width: 100%;
   max-width: 500px;
-  background-color: white;
-  border-radius: 10px;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+  background-color: var(--white);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
   overflow: hidden;
-  padding: 2rem;
+  padding: 2.5rem;
+  animation: fadeIn 0.6s ease-out;
+  position: relative;
+  z-index: 1;
+}
+
+.login-container::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%);
+  z-index: -1;
 }
 
 .logo-rr {
@@ -24,75 +38,105 @@
 
 .logo-rr img {
   max-width: 250px;
-  margin-bottom: 1rem;
+  margin-bottom: 1.2rem;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
 }
 
 .logo-rr p {
-  color: #7f8c8d;
-  font-size: 1.2rem;
+  color: var(--dark);
+  font-size: 1.25rem;
   margin: 0;
+  font-weight: 500;
+  letter-spacing: 0.5px;
 }
 
 form {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.8rem;
 }
 
 label {
   font-weight: 600;
-  color: #2c3e50;
-  margin-bottom: 0.5rem;
+  color: var(--dark);
+  margin-bottom: 0.6rem;
   display: block;
+  font-size: 1.05rem;
 }
 
 .login-input {
   width: 100%;
-  padding: 1rem;
+  padding: 1.1rem;
   border: 1px solid #ddd;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 1rem;
-  transition: border-color 0.3s;
+  transition: all 0.3s;
+  background-color: var(--light);
 }
 
 .login-input:focus {
-  border-color: #3498db;
+  border-color: var(--primary);
   outline: none;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
 }
 
 .error-message {
-  color: #e74c3c;
-  background-color: #ffebee;
-  padding: 0.8rem;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  margin-top: -0.5rem;
+  color: var(--danger);
+  background-color: rgba(231, 76, 60, 0.08);
+  padding: 0.9rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  margin-top: -0.8rem;
+  border-left: 4px solid var(--danger);
 }
 
 .boton-container {
-  margin-top: 1rem;
+  margin-top: 0.5rem;
 }
 
 .login-btn {
   width: 100%;
-  padding: 1rem;
-  background-color: #3498db;
+  padding: 1.1rem;
+  background-color: var(--primary);
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 1.1rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.3s;
+  transition: all 0.3s;
+  box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2);
+  position: relative;
+  overflow: hidden;
 }
 
 .login-btn:hover {
-  background-color: #2980b9;
+  background-color: var(--primary-dark);
+  box-shadow: 0 6px 8px rgba(52, 152, 219, 0.3);
+  transform: translateY(-2px);
 }
 
 .login-btn:disabled {
-  background-color: #bdc3c7;
+  background-color: var(--gray);
   cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.login-btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.6s;
+}
+
+.login-btn:hover::after {
+  transform: translateX(100%);
 }
 
 .spinner-container {
@@ -106,9 +150,20 @@ label {
   border: 3px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
   border-top: 3px solid white;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   animation: spin 1s linear infinite;
+}
+
+.logo-eurobag {
+  text-align: center;
+  margin-top: 2.5rem;
+  opacity: 0.8;
+}
+
+.logo-eurobag img {
+  max-width: 130px;
+  filter: grayscale(30%);
 }
 
 @keyframes spin {
@@ -116,17 +171,27 @@ label {
   100% { transform: rotate(360deg); }
 }
 
-.logo-eurobag {
-  text-align: center;
-  margin-top: 2rem;
-}
-
-.logo-eurobag img {
-  max-width: 150px;
-}
-
-@media (min-width: 768px) {
+@media (max-width: 768px) {
   .login-container {
-    padding: 3rem;
+    padding: 2rem;
+  }
+  
+  .logo-rr img {
+    max-width: 200px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-container {
+    padding: 1.5rem;
+    border-radius: 12px;
+  }
+  
+  .login-input {
+    padding: 1rem;
+  }
+  
+  .login-btn {
+    padding: 1rem;
   }
 }

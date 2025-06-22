@@ -45,7 +45,7 @@ function GestionRutas() {
   };
 
   return (
-    <div className="rutas-content">
+    <div className="rutas-content fade-in">
       <UserInfoBar />
       
       <div className="screen-header">
@@ -118,4 +118,4 @@ function GestionRutas() {
   );
 }
 
-export default GestionRutas;
+export default React.memo(GestionRutas);

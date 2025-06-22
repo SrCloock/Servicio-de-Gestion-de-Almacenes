@@ -1,5 +1,5 @@
 .pedidos-container {
-  padding: 100px 1rem 70px;
+  padding: 70px 1rem 70px;
   max-width: 1400px;
   margin: 0 auto;
   min-height: 100vh;
@@ -8,7 +8,7 @@
 .screen-header {
   position: relative;
   margin-bottom: 2rem;
-  padding: 1rem;
+  padding: 1.5rem;
   background-color: #f8f9fa;
   border-radius: 8px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
@@ -21,7 +21,7 @@
 
 .bubble {
   position: absolute;
-  background-color: #3498db;
+  background-color: var(--primary);
   opacity: 0.1;
   border-radius: 50%;
 }
@@ -46,7 +46,7 @@
 
 .filtros-container {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 1rem;
 }
 
@@ -61,27 +61,25 @@
   color: #34495e;
 }
 
-.search-input {
+.search-input, .sort-select {
   padding: 0.8rem;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 1rem;
-}
-
-.sort-select {
-  padding: 0.8rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 1rem;
-  background-color: white;
 }
 
 .pedido-card {
   background-color: white;
   border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow);
   margin-bottom: 1.5rem;
   overflow: hidden;
+  transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.pedido-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
 }
 
 .pedido-info {
@@ -96,7 +94,7 @@
 
 .numero-pedido {
   font-weight: bold;
-  color: #3498db;
+  color: var(--primary);
   font-size: 1.1rem;
 }
 
@@ -111,7 +109,7 @@
 }
 
 .btn-asignar {
-  background-color: #2ecc71;
+  background-color: var(--secondary);
   color: white;
   border: none;
   padding: 0.5rem 1rem;
@@ -153,8 +151,8 @@
 
 .btn-toggle {
   background-color: transparent;
-  border: 1px solid #3498db;
-  color: #3498db;
+  border: 1px solid var(--primary);
+  color: var(--primary);
   padding: 0.5rem 1rem;
   border-radius: 4px;
   cursor: pointer;
@@ -162,7 +160,7 @@
 }
 
 .btn-toggle:hover {
-  background-color: #3498db;
+  background-color: var(--primary);
   color: white;
 }
 
@@ -176,7 +174,7 @@
 }
 
 .lineas-table th {
-  background-color: #34495e;
+  background-color: var(--dark);
   color: white;
   padding: 0.8rem;
   text-align: left;
@@ -231,7 +229,7 @@
 }
 
 .completada-badge {
-  background-color: #2ecc71;
+  background-color: var(--secondary);
   color: white;
   padding: 0.2rem 0.5rem;
   border-radius: 12px;
@@ -259,7 +257,7 @@
 }
 
 .btn-expedir {
-  background-color: #3498db;
+  background-color: var(--primary);
   color: white;
   border: none;
   padding: 0.5rem 1rem;
@@ -269,7 +267,7 @@
 }
 
 .btn-expedir:hover {
-  background-color: #2980b9;
+  background-color: var(--primary-dark);
 }
 
 .btn-expedir:disabled {
@@ -294,9 +292,9 @@
 }
 
 .pagination button.active {
-  background-color: #3498db;
+  background-color: var(--primary);
   color: white;
-  border-color: #3498db;
+  border-color: var(--primary);
 }
 
 .pagination button:disabled {
@@ -304,7 +302,7 @@
   cursor: not-allowed;
 }
 
-.modal-asignacion {
+.modal-asignacion, .modal-verificacion {
   position: fixed;
   top: 0;
   left: 0;
@@ -323,59 +321,50 @@
   border-radius: 8px;
   width: 90%;
   max-width: 500px;
+  box-shadow: var(--shadow);
 }
 
 .modal-contenido h3 {
   margin-top: 0;
-  color: #2c3e50;
+  color: var(--dark);
+  margin-bottom: 1.5rem;
 }
 
-.modal-contenido select {
+.modal-contenido select, .verification-input {
   width: 100%;
   padding: 0.8rem;
   margin: 1rem 0;
   border: 1px solid #ddd;
   border-radius: 4px;
+  font-size: 1rem;
 }
 
-.modal-contenido button {
+.btn-modal-confirm, .btn-modal-cancel {
   padding: 0.8rem 1.5rem;
   margin-right: 1rem;
   border: none;
   border-radius: 4px;
   cursor: pointer;
   font-weight: 600;
+  transition: all 0.3s;
 }
 
-.modal-contenido button:first-of-type {
-  background-color: #2ecc71;
+.btn-modal-confirm {
+  background-color: var(--secondary);
   color: white;
 }
 
-.modal-contenido button:last-of-type {
-  background-color: #e74c3c;
+.btn-modal-confirm:hover {
+  background-color: #27ae60;
+}
+
+.btn-modal-cancel {
+  background-color: var(--danger);
   color: white;
 }
 
-.modal-verificacion {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 2000;
-}
-
-.modal-verificacion input {
-  width: 100%;
-  padding: 0.8rem;
-  margin: 1rem 0;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+.btn-modal-cancel:hover {
+  background-color: #c0392b;
 }
 
 .error-pedidos {
@@ -387,12 +376,12 @@
 }
 
 .error-pedidos p {
-  color: #e74c3c;
+  color: var(--danger);
   margin-bottom: 1rem;
 }
 
 .error-pedidos button {
-  background-color: #e74c3c;
+  background-color: var(--danger);
   color: white;
   border: none;
   padding: 0.8rem 1.5rem;
@@ -407,7 +396,7 @@
 
 .loader {
   border: 5px solid #f3f3f3;
-  border-top: 5px solid #3498db;
+  border-top: 5px solid var(--primary);
   border-radius: 50%;
   width: 50px;
   height: 50px;
@@ -445,18 +434,10 @@
   .pedidos-container {
     padding: 70px 2rem 70px;
   }
-  
-  .navbar {
-    width: 80px;
-  }
 }
 
 @media (min-width: 1200px) {
   .pedidos-container {
     padding: 70px 2rem 70px;
-  }
-  
-  .navbar {
-    width: 200px;
   }
 }
