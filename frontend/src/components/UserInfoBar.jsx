@@ -1,50 +1,33 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import '../styles/UserInfoBar.css';
-import { getEmpresas } from '../helpers/authHelper';
+import { getAuthHeader } from '../helpers/authHelper';
 
 const UserInfoBar = () => {
   const [empresas, setEmpresas] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const user = JSON.parse(localStorage.getItem('user'));
   
   useEffect(() => {
-    let isMounted = true;
-    
-    const loadEmpresas = async () => {
-      if (!user) return;
-      
-      setLoading(true);
-      setError('');
-      
+    const fetchEmpresas = async () => {
       try {
-        const empresasData = await getEmpresas();
-        if (isMounted) {
-          setEmpresas(empresasData);
-        }
-      } catch (e) {
-        if (isMounted) {
-          setError('Error al cargar empresas');
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
+        const headers = getAuthHeader();
+        const response = await axios.get(
+          'http://localhost:3000/empresas',
+          { headers }
+        );
+        setEmpresas(response.data);
+      } catch (error) {
+        console.error('Error al obtener empresas:', error);
       }
     };
-    
-    loadEmpresas();
-    
-    return () => {
-      isMounted = false;
-    };
-  }, [user]);
-  
+    fetchEmpresas();
+  }, []);
+
   const handleEmpresaChange = async (e) => {
     const nuevaEmpresa = e.target.value;
     const updatedUser = {...user, CodigoEmpresa: nuevaEmpresa};
     localStorage.setItem('user', JSON.stringify(updatedUser));
-    window.dispatchEvent(new CustomEvent('empresaChanged', { detail: nuevaEmpresa }));
+    window.location.reload();
   };
 
   if (!user) return null;
@@ -54,25 +37,19 @@ const UserInfoBar = () => {
       <div className="user-info-content">
         <span>Usuario: <strong>{user.Nombre}</strong> | </span>
         
-        {loading ? (
-          <span>Empresa: <strong>Cargando...</strong></span>
-        ) : error ? (
-          <span className="error-message">{error}</span>
-        ) : (
-          <span>Empresa: 
-            <select 
-              value={user.CodigoEmpresa} 
-              onChange={handleEmpresaChange}
-              className="empresa-selector"
-            >
-              {empresas.map(empresa => (
-                <option key={empresa.CodigoEmpresa} value={empresa.CodigoEmpresa}>
-                  {empresa.Empresa} ({empresa.CodigoEmpresa})
-                </option>
-              ))}
-            </select> 
-          </span>
-        )}
+        <span>Empresa: 
+          <select 
+            value={user.CodigoEmpresa} 
+            onChange={handleEmpresaChange}
+            className="empresa-selector"
+          >
+            {empresas.map(empresa => (
+              <option key={empresa.CodigoEmpresa} value={empresa.CodigoEmpresa}>
+                {empresa.Empresa} ({empresa.CodigoEmpresa})
+              </option>
+            ))}
+          </select> 
+        </span>
         
         <span> | Categoría: <strong>{user.CodigoCategoriaEmpleadoLc}</strong></span>
       </div>

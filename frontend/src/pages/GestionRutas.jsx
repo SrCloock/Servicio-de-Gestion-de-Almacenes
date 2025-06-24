@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
 import UserInfoBar from '../components/UserInfoBar';
+import Navbar from '../components/Navbar';
 
 function GestionRutas() {
   const [albaranes, setAlbaranes] = useState([]);
@@ -45,14 +46,11 @@ function GestionRutas() {
   };
 
   return (
-    <div className="rutas-content fade-in">
+    <div className="rutas-content">
       <UserInfoBar />
       
       <div className="screen-header">
         <h2>Gestión de Rutas</h2>
-        <button className="btn-volver-rutas" onClick={() => navigate('/PedidosScreen')}>
-          ← Volver a Pedidos
-        </button>
         <div className="bubble bubble1"></div>
         <div className="bubble bubble2"></div>
       </div>
@@ -114,8 +112,9 @@ function GestionRutas() {
           </div>
         ))}
       </div>
+      <Navbar />
     </div>
   );
 }
 
-export default React.memo(GestionRutas);
+export default GestionRutas;

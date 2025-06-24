@@ -1,70 +1,94 @@
-﻿import React, { Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import UserInfoBar from './components/UserInfoBar';
-import Navbar from './components/Navbar';
+﻿import React from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import './styles/style.css';
+import './styles/PedidosScreen.css';
+import './styles/TraspasoAlmacenesScreen.css';
+import './styles/InventarioScreen.css';
+import './styles/DesignarRutasScreen.css';
 import LoginPage from './pages/LoginPage';
-import ProtectedRoute from './components/ProtectedRoute';
-import LoadingSpinner from './components/LoadingSpinner';
-import './styles/GlobalStyles.css';
+import PedidosScreen from './pages/PedidosScreen';
+import TraspasoAlmacenesScreen from './pages/TraspasoAlmacenesScreen';
+import ConfirmacionEntrega from './pages/ConfirmacionEntrega';
+import GestionRutas from './pages/GestionRutas';
+import DetalleAlbaran from './pages/DetalleAlbaran';
+import InventarioScreen from './pages/InventarioScreen';
+import PedidosAsignadosScreen from './pages/PedidosAsignadosScreen';
+import DesignarRutasScreen from './pages/DesignarRutasScreen';
+import AlbaranesAsignadosScreen from './pages/AlbaranesAsignadosScreen';
+import { getUserPermisos } from './helpers/authHelper';
 
-const Dashboard = React.lazy(() => import('./pages/Dashboard'));
-const PedidosScreen = React.lazy(() => import('./pages/PedidosScreen'));
-const PedidosAsignadosScreen = React.lazy(() => import('./pages/PedidosAsignadosScreen'));
-const InventarioScreen = React.lazy(() => import('./pages/InventarioScreen'));
-const GestionRutas = React.lazy(() => import('./pages/GestionRutas'));
-const DetalleAlbaran = React.lazy(() => import('./pages/DetalleAlbaran'));
-const TraspasoAlmacenesScreen = React.lazy(() => import('./pages/TraspasoAlmacenesScreen'));
+const ProtectedRoute = ({ children }) => {
+  const location = useLocation();
+  const userData = JSON.parse(localStorage.getItem('user'));
+  
+  if (!userData) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  
+  return children;
+};
 
 function App() {
   return (
-    <Router>
-      <div className="app-container">
-        <UserInfoBar />
-        <Routes>
-          <Route path="/" element={<LoginPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          
-          <Route element={<ProtectedRoute />}>
-            <Route path="/dashboard" element={
-              <Suspense fallback={<LoadingSpinner />}>
-                <Dashboard />
-              </Suspense>
-            } />
-            <Route path="/PedidosScreen" element={
-              <Suspense fallback={<LoadingSpinner />}>
-                <PedidosScreen />
-              </Suspense>
-            } />
-            <Route path="/pedidos-asignados" element={
-              <Suspense fallback={<LoadingSpinner />}>
-                <PedidosAsignadosScreen />
-              </Suspense>
-            } />
-            <Route path="/inventario" element={
-              <Suspense fallback={<LoadingSpinner />}>
-                <InventarioScreen />
-              </Suspense>
-            } />
-            <Route path="/rutas" element={
-              <Suspense fallback={<LoadingSpinner />}>
-                <GestionRutas />
-              </Suspense>
-            } />
-            <Route path="/detalle-albaran" element={
-              <Suspense fallback={<LoadingSpinner />}>
-                <DetalleAlbaran />
-              </Suspense>
-            } />
-            <Route path="/traspaso" element={
-              <Suspense fallback={<LoadingSpinner />}>
-                <TraspasoAlmacenesScreen />
-              </Suspense>
-            } />
-          </Route>
-        </Routes>
-        <Navbar />
-      </div>
-    </Router>
+    <Routes>
+      <Route path="/" element={<Navigate to="/login" />} />
+      <Route path="/login" element={<LoginPage />} />
+      
+      {/* Rutas para todos los usuarios autenticados */}
+      <Route path="/PedidosScreen" element={
+        <ProtectedRoute>
+          <PedidosScreen />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/designar-rutas" element={
+        <ProtectedRoute>
+          <DesignarRutasScreen />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/traspaso" element={
+        <ProtectedRoute>
+          <TraspasoAlmacenesScreen />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/rutas" element={
+        <ProtectedRoute>
+          <GestionRutas />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/confirmacion-entrega" element={
+        <ProtectedRoute>
+          <ConfirmacionEntrega />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/detalle-albaran" element={
+        <ProtectedRoute>
+          <DetalleAlbaran />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/inventario" element={
+        <ProtectedRoute>
+          <InventarioScreen />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/pedidos-asignados" element={
+        <ProtectedRoute>
+          <PedidosAsignadosScreen  />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/albaranes-asignados" element={
+        <ProtectedRoute>
+          <AlbaranesAsignadosScreen />
+        </ProtectedRoute>
+      } />
+    </Routes>
   );
 }
 

@@ -1,96 +1,63 @@
+/* Barra justo debajo de la navbar */
+
 .user-info-bar {
   position: fixed;
-  top: 0;
+  top: 60px; /* Debe coincidir con la altura de .navbar */
   left: 0;
-  width: 100%;
-  background-color: var(--dark);
+  right: 0;
+  height: 45px; /* Altura fija */
+  background-color: #34495e;
   color: white;
-  padding: 0.8rem 1rem;
-  z-index: 1000;
-  box-shadow: var(--shadow);
-  font-size: 0.95rem;
+  padding: 0 20px;
+  font-size: 14px;
+  z-index: 999;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
 .user-info-content {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.8rem;
+  justify-content: center;
   align-items: center;
-  justify-content: space-between;
-  max-width: 1400px;
-  margin: 0 auto;
-  width: 100%;
+  gap: 10px;
+  text-align: center;
 }
 
-.user-info-bar span {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
+/* Selector de empresa */
 .empresa-selector {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  margin-left: 6px;
+  padding: 4px 6px;
   border-radius: 4px;
-  padding: 0.3rem 0.8rem;
-  margin-left: 0.3rem;
-  transition: all 0.3s;
+  border: none;
+  font-size: 14px;
+  background-color: #ecf0f1;
+  color: #2c3e50;
   cursor: pointer;
 }
 
 .empresa-selector:hover {
-  background-color: rgba(255, 255, 255, 0.15);
+  background-color: #dce4ea;
 }
 
-.empresa-selector:focus {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-
-.error-message {
-  color: var(--danger);
-  font-weight: 600;
-  background-color: rgba(231, 76, 60, 0.1);
-  padding: 0.3rem 0.8rem;
-  border-radius: 4px;
-}
-
+/* ============ RESPONSIVE ============ */
 @media (max-width: 768px) {
   .user-info-bar {
-    font-size: 0.85rem;
-    padding: 0.6rem 0.8rem;
+    top: 60px; /* Sigue debajo de la navbar */
+    height: auto;
+    padding: 10px;
   }
-  
-  .user-info-content {
-    gap: 0.5rem;
-  }
-  
-  .user-info-bar span {
-    flex-wrap: wrap;
-  }
-  
-  .empresa-selector {
-    padding: 0.2rem 0.5rem;
-    font-size: 0.85rem;
-  }
-}
 
-@media (max-width: 480px) {
-  .user-info-bar {
-    font-size: 0.75rem;
-  }
-  
   .user-info-content {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 0.3rem;
+    align-items: center;
+    gap: 6px;
   }
-  
+
   .empresa-selector {
-    margin-left: 0;
     width: 100%;
+    max-width: 250px;
   }
 }

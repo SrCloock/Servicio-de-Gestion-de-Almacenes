@@ -1,108 +1,65 @@
 .designar-rutas-container {
-  padding: 100px 1rem 70px;
-  max-width: 1400px;
+  padding: 20px;
+  max-width: 1200px;
   margin: 0 auto;
-  min-height: 100vh;
-}
-
-.designar-rutas-container h2 {
-  color: #2c3e50;
-  margin-bottom: 2rem;
-  text-align: center;
-}
-
-.error {
-  background-color: #ffebee;
-  color: #e74c3c;
-  padding: 1rem;
-  border-radius: 8px;
-  margin-bottom: 1.5rem;
-  font-weight: 600;
-  text-align: center;
-}
-
-.loading {
-  text-align: center;
-  padding: 2rem;
-  color: #7f8c8d;
-  font-size: 1.2rem;
 }
 
 .designar-table {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 2rem;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  margin: 20px 0;
 }
 
-.designar-table th {
-  background-color: #34495e;
-  color: white;
-  padding: 1rem;
+.designar-table th, .designar-table td {
+  border: 1px solid #ddd;
+  padding: 12px;
   text-align: left;
 }
 
-.designar-table td {
-  padding: 1rem;
-  border-bottom: 1px solid #eee;
+.designar-table th {
+  background-color: #f2f2f2;
+  font-weight: bold;
 }
 
-.designar-table tr:last-child td {
-  border-bottom: none;
+.designar-table tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.designar-table tr:hover {
+  background-color: #f1f1f1;
 }
 
 .designar-table select {
   width: 100%;
-  padding: 0.8rem;
+  padding: 8px;
   border: 1px solid #ddd;
   border-radius: 4px;
-  background-color: white;
 }
 
 .btn-guardar {
-  display: block;
-  margin: 0 auto;
-  background-color: #2ecc71;
+  background-color: #4CAF50;
   color: white;
+  padding: 12px 20px;
   border: none;
-  padding: 1rem 2rem;
   border-radius: 4px;
-  font-size: 1rem;
-  font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.3s;
+  font-size: 16px;
+  margin-top: 20px;
 }
 
 .btn-guardar:hover {
-  background-color: #27ae60;
+  background-color: #45a049;
 }
 
-.btn-guardar:disabled {
-  background-color: #bdc3c7;
-  cursor: not-allowed;
+.error {
+  color: #ff0000;
+  background-color: #ffebee;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 20px;
 }
 
-@media (min-width: 768px) {
-  .designar-rutas-container {
-    padding: 70px 2rem 70px;
-  }
-  
-  .designar-table {
-    font-size: 1rem;
-  }
-  
-  .designar-table th,
-  .designar-table td {
-    padding: 1.2rem;
-  }
-}
-
-@media (min-width: 1024px) {
-  .designar-table {
-    font-size: 1.1rem;
-  }
-  
-  .designar-table select {
-    min-width: 250px;
-  }
+.loading {
+  text-align: center;
+  padding: 20px;
 }

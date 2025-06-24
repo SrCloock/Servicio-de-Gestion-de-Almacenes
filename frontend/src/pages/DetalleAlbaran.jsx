@@ -4,6 +4,8 @@ import SignatureCanvas from 'react-signature-canvas';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import '../styles/DetalleAlbaran.css';
+import Navbar from '../components/Navbar';
+import { getAuthHeader } from '../helpers/authHelper'; // Importar helper de autenticación
 
 function DetalleAlbaran() {
   const location = useLocation();
@@ -36,13 +38,14 @@ function DetalleAlbaran() {
       return;
     }
 
+    // Verificar si ambas firmas están completas
     if (!firmaGuardadaCliente || !firmaGuardadaRepartidor) {
       alert('Por favor, complete ambas firmas antes de enviar');
       return;
     }
 
-    const firmaClienteURL = clienteRef.current?.getTrimmedCanvas().toDataURL('image/png');
-    const firmaRepartidorURL = repartidorRef.current?.getTrimmedCanvas().toDataURL('image/png');
+    const firmaClienteURL = clienteRef.current?.getCanvas().toDataURL('image/png');
+    const firmaRepartidorURL = repartidorRef.current?.getCanvas().toDataURL('image/png');
 
     const doc = new jsPDF({
       orientation: 'portrait',
@@ -57,6 +60,7 @@ function DetalleAlbaran() {
     doc.text(`Dirección: ${albaran.direccion}`, 20, 38);
     doc.text(`Fecha: ${new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}`, 20, 46);
 
+    // Artículos entregados
     if (albaran.articulos && albaran.articulos.length > 0) {
       doc.text('Artículos entregados:', 20, 56);
       autoTable(doc, {
@@ -76,11 +80,13 @@ function DetalleAlbaran() {
 
     let finalY = doc.lastAutoTable?.finalY || 70;
     
+    // Total del albarán
     doc.setFontSize(12);
     doc.setFont(undefined, 'bold');
     doc.text(`Total del albarán: ${albaran.importeLiquido?.toFixed(2) || '0.00'} €`, 20, finalY + 10);
     doc.setFont(undefined, 'normal');
     
+    // Firmas
     doc.setFontSize(12);
     if (firmaClienteURL) {
       doc.text('Firma Cliente:', 20, finalY + 30);
@@ -98,10 +104,19 @@ function DetalleAlbaran() {
     formData.append('to', 'sergitaberner@hotmail.es');
 
     try {
+      // Obtener headers de autenticación
+      const authHeaders = getAuthHeader();
+      
+      // Añadir headers a la solicitud
       const res = await fetch('http://localhost:3000/enviar-pdf-albaran', {
         method: 'POST',
         body: formData,
+        headers: {
+          'usuario': authHeaders.usuario,
+          'codigoempresa': authHeaders.codigoempresa
+        }
       });
+      
       const data = await res.json();
 
       if (data.success) {
@@ -121,12 +136,14 @@ function DetalleAlbaran() {
   }
 
   return (
-    <div className="detalle-albaran fade-in">
+    <div className="detalle-albaran">
       <div className="detalle-header">
         <h2>Detalle del Albarán {albaran.albaran}</h2>
         <div className="bubble bubble1"></div>
         <div className="bubble bubble2"></div>
-        <button className="btn-volver" onClick={() => navigate('/rutas')}>← Volver</button>
+        <button className="btn-volver" onClick={() => navigate('/rutas')}>
+          ← Volver
+        </button>
       </div>
 
       <div className="detalle-content">
@@ -142,7 +159,7 @@ function DetalleAlbaran() {
           <div className="articulos-section">
             <h3>Líneas del Albarán</h3>
             {albaran.articulos && albaran.articulos.length > 0 ? (
-              <table className="responsive-table">
+              <table>
                 <thead>
                   <tr>
                     <th>Artículo</th>
@@ -234,8 +251,9 @@ function DetalleAlbaran() {
             : 'Complete ambas firmas para enviar'}
         </button>
       </div>
+      <Navbar />
     </div>
   );
 }
 
-export default React.memo(DetalleAlbaran);
+export default DetalleAlbaran;

@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/PedidosScreen.css';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
+import UserInfoBar from '../components/UserInfoBar';
+import { getUserPermisos } from '../helpers/authHelper';
 
 const PedidosAsignadosScreen = () => {
   const [pedidos, setPedidos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState({});
-  const [lineaSeleccionada, setLineaSeleccionada] = useState(null);
   const [expediciones, setExpediciones] = useState({});
   const [pedidoViewModes, setPedidoViewModes] = useState({});
   const [loading, setLoading] = useState(true);
@@ -20,138 +21,189 @@ const PedidosAsignadosScreen = () => {
   const [error, setError] = useState('');
   const [paginaActual, setPaginaActual] = useState(1);
   const pedidosPorPagina = 20;
+  const [retryCount, setRetryCount] = useState(0);
   
   const [codigoVerificacion, setCodigoVerificacion] = useState('');
   const [lineaVerificando, setLineaVerificando] = useState(null);
 
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem('user'));
 
-  if (!user || user.CodigoCategoriaEmpleadoLc !== 'rep') {
-    return (
-      <div className="pedidos-container">
-        <div className="error-pedidos">
-          <p>No tienes permiso para acceder a esta página</p>
-          <button onClick={() => navigate('/')}>Volver al inicio</button>
-        </div>
-      </div>
-    );
-  }
+  // Memoizar el usuario y los permisos para evitar cambios en cada render
+  const user = useMemo(() => JSON.parse(localStorage.getItem('user') || {}, []));
+  const permisos = useMemo(() => getUserPermisos(), []);
 
-  useEffect(() => {
-    const fetchPedidosAsignados = async () => {
-      try {
-        setLoading(true);
-        setError('');
-        
-        const authHeaders = getAuthHeader();
-        
-        const response = await axios.get(
-          'http://localhost:3000/pedidosAsignados',
-          authHeaders
-        );
-        
-        setPedidos(response.data);
-        
-        const codigosArticulos = [...new Set(response.data.flatMap(p => p.articulos.map(a => a.codigoArticulo)))];
-        
-        const responseUbicaciones = await axios.post(
-          'http://localhost:3000/ubicacionesMultiples',
-          { articulos: codigosArticulos },
-          authHeaders
-        );
-        
-        setUbicaciones(responseUbicaciones.data);
-        
-        const nuevasExpediciones = {};
-        response.data.forEach(pedido => {
-          pedido.articulos.forEach(linea => {
-            const key = `${pedido.numeroPedido}-${linea.codigoArticulo}`;
-            let ubicacionesConStock = responseUbicaciones.data[linea.codigoArticulo] || [];
-            ubicacionesConStock = ubicacionesConStock.filter(ubi => ubi.unidadSaldo > 0);
-            
-            if (ubicacionesConStock.length === 0) {
-              ubicacionesConStock.push({
-                ubicacion: "Zona descarga",
-                partida: null,
-                unidadSaldo: Infinity
-              });
-            }
-            
-            if (ubicacionesConStock.length > 0) {
-              nuevasExpediciones[key] = {
-                ubicacion: ubicacionesConStock[0].ubicacion,
-                partida: ubicacionesConStock[0].partida || null,
-                cantidad: Math.min(
-                  ubicacionesConStock[0].unidadSaldo,
-                  linea.unidadesPendientes
-                ).toString()
-              };
-            }
-          });
-        });
-        setExpediciones(nuevasExpediciones);
-        
-        const initialModes = {};
-        response.data.forEach(pedido => {
-          initialModes[pedido.numeroPedido] = 'show';
-        });
-        setPedidoViewModes(initialModes);
-        
-      } catch (err) {
-        setError('Error al cargar pedidos asignados');
-        console.error('Error:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchPedidosAsignados = useCallback(async () => {
+    // Obtener valores actuales en cada ejecución
+    const permisosActual = getUserPermisos();
+    const userActual = JSON.parse(localStorage.getItem('user')) || {};
     
-    fetchPedidosAsignados();
-    
-    const handleEmpresaChange = () => {
-      fetchPedidosAsignados();
-    };
+    // Si no es admin ni repartidor, redirigir
+    if (!permisosActual.isAdmin && !permisosActual.isRepartidor) {
+      navigate('/', { replace: true });
+      return;
+    }
 
-    window.addEventListener('empresaChanged', handleEmpresaChange);
-
-    return () => {
-      window.removeEventListener('empresaChanged', handleEmpresaChange);
-    };
-  }, []);
-
-  const handleLineaClick = async (codigoArticulo, unidadesPendientes) => {
     try {
-      const authHeaders = getAuthHeader();
+      setLoading(true);
+      setError('');
+      
+      // Preparar headers con autenticación y los headers específicos
+      const authHeader = getAuthHeader();
+      const headers = {
+        ...authHeader,
+        usuario: userActual.UsuarioLogicNet || '',
+        codigoempresa: userActual.CodigoEmpresa?.toString() || ''
+      };
+      
+      const params = {
+        codigoEmpresa: userActual.CodigoEmpresa
+      };
+      
+      if (permisosActual.isRepartidor) {
+        params.codigoRepartidor = permisosActual.CodigoCliente;
+      }
+      
+      console.log("Solicitando pedidos asignados con parámetros:", params);
+      
       const response = await axios.get(
-        `http://localhost:3000/ubicacionesArticulo`,
-        {
-          ...authHeaders,
-          params: { codigoArticulo }
+        'http://localhost:3000/pedidosAsignados',
+        { 
+          headers,
+          params,
+          timeout: 30000
         }
       );
       
-      let ubicacionesConStock = response.data.filter(ubi => ubi.unidadSaldo > 0);
-      if (ubicacionesConStock.length === 0) {
-        ubicacionesConStock.push({
-          ubicacion: "Zona descarga",
-          partida: null,
-          unidadSaldo: Infinity
-        });
-      }
-
-      setUbicaciones(prev => ({
-        ...prev,
-        [codigoArticulo]: ubicacionesConStock
+      console.log("Respuesta recibida con", response.data.length, "pedidos");
+      
+      // 1. Normalizar datos y asegurar identificadores únicos
+      const pedidosNormalizados = response.data.map((pedido, index) => ({
+        ...pedido,
+        id: pedido.numeroPedido || `pedido-${index}-${Date.now()}`,
+        articulos: (pedido.articulos || []).map(art => ({
+          ...art,
+          id: art.codigoArticulo || `art-${Math.random().toString(36).substr(2, 9)}`
+        }))
       }));
       
-      setLineaSeleccionada(codigoArticulo);
-    } catch (error) {
-      console.error('Error al obtener ubicaciones:', error);
+      setPedidos(pedidosNormalizados);
+      
+      // 2. Obtener todos los artículos
+      const todosLosArticulos = pedidosNormalizados.flatMap(pedido => 
+        pedido.articulos.map(art => art.codigoArticulo)
+      );
+      
+      const codigosArticulos = [...new Set(todosLosArticulos)].filter(cod => cod);
+      console.log("Solicitando ubicaciones para", codigosArticulos.length, "artículos");
+      
+      // 3. Obtener ubicaciones solo si hay artículos
+      if (codigosArticulos.length > 0) {
+        const responseUbicaciones = await axios.post(
+          'http://localhost:3000/ubicacionesMultiples',
+          { articulos: codigosArticulos },
+          { 
+            headers: authHeader, // Usar solo authHeader para esta solicitud
+            timeout: 30000
+          }
+        );
+        
+        setUbicaciones(responseUbicaciones.data);
+      } else {
+        setUbicaciones({});
+      }
+      
+      // 4. Preparar expediciones iniciales
+      const nuevasExpediciones = {};
+      pedidosNormalizados.forEach(pedido => {
+        pedido.articulos.forEach(linea => {
+          const key = `${pedido.id}-${linea.id}`;
+          let ubicacionesConStock = [];
+          
+          // Obtener ubicaciones para este artículo
+          if (ubicaciones[linea.codigoArticulo]) {
+            ubicacionesConStock = ubicaciones[linea.codigoArticulo].filter(ubi => ubi.unidadSaldo > 0);
+          }
+          
+          if (ubicacionesConStock.length === 0) {
+            ubicacionesConStock.push({
+              ubicacion: "Zona descarga",
+              partida: null,
+              unidadSaldo: Infinity
+            });
+          }
+          
+          nuevasExpediciones[key] = {
+            ubicacion: ubicacionesConStock[0].ubicacion,
+            partida: ubicacionesConStock[0].partida || null,
+            cantidad: Math.min(
+              ubicacionesConStock[0].unidadSaldo,
+              linea.unidadesPendientes
+            ).toString()
+          };
+        });
+      });
+      setExpediciones(nuevasExpediciones);
+      
+      // 5. Inicializar modos de vista
+      const initialModes = {};
+      pedidosNormalizados.forEach(pedido => {
+        initialModes[pedido.id] = 'show';
+      });
+      setPedidoViewModes(initialModes);
+    } catch (err) {
+      console.error('Error al obtener pedidos asignados:', err);
+      
+      let errorMessage = 'Error al cargar los pedidos asignados';
+      
+      if (err.response) {
+        if (err.response.status === 500) {
+          errorMessage = 'Error interno del servidor. Inténtalo más tarde';
+        } else if (err.response.status === 401) {
+          errorMessage = 'Error de autenticación. Vuelve a iniciar sesión';
+        } else {
+          errorMessage = `Error del servidor: ${err.response.status} ${err.response.statusText}`;
+        }
+      } else if (err.code === 'ECONNABORTED') {
+        errorMessage = 'El servidor está tardando demasiado en responder';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+      
+      // Limitar reintentos a 3
+      if (retryCount < 3) {
+        // Programar reintento después de 2 segundos
+        setRetryCount(prev => prev + 1);
+      }
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [retryCount, navigate]);
+
+  // Efecto principal para cargar los pedidos
+  useEffect(() => {
+    // Solo ejecutar si tenemos permisos
+    if (permisos.isAdmin || permisos.isRepartidor) {
+      fetchPedidosAsignados();
+    }
+  }, [fetchPedidosAsignados, permisos]);
+
+  // Efecto para manejar reintentos
+  useEffect(() => {
+    if (retryCount > 0 && retryCount <= 3) {
+      const timer = setTimeout(() => {
+        fetchPedidosAsignados();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [retryCount, fetchPedidosAsignados]);
 
   const handleExpedir = async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes) => {
-    const key = `${numeroPedido}-${codigoArticulo}`;
+    const pedido = pedidos.find(p => p.numeroPedido === numeroPedido);
+    const linea = pedido?.articulos?.find(a => a.codigoArticulo === codigoArticulo);
+    const key = `${pedido?.id}-${linea?.id}`;
+    
     const expedicion = expediciones[key];
     if (!expedicion) return;
 
@@ -160,7 +212,7 @@ const PedidosAsignadosScreen = () => {
 
     try {
       setExpedicionLoading(true);
-      const authHeaders = getAuthHeader();
+      const headers = getAuthHeader();
       const result = await axios.post(
         'http://localhost:3000/actualizarLineaPedido',
         {
@@ -173,7 +225,7 @@ const PedidosAsignadosScreen = () => {
           ubicacion: expedicion.ubicacion,
           partida: expedicion.partida
         },
-        authHeaders
+        { headers: headers }
       );
 
       if (result.data.success) {
@@ -195,15 +247,15 @@ const PedidosAsignadosScreen = () => {
     }
   };
 
-  const togglePedidoView = (numeroPedido) => {
+  const togglePedidoView = (pedidoId) => {
     setPedidoViewModes(prev => ({
       ...prev,
-      [numeroPedido]: prev[numeroPedido] === 'show' ? 'hide' : 'show'
+      [pedidoId]: prev[pedidoId] === 'show' ? 'hide' : 'show'
     }));
   };
 
-  const handleExpedicionChange = (numeroPedido, codigoArticulo, field, value) => {
-    const key = `${numeroPedido}-${codigoArticulo}`;
+  const handleExpedicionChange = (pedidoId, lineaId, field, value) => {
+    const key = `${pedidoId}-${lineaId}`;
     setExpediciones(prev => ({
       ...prev,
       [key]: {
@@ -215,26 +267,30 @@ const PedidosAsignadosScreen = () => {
 
   const pedidosFiltrados = pedidos.filter(pedido => {
     const matchPedido = filtroPedido 
-      ? pedido.numeroPedido.toString().includes(filtroPedido) || 
-        pedido.razonSocial.toLowerCase().includes(filtroPedido.toLowerCase())
+      ? (pedido.numeroPedido?.toString().includes(filtroPedido) || 
+         pedido.razonSocial?.toLowerCase().includes(filtroPedido.toLowerCase()))
       : true;
 
     const matchArticulo = filtroArticulo
-      ? pedido.articulos.some(art => 
-          art.codigoArticulo.includes(filtroArticulo) || 
-          art.descripcionArticulo.toLowerCase().includes(filtroArticulo.toLowerCase()))
+      ? pedido.articulos?.some(art => 
+          art.codigoArticulo?.includes(filtroArticulo) || 
+          art.descripcionArticulo?.toLowerCase().includes(filtroArticulo.toLowerCase()))
       : true;
 
     const matchDireccion = filtroDireccion
-      ? `${pedido.domicilio} ${pedido.municipio}`.toLowerCase().includes(filtroDireccion.toLowerCase())
+      ? `${pedido.domicilio || ''} ${pedido.municipio || ''}`.toLowerCase().includes(filtroDireccion.toLowerCase())
       : true;
 
     return matchPedido && matchArticulo && matchDireccion;
   });
 
   const pedidosOrdenados = [...pedidosFiltrados].sort((a, b) => {
-    if (orden === 'fecha') return new Date(b.fechaPedido) - new Date(a.fechaPedido);
-    return a.razonSocial.localeCompare(b.razonSocial);
+    if (orden === 'fecha') {
+      const dateA = a.fechaPedido ? new Date(a.fechaPedido) : new Date(0);
+      const dateB = b.fechaPedido ? new Date(b.fechaPedido) : new Date(0);
+      return dateB - dateA;
+    }
+    return (a.razonSocial || '').localeCompare(b.razonSocial || '');
   });
   
   const indexUltimoPedido = paginaActual * pedidosPorPagina;
@@ -272,12 +328,25 @@ const PedidosAsignadosScreen = () => {
     }
   };
 
+  // Redirigir si no tiene permisos
+  if (!permisos.isAdmin && !permisos.isRepartidor) {
+    return (
+      <div className="pedidos-container">
+        <div className="error-pedidos">
+          <p>No tienes permiso para acceder a esta página</p>
+          <button onClick={() => navigate('/')}>Volver al inicio</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="pedidos-container fade-in">
+    <div className="pedidos-container">
+      <UserInfoBar />
       <div className="screen-header">
-        <h2>Mis Pedidos Asignados</h2>
         <div className="bubble bubble1"></div>
         <div className="bubble bubble2"></div>
+        <h2>{permisos.isAdmin ? 'Pedidos Asignados' : 'Mis Pedidos Asignados'}</h2>
       </div>
       
       <div className="pedidos-controls">
@@ -333,52 +402,70 @@ const PedidosAsignadosScreen = () => {
         {error ? (
           <div className="error-pedidos">
             <p>{error}</p>
-            <button onClick={() => window.location.reload()}>Reintentar</button>
+            {retryCount <= 3 ? (
+              <button onClick={() => setRetryCount(0)}>Reintentar</button>
+            ) : (
+              <>
+                <p>Demasiados intentos fallidos</p>
+                <button onClick={() => window.location.reload()}>Recargar página</button>
+                <button onClick={() => navigate('/')}>Volver al inicio</button>
+              </>
+            )}
           </div>
         ) : loading ? (
           <div className="loading-pedidos">
             <div className="loader"></div>
-            <p>Cargando pedidos...</p>
+            <p>Cargando pedidos asignados...</p>
+            {retryCount > 0 && <p>Intento {retryCount} de 3</p>}
           </div>
         ) : pedidosOrdenados.length === 0 ? (
           <div className="no-pedidos">
             <p>No hay pedidos asignados</p>
+            <button onClick={() => setRetryCount(0)}>Reintentar búsqueda</button>
           </div>
         ) : (
           <>
             {pedidosActuales.map(pedido => (
-              <div key={`${pedido.numeroPedido}-${pedido.codigoEmpresa}`} className="pedido-card">
+              <div key={pedido.id} className="pedido-card">
                 <div className="pedido-info">
                   <span className="numero-pedido">#{pedido.numeroPedido}</span>
                   <span className="cliente">{pedido.razonSocial}</span>
-                  <span className="fecha-pedido">{new Date(pedido.fechaPedido).toLocaleDateString()}</span>
+                  <span className="fecha-pedido">{pedido.fechaPedido ? new Date(pedido.fechaPedido).toLocaleDateString() : 'Sin fecha'}</span>
+                  <span className="fecha-entrega">
+                    Entrega: {pedido.fechaEntrega ? new Date(pedido.fechaEntrega).toLocaleDateString() : 'Sin fecha'}
+                  </span>
+                  {permisos.isAdmin && (
+                    <span className="repartidor-asignado">
+                      Repartidor: {pedido.repartidor || 'Sin asignar'}
+                    </span>
+                  )}
                 </div>
                 
                 <div className="pedido-details">
-                  <div><strong>Dirección:</strong> {pedido.domicilio}, {pedido.municipio}</div>
-                  <div><strong>Obra:</strong> {pedido.obra || 'Sin obra especificada'}</div>
-                  <div><strong>Entrega:</strong> {pedido.fechaEntrega ? new Date(pedido.fechaEntrega).toLocaleDateString() : 'Sin fecha especificada'}</div>
+                  <div><strong>Obra:</strong> {pedido.NombreObra || 'Sin obra especificada'}</div>
+                  <div><strong>Dirección:</strong> {pedido.domicilio}</div>
+                  <div><strong>Municipio:</strong> {pedido.municipio}</div>
                   
                   <div className="observaciones-container">
                     <strong>Observaciones:</strong>
                     <div className="observaciones-content">
-                      {pedido.observaciones || 'Sin observaciones'}
+                      {pedido.ObservacionesWeb || 'Sin observaciones'}
                     </div>
                   </div>
                 </div>
                 
                 <div className="toggle-button-container">
                   <button 
-                    onClick={() => togglePedidoView(pedido.numeroPedido)}
+                    onClick={() => togglePedidoView(pedido.id)}
                     className="btn-toggle"
                   >
-                    {pedidoViewModes[pedido.numeroPedido] === 'show' ? 'Ocultar líneas' : 'Mostrar líneas'}
+                    {pedidoViewModes[pedido.id] === 'show' ? 'Ocultar líneas' : 'Mostrar líneas'}
                   </button>
                 </div>
                 
-                {pedidoViewModes[pedido.numeroPedido] === 'show' && (
+                {pedidoViewModes[pedido.id] === 'show' && (
                   <div className="lineas-table-container">
-                    <table className="lineas-table responsive-table">
+                    <table className="lineas-table">
                       <thead>
                         <tr>
                           <th>Artículo</th>
@@ -390,7 +477,7 @@ const PedidosAsignadosScreen = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {pedido.articulos.map((linea, index) => {
+                        {(pedido.articulos || []).map(linea => {
                           let ubicacionesConStock = ubicaciones[linea.codigoArticulo] || [];
                           ubicacionesConStock = ubicacionesConStock.filter(ubi => ubi.unidadSaldo > 0);
                           if (ubicacionesConStock.length === 0) {
@@ -403,7 +490,7 @@ const PedidosAsignadosScreen = () => {
 
                           const tieneStock = ubicacionesConStock.some(u => u.unidadSaldo > 0);
                           const stockNegativo = ubicacionesConStock.some(u => u.unidadSaldo < 0);
-                          const key = `${pedido.numeroPedido}-${linea.codigoArticulo}`;
+                          const key = `${pedido.id}-${linea.id}`;
                           const expedicion = expediciones[key] || {
                             ubicacion: ubicacionesConStock[0]?.ubicacion || '',
                             cantidad: '0'
@@ -411,9 +498,8 @@ const PedidosAsignadosScreen = () => {
                           
                           return (
                             <tr 
-                              key={index}
+                              key={key}
                               className={`linea-pedido ${tieneStock ? 'clickable' : 'no-stock'} ${stockNegativo ? 'negative-stock' : ''}`}
-                              onClick={() => handleLineaClick(linea.codigoArticulo, linea.unidadesPendientes)}
                             >
                               <td className="td-izquierda">
                                 <div className="codigo-articulo">{linea.codigoArticulo}</div>
@@ -435,8 +521,8 @@ const PedidosAsignadosScreen = () => {
                                   <select
                                     value={expedicion.ubicacion}
                                     onChange={e => handleExpedicionChange(
-                                      pedido.numeroPedido, 
-                                      linea.codigoArticulo, 
+                                      pedido.id, 
+                                      linea.id, 
                                       'ubicacion', 
                                       e.target.value
                                     )}
@@ -467,8 +553,8 @@ const PedidosAsignadosScreen = () => {
                                   }
                                   value={expedicion.cantidad}
                                   onChange={e => handleExpedicionChange(
-                                    pedido.numeroPedido, 
-                                    linea.codigoArticulo, 
+                                    pedido.id, 
+                                    linea.id, 
                                     'cantidad', 
                                     e.target.value
                                   )}
@@ -540,10 +626,9 @@ const PedidosAsignadosScreen = () => {
               value={codigoVerificacion}
               onChange={(e) => setCodigoVerificacion(e.target.value)}
               placeholder="Ingrese código"
-              className="verification-input"
             />
-            <button onClick={confirmarVerificacion} className="btn-modal-confirm">Confirmar</button>
-            <button onClick={() => setLineaVerificando(null)} className="btn-modal-cancel">Cancelar</button>
+            <button onClick={confirmarVerificacion}>Confirmar</button>
+            <button onClick={() => setLineaVerificando(null)}>Cancelar</button>
           </div>
         </div>
       )}
@@ -551,4 +636,4 @@ const PedidosAsignadosScreen = () => {
   );
 };
 
-export default React.memo(PedidosAsignadosScreen);
+export default PedidosAsignadosScreen;

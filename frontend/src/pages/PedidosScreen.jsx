@@ -45,9 +45,9 @@ const PedidosScreen = () => {
         }
         
         const codigoEmpresa = userData.CodigoEmpresa;
-        const authHeaders = getAuthHeader();
+        const headers = getAuthHeader();
         
-        if (!authHeaders.headers || !authHeaders.headers.usuario || !authHeaders.headers.codigoempresa) {
+        if (!headers.usuario || !headers.codigoempresa) {
           setError('Error de autenticación. Vuelve a iniciar sesión');
           setLoading(false);
           return;
@@ -55,14 +55,20 @@ const PedidosScreen = () => {
         
         const repResponse = await axios.get(
           'http://localhost:3000/repartidores',
-          authHeaders
+          { 
+            headers,
+            params: { 
+              codigoEmpresa,
+              categoria: 'REP'
+            } 
+          }
         );
         setRepartidores(repResponse.data);
         
         const response = await axios.get(
           `http://localhost:3000/pedidosPendientes`,
-          {
-            ...authHeaders,
+          { 
+            headers: headers,
             params: { codigoEmpresa } 
           }
         );
@@ -74,7 +80,7 @@ const PedidosScreen = () => {
         const responseUbicaciones = await axios.post(
           'http://localhost:3000/ubicacionesMultiples',
           { articulos: codigosArticulos },
-          authHeaders
+          { headers }
         );
         
         setUbicaciones(responseUbicaciones.data);
@@ -132,25 +138,15 @@ const PedidosScreen = () => {
     };
     
     fetchPedidos();
-    
-    const handleEmpresaChange = () => {
-      fetchPedidos();
-    };
-
-    window.addEventListener('empresaChanged', handleEmpresaChange);
-
-    return () => {
-      window.removeEventListener('empresaChanged', handleEmpresaChange);
-    };
   }, []);
 
   const handleLineaClick = async (codigoArticulo, unidadesPendientes) => {
     try {
-      const authHeaders = getAuthHeader();
+      const headers = getAuthHeader();
       const response = await axios.get(
         `http://localhost:3000/ubicacionesArticulo`,
         {
-          ...authHeaders,
+          headers: headers,
           params: { codigoArticulo }
         }
       );
@@ -185,7 +181,7 @@ const PedidosScreen = () => {
 
     try {
       setExpedicionLoading(true);
-      const authHeaders = getAuthHeader();
+      const headers = getAuthHeader();
       const result = await axios.post(
         'http://localhost:3000/actualizarLineaPedido',
         {
@@ -198,7 +194,7 @@ const PedidosScreen = () => {
           ubicacion: expedicion.ubicacion,
           partida: expedicion.partida
         },
-        authHeaders
+        { headers: headers }
       );
 
       if (result.data.success) {
@@ -276,13 +272,11 @@ const PedidosScreen = () => {
     if (!pedidoAsignando || !repartidorSeleccionado) return;
     
     try {
-      const authHeaders = getAuthHeader();
       await axios.post('http://localhost:3000/asignarPedido', {
         pedidoId: pedidoAsignando.numeroPedido,
-        repartidorId: repartidorSeleccionado,
+        codigoRepartidor: repartidorSeleccionado,
         codigoEmpresa: user.CodigoEmpresa
-      }, authHeaders);
-      
+      });
       alert(`Pedido #${pedidoAsignando.numeroPedido} asignado`);
       setPedidoAsignando(null);
     } catch (error) {
@@ -317,7 +311,7 @@ const PedidosScreen = () => {
   };
 
   return (
-    <div className="pedidos-container fade-in">
+    <div className="pedidos-container">
       <UserInfoBar />
       
       <div className="screen-header">
@@ -398,6 +392,9 @@ const PedidosScreen = () => {
                   <span className="numero-pedido">#{pedido.numeroPedido}</span>
                   <span className="cliente">{pedido.razonSocial}</span>
                   <span className="fecha-pedido">{new Date(pedido.fechaPedido).toLocaleDateString()}</span>
+                  <span className="fecha-entrega">
+                    Entrega: {pedido.fechaEntrega ? new Date(pedido.fechaEntrega).toLocaleDateString() : 'Sin fecha'}
+                  </span>
                   <button 
                     onClick={() => setPedidoAsignando(pedido)}
                     className="btn-asignar"
@@ -407,14 +404,14 @@ const PedidosScreen = () => {
                 </div>
                 
                 <div className="pedido-details">
-                  <div><strong>Dirección:</strong> {pedido.domicilio}, {pedido.municipio}</div>
-                  <div><strong>Obra:</strong> {pedido.obra || 'Sin obra especificada'}</div>
-                  <div><strong>Entrega:</strong> {pedido.fechaEntrega ? new Date(pedido.fechaEntrega).toLocaleDateString() : 'Sin fecha especificada'}</div>
+                  <div><strong>Obra:</strong> {pedido.NombreObra || 'Sin obra especificada'}</div>
+                  <div><strong>Dirección:</strong> {pedido.domicilio}</div>
+                  <div><strong>Municipio:</strong> {pedido.municipio}</div>
                   
                   <div className="observaciones-container">
                     <strong>Observaciones:</strong>
                     <div className="observaciones-content">
-                      {pedido.observaciones || 'Sin observaciones'}
+                      {pedido.ObservacionesWeb || 'Sin observaciones'}
                     </div>
                   </div>
                 </div>
@@ -430,7 +427,7 @@ const PedidosScreen = () => {
                 
                 {pedidoViewModes[pedido.numeroPedido] === 'show' && (
                   <div className="lineas-table-container">
-                    <table className="lineas-table responsive-table">
+                    <table className="lineas-table">
                       <thead>
                         <tr>
                           <th>Artículo</th>
@@ -601,11 +598,10 @@ const PedidosScreen = () => {
             <button 
               onClick={asignarPedido}
               disabled={!repartidorSeleccionado}
-              className="btn-modal-confirm"
             >
               Asignar
             </button>
-            <button onClick={() => setPedidoAsignando(null)} className="btn-modal-cancel">Cancelar</button>
+            <button onClick={() => setPedidoAsignando(null)}>Cancelar</button>
           </div>
         </div>
       )}
@@ -619,10 +615,9 @@ const PedidosScreen = () => {
               value={codigoVerificacion}
               onChange={(e) => setCodigoVerificacion(e.target.value)}
               placeholder="Ingrese código"
-              className="verification-input"
             />
-            <button onClick={confirmarVerificacion} className="btn-modal-confirm">Confirmar</button>
-            <button onClick={() => setLineaVerificando(null)} className="btn-modal-cancel">Cancelar</button>
+            <button onClick={confirmarVerificacion}>Confirmar</button>
+            <button onClick={() => setLineaVerificando(null)}>Cancelar</button>
           </div>
         </div>
       )}
@@ -630,4 +625,4 @@ const PedidosScreen = () => {
   );
 };
 
-export default React.memo(PedidosScreen);
+export default PedidosScreen;

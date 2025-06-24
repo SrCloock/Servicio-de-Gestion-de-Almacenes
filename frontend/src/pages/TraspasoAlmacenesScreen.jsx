@@ -1,9 +1,10 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/TraspasoAlmacenesScreen.css';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
+import { FixedSizeList as List } from 'react-window';
 
 const TraspasoAlmacenesScreen = () => {
   const navigate = useNavigate();
@@ -28,7 +29,29 @@ const TraspasoAlmacenesScreen = () => {
     ubicacionDestino: '',
     cantidad: ''
   });
+  const [stockData, setStockData] = useState([]);
+  const [articulosFiltrados, setArticulosFiltrados] = useState([]);
+  const [isFetchingStock, setIsFetchingStock] = useState(false);
+  const [stockDisponible, setStockDisponible] = useState(0);
 
+  // Debounce para la búsqueda
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      if (busqueda.trim() === '') {
+        setArticulosFiltrados([]);
+      } else {
+        const filtered = articulos.filter(art => 
+          art.codigo.toLowerCase().includes(busqueda.toLowerCase()) || 
+          (art.nombre && art.nombre.toLowerCase().includes(busqueda.toLowerCase()))
+        );
+        setArticulosFiltrados(filtered.slice(0, 100));
+      }
+    }, 300);
+    
+    return () => clearTimeout(handler);
+  }, [busqueda, articulos]);
+
+  // Obtener datos iniciales
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
@@ -40,7 +63,7 @@ const TraspasoAlmacenesScreen = () => {
         const [artResponse, almResponse, movResponse] = await Promise.all([
           axios.get(`http://localhost:3000/inventario?codigoEmpresa=${codigoEmpresa}`, { headers }),
           axios.get(`http://localhost:3000/almacenes?codigoEmpresa=${codigoEmpresa}`, { headers }),
-          axios.get(`http://localhost:3000/movimientos?codigoEmpresa=${codigoEmpresa}&dias=30`, { headers })
+          axios.get(`http://localhost:3000/movimientos-combinados?codigoEmpresa=${codigoEmpresa}&dias=30`, { headers })
         ]);
         
         setArticulos(artResponse.data);
@@ -57,55 +80,164 @@ const TraspasoAlmacenesScreen = () => {
     fetchData();
   }, [navigate]);
 
-  const articulosFiltrados = busqueda 
-    ? articulos.filter(art => 
-        art.codigo.toLowerCase().includes(busqueda.toLowerCase())) || 
-        (art.nombre && art.nombre.toLowerCase().includes(busqueda.toLowerCase()))
-    : articulos;
-      
-  const handleSelectArticulo = (codigo) => {
-    setTraspasoData({...traspasoData, articulo: codigo});
+  // Al seleccionar un artículo, obtener su stock
+  const handleSelectArticulo = useCallback(async (codigo) => {
+    setTraspasoData(prev => ({
+      ...prev, 
+      articulo: codigo,
+      almacenOrigen: '',
+      ubicacionOrigen: '',
+      almacenDestino: '',
+      ubicacionDestino: '',
+      cantidad: ''
+    }));
     setBusqueda(codigo);
     setShowArticleDropdown(false);
-  };
-
-  useEffect(() => {
-    const fetchUbicacionesOrigen = async () => {
-      if (!traspasoData.articulo || !traspasoData.almacenOrigen) return;
-      
-      try {
-        const headers = getAuthHeader();
-        if (traspasoData.almacenOrigen === 'DESCARGA') {
-          setUbicacionesOrigen([
-            { ubicacion: 'Muelle 1', stock: 0 },
-            { ubicacion: 'Muelle 2', stock: 0 },
-            { ubicacion: 'Zona Recepción', stock: 0 },
-            { ubicacion: 'Cuarentena', stock: 0 }
-          ]);
-        } else {
-          const response = await axios.get(
-            `http://localhost:3000/stock?articulo=${traspasoData.articulo}&almacen=${traspasoData.almacenOrigen}`,
-            { headers }
-          );
-          
-          if (Array.isArray(response.data)) {
-            setUbicacionesOrigen(response.data);
-          } else {
-            setUbicacionesOrigen([]);
-          }
-        }
-      } catch (error) {
-        console.error('Error al obtener ubicaciones origen:', error);
-        setUbicacionesOrigen([]);
-      }
-    };
     
-    fetchUbicacionesOrigen();
-  }, [traspasoData.articulo, traspasoData.almacenOrigen]);
+    setIsFetchingStock(true);
+    try {
+      const headers = getAuthHeader();
+      const user = JSON.parse(localStorage.getItem('user'));
+      const codigoEmpresa = user.CodigoEmpresa;
+      
+      // Obtener stock por ubicación usando el nuevo endpoint
+      const response = await axios.get(
+        `http://localhost:3000/stock-con-ubicacion?codigoEmpresa=${codigoEmpresa}&codigoArticulo=${codigo}`,
+        { headers }
+      );
+      
+      // Formatear los datos para el frontend
+      const stockDataFormateado = response.data.map(item => ({
+        almacen: item.CodigoAlmacen,
+        ubicacion: item.Ubicacion,
+        stock: parseFloat(item.UnidadSaldo)
+      }));
+      
+      setStockData(stockDataFormateado);
+      
+      // Encontrar el almacén con mayor stock
+      let maxStock = 0;
+      let selectedAlmacen = '';
+      let selectedUbicacion = '';
+      
+      // Agrupar por almacén para encontrar el con mayor stock
+      const almacenesAgrupados = {};
+      stockDataFormateado.forEach(item => {
+        if (!almacenesAgrupados[item.almacen]) {
+          almacenesAgrupados[item.almacen] = {
+            stockTotal: 0,
+            ubicaciones: []
+          };
+        }
+        almacenesAgrupados[item.almacen].stockTotal += item.stock;
+        almacenesAgrupados[item.almacen].ubicaciones.push(item);
+      });
+      
+      // Encontrar almacén con mayor stock
+      Object.entries(almacenesAgrupados).forEach(([almacen, data]) => {
+        if (data.stockTotal > maxStock) {
+          maxStock = data.stockTotal;
+          selectedAlmacen = almacen;
+          
+          // Encontrar ubicación con mayor stock en este almacén
+          let maxUbicacionStock = 0;
+          data.ubicaciones.forEach(ubi => {
+            if (ubi.stock > maxUbicacionStock) {
+              maxUbicacionStock = ubi.stock;
+              selectedUbicacion = ubi.ubicacion;
+            }
+          });
+        }
+      });
+      
+      // Si encontramos un almacén y ubicación, los seleccionamos
+      if (selectedAlmacen && selectedUbicacion) {
+        setTraspasoData(prev => ({
+          ...prev,
+          almacenOrigen: selectedAlmacen,
+          ubicacionOrigen: selectedUbicacion
+        }));
+        
+        // Actualizar stock disponible
+        const stockUbicacion = stockDataFormateado.find(
+          item => item.almacen === selectedAlmacen && 
+                  item.ubicacion === selectedUbicacion
+        )?.stock || 0;
+        
+        setStockDisponible(stockUbicacion);
+      } else {
+        setStockDisponible(0);
+      }
+      
+    } catch (error) {
+      console.error('Error al obtener stock del artículo:', error);
+      setStockDisponible(0);
+    } finally {
+      setIsFetchingStock(false);
+    }
+  }, []);
 
+  // Al cambiar el almacén de origen, actualizar las ubicaciones de origen
+  useEffect(() => {
+    if (traspasoData.articulo && traspasoData.almacenOrigen) {
+      // Manejar zona de descarga como caso especial
+      if (traspasoData.almacenOrigen === 'DESCARGA') {
+        setUbicacionesOrigen([
+          { ubicacion: 'Descarga', stock: Infinity }
+        ]);
+        setTraspasoData(prev => ({
+          ...prev, 
+          ubicacionOrigen: 'Descarga'
+        }));
+        setStockDisponible(Infinity);
+      } else {
+        // Filtrar ubicaciones para este almacén
+        const ubicacionesFiltradas = stockData
+          .filter(item => 
+            item.almacen === traspasoData.almacenOrigen
+          )
+          .map(item => ({
+            ubicacion: item.ubicacion,
+            stock: item.stock
+          }));
+        
+        setUbicacionesOrigen(ubicacionesFiltradas);
+        
+        // Si la ubicación actual no está en las nuevas ubicaciones, resetearla
+        if (ubicacionesFiltradas.length > 0 && !ubicacionesFiltradas.some(u => u.ubicacion === traspasoData.ubicacionOrigen)) {
+          setTraspasoData(prev => ({
+            ...prev, 
+            ubicacionOrigen: ubicacionesFiltradas[0].ubicacion
+          }));
+          
+          // Actualizar stock disponible para la nueva ubicación
+          setStockDisponible(ubicacionesFiltradas[0].stock);
+        }
+      }
+    }
+  }, [traspasoData.almacenOrigen, traspasoData.articulo, stockData]);
+
+  // Al cambiar la ubicación de origen, actualizar el stock disponible
+  useEffect(() => {
+    if (traspasoData.almacenOrigen === 'DESCARGA') {
+      setStockDisponible(Infinity);
+    } else if (traspasoData.ubicacionOrigen && traspasoData.almacenOrigen) {
+      const ubicacionData = stockData.find(
+        item => item.almacen === traspasoData.almacenOrigen && 
+                item.ubicacion === traspasoData.ubicacionOrigen
+      );
+      
+      setStockDisponible(ubicacionData ? ubicacionData.stock : 0);
+    }
+  }, [traspasoData.ubicacionOrigen, traspasoData.almacenOrigen, stockData]);
+
+  // Al cambiar el almacén de destino, obtener sus ubicaciones
   useEffect(() => {
     const fetchUbicacionesDestino = async () => {
-      if (!traspasoData.almacenDestino) return;
+      if (!traspasoData.almacenDestino) {
+        setUbicacionesDestino([]);
+        return;
+      }
       
       try {
         const headers = getAuthHeader();
@@ -113,7 +245,14 @@ const TraspasoAlmacenesScreen = () => {
           `http://localhost:3000/ubicaciones/almacen?almacen=${traspasoData.almacenDestino}`,
           { headers }
         );
-        setUbicacionesDestino(response.data);
+        
+        // Filtrar: si el almacén destino es igual al origen, quitar la ubicación de origen
+        let ubicaciones = response.data;
+        if (traspasoData.almacenDestino === traspasoData.almacenOrigen) {
+          ubicaciones = ubicaciones.filter(ubi => ubi !== traspasoData.ubicacionOrigen);
+        }
+        
+        setUbicacionesDestino(ubicaciones);
       } catch (error) {
         console.error('Error al obtener ubicaciones destino:', error);
         setUbicacionesDestino([]);
@@ -121,7 +260,7 @@ const TraspasoAlmacenesScreen = () => {
     };
     
     fetchUbicacionesDestino();
-  }, [traspasoData.almacenDestino]);
+  }, [traspasoData.almacenDestino, traspasoData.almacenOrigen, traspasoData.ubicacionOrigen]);
 
   const handleCantidadChange = (e) => {
     const value = e.target.value;
@@ -130,7 +269,7 @@ const TraspasoAlmacenesScreen = () => {
     }
   };
 
-  const agregarTraspaso = async () => {
+  const agregarTraspaso = () => {
     const { articulo, almacenOrigen, ubicacionOrigen, almacenDestino, ubicacionDestino, cantidad } = traspasoData;
     const cantidadNum = parseInt(cantidad, 10);
     
@@ -144,26 +283,15 @@ const TraspasoAlmacenesScreen = () => {
       return;
     }
 
-    const articuloInfo = articulos.find(a => a.codigo === articulo);
-    
+    // Verificar stock disponible (excepto para descarga)
     if (almacenOrigen !== 'DESCARGA') {
-      try {
-        const headers = getAuthHeader();
-        const stockResponse = await axios.get(
-          `http://localhost:3000/stock?articulo=${articulo}&almacen=${almacenOrigen}&ubicacion=${ubicacionOrigen}`,
-          { headers }
-        );
-        
-        if (cantidadNum > stockResponse.data.cantidad) {
-          alert(`Stock insuficiente. Disponible: ${stockResponse.data.cantidad} unidades`);
-          return;
-        }
-      } catch (error) {
-        console.error('Error al verificar stock:', error);
-        alert('Error al verificar stock disponible');
+      if (cantidadNum > stockDisponible) {
+        alert(`Stock insuficiente. Disponible: ${stockDisponible} unidades`);
         return;
       }
     }
+    
+    const articuloInfo = articulos.find(a => a.codigo === articulo);
     
     setTraspasosPendientes([...traspasosPendientes, {
       ...traspasoData,
@@ -199,6 +327,9 @@ const TraspasoAlmacenesScreen = () => {
       });
       setBusqueda(traspaso.articulo);
       setTraspasosPendientes(traspasosPendientes.filter(t => t.id !== id));
+      
+      // Recargar stock para este artículo
+      handleSelectArticulo(traspaso.articulo);
     }
   };
 
@@ -227,7 +358,7 @@ const TraspasoAlmacenesScreen = () => {
     try {
       const headers = getAuthHeader();
       const user = JSON.parse(localStorage.getItem('user'));
-      const usuario = user.Nombre;
+      const usuario = user.CodigoCliente;
       
       const response = await axios.post(
         'http://localhost:3000/traspasos/confirmar', 
@@ -250,6 +381,13 @@ const TraspasoAlmacenesScreen = () => {
         setTraspasosPendientes([]);
         
         setTimeout(() => setShowSuccess(false), 2000);
+        
+        // Actualizar movimientos
+        const movResponse = await axios.get(
+          `http://localhost:3000/movimientos-combinados?codigoEmpresa=${user.CodigoEmpresa}&dias=30`,
+          { headers }
+        );
+        setMovimientos(movResponse.data);
       } else {
         throw new Error(response.data.mensaje || 'Error al confirmar traspasos');
       }
@@ -271,8 +409,24 @@ const TraspasoAlmacenesScreen = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Función para renderizar elementos de la lista de artículos
+  const Row = ({ index, style }) => {
+    const art = articulosFiltrados[index];
+    return (
+      <div 
+        style={style} 
+        className="dropdown-item"
+        onClick={() => handleSelectArticulo(art.codigo)}
+      >
+        <div className="article-code">{art.codigo}</div>
+        <div className="article-name">{art.nombre}</div>
+        <div className="article-stock">Stock: {art.stock}</div>
+      </div>
+    );
+  };
+
   return (
-    <div className="traspaso-screen fade-in">
+    <div className="traspaso-screen">
       {isLoading && (
         <div className="loading-overlay">
           <div className="loading-card">
@@ -307,7 +461,9 @@ const TraspasoAlmacenesScreen = () => {
           >
             <option value="">Todos los almacenes</option>
             {almacenes.map(alm => (
-              <option key={alm.codigo} value={alm.codigo}>{alm.nombre}</option>
+              <option key={alm.codigo} value={alm.codigo}>
+                {alm.nombre}
+              </option>
             ))}
           </select>
         </div>
@@ -338,18 +494,26 @@ const TraspasoAlmacenesScreen = () => {
                 />
                 
                 {showArticleDropdown && (
-                  <div className="article-dropdown" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                    {articulosFiltrados.map((art) => (
-                      <div 
-                        key={art.codigo} 
-                        className="dropdown-item"
-                        onClick={() => handleSelectArticulo(art.codigo)}
+                  <div className="article-dropdown">
+                    {articulosFiltrados.length > 0 ? (
+                      <List
+                        height={Math.min(200, articulosFiltrados.length * 50)}
+                        itemCount={articulosFiltrados.length}
+                        itemSize={50}
+                        width="100%"
                       >
-                        <div className="article-code">{art.codigo}</div>
-                        <div className="article-name">{art.nombre}</div>
-                        <div className="article-stock">Stock: {art.stock}</div>
+                        {Row}
+                      </List>
+                    ) : (
+                      <div className="dropdown-item no-results">
+                        {busqueda ? "No se encontraron artículos" : "Comience a escribir para buscar"}
                       </div>
-                    ))}
+                    )}
+                  </div>
+                )}
+                {isFetchingStock && (
+                  <div className="stock-loading">
+                    <div className="mini-spinner"></div>
                   </div>
                 )}
               </div>
@@ -363,13 +527,26 @@ const TraspasoAlmacenesScreen = () => {
                 <select
                   value={traspasoData.almacenOrigen}
                   onChange={(e) => setTraspasoData({ ...traspasoData, almacenOrigen: e.target.value })}
-                  disabled={!traspasoData.articulo}
+                  disabled={!traspasoData.articulo || isFetchingStock}
                   className="select-input"
                 >
                   <option value="">Selecciona almacén</option>
-                  {almacenes.map((alm) => (
-                    <option key={alm.codigo} value={alm.codigo}>{alm.nombre}</option>
-                  ))}
+                  {stockData
+                    .filter((item, index, self) => 
+                      index === self.findIndex(i => i.almacen === item.almacen)
+                    )
+                    .map(item => {
+                      const almacenInfo = almacenes.find(a => a.codigo === item.almacen);
+                      const stockTotal = stockData
+                        .filter(i => i.almacen === item.almacen)
+                        .reduce((sum, i) => sum + i.stock, 0);
+                      
+                      return (
+                        <option key={item.almacen} value={item.almacen}>
+                          {almacenInfo?.nombre || item.almacen} ({stockTotal} uds)
+                        </option>
+                      );
+                    })}
                   <option value="DESCARGA">Zona de Descarga</option>
                 </select>
               </div>
@@ -381,14 +558,13 @@ const TraspasoAlmacenesScreen = () => {
                 <select
                   value={traspasoData.ubicacionOrigen}
                   onChange={(e) => setTraspasoData({ ...traspasoData, ubicacionOrigen: e.target.value })}
-                  disabled={!traspasoData.almacenOrigen}
+                  disabled={!traspasoData.almacenOrigen || isFetchingStock || traspasoData.almacenOrigen === 'DESCARGA'}
                   className="select-input"
                 >
                   <option value="">Selecciona ubicación</option>
                   {ubicacionesOrigen.map((ubi, index) => (
                     <option key={index} value={ubi.ubicacion}>
-                      {ubi.ubicacion} {ubi.stock > 0 && `(${ubi.stock} uds)`}
-                      {traspasoData.almacenOrigen === 'DESCARGA' && ' [Descarga]'}
+                      {ubi.ubicacion} {ubi.stock === Infinity ? '' : `(${ubi.stock} uds)`}
                     </option>
                   ))}
                 </select>
@@ -430,11 +606,19 @@ const TraspasoAlmacenesScreen = () => {
               <div className="form-group quantity-group">
                 <label className="form-label">
                   <span className="icon">🔢</span> Cantidad
+                  {traspasoData.almacenOrigen && (
+                    <span className="stock-info">
+                      {traspasoData.almacenOrigen === 'DESCARGA' 
+                        ? ' (Stock ilimitado)' 
+                        : ` (Disponible: ${stockDisponible} uds)`}
+                    </span>
+                  )}
                 </label>
                 <input
                   type="number"
                   placeholder="0"
                   min="0"
+                  max={traspasoData.almacenOrigen === 'DESCARGA' ? undefined : stockDisponible}
                   value={traspasoData.cantidad}
                   onChange={handleCantidadChange}
                   className="quantity-input"
@@ -442,7 +626,11 @@ const TraspasoAlmacenesScreen = () => {
               </div>
               
               <div className="form-group button-group">
-                <button onClick={agregarTraspaso} className="btn-add">
+                <button 
+                  onClick={agregarTraspaso} 
+                  className="btn-add"
+                  disabled={isFetchingStock}
+                >
                   <span className="icon">➕</span> Agregar
                 </button>
               </div>
@@ -547,28 +735,64 @@ const TraspasoAlmacenesScreen = () => {
             ) : (
               <div className="table-container">
                 {movimientos.length > 0 ? (
-                  <table className="movimientos-table responsive-table">
+                  <table className="movimientos-table">
                     <thead>
                       <tr>
                         <th>Fecha</th>
                         <th>Artículo</th>
-                        <th>Almacén</th>
-                        <th>Ubicación</th>
+                        <th>Alm. Origen</th>
+                        <th>Ubic. Origen</th>
+                        <th>Alm. Destino</th>
+                        <th>Ubic. Destino</th>
                         <th>Cantidad</th>
                         <th>Tipo</th>
                         <th>Usuario</th>
+                        <th>Comentario</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {movimientos.map((movimiento) => (
-                        <tr key={movimiento.id}>
+                      {movimientos.map((movimiento, index) => (
+                        <tr key={`${movimiento.Fecha}-${index}`}>
                           <td>{new Date(movimiento.Fecha).toLocaleString()}</td>
                           <td>{movimiento.CodigoArticulo}</td>
-                          <td>{movimiento.CodigoAlmacen}</td>
-                          <td>{movimiento.Ubicacion}</td>
+                          <td>
+                            {movimiento.Tipo === 'Traspaso' 
+                              ? movimiento.AlmacenOrigen 
+                              : movimiento.TipoMovimiento === 2 
+                                ? movimiento.CodigoAlmacen 
+                                : '-'}
+                          </td>
+                          <td>
+                            {movimiento.Tipo === 'Traspaso' 
+                              ? movimiento.UbicacionOrigen 
+                              : movimiento.TipoMovimiento === 2 
+                                ? movimiento.Ubicacion 
+                                : '-'}
+                          </td>
+                          <td>
+                            {movimiento.Tipo === 'Traspaso' 
+                              ? movimiento.AlmacenDestino 
+                              : movimiento.TipoMovimiento === 1 
+                                ? movimiento.CodigoAlmacen 
+                                : '-'}
+                          </td>
+                          <td>
+                            {movimiento.Tipo === 'Traspaso' 
+                              ? movimiento.UbicacionDestino 
+                              : movimiento.TipoMovimiento === 1 
+                                ? movimiento.Ubicacion 
+                                : '-'}
+                          </td>
                           <td>{movimiento.Unidades}</td>
-                          <td>{movimiento.TipoMovimiento === 1 ? 'Entrada' : 'Salida'}</td>
-                          <td>{movimiento.Usuario || 'Sistema'}</td>
+                          <td>
+                            {movimiento.Tipo === 'Traspaso' 
+                              ? 'Traspaso' 
+                              : movimiento.TipoMovimiento === 1 
+                                ? 'Entrada' 
+                                : 'Salida'}
+                          </td>
+                          <td>{movimiento.Usuario}</td>
+                          <td>{movimiento.Comentario || '-'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -590,4 +814,4 @@ const TraspasoAlmacenesScreen = () => {
   );
 };
 
-export default React.memo(TraspasoAlmacenesScreen);
+export default TraspasoAlmacenesScreen;

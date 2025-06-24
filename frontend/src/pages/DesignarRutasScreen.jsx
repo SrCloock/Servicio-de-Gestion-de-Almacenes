@@ -3,6 +3,7 @@ import axios from 'axios';
 import '../styles/DesignarRutasScreen.css';
 import Navbar from '../components/Navbar';
 import { getAuthHeader } from '../helpers/authHelper';
+import UserInfoBar from '../components/UserInfoBar';
 
 const DesignarRutasScreen = () => {
   const [repartidores, setRepartidores] = useState([]);
@@ -10,7 +11,7 @@ const DesignarRutasScreen = () => {
   const [asignaciones, setAsignaciones] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
+  
   useEffect(() => {
     const cargarDatos = async () => {
       try {
@@ -19,19 +20,31 @@ const DesignarRutasScreen = () => {
         const user = JSON.parse(localStorage.getItem('user'));
         const codigoEmpresa = user.CodigoEmpresa;
         
+        // Obtener repartidores usando el endpoint correcto
         const repResponse = await axios.get(
-          `http://localhost:3000/empleados?categoria=Repartidor&codigoEmpresa=${codigoEmpresa}`,
-          { headers }
+          'http://localhost:3000/repartidores',
+          { 
+            headers,
+            params: { 
+              codigoEmpresa,
+              categoria: 'REP'
+            } 
+          }
         );
         
+        // Obtener albaranes pendientes
         const albResponse = await axios.get(
           `http://localhost:3000/albaranesPendientes`,
-          { headers }
+          { 
+            headers,
+            params: { codigoEmpresa } 
+          }
         );
         
         setRepartidores(repResponse.data);
         setAlbaranes(albResponse.data);
       } catch (err) {
+        console.error('Error cargando datos:', err);
         setError('Error cargando datos: ' + err.message);
       } finally {
         setLoading(false);
@@ -52,15 +65,21 @@ const DesignarRutasScreen = () => {
     try {
       setLoading(true);
       const headers = getAuthHeader();
+      const user = JSON.parse(localStorage.getItem('user'));
       
       await axios.post(
         'http://localhost:3000/designar-rutas',
-        { asignaciones },
+        { 
+          asignaciones,
+          codigoEmpresa: user.CodigoEmpresa
+        },
         { headers }
       );
       
       alert('Rutas asignadas correctamente');
+      setAsignaciones({});
     } catch (err) {
+      console.error('Error guardando asignaciones:', err);
       setError('Error guardando asignaciones: ' + err.message);
     } finally {
       setLoading(false);
@@ -73,7 +92,13 @@ const DesignarRutasScreen = () => {
 
   return (
     <div className="designar-rutas-container">
-      <h2>Designar Albaranes a Repartidores</h2>
+      <UserInfoBar />
+      
+      <div className="screen-header">
+        <div className="bubble bubble1"></div>
+        <div className="bubble bubble2"></div>
+        <h2>Designar Albaranes a Repartidores</h2>
+      </div>
       
       {error && <div className="error">{error}</div>}
       
@@ -99,8 +124,8 @@ const DesignarRutasScreen = () => {
                 >
                   <option value="">Seleccionar repartidor</option>
                   {repartidores.map(rep => (
-                    <option key={rep.id} value={rep.id}>
-                      {rep.nombre}
+                    <option key={rep.CodigoCliente} value={rep.CodigoCliente}>
+                      {rep.Nombre}
                     </option>
                   ))}
                 </select>
