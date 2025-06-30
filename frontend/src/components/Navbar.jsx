@@ -1,29 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { 
+  FaRoute, 
+  FaClipboardList, 
+  FaTruckLoading, 
+  FaExchangeAlt, 
+  FaBoxes, 
+  FaUserFriends, 
+  FaFileInvoice, 
+  FaHome,
+  FaWarehouse
+} from 'react-icons/fa';
 import '../styles/Navbar.css';
-import { getUserPermisos } from '../helpers/authHelper';
 
-// ============================================
-// ✅ COMPONENTE: BARRA DE NAVEGACIÓN
-// ============================================
-/**
- * Componente de barra de navegación superior
- * 
- * @returns {React.ReactNode} Barra de navegación con enlaces a secciones de la app
- */
 const Navbar = () => {
   const navigate = useNavigate();
-  const permisos = getUserPermisos();
-  const isAdmin = permisos.isAdmin;
-  const isRepartidor = permisos.isRepartidor;
+  const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [activeRoute, setActiveRoute] = useState(location.pathname);
+  const [isScrolled, setIsScrolled] = useState(false);
 
-  // ============================================
-  // ✅ EFECTO: GESTIÓN DE REDIMENSIONAMIENTO
-  // ============================================
-  /**
-   * Cierra menú móvil al cambiar tamaño de ventana
-   */
+  // Actualizar ruta activa cuando cambia la ubicación
+  useEffect(() => {
+    setActiveRoute(location.pathname);
+  }, [location]);
+
+  // Cerrar menú móvil al cambiar tamaño de ventana
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth > 768) setIsMobileMenuOpen(false);
@@ -32,107 +34,72 @@ const Navbar = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // ============================================
-  // ✅ FUNCIÓN: TOGGLE MENÚ MÓVIL
-  // ============================================
+  // Efecto de scroll para sombra
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 10);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
   };
 
-  // ============================================
-  // ✅ FUNCIÓN: NAVEGACIÓN
-  // ============================================
-  /**
-   * Navega a una ruta y cierra menú móvil
-   * 
-   * @param {string} path - Ruta destino
-   */
   const goTo = (path) => {
     navigate(path);
     setIsMobileMenuOpen(false);
   };
 
+  const navItems = [
+    { path: '/rutas', label: 'Rutas', icon: <FaRoute /> },
+    { path: '/PedidosScreen', label: 'Todos los Pedidos', icon: <FaClipboardList /> },
+    { path: '/pedidos-asignados', label: 'Pedidos Asignados', icon: <FaTruckLoading /> },
+    { path: '/traspasos', label: 'Traspasos', icon: <FaExchangeAlt /> },
+    { path: '/inventario', label: 'Inventario', icon: <FaBoxes /> },
+    { path: '/designar-rutas', label: 'Designar Rutas', icon: <FaUserFriends /> },
+    { path: '/albaranes-asignados', label: 'Albaranes Asignados', icon: <FaFileInvoice /> },
+    { path: '/', label: 'Inicio', icon: <FaHome /> },
+  ];
+
   return (
-    <nav className="navbar">
-      <div className="navbar-header">
-        <div className="navbar-logo">📦 App Pedidos</div>
-        <button 
-          className="hamburger" 
-          onClick={toggleMobileMenu}
-          aria-label={isMobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
+    <nav className={`navbar ${isScrolled ? 'scrolled' : ''}`}>
+      <div className="navbar-container">
+        <div className="navbar-header">
+          <div className="navbar-brand" onClick={() => goTo('/')}>
+            <div className="logo-icon">
+              <FaWarehouse />
+            </div>
+            <span className="app-name">Gestión de Almacén</span>
+          </div>
+          
+          <button 
+            className={`mobile-toggle ${isMobileMenuOpen ? 'open' : ''}`}
+            onClick={toggleMobileMenu}
+            aria-label={isMobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
+          >
+            <span className="hamburger-line"></span>
+            <span className="hamburger-line"></span>
+            <span className="hamburger-line"></span>
+          </button>
+        </div>
+
+        <div 
+          className={`navbar-links ${isMobileMenuOpen ? 'open' : ''}`}
+          aria-hidden={!isMobileMenuOpen}
         >
-          ☰
-        </button>
-      </div>
-
-      <div 
-        className={`navbar-links ${isMobileMenuOpen ? 'open' : ''}`}
-        aria-hidden={!isMobileMenuOpen}
-      >
-        {/* ============================================ */}
-        {/* ✅ ENLACE: GESTIÓN DE RUTAS                  */}
-        {/* ============================================ */}
-        <button onClick={() => goTo('/rutas')} className="btn-nav">
-          <span>📦</span> Rutas
-        </button>
-
-        {/* ============================================ */}
-        {/* ✅ ENLACE: TODOS LOS PEDIDOS (ADMIN)         */}
-        {/* ============================================ */}
-        {isAdmin && (
-          <button onClick={() => goTo('/PedidosScreen')} className="btn-nav">
-            <span>📝</span> Todos los Pedidos
-          </button>
-        )}
-
-        {/* ============================================ */}
-        {/* ✅ ENLACE: PEDIDOS ASIGNADOS                 */}
-        {/* ============================================ */}
-        {(isAdmin || isRepartidor) && (
-          <button onClick={() => goTo('/pedidos-asignados')} className="btn-nav">
-            <span>📋</span> Pedidos Asignados
-          </button>
-        )}
-
-        {/* ============================================ */}
-        {/* ✅ ENLACE: TRASPASOS                         */}
-        {/* ============================================ */}
-        <button onClick={() => goTo('/traspasos')} className="btn-nav">
-          <span>🔄</span> Traspasos
-        </button>
-        
-        {/* ============================================ */}
-        {/* ✅ ENLACE: INVENTARIO (NUEVO)                */}
-        {/* ============================================ */}
-        <button onClick={() => goTo('/inventario')} className="btn-nav">
-          <span>📊</span> Inventario
-        </button>
-
-        {/* ============================================ */}
-        {/* ✅ ENLACE: DESIGNAR RUTAS (ADMIN)            */}
-        {/* ============================================ */}
-        {isAdmin && (
-          <button onClick={() => goTo('/designar-rutas')} className="btn-nav">
-            <span>👥</span> Designar Rutas
-          </button>
-        )}
-
-        {/* ============================================ */}
-        {/* ✅ ENLACE: ALBARANES ASIGNADOS               */}
-        {/* ============================================ */}
-        {(isAdmin || isRepartidor) && (
-          <button onClick={() => goTo('/albaranes-asignados')} className="btn-nav">
-            {isAdmin ? <span>📑</span> : <span>📋</span>}
-            {isAdmin ? ' Albaranes Asignados' : ' Mis Albaranes'}
-          </button>
-        )}
-
-        {/* ============================================ */}
-        {/* ✅ ENLACE: INICIO                            */}
-        {/* ============================================ */}
-        <button onClick={() => goTo('/')} className="btn-nav">
-          <span>🏠</span> Inicio
-        </button>
+          {navItems.map((item) => (
+            <div 
+              key={item.path}
+              className={`nav-item ${activeRoute === item.path ? 'active' : ''}`}
+              onClick={() => goTo(item.path)}
+            >
+              <div className="nav-icon">{item.icon}</div>
+              <span className="nav-label">{item.label}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </nav>
   );

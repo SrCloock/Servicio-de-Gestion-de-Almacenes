@@ -1,10 +1,10 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/PedidosScreen.css';
-import Navbar from '../components/Navbar';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
 import UserInfoBar from '../components/UserInfoBar';
+import Navbar from '../components/Navbar';
 
 const PedidosScreen = () => {
   const [pedidos, setPedidos] = useState([]);
@@ -12,6 +12,7 @@ const PedidosScreen = () => {
   const [lineaSeleccionada, setLineaSeleccionada] = useState(null);
   const [expediciones, setExpediciones] = useState({});
   const [pedidoViewModes, setPedidoViewModes] = useState({});
+  const [detallesVisibles, setDetallesVisibles] = useState({});
   const [loading, setLoading] = useState(true);
   const [expedicionLoading, setExpedicionLoading] = useState(false);
   const [filtroPedido, setFiltroPedido] = useState('');
@@ -53,6 +54,7 @@ const PedidosScreen = () => {
           return;
         }
         
+        // Obtener repartidores
         const repResponse = await axios.get(
           'http://localhost:3000/repartidores',
           { 
@@ -65,6 +67,7 @@ const PedidosScreen = () => {
         );
         setRepartidores(repResponse.data);
         
+        // Obtener pedidos pendientes
         const response = await axios.get(
           `http://localhost:3000/pedidosPendientes`,
           { 
@@ -75,6 +78,18 @@ const PedidosScreen = () => {
         
         setPedidos(response.data);
         
+        // Inicializar detalles como no visibles - CORRECCIÓN APLICADA AQUÍ
+        const initialDetalles = {};
+        response.data.forEach(pedido => {
+          pedido.articulos.forEach(linea => {
+            if (linea.detalles && linea.movPosicionLinea) {
+              initialDetalles[linea.movPosicionLinea] = false;
+            }
+          });
+        });
+        setDetallesVisibles(initialDetalles);
+        
+        // Obtener ubicaciones para todos los artículos
         const codigosArticulos = [...new Set(response.data.flatMap(p => p.articulos.map(a => a.codigoArticulo)))];
         
         const responseUbicaciones = await axios.post(
@@ -85,6 +100,7 @@ const PedidosScreen = () => {
         
         setUbicaciones(responseUbicaciones.data);
         
+        // Inicializar expediciones con la primera ubicación disponible
         const nuevasExpediciones = {};
         response.data.forEach(pedido => {
           pedido.articulos.forEach(linea => {
@@ -92,6 +108,7 @@ const PedidosScreen = () => {
             let ubicacionesConStock = responseUbicaciones.data[linea.codigoArticulo] || [];
             ubicacionesConStock = ubicacionesConStock.filter(ubi => ubi.unidadSaldo > 0);
             
+            // Si no hay stock, usar "Zona descarga"
             if (ubicacionesConStock.length === 0) {
               ubicacionesConStock.push({
                 ubicacion: "Zona descarga",
@@ -114,6 +131,7 @@ const PedidosScreen = () => {
         });
         setExpediciones(nuevasExpediciones);
         
+        // Inicializar modos de vista de pedido (mostrar/ocultar líneas)
         const initialModes = {};
         response.data.forEach(pedido => {
           initialModes[pedido.numeroPedido] = 'show';
@@ -140,18 +158,25 @@ const PedidosScreen = () => {
     fetchPedidos();
   }, []);
 
+  const toggleDetalles = (movPosicionLinea) => {
+    setDetallesVisibles(prev => ({
+      ...prev,
+      [movPosicionLinea]: !prev[movPosicionLinea]
+    }));
+  };
+
   const handleLineaClick = async (codigoArticulo, unidadesPendientes) => {
     try {
       const headers = getAuthHeader();
       const response = await axios.get(
-        `http://localhost:3000/ubicacionesArticulo`,
+        `http://localhost:3000/stock/por-articulo`,
         {
           headers: headers,
-          params: { codigoArticulo }
+          params: { codigoArticulo, codigoEmpresa: user.CodigoEmpresa }
         }
       );
       
-      let ubicacionesConStock = response.data.filter(ubi => ubi.unidadSaldo > 0);
+      let ubicacionesConStock = response.data.filter(ubi => ubi.Cantidad > 0);
       if (ubicacionesConStock.length === 0) {
         ubicacionesConStock.push({
           ubicacion: "Zona descarga",
@@ -310,6 +335,46 @@ const PedidosScreen = () => {
     }
   };
 
+  const DetallesArticulo = ({ detalles }) => {
+    if (!detalles || detalles.length === 0) return null;
+
+    return (
+      <div className="detalles-container">
+        <table className="detalles-table">
+          <thead>
+            <tr>
+              <th>Color</th>
+              <th>Grupo de Tallas</th>
+              <th>Detalle de Tallas</th>
+              <th>Unidades</th>
+            </tr>
+          </thead>
+          <tbody>
+            {detalles.map((detalle, index) => {
+              // Filtrar tallas con unidades > 0
+              const tallasConUnidades = Object.entries(detalle.tallas)
+                .filter(([_, unidades]) => unidades > 0)
+                .map(([codigoTalla, unidades]) => ({ codigoTalla, unidades }));
+
+              return (
+                <tr key={index}>
+                  <td>{detalle.color.nombre}</td>
+                  <td>{detalle.grupoTalla.nombre}</td>
+                  <td>
+                    {tallasConUnidades.map((talla, idx) => (
+                      <div key={idx}>Talla {talla.codigoTalla}: {talla.unidades}</div>
+                    ))}
+                  </td>
+                  <td>{detalle.unidades}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   return (
     <div className="pedidos-container">
       <UserInfoBar />
@@ -404,14 +469,14 @@ const PedidosScreen = () => {
                 </div>
                 
                 <div className="pedido-details">
-                  <div><strong>Obra:</strong> {pedido.NombreObra || 'Sin obra especificada'}</div>
+                  <div><strong>Obra:</strong> {pedido.obra || 'Sin obra especificada'}</div>
                   <div><strong>Dirección:</strong> {pedido.domicilio}</div>
                   <div><strong>Municipio:</strong> {pedido.municipio}</div>
                   
                   <div className="observaciones-container">
                     <strong>Observaciones:</strong>
                     <div className="observaciones-content">
-                      {pedido.ObservacionesWeb || 'Sin observaciones'}
+                      {pedido.observaciones || 'Sin observaciones'}
                     </div>
                   </div>
                 </div>
@@ -459,85 +524,108 @@ const PedidosScreen = () => {
                           };
                           
                           return (
-                            <tr 
-                              key={index}
-                              className={`linea-pedido ${tieneStock ? 'clickable' : 'no-stock'} ${stockNegativo ? 'negative-stock' : ''}`}
-                              onClick={() => handleLineaClick(linea.codigoArticulo, linea.unidadesPendientes)}
-                            >
-                              <td className="td-izquierda">
-                                <div className="codigo-articulo">{linea.codigoArticulo}</div>
-                                <div className="codigo-alternativo">{linea.codigoAlternativo}</div>
-                              </td>
-                              <td className="td-izquierda">
-                                <div className="descripcion-articulo">{linea.descripcionArticulo}</div>
-                                <div className="detalles-articulo">{linea.descripcion2Articulo}</div>
-                              </td>
-                              <td className="td-centrado">
-                                {linea.unidadesPendientes > 0 ? (
-                                  <span>{linea.unidadesPendientes}</span>
-                                ) : (
-                                  <span className="completada-badge">COMPLETADA</span>
-                                )}
-                              </td>
-                              <td>
-                                <div className="ubicacion-select-container">
-                                  <select
-                                    value={expedicion.ubicacion}
+                            <React.Fragment key={index}>
+                              <tr 
+                                className={`linea-pedido ${tieneStock ? 'clickable' : 'no-stock'} ${stockNegativo ? 'negative-stock' : ''}`}
+                                onClick={() => handleLineaClick(linea.codigoArticulo, linea.unidadesPendientes)}
+                              >
+                                <td className="td-izquierda">
+                                  <div className="codigo-articulo">{linea.codigoArticulo}</div>
+                                  <div className="codigo-alternativo">{linea.codigoAlternativo}</div>
+                                </td>
+                                <td className="td-izquierda">
+                                  <div className="descripcion-articulo">{linea.descripcionArticulo}</div>
+                                  <div className="detalles-articulo">{linea.descripcion2Articulo}</div>
+                                </td>
+                                <td className="td-centrado">
+                                  {linea.unidadesPendientes > 0 ? (
+                                    <div className="pendiente-container">
+                                      <span>{linea.unidadesPendientes}</span>
+                                      {linea.detalles && linea.movPosicionLinea && (
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleDetalles(linea.movPosicionLinea);
+                                          }}
+                                          className="btn-detalles"
+                                        >
+                                          ...
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="completada-badge">COMPLETADA</span>
+                                  )}
+                                </td>
+                                <td>
+                                  <div className="ubicacion-select-container">
+                                    <select
+                                      value={expedicion.ubicacion}
+                                      onChange={e => handleExpedicionChange(
+                                        pedido.numeroPedido, 
+                                        linea.codigoArticulo, 
+                                        'ubicacion', 
+                                        e.target.value
+                                      )}
+                                      className={`ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'zona-descarga' : ''}`}
+                                    >
+                                      {ubicacionesConStock.map((ubicacion, ubiIndex) => (
+                                        <option 
+                                          key={ubiIndex} 
+                                          value={ubicacion.ubicacion}
+                                          className={ubicacion.ubicacion === "Zona descarga" ? 'zona-descarga-option' : ''}
+                                        >
+                                          {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''} - 
+                                          Stock: {ubicacion.unidadSaldo === Infinity ? 'Ilimitado' : ubicacion.unidadSaldo}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={Math.min(
+                                      linea.unidadesPendientes,
+                                      expedicion.ubicacion === "Zona descarga" 
+                                        ? linea.unidadesPendientes 
+                                        : (ubicacionesConStock.find(ubi => ubi.ubicacion === expedicion.ubicacion)?.unidadSaldo || 0))
+                                    }
+                                    value={expedicion.cantidad}
                                     onChange={e => handleExpedicionChange(
                                       pedido.numeroPedido, 
                                       linea.codigoArticulo, 
-                                      'ubicacion', 
+                                      'cantidad', 
                                       e.target.value
                                     )}
-                                    className={`ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'zona-descarga' : ''}`}
+                                    className={expedicion.ubicacion === "Zona descarga" ? 'zona-descarga-input' : ''}
+                                  />
+                                </td>
+                                <td className="td-centrado">
+                                  <button
+                                    className="btn-expedir"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      verificarYExpedir(linea, pedido);
+                                    }}
+                                    disabled={expedicionLoading || !expediciones[key] || 
+                                      parseInt(expedicion.cantidad || 0) <= 0}
                                   >
-                                    {ubicacionesConStock.map((ubicacion, ubiIndex) => (
-                                      <option 
-                                        key={ubiIndex} 
-                                        value={ubicacion.ubicacion}
-                                        className={ubicacion.ubicacion === "Zona descarga" ? 'zona-descarga-option' : ''}
-                                      >
-                                        {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''} - 
-                                        Stock: {ubicacion.unidadSaldo === Infinity ? 'Ilimitado' : ubicacion.unidadSaldo}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                              </td>
-                              <td>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max={Math.min(
-                                    linea.unidadesPendientes,
-                                    expedicion.ubicacion === "Zona descarga" 
-                                      ? linea.unidadesPendientes 
-                                      : (ubicacionesConStock.find(ubi => ubi.ubicacion === expedicion.ubicacion)?.unidadSaldo || 0))
-                                  }
-                                  value={expedicion.cantidad}
-                                  onChange={e => handleExpedicionChange(
-                                    pedido.numeroPedido, 
-                                    linea.codigoArticulo, 
-                                    'cantidad', 
-                                    e.target.value
-                                  )}
-                                  className={expedicion.ubicacion === "Zona descarga" ? 'zona-descarga-input' : ''}
-                                />
-                              </td>
-                              <td className="td-centrado">
-                                <button
-                                  className="btn-expedir"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    verificarYExpedir(linea, pedido);
-                                  }}
-                                  disabled={expedicionLoading || !expediciones[key] || 
-                                    parseInt(expedicion.cantidad || 0) <= 0}
-                                >
-                                  Expedir
-                                </button>
-                              </td>
-                            </tr>
+                                    Expedir
+                                  </button>
+                                </td>
+                              </tr>
+                              
+                              {/* FILA DE DETALLES */}
+                              {linea.movPosicionLinea && detallesVisibles[linea.movPosicionLinea] && (
+                                <tr className="detalles-row">
+                                  <td colSpan="6">
+                                    <DetallesArticulo detalles={linea.detalles} />
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           );
                         })}
                       </tbody>
@@ -578,8 +666,6 @@ const PedidosScreen = () => {
         )}
       </div>
       
-      <Navbar />
-
       {pedidoAsignando && (
         <div className="modal-asignacion">
           <div className="modal-contenido">
@@ -621,6 +707,8 @@ const PedidosScreen = () => {
           </div>
         </div>
       )}
+
+      <Navbar />
     </div>
   );
 };

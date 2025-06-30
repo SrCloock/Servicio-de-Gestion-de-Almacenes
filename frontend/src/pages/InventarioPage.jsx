@@ -3,7 +3,7 @@ import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
 import UserInfoBar from '../components/UserInfoBar';
 import Navbar from '../components/Navbar';
-import { FiSearch, FiChevronDown, FiChevronUp, FiDownload, FiFilter } from 'react-icons/fi';
+import { FiSearch, FiChevronDown, FiChevronUp, FiDownload, FiFilter, FiEdit, FiX, FiCheck } from 'react-icons/fi';
 import '../styles/InventarioPage.css';
 
 const PAGE_SIZE = 30;
@@ -22,15 +22,30 @@ const InventarioPage = () => {
   });
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
+  const [ajustesPendientes, setAjustesPendientes] = useState([]);
+  const [editandoCantidad, setEditandoCantidad] = useState(null);
+  const [nuevaCantidad, setNuevaCantidad] = useState('');
+  
   const user = JSON.parse(localStorage.getItem('user'));
   const codigoEmpresa = user?.CodigoEmpresa;
   const nombreEmpresa = user?.Empresa || 'Demos';
 
-  // Agrupar inventario por artículo
+  // Agrupar inventario por artículo con claves únicas
   const agruparPorArticulo = useCallback((data) => {
     const agrupado = {};
+    let claveCounter = {};
     
     data.forEach(item => {
+      const baseClave = `${item.CodigoArticulo}-${item.CodigoAlmacen}-${item.Ubicacion}`;
+      
+      // Contador para garantizar claves únicas
+      if (!claveCounter[baseClave]) {
+        claveCounter[baseClave] = 0;
+      }
+      claveCounter[baseClave]++;
+      
+      const claveUnica = `${baseClave}-${claveCounter[baseClave]}`;
+      
       if (!agrupado[item.CodigoArticulo]) {
         agrupado[item.CodigoArticulo] = {
           CodigoArticulo: item.CodigoArticulo,
@@ -42,7 +57,7 @@ const InventarioPage = () => {
       }
       
       const ubicacion = {
-        clave: `${item.CodigoArticulo}-${item.CodigoAlmacen}-${item.Ubicacion}`,
+        clave: claveUnica,
         CodigoAlmacen: item.CodigoAlmacen,
         NombreAlmacen: item.NombreAlmacen,
         Ubicacion: item.Ubicacion,
@@ -69,30 +84,30 @@ const InventarioPage = () => {
   }, []);
 
   // Cargar inventario
-  useEffect(() => {
+  const cargarInventario = useCallback(async () => {
     if (!codigoEmpresa) return;
 
-    const cargarInventario = async () => {
-      try {
-        setLoading(true);
-        setError('');
-        const headers = getAuthHeader();
-        const response = await axios.get(
-          'http://localhost:3000/inventario/stock-total',
-          { headers }
-        );
-        
-        setInventario(agruparPorArticulo(response.data));
-        setLoading(false);
-      } catch (error) {
-        console.error('Error al obtener inventario:', error);
-        setError('Error al cargar el inventario. Intente nuevamente.');
-        setLoading(false);
-      }
-    };
-
-    cargarInventario();
+    try {
+      setLoading(true);
+      setError('');
+      const headers = getAuthHeader();
+      const response = await axios.get(
+        'http://localhost:3000/inventario/stock-total',
+        { headers }
+      );
+      
+      setInventario(agruparPorArticulo(response.data));
+      setLoading(false);
+    } catch (error) {
+      console.error('Error al obtener inventario:', error);
+      setError('Error al cargar el inventario. Intente nuevamente.');
+      setLoading(false);
+    }
   }, [codigoEmpresa, agruparPorArticulo]);
+
+  useEffect(() => {
+    cargarInventario();
+  }, [cargarInventario]);
 
   // Alternar vista expandida
   const toggleExpandirArticulo = (codigoArticulo) => {
@@ -243,6 +258,66 @@ const InventarioPage = () => {
     }
   };
 
+  // Iniciar edición de una cantidad
+  const iniciarEdicionCantidad = (articulo, ubicacionInfo, cantidadActual, clave, codigoAlmacen, ubicacionStr) => {
+    setEditandoCantidad({
+      articulo,
+      ubicacion: `${ubicacionInfo} (${codigoAlmacen}) - ${ubicacionStr}`,
+      cantidadActual,
+      clave,
+      codigoAlmacen,
+      ubicacionStr
+    });
+    setNuevaCantidad(cantidadActual.toString());
+  };
+
+  // Guardar ajuste pendiente
+  const guardarAjustePendiente = () => {
+    if (!editandoCantidad || !nuevaCantidad) return;
+    
+    const nuevoAjuste = {
+      ...editandoCantidad,
+      nuevaCantidad: parseFloat(nuevaCantidad),
+      fecha: new Date().toISOString(),
+      estado: 'pendiente'
+    };
+    
+    // Actualizar lista de ajustes pendientes
+    setAjustesPendientes(prev => [...prev, nuevoAjuste]);
+    
+    // Cerrar modal
+    setEditandoCantidad(null);
+    setNuevaCantidad('');
+  };
+
+  // Confirmar todos los ajustes
+  const confirmarAjustes = async () => {
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.post(
+        'http://localhost:3000/inventario/ajustar',
+        { ajustes: ajustesPendientes },
+        { headers }
+      );
+      
+      if (response.data.success) {
+        // Recargar inventario después de ajustar
+        cargarInventario();
+        // Limpiar ajustes pendientes
+        setAjustesPendientes([]);
+        alert('Ajustes realizados correctamente');
+      }
+    } catch (error) {
+      console.error('Error al confirmar ajustes:', error);
+      alert('Error al confirmar ajustes: ' + error.message);
+    }
+  };
+
+  // Eliminar un ajuste pendiente
+  const eliminarAjustePendiente = (index) => {
+    setAjustesPendientes(prev => prev.filter((_, i) => i !== index));
+  };
+
   return (
     <div className="inventario-container">
       <Navbar />
@@ -357,6 +432,108 @@ const InventarioPage = () => {
         </button>
       </div>
 
+      {/* Panel de Ajustes Pendientes */}
+      {ajustesPendientes.length > 0 && (
+        <div className="panel-ajustes">
+          <div className="panel-header">
+            <h3>Ajustes Pendientes</h3>
+            <div className="panel-actions">
+              <span className="badge">{ajustesPendientes.length} pendientes</span>
+              <button 
+                className="btn-confirmar"
+                onClick={confirmarAjustes}
+              >
+                <FiCheck /> Confirmar Ajustes
+              </button>
+            </div>
+          </div>
+          
+          <div className="lista-ajustes">
+            {ajustesPendientes.map((ajuste, index) => (
+              <div key={index} className="ajuste-item">
+                <div className="ajuste-info">
+                  <div className="articulo">
+                    <span className="label">Artículo:</span> 
+                    <span className="value">{ajuste.articulo}</span>
+                  </div>
+                  <div className="ubicacion">
+                    <span className="label">Ubicación:</span> 
+                    <span className="value">{ajuste.ubicacion}</span>
+                  </div>
+                  <div className="cantidad">
+                    <span className="label">Cantidad:</span> 
+                    <span className="value">
+                      {ajuste.cantidadActual} → <strong>{ajuste.nuevaCantidad}</strong>
+                    </span>
+                  </div>
+                </div>
+                <button 
+                  className="btn-eliminar"
+                  onClick={() => eliminarAjustePendiente(index)}
+                >
+                  <FiX /> Eliminar
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edición */}
+      {editandoCantidad && (
+        <div className="modal-edicion">
+          <div className="modal-contenido">
+            <h3>Editar Cantidad</h3>
+            <div className="modal-details">
+              <div className="detail-item">
+                <span className="label">Artículo:</span>
+                <span className="value">{editandoCantidad.articulo}</span>
+              </div>
+              <div className="detail-item">
+                <span className="label">Ubicación:</span>
+                <span className="value">{editandoCantidad.ubicacion}</span>
+              </div>
+            </div>
+            
+            <div className="form-group">
+              <label>Cantidad Actual:</label>
+              <input 
+                type="text" 
+                value={editandoCantidad.cantidadActual} 
+                disabled 
+                className="cantidad-actual"
+              />
+            </div>
+            
+            <div className="form-group">
+              <label>Nueva Cantidad:</label>
+              <input 
+                type="number" 
+                value={nuevaCantidad}
+                onChange={(e) => setNuevaCantidad(e.target.value)}
+                autoFocus
+                className="nueva-cantidad"
+              />
+            </div>
+            
+            <div className="modal-acciones">
+              <button 
+                className="btn-cancelar"
+                onClick={() => setEditandoCantidad(null)}
+              >
+                Cancelar
+              </button>
+              <button 
+                className="btn-guardar"
+                onClick={guardarAjustePendiente}
+              >
+                Guardar Ajuste
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {error ? (
         <div className="error-container">
           <div className="error-icon">⚠️</div>
@@ -435,6 +612,7 @@ const InventarioPage = () => {
                         <span onClick={() => requestSort('Cantidad')}>
                           Cantidad {sortConfig.key === 'Cantidad' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </span>
+                        <span>Acciones</span>
                       </div>
                       
                       {articulo.ubicaciones
@@ -464,6 +642,19 @@ const InventarioPage = () => {
                           >
                             {ubicacion.Cantidad.toLocaleString()}
                           </span>
+                          <button 
+                            className="btn-editar"
+                            onClick={() => iniciarEdicionCantidad(
+                              articulo.CodigoArticulo,
+                              ubicacion.NombreAlmacen,
+                              ubicacion.Cantidad,
+                              ubicacion.clave,
+                              ubicacion.CodigoAlmacen,
+                              ubicacion.Ubicacion
+                            )}
+                          >
+                            <FiEdit /> Editar
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -479,6 +670,7 @@ const InventarioPage = () => {
               <button 
                 onClick={() => goToPage(currentPage - 1)} 
                 disabled={currentPage === 1}
+                className="pagination-btn"
               >
                 Anterior
               </button>
@@ -488,6 +680,7 @@ const InventarioPage = () => {
               <button 
                 onClick={() => goToPage(currentPage + 1)} 
                 disabled={currentPage === totalPages}
+                className="pagination-btn"
               >
                 Siguiente
               </button>

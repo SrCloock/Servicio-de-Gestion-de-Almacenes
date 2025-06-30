@@ -1,7 +1,7 @@
 ﻿import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import '../styles/LoginScreen.css';
+import '../styles/LoginPage.css';
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -17,7 +17,6 @@ function LoginPage() {
       const res = await axios.post("http://localhost:3000/login", { usuario, contrasena });
       if (res.data.success) {
         localStorage.setItem('user', JSON.stringify(res.data.datos));
-        localStorage.setItem('permisos', JSON.stringify(res.data.permisos));
         navigate('/PedidosScreen');
       } else {
         alert("Usuario o contraseña incorrectos");
@@ -32,49 +31,63 @@ function LoginPage() {
   return (
     <div className="login-body">
       <div className="login-container">
-        <div className="logo-rr">
-          <img src="/img/logo-ferreteria-luque.png" alt="Ferretería Luque" />
-          <p>Sistema de Gestión de Almacenes</p>
+        <div className="logo-container">
+          <img 
+            src="/img/logo-ferreteria-luque.png" 
+            alt="Ferretería Luque" 
+            className="main-logo"
+          />
+          <p className="app-subtitle">Sistema de Gestión de Almacenes</p>
         </div>
         
         <form onSubmit={handleSubmit} autoComplete="off">
-          <label htmlFor="usuario">Usuario</label>
-          <input
-            type="text"
-            id="usuario"
-            value={usuario}
-            onChange={e => setUsuario(e.target.value)}
-            required
-          />
-          
-          <label htmlFor="contrasena">Contraseña</label>
-          <input
-            type="password"
-            id="contrasena"
-            value={contrasena}
-            onChange={e => setContrasena(e.target.value)}
-            required
-          />
-          
-          <div className="captcha-container">
-            {/* Aquí iría el captcha */}
+          <div className="input-group">
+            <label htmlFor="usuario">Usuario</label>
+            <input
+              type="text"
+              id="usuario"
+              value={usuario}
+              onChange={e => setUsuario(e.target.value)}
+              required
+              placeholder="Ingrese su usuario"
+            />
           </div>
           
-          <div className="boton-container">
-            <button type="submit" className="login-btn" disabled={loading}>
+          <div className="input-group">
+            <label htmlFor="contrasena">Contraseña</label>
+            <input
+              type="password"
+              id="contrasena"
+              value={contrasena}
+              onChange={e => setContrasena(e.target.value)}
+              required
+              placeholder="Ingrese su contraseña"
+            />
+          </div>
+          
+          <div className="button-container">
+            <button 
+              type="submit" 
+              className="login-button" 
+              disabled={loading}
+            >
               {loading ? (
-                <span className="spinner-container">
+                <span className="button-loading">
                   <span className="spinner"></span> Cargando...
                 </span>
               ) : (
-                '→'
+                'Iniciar Sesión →'
               )}
             </button>
           </div>
         </form>
         
-        <div className="logo-eurobag">
-          <img src="/img/logo-eurobag.png" alt="Eurobag" />
+        <div className="partner-logo">
+          <img 
+            src="/img/logo-eurobag.png" 
+            alt="Eurobag" 
+            className="partner-image"
+          />
         </div>
       </div>
     </div>

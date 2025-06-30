@@ -7,27 +7,41 @@ const TraspasosPage = () => {
   const [activeSection, setActiveSection] = useState('movimientos');
   const [activeTab, setActiveTab] = useState('articulo');
   const [almacenes, setAlmacenes] = useState([]);
-  const [terminoBusqueda, setTerminoBusqueda] = useState('');
-  const [resultadosBusqueda, setResultadosBusqueda] = useState([]);
-  const [articuloSeleccionado, setArticuloSeleccionado] = useState(null);
-  const [stockDisponible, setStockDisponible] = useState([]);
   const [ubicacionesOrigen, setUbicacionesOrigen] = useState([]);
   const [ubicacionesDestino, setUbicacionesDestino] = useState([]);
-  const [form, setForm] = useState({
-    origenAlmacen: '',
-    origenUbicacion: '',
-    destinoAlmacen: '',
-    destinoUbicacion: '',
-    cantidad: ''
-  });
   const [loading, setLoading] = useState(false);
-  const [buscando, setBuscando] = useState(false);
-  const [errorBusqueda, setErrorBusqueda] = useState('');
   const [cargandoUbicaciones, setCargandoUbicaciones] = useState(false);
   const [historial, setHistorial] = useState([]);
   const [cargandoHistorial, setCargandoHistorial] = useState(false);
-  const [articulosUbicacion, setArticulosUbicacion] = useState([]);
-  const [ubicacionSeleccionada, setUbicacionSeleccionada] = useState(null);
+  
+  // Estados independientes para cada modo
+  const [modoArticulo, setModoArticulo] = useState({
+    terminoBusqueda: '',
+    resultadosBusqueda: [],
+    articuloSeleccionado: null,
+    stockDisponible: [],
+    form: {
+      origenAlmacen: '',
+      origenUbicacion: '',
+      destinoAlmacen: '',
+      destinoUbicacion: '',
+      cantidad: ''
+    },
+    buscando: false,
+    errorBusqueda: ''
+  });
+  
+  const [modoUbicacion, setModoUbicacion] = useState({
+    ubicacionSeleccionada: null,
+    articulosUbicacion: [],
+    articuloSeleccionado: null,
+    form: {
+      destinoAlmacen: '',
+      destinoUbicacion: '',
+      cantidad: ''
+    }
+  });
+  
   const user = JSON.parse(localStorage.getItem('user'));
   const timerRef = useRef(null);
 
@@ -48,36 +62,41 @@ const TraspasosPage = () => {
     cargarDatosIniciales();
   }, []);
 
-  // Buscar artículos con debounce
+  // Buscar artículos con debounce (modo Artículo)
   useEffect(() => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
     }
     
-    if (!terminoBusqueda || terminoBusqueda.trim() === '') {
-      setResultadosBusqueda([]);
-      setErrorBusqueda('');
+    const termino = modoArticulo.terminoBusqueda;
+    if (!termino || termino.trim() === '') {
+      setModoArticulo(prev => ({ ...prev, resultadosBusqueda: [], errorBusqueda: '' }));
       return;
     }
     
-    setBuscando(true);
-    setErrorBusqueda('');
+    setModoArticulo(prev => ({ ...prev, buscando: true, errorBusqueda: '' }));
     
     timerRef.current = setTimeout(async () => {
       try {
         const headers = getAuthHeader();
         const response = await axios.get(
-          `http://localhost:3000/buscar-articulos?termino=${encodeURIComponent(terminoBusqueda)}`,
+          `http://localhost:3000/buscar-articulos?termino=${encodeURIComponent(termino)}`,
           { headers }
         );
-        setResultadosBusqueda(response.data);
-        setErrorBusqueda(response.data.length === 0 ? 'No se encontraron artículos' : '');
+        setModoArticulo(prev => ({ 
+          ...prev, 
+          resultadosBusqueda: response.data,
+          errorBusqueda: response.data.length === 0 ? 'No se encontraron artículos' : '',
+          buscando: false
+        }));
       } catch (error) {
         console.error('Error buscando artículos:', error);
-        setErrorBusqueda('Error al buscar artículos. Intente nuevamente.');
-        setResultadosBusqueda([]);
-      } finally {
-        setBuscando(false);
+        setModoArticulo(prev => ({ 
+          ...prev, 
+          errorBusqueda: 'Error al buscar artículos. Intente nuevamente.',
+          resultadosBusqueda: [],
+          buscando: false
+        }));
       }
     }, 300);
     
@@ -86,9 +105,9 @@ const TraspasosPage = () => {
         clearTimeout(timerRef.current);
       }
     };
-  }, [terminoBusqueda]);
+  }, [modoArticulo.terminoBusqueda]);
 
-  // Cargar stock del artículo
+  // Cargar stock del artículo (modo Artículo)
   const cargarStockArticulo = async (codigoArticulo) => {
     try {
       const headers = getAuthHeader();
@@ -96,19 +115,18 @@ const TraspasosPage = () => {
         `http://localhost:3000/stock/por-articulo?codigoArticulo=${codigoArticulo}`,
         { headers }
       );
-      setStockDisponible(response.data);
-      
-      if (response.data.length > 0) {
-        const primerStock = response.data[0];
-        setForm(prev => ({
-          ...prev,
-          origenAlmacen: primerStock.CodigoAlmacen,
-          origenUbicacion: primerStock.Ubicacion
-        }));
-      }
+      setModoArticulo(prev => ({
+        ...prev,
+        stockDisponible: response.data,
+        form: {
+          ...prev.form,
+          origenAlmacen: response.data.length > 0 ? response.data[0].CodigoAlmacen : '',
+          origenUbicacion: response.data.length > 0 ? response.data[0].Ubicacion : ''
+        }
+      }));
     } catch (error) {
       console.error('Error cargando stock del artículo:', error);
-      setStockDisponible([]);
+      setModoArticulo(prev => ({ ...prev, stockDisponible: [] }));
     }
   };
 
@@ -134,25 +152,49 @@ const TraspasosPage = () => {
     }
   };
 
-  // Efecto para ubicaciones de origen
+  // Efecto para ubicaciones de origen (modo Ubicación)
   useEffect(() => {
-    if (ubicacionSeleccionada?.almacen) {
-      cargarUbicaciones(ubicacionSeleccionada.almacen, setUbicacionesOrigen);
+    if (modoUbicacion.ubicacionSeleccionada?.almacen) {
+      cargarUbicaciones(modoUbicacion.ubicacionSeleccionada.almacen, setUbicacionesOrigen);
     }
-  }, [ubicacionSeleccionada?.almacen]);
+  }, [modoUbicacion.ubicacionSeleccionada?.almacen]);
 
-  // Efecto para ubicaciones de destino - CORREGIDO
+  // Efecto para ubicaciones de destino
   useEffect(() => {
-    if (form.destinoAlmacen) {
-      const excluirUbicacion = form.destinoAlmacen === form.origenAlmacen ? form.origenUbicacion : null;
-      cargarUbicaciones(form.destinoAlmacen, setUbicacionesDestino, excluirUbicacion);
+    const destinoAlmacen = activeTab === 'articulo' 
+      ? modoArticulo.form.destinoAlmacen 
+      : modoUbicacion.form.destinoAlmacen;
+    
+    if (destinoAlmacen) {
+      let excluirUbicacion = null;
+      if (activeTab === 'articulo') {
+        if (modoArticulo.form.origenAlmacen === destinoAlmacen) {
+          excluirUbicacion = modoArticulo.form.origenUbicacion;
+        }
+      } else {
+        if (modoUbicacion.ubicacionSeleccionada?.almacen === destinoAlmacen) {
+          excluirUbicacion = modoUbicacion.ubicacionSeleccionada.ubicacion;
+        }
+      }
+      cargarUbicaciones(destinoAlmacen, setUbicacionesDestino, excluirUbicacion);
     } else {
       setUbicacionesDestino([]);
-      setForm(prev => ({ ...prev, destinoUbicacion: '' }));
+      if (activeTab === 'articulo') {
+        setModoArticulo(prev => ({ ...prev, form: { ...prev.form, destinoUbicacion: '' } }));
+      } else {
+        setModoUbicacion(prev => ({ ...prev, form: { ...prev.form, destinoUbicacion: '' } }));
+      }
     }
-  }, [form.destinoAlmacen, form.origenAlmacen, form.origenUbicacion]);
+  }, [
+    activeTab,
+    modoArticulo.form.destinoAlmacen,
+    modoArticulo.form.origenAlmacen,
+    modoArticulo.form.origenUbicacion,
+    modoUbicacion.form.destinoAlmacen,
+    modoUbicacion.ubicacionSeleccionada
+  ]);
 
-  // Cargar artículos por ubicación
+  // Cargar artículos por ubicación (modo Ubicación)
   const cargarArticulosPorUbicacion = async (codigoAlmacen, ubicacion) => {
     try {
       setCargandoUbicaciones(true);
@@ -161,10 +203,10 @@ const TraspasosPage = () => {
         `http://localhost:3000/stock/por-ubicacion?codigoAlmacen=${codigoAlmacen}&ubicacion=${ubicacion}`,
         { headers }
       );
-      setArticulosUbicacion(response.data);
+      setModoUbicacion(prev => ({ ...prev, articulosUbicacion: response.data }));
     } catch (error) {
       console.error('Error cargando artículos por ubicación:', error);
-      setArticulosUbicacion([]);
+      setModoUbicacion(prev => ({ ...prev, articulosUbicacion: [] }));
     } finally {
       setCargandoUbicaciones(false);
     }
@@ -188,89 +230,136 @@ const TraspasosPage = () => {
     }
   };
 
-  // Formatear fecha
+  // Formatear fecha (CORREGIDO)
   const formatFecha = (fechaStr) => {
     if (!fechaStr) return 'Fecha no disponible';
+    
+    // Intentar parsear como ISO (formato que viene del backend)
     try {
-      const fecha = new Date(fechaStr);
-      if (isNaN(fecha.getTime())) return fechaStr;
-      return fecha.toLocaleString('es-ES', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
+      // Si tiene formato ISO (contiene 'T' o tiene el formato YYYY-MM-DD)
+      if (fechaStr.includes('T') || /^\d{4}-\d{2}-\d{2}/.test(fechaStr)) {
+        const fecha = new Date(fechaStr);
+        if (isNaN(fecha.getTime())) return fechaStr; // Fallback si es inválida
+        
+        return fecha.toLocaleString('es-ES', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+      // Si ya es un string formateado
+      return fechaStr;
     } catch (error) {
       console.error('Error formateando fecha:', error);
-      return fechaStr;
+      return fechaStr; // Devolver original si falla
     }
   };
 
-  // Seleccionar artículo
-  const seleccionarArticulo = (articulo) => {
-    setArticuloSeleccionado(articulo);
-    setTerminoBusqueda(articulo.DescripcionArticulo);
-    setResultadosBusqueda([]);
-    setErrorBusqueda('');
+  // ✅ Función corregida para formatear cantidades
+  const formatCantidad = (valor) => {
+    // Convertir a número
+    const cantidad = parseFloat(valor);
+    
+    // Si no es número válido
+    if (isNaN(cantidad)) return "0";
+    
+    // Redondear a máximo 2 decimales
+    const rounded = Math.round(cantidad * 100) / 100;
+    
+    // Eliminar ceros innecesarios
+    return rounded % 1 === 0 
+      ? rounded.toString() 
+      : rounded.toFixed(2).replace(/\.?0+$/, '');
+  };
+
+  // Seleccionar artículo en modo Artículo
+  const seleccionarArticuloModoArticulo = (articulo) => {
+    setModoArticulo(prev => ({
+      ...prev,
+      articuloSeleccionado: articulo,
+      terminoBusqueda: articulo.DescripcionArticulo,
+      resultadosBusqueda: [],
+      errorBusqueda: ''
+    }));
     cargarStockArticulo(articulo.CodigoArticulo);
   };
 
-  // Seleccionar ubicación
-  const seleccionarUbicacion = (almacen, ubicacion) => {
-    setUbicacionSeleccionada({ almacen, ubicacion });
-    setForm(prev => ({
-      ...prev,
-      origenAlmacen: almacen,
-      origenUbicacion: ubicacion
-    }));
-    cargarArticulosPorUbicacion(almacen, ubicacion);
+  // Seleccionar artículo en modo Ubicación
+  const seleccionarArticuloModoUbicacion = (articulo) => {
+    setModoUbicacion(prev => ({ ...prev, articuloSeleccionado: articulo }));
   };
 
-  // Seleccionar artículo en modo ubicación
-  const seleccionarArticuloUbicacion = async (articulo) => {
-    setArticuloSeleccionado(articulo);
-    await cargarStockArticulo(articulo.CodigoArticulo);
-  };
-
-  // Manejar cambios en el formulario
-  const handleChange = (e) => {
+  // Manejar cambios en el formulario del modo Artículo
+  const handleChangeModoArticulo = (e) => {
     const { name, value } = e.target;
-    if (name === 'destinoAlmacen') {
-      setForm(prev => ({ 
-        ...prev, 
-        [name]: value,
-        destinoUbicacion: ''
-      }));
-    } else {
-      setForm(prev => ({ ...prev, [name]: value }));
-    }
+    setModoArticulo(prev => ({
+      ...prev,
+      form: {
+        ...prev.form,
+        [name]: value
+      }
+    }));
+  };
+
+  // Manejar cambios en el formulario del modo Ubicación
+  const handleChangeModoUbicacion = (e) => {
+    const { name, value } = e.target;
+    setModoUbicacion(prev => ({
+      ...prev,
+      form: {
+        ...prev.form,
+        [name]: value
+      }
+    }));
   };
 
   // Validar formulario
   const validarFormulario = () => {
-    if (!articuloSeleccionado) return 'Seleccione un artículo';
-    if (!form.origenAlmacen) return 'Seleccione almacén de origen';
-    if (!form.origenUbicacion) return 'Seleccione ubicación de origen';
-    if (!form.destinoAlmacen) return 'Seleccione almacén de destino';
-    if (!form.destinoUbicacion) return 'Seleccione ubicación de destino';
-    if (!form.cantidad || form.cantidad <= 0) return 'Cantidad inválida';
-    
-    if (form.origenAlmacen === form.destinoAlmacen && 
-        form.origenUbicacion === form.destinoUbicacion) {
-      return 'No puede seleccionar la misma ubicación de origen y destino';
+    if (activeTab === 'articulo') {
+      const { articuloSeleccionado, form } = modoArticulo;
+      if (!articuloSeleccionado) return 'Seleccione un artículo';
+      if (!form.origenAlmacen) return 'Seleccione almacén de origen';
+      if (!form.origenUbicacion) return 'Seleccione ubicación de origen';
+      if (!form.destinoAlmacen) return 'Seleccione almacén de destino';
+      if (!form.destinoUbicacion) return 'Seleccione ubicación de destino';
+      if (!form.cantidad || form.cantidad <= 0) return 'Cantidad inválida';
+      
+      if (form.origenAlmacen === form.destinoAlmacen && 
+          form.origenUbicacion === form.destinoUbicacion) {
+        return 'No puede seleccionar la misma ubicación de origen y destino';
+      }
+      
+      const stockEnOrigen = modoArticulo.stockDisponible.find(
+        s => s.CodigoAlmacen === form.origenAlmacen && 
+              s.Ubicacion === form.origenUbicacion
+      )?.Cantidad || 0;
+      
+      if (parseFloat(form.cantidad) > stockEnOrigen) {
+        return `La cantidad supera el stock disponible (${stockEnOrigen})`;
+      }
+      
+      return null;
+    } else {
+      const { articuloSeleccionado, form, ubicacionSeleccionada } = modoUbicacion;
+      if (!ubicacionSeleccionada) return 'Seleccione una ubicación de origen';
+      if (!articuloSeleccionado) return 'Seleccione un artículo';
+      if (!form.destinoAlmacen) return 'Seleccione almacén de destino';
+      if (!form.destinoUbicacion) return 'Seleccione ubicación de destino';
+      if (!form.cantidad || form.cantidad <= 0) return 'Cantidad inválida';
+      
+      if (ubicacionSeleccionada.almacen === form.destinoAlmacen && 
+          ubicacionSeleccionada.ubicacion === form.destinoUbicacion) {
+        return 'No puede seleccionar la misma ubicación de origen y destino';
+      }
+      
+      if (parseFloat(form.cantidad) > articuloSeleccionado.Cantidad) {
+        return `La cantidad supera el stock disponible (${articuloSeleccionado.Cantidad})`;
+      }
+      
+      return null;
     }
-    
-    const stockEnOrigen = stockDisponible.find(
-      s => s.CodigoAlmacen === form.origenAlmacen && 
-            s.Ubicacion === form.origenUbicacion
-    )?.Cantidad || 0;
-    
-    if (parseFloat(form.cantidad) > stockEnOrigen) {
-      return `La cantidad supera el stock disponible (${stockEnOrigen})`;
-    }
-    
-    return null;
   };
 
   // Preparar traspaso
@@ -288,9 +377,10 @@ const TraspasosPage = () => {
     setLoading(true);
     try {
       const headers = getAuthHeader();
-      await axios.post(
-        'http://localhost:3000/traspaso',
-        {
+      let body;
+      if (activeTab === 'articulo') {
+        const { articuloSeleccionado, form } = modoArticulo;
+        body = {
           codigoEmpresa: user.CodigoEmpresa,
           articulo: articuloSeleccionado.CodigoArticulo,
           origenAlmacen: form.origenAlmacen,
@@ -299,24 +389,59 @@ const TraspasosPage = () => {
           destinoUbicacion: form.destinoUbicacion,
           cantidad: parseFloat(form.cantidad),
           usuario: user.UsuarioLogicNet
-        },
+        };
+      } else {
+        const { articuloSeleccionado, form, ubicacionSeleccionada } = modoUbicacion;
+        body = {
+          codigoEmpresa: user.CodigoEmpresa,
+          articulo: articuloSeleccionado.CodigoArticulo,
+          origenAlmacen: ubicacionSeleccionada.almacen,
+          origenUbicacion: ubicacionSeleccionada.ubicacion,
+          destinoAlmacen: form.destinoAlmacen,
+          destinoUbicacion: form.destinoUbicacion,
+          cantidad: parseFloat(form.cantidad),
+          usuario: user.UsuarioLogicNet
+        };
+      }
+      
+      await axios.post(
+        'http://localhost:3000/traspaso',
+        body,
         { headers }
       );
       
       alert('Traspaso realizado con éxito');
-      setArticuloSeleccionado(null);
-      setTerminoBusqueda('');
-      setStockDisponible([]);
-      setForm({
-        origenAlmacen: '',
-        origenUbicacion: '',
-        destinoAlmacen: '',
-        destinoUbicacion: '',
-        cantidad: ''
-      });
-      setResultadosBusqueda([]);
-      setUbicacionSeleccionada(null);
-      setArticulosUbicacion([]);
+      // Resetear estados
+      if (activeTab === 'articulo') {
+        setModoArticulo({
+          terminoBusqueda: '',
+          resultadosBusqueda: [],
+          articuloSeleccionado: null,
+          stockDisponible: [],
+          form: {
+            origenAlmacen: '',
+            origenUbicacion: '',
+            destinoAlmacen: '',
+            destinoUbicacion: '',
+            cantidad: ''
+          },
+          buscando: false,
+          errorBusqueda: ''
+        });
+      } else {
+        setModoUbicacion({
+          ubicacionSeleccionada: null,
+          articulosUbicacion: [],
+          articuloSeleccionado: null,
+          form: {
+            destinoAlmacen: '',
+            destinoUbicacion: '',
+            cantidad: ''
+          }
+        });
+      }
+      setUbicacionesDestino([]);
+      setUbicacionesOrigen([]);
       cargarHistorial();
       setActiveSection('movimientos');
     } catch (error) {
@@ -327,10 +452,10 @@ const TraspasosPage = () => {
     }
   };
 
-  // Obtener stock disponible
-  const stockEnOrigen = stockDisponible.find(
-    item => item.CodigoAlmacen === form.origenAlmacen && 
-            item.Ubicacion === form.origenUbicacion
+  // Obtener stock disponible en modo Artículo
+  const stockEnOrigenModoArticulo = modoArticulo.stockDisponible.find(
+    item => item.CodigoAlmacen === modoArticulo.form.origenAlmacen && 
+            item.Ubicacion === modoArticulo.form.origenUbicacion
   )?.Cantidad || 0;
 
   // Obtener nombre del almacén
@@ -347,6 +472,12 @@ const TraspasosPage = () => {
     return ubic ? (ubic.DescripcionUbicacion || ubicacion) : ubicacion;
   };
 
+  // Limpiar estados al cambiar de pestaña
+  useEffect(() => {
+    setUbicacionesOrigen([]);
+    setUbicacionesDestino([]);
+  }, [activeTab]);
+
   return (
     <div className="traspasos-container">
       <h1>Traspaso entre Ubicaciones</h1>
@@ -355,12 +486,21 @@ const TraspasosPage = () => {
         <button 
           className={`section-btn ${activeSection === 'movimientos' ? 'active' : ''}`}
           onClick={() => setActiveSection('movimientos')}
+          aria-pressed={activeSection === 'movimientos'}
         >
           Movimientos
         </button>
         <button 
           className={`section-btn ${activeSection === 'verificacion' ? 'active' : ''}`}
-          onClick={() => articuloSeleccionado ? setActiveSection('verificacion') : alert('Primero debe preparar un traspaso')}
+          onClick={() => {
+            if ((activeTab === 'articulo' && modoArticulo.articuloSeleccionado) || 
+                (activeTab === 'ubicacion' && modoUbicacion.articuloSeleccionado)) {
+              setActiveSection('verificacion');
+            } else {
+              alert('Primero debe preparar un traspaso');
+            }
+          }}
+          aria-pressed={activeSection === 'verificacion'}
         >
           Verificación
         </button>
@@ -370,6 +510,7 @@ const TraspasosPage = () => {
             setActiveSection('historial');
             cargarHistorial();
           }}
+          aria-pressed={activeSection === 'historial'}
         >
           Historial
         </button>
@@ -377,47 +518,60 @@ const TraspasosPage = () => {
       
       {activeSection === 'movimientos' && (
         <div className="movimientos-section">
-          <div className="tabs-container">
+          <div className="tabs-container" role="tablist">
             <button 
               className={`tab-btn ${activeTab === 'articulo' ? 'active' : ''}`}
               onClick={() => setActiveTab('articulo')}
+              role="tab"
+              aria-selected={activeTab === 'articulo'}
+              aria-controls="modo-articulo"
             >
               Por Artículo
             </button>
             <button 
               className={`tab-btn ${activeTab === 'ubicacion' ? 'active' : ''}`}
               onClick={() => setActiveTab('ubicacion')}
+              role="tab"
+              aria-selected={activeTab === 'ubicacion'}
+              aria-controls="modo-ubicacion"
             >
               Por Ubicación
             </button>
           </div>
           
           {activeTab === 'articulo' ? (
-            <div className="modo-articulo">
+            <div className="modo-articulo" id="modo-articulo" role="tabpanel">
               <div className="form-section">
                 <h2>Artículo</h2>
                 <div className="form-group">
-                  <label>Buscar artículo:</label>
+                  <label htmlFor="buscar-articulo">Buscar artículo:</label>
                   <div className="search-container">
                     <input
+                      id="buscar-articulo"
                       type="text"
-                      value={terminoBusqueda}
-                      onChange={(e) => setTerminoBusqueda(e.target.value)}
+                      value={modoArticulo.terminoBusqueda}
+                      onChange={(e) => setModoArticulo(prev => ({ ...prev, terminoBusqueda: e.target.value }))}
                       placeholder="Código o descripción del artículo..."
                       className="search-input"
+                      aria-label="Buscar artículo"
                     />
-                    {buscando && <div className="search-loading">Buscando...</div>}
+                    {modoArticulo.buscando && <div className="search-loading">Buscando...</div>}
                   </div>
                   
-                  {errorBusqueda && <div className="error-message">{errorBusqueda}</div>}
+                  {modoArticulo.errorBusqueda && 
+                    <div className="error-message" role="alert">{modoArticulo.errorBusqueda}</div>
+                  }
                   
-                  {resultadosBusqueda.length > 0 && (
-                    <div className="resultados-busqueda">
-                      {resultadosBusqueda.map((articulo, index) => (
+                  {modoArticulo.resultadosBusqueda.length > 0 && (
+                    <div className="resultados-busqueda" role="listbox">
+                      {modoArticulo.resultadosBusqueda.map((articulo, index) => (
                         <div 
                           key={`${articulo.CodigoArticulo}-${index}`}
                           className="resultado-item"
-                          onClick={() => seleccionarArticulo(articulo)}
+                          onClick={() => seleccionarArticuloModoArticulo(articulo)}
+                          role="option"
+                          tabIndex="0"
+                          onKeyDown={(e) => e.key === 'Enter' && seleccionarArticuloModoArticulo(articulo)}
                         >
                           <div className="articulo-codigo">{articulo.CodigoArticulo}</div>
                           <div className="articulo-descripcion">{articulo.DescripcionArticulo}</div>
@@ -426,31 +580,33 @@ const TraspasosPage = () => {
                     </div>
                   )}
                   
-                  {articuloSeleccionado && (
-                    <div className="articulo-seleccionado">
+                  {modoArticulo.articuloSeleccionado && (
+                    <div className="articulo-seleccionado" aria-live="polite">
                       <span className="articulo-label">Artículo seleccionado:</span>
                       <span className="articulo-nombre">
-                        {articuloSeleccionado.DescripcionArticulo} ({articuloSeleccionado.CodigoArticulo})
+                        {modoArticulo.articuloSeleccionado.DescripcionArticulo} ({modoArticulo.articuloSeleccionado.CodigoArticulo})
                       </span>
                     </div>
                   )}
                 </div>
               </div>
 
-              {articuloSeleccionado && (
+              {modoArticulo.articuloSeleccionado && (
                 <>
                   <div className="form-section">
                     <h2>Origen</h2>
                     <div className="form-group">
-                      <label>Almacén:</label>
+                      <label htmlFor="origen-almacen">Almacén:</label>
                       <select 
+                        id="origen-almacen"
                         name="origenAlmacen" 
-                        value={form.origenAlmacen} 
-                        onChange={handleChange}
+                        value={modoArticulo.form.origenAlmacen} 
+                        onChange={handleChangeModoArticulo}
                         required
+                        aria-required="true"
                       >
                         <option value="">Seleccionar almacén</option>
-                        {Array.from(new Set(stockDisponible.map(item => item.CodigoAlmacen))).map((codigo, index) => (
+                        {Array.from(new Set(modoArticulo.stockDisponible.map(item => item.CodigoAlmacen))).map((codigo, index) => (
                           <option key={`${codigo}-${index}`} value={codigo}>
                             {getNombreAlmacen(codigo)} ({codigo})
                           </option>
@@ -459,17 +615,19 @@ const TraspasosPage = () => {
                     </div>
 
                     <div className="form-group">
-                      <label>Ubicación:</label>
+                      <label htmlFor="origen-ubicacion">Ubicación:</label>
                       <select 
+                        id="origen-ubicacion"
                         name="origenUbicacion" 
-                        value={form.origenUbicacion} 
-                        onChange={handleChange}
+                        value={modoArticulo.form.origenUbicacion} 
+                        onChange={handleChangeModoArticulo}
                         required
-                        disabled={!form.origenAlmacen}
+                        aria-required="true"
+                        disabled={!modoArticulo.form.origenAlmacen}
                       >
-                        <option value="">{form.origenAlmacen ? 'Seleccionar ubicación' : 'Primero seleccione un almacén'}</option>
-                        {form.origenAlmacen && stockDisponible
-                          .filter(item => item.CodigoAlmacen === form.origenAlmacen)
+                        <option value="">{modoArticulo.form.origenAlmacen ? 'Seleccionar ubicación' : 'Primero seleccione un almacén'}</option>
+                        {modoArticulo.form.origenAlmacen && modoArticulo.stockDisponible
+                          .filter(item => item.CodigoAlmacen === modoArticulo.form.origenAlmacen)
                           .map((item, index) => (
                             <option key={`${item.Ubicacion}-${index}`} value={item.Ubicacion}>
                               {getDescripcionUbicacion(item.CodigoAlmacen, item.Ubicacion)} 
@@ -483,12 +641,14 @@ const TraspasosPage = () => {
                   <div className="form-section">
                     <h2>Destino</h2>
                     <div className="form-group">
-                      <label>Almacén:</label>
+                      <label htmlFor="destino-almacen">Almacén:</label>
                       <select 
+                        id="destino-almacen"
                         name="destinoAlmacen" 
-                        value={form.destinoAlmacen} 
-                        onChange={handleChange}
+                        value={modoArticulo.form.destinoAlmacen} 
+                        onChange={handleChangeModoArticulo}
                         required
+                        aria-required="true"
                       >
                         <option value="">Seleccionar almacén</option>
                         {almacenes.map((almacen, index) => (
@@ -500,18 +660,21 @@ const TraspasosPage = () => {
                     </div>
 
                     <div className="form-group">
-                      <label>Ubicación:</label>
+                      <label htmlFor="destino-ubicacion">Ubicación:</label>
                       <select 
+                        id="destino-ubicacion"
                         name="destinoUbicacion" 
-                        value={form.destinoUbicacion} 
-                        onChange={handleChange}
+                        value={modoArticulo.form.destinoUbicacion} 
+                        onChange={handleChangeModoArticulo}
                         required
-                        disabled={!form.destinoAlmacen || cargandoUbicaciones}
+                        aria-required="true"
+                        disabled={!modoArticulo.form.destinoAlmacen || cargandoUbicaciones}
+                        aria-busy={cargandoUbicaciones}
                       >
                         <option value="">
                           {cargandoUbicaciones 
                             ? 'Cargando ubicaciones...' 
-                            : (form.destinoAlmacen ? 'Seleccionar ubicación' : 'Primero seleccione un almacén')}
+                            : (modoArticulo.form.destinoAlmacen ? 'Seleccionar ubicación' : 'Primero seleccione un almacén')}
                         </option>
                         {ubicacionesDestino.map((ubicacion, index) => (
                           <option 
@@ -528,21 +691,26 @@ const TraspasosPage = () => {
                   <div className="form-section">
                     <h2>Cantidad</h2>
                     <div className="form-group">
-                      <label>Cantidad a traspasar:</label>
+                      <label htmlFor="cantidad">Cantidad a traspasar:</label>
                       <input 
+                        id="cantidad"
                         type="number" 
                         name="cantidad" 
-                        value={form.cantidad} 
-                        onChange={handleChange}
+                        value={modoArticulo.form.cantidad} 
+                        onChange={handleChangeModoArticulo}
                         required
                         min="0.01"
                         step="any"
                         placeholder="Ingrese la cantidad"
-                        max={stockEnOrigen}
-                        disabled={!form.origenUbicacion}
+                        max={stockEnOrigenModoArticulo}
+                        disabled={!modoArticulo.form.origenUbicacion}
+                        aria-required="true"
                       />
-                      <div className={`stock-info ${parseFloat(form.cantidad) > stockEnOrigen ? 'stock-warning' : ''}`}>
-                        {form.origenUbicacion && `Stock disponible en origen: ${stockEnOrigen}`}
+                      <div 
+                        className={`stock-info ${parseFloat(modoArticulo.form.cantidad) > stockEnOrigenModoArticulo ? 'stock-warning' : ''}`}
+                        aria-live="polite"
+                      >
+                        {modoArticulo.form.origenUbicacion && `Stock disponible en origen: ${stockEnOrigenModoArticulo}`}
                       </div>
                     </div>
                   </div>
@@ -552,17 +720,21 @@ const TraspasosPage = () => {
                       type="button" 
                       className="btn-cancelar"
                       onClick={() => {
-                        setArticuloSeleccionado(null);
-                        setTerminoBusqueda('');
-                        setStockDisponible([]);
-                        setForm({
-                          origenAlmacen: '',
-                          origenUbicacion: '',
-                          destinoAlmacen: '',
-                          destinoUbicacion: '',
-                          cantidad: ''
+                        setModoArticulo({
+                          terminoBusqueda: '',
+                          resultadosBusqueda: [],
+                          articuloSeleccionado: null,
+                          stockDisponible: [],
+                          form: {
+                            origenAlmacen: '',
+                            origenUbicacion: '',
+                            destinoAlmacen: '',
+                            destinoUbicacion: '',
+                            cantidad: ''
+                          },
+                          buscando: false,
+                          errorBusqueda: ''
                         });
-                        setResultadosBusqueda([]);
                       }}
                     >
                       Limpiar
@@ -573,6 +745,7 @@ const TraspasosPage = () => {
                       className="btn-enviar"
                       onClick={prepararTraspaso}
                       disabled={loading}
+                      aria-busy={loading}
                     >
                       {loading ? (
                         <>
@@ -586,18 +759,19 @@ const TraspasosPage = () => {
               )}
             </div>
           ) : (
-            <div className="modo-ubicacion">
+            <div className="modo-ubicacion" id="modo-ubicacion" role="tabpanel">
               <div className="form-section">
                 <h2>Ubicación de Origen</h2>
                 <div className="form-group">
-                  <label>Almacén:</label>
+                  <label htmlFor="ubicacion-almacen">Almacén:</label>
                   <select 
-                    value={ubicacionSeleccionada?.almacen || ''}
+                    id="ubicacion-almacen"
+                    value={modoUbicacion.ubicacionSeleccionada?.almacen || ''}
                     onChange={(e) => {
                       const almacen = e.target.value;
-                      setUbicacionSeleccionada(prev => ({
-                        almacen,
-                        ubicacion: prev?.ubicacion || ''
+                      setModoUbicacion(prev => ({
+                        ...prev,
+                        ubicacionSeleccionada: { ...prev.ubicacionSeleccionada, almacen }
                       }));
                     }}
                   >
@@ -611,20 +785,21 @@ const TraspasosPage = () => {
                 </div>
 
                 <div className="form-group">
-                  <label>Ubicación:</label>
+                  <label htmlFor="ubicacion-ubicacion">Ubicación:</label>
                   <select 
-                    value={ubicacionSeleccionada?.ubicacion || ''}
+                    id="ubicacion-ubicacion"
+                    value={modoUbicacion.ubicacionSeleccionada?.ubicacion || ''}
                     onChange={(e) => {
                       const ubicacion = e.target.value;
-                      setUbicacionSeleccionada(prev => ({
-                        almacen: prev?.almacen || '',
-                        ubicacion
+                      setModoUbicacion(prev => ({
+                        ...prev,
+                        ubicacionSeleccionada: { ...prev.ubicacionSeleccionada, ubicacion }
                       }));
                     }}
-                    disabled={!ubicacionSeleccionada?.almacen}
+                    disabled={!modoUbicacion.ubicacionSeleccionada?.almacen}
                   >
                     <option value="">Seleccionar ubicación</option>
-                    {ubicacionSeleccionada?.almacen && ubicacionesOrigen.map((ubicacion, index) => (
+                    {modoUbicacion.ubicacionSeleccionada?.almacen && ubicacionesOrigen.map((ubicacion, index) => (
                       <option key={`${ubicacion.Ubicacion}-${index}`} value={ubicacion.Ubicacion}>
                         {ubicacion.DescripcionUbicacion || ubicacion.Ubicacion}
                       </option>
@@ -635,28 +810,32 @@ const TraspasosPage = () => {
                 <button 
                   className="btn-cargar"
                   onClick={() => {
-                    if (ubicacionSeleccionada?.almacen && ubicacionSeleccionada?.ubicacion) {
+                    if (modoUbicacion.ubicacionSeleccionada?.almacen && modoUbicacion.ubicacionSeleccionada?.ubicacion) {
                       cargarArticulosPorUbicacion(
-                        ubicacionSeleccionada.almacen, 
-                        ubicacionSeleccionada.ubicacion
+                        modoUbicacion.ubicacionSeleccionada.almacen, 
+                        modoUbicacion.ubicacionSeleccionada.ubicacion
                       );
                     }
                   }}
-                  disabled={!ubicacionSeleccionada?.almacen || !ubicacionSeleccionada?.ubicacion}
+                  disabled={!modoUbicacion.ubicacionSeleccionada?.almacen || !modoUbicacion.ubicacionSeleccionada?.ubicacion}
                 >
                   Cargar Artículos
                 </button>
               </div>
 
-              {articulosUbicacion.length > 0 && (
+              {modoUbicacion.articulosUbicacion.length > 0 && (
                 <div className="form-section">
                   <h2>Artículos Disponibles</h2>
                   <div className="articulos-ubicacion">
-                    {articulosUbicacion.map((articulo, index) => (
+                    {modoUbicacion.articulosUbicacion.map((articulo, index) => (
                       <div 
                         key={`${articulo.CodigoArticulo}-${index}`}
-                        className={`articulo-item ${articuloSeleccionado?.CodigoArticulo === articulo.CodigoArticulo ? 'seleccionado' : ''}`}
-                        onClick={() => seleccionarArticuloUbicacion(articulo)}
+                        className={`articulo-item ${modoUbicacion.articuloSeleccionado?.CodigoArticulo === articulo.CodigoArticulo ? 'seleccionado' : ''}`}
+                        onClick={() => seleccionarArticuloModoUbicacion(articulo)}
+                        role="button"
+                        tabIndex="0"
+                        onKeyDown={(e) => e.key === 'Enter' && seleccionarArticuloModoUbicacion(articulo)}
+                        aria-pressed={modoUbicacion.articuloSeleccionado?.CodigoArticulo === articulo.CodigoArticulo}
                       >
                         <div className="articulo-codigo">{articulo.CodigoArticulo}</div>
                         <div className="articulo-descripcion">{articulo.DescripcionArticulo}</div>
@@ -667,24 +846,26 @@ const TraspasosPage = () => {
                 </div>
               )}
 
-              {articuloSeleccionado && (
+              {modoUbicacion.articuloSeleccionado && (
                 <div className="form-section">
                   <h2>Detalles del Traspaso</h2>
                   
-                  <div className="articulo-seleccionado">
+                  <div className="articulo-seleccionado" aria-live="polite">
                     <span className="articulo-label">Artículo seleccionado:</span>
                     <span className="articulo-nombre">
-                      {articuloSeleccionado.DescripcionArticulo} ({articuloSeleccionado.CodigoArticulo})
+                      {modoUbicacion.articuloSeleccionado.DescripcionArticulo} ({modoUbicacion.articuloSeleccionado.CodigoArticulo})
                     </span>
                   </div>
                   
                   <div className="form-group">
-                    <label>Almacén de destino:</label>
+                    <label htmlFor="destino-almacen-ubic">Almacén de destino:</label>
                     <select 
+                      id="destino-almacen-ubic"
                       name="destinoAlmacen" 
-                      value={form.destinoAlmacen} 
-                      onChange={handleChange}
+                      value={modoUbicacion.form.destinoAlmacen} 
+                      onChange={handleChangeModoUbicacion}
                       required
+                      aria-required="true"
                     >
                       <option value="">Seleccionar almacén</option>
                       {almacenes.map((almacen, index) => (
@@ -696,18 +877,21 @@ const TraspasosPage = () => {
                   </div>
 
                   <div className="form-group">
-                    <label>Ubicación de destino:</label>
+                    <label htmlFor="destino-ubicacion-ubic">Ubicación de destino:</label>
                     <select 
+                      id="destino-ubicacion-ubic"
                       name="destinoUbicacion" 
-                      value={form.destinoUbicacion} 
-                      onChange={handleChange}
+                      value={modoUbicacion.form.destinoUbicacion} 
+                      onChange={handleChangeModoUbicacion}
                       required
-                      disabled={!form.destinoAlmacen || cargandoUbicaciones}
+                      aria-required="true"
+                      disabled={!modoUbicacion.form.destinoAlmacen || cargandoUbicaciones}
+                      aria-busy={cargandoUbicaciones}
                     >
                       <option value="">
                         {cargandoUbicaciones 
                           ? 'Cargando ubicaciones...' 
-                          : (form.destinoAlmacen ? 'Seleccionar ubicación' : 'Primero seleccione un almacén')}
+                          : (modoUbicacion.form.destinoAlmacen ? 'Seleccionar ubicación' : 'Primero seleccione un almacén')}
                       </option>
                       {ubicacionesDestino.map((ubicacion, index) => (
                         <option 
@@ -721,20 +905,22 @@ const TraspasosPage = () => {
                   </div>
 
                   <div className="form-group">
-                    <label>Cantidad a traspasar:</label>
+                    <label htmlFor="cantidad-ubic">Cantidad a traspasar:</label>
                     <input 
+                      id="cantidad-ubic"
                       type="number" 
                       name="cantidad" 
-                      value={form.cantidad} 
-                      onChange={handleChange}
+                      value={modoUbicacion.form.cantidad} 
+                      onChange={handleChangeModoUbicacion}
                       required
                       min="0.01"
                       step="any"
                       placeholder="Ingrese la cantidad"
-                      max={articuloSeleccionado.Cantidad}
+                      max={modoUbicacion.articuloSeleccionado.Cantidad}
+                      aria-required="true"
                     />
-                    <div className="stock-info">
-                      Stock disponible: {articuloSeleccionado.Cantidad}
+                    <div className="stock-info" aria-live="polite">
+                      Stock disponible: {modoUbicacion.articuloSeleccionado.Cantidad}
                     </div>
                   </div>
 
@@ -743,14 +929,15 @@ const TraspasosPage = () => {
                       type="button" 
                       className="btn-cancelar"
                       onClick={() => {
-                        setArticuloSeleccionado(null);
-                        setForm({
-                          origenAlmacen: '',
-                          origenUbicacion: '',
-                          destinoAlmacen: '',
-                          destinoUbicacion: '',
-                          cantidad: ''
-                        });
+                        setModoUbicacion(prev => ({
+                          ...prev,
+                          articuloSeleccionado: null,
+                          form: {
+                            destinoAlmacen: '',
+                            destinoUbicacion: '',
+                            cantidad: ''
+                          }
+                        }));
                       }}
                     >
                       Cancelar
@@ -761,6 +948,7 @@ const TraspasosPage = () => {
                       className="btn-enviar"
                       onClick={prepararTraspaso}
                       disabled={loading}
+                      aria-busy={loading}
                     >
                       {loading ? (
                         <>
@@ -781,27 +969,40 @@ const TraspasosPage = () => {
         <div className="verificacion-section">
           <h2>Verificación de Traspaso</h2>
           
-          {articuloSeleccionado ? (
+          {(activeTab === 'articulo' && modoArticulo.articuloSeleccionado) || 
+          (activeTab === 'ubicacion' && modoUbicacion.articuloSeleccionado) ? (
             <div className="detalle-traspaso">
               <div className="detalle-item">
                 <span>Artículo:</span>
-                <span>{articuloSeleccionado.DescripcionArticulo} ({articuloSeleccionado.CodigoArticulo})</span>
+                <span>
+                  {activeTab === 'articulo' 
+                    ? `${modoArticulo.articuloSeleccionado.DescripcionArticulo} (${modoArticulo.articuloSeleccionado.CodigoArticulo})`
+                    : `${modoUbicacion.articuloSeleccionado.DescripcionArticulo} (${modoUbicacion.articuloSeleccionado.CodigoArticulo})`}
+                </span>
               </div>
               <div className="detalle-item">
                 <span>Origen:</span>
                 <span>
-                  {getNombreAlmacen(form.origenAlmacen)} - {getDescripcionUbicacion(form.origenAlmacen, form.origenUbicacion)}
+                  {activeTab === 'articulo' 
+                    ? `${getNombreAlmacen(modoArticulo.form.origenAlmacen)} - ${getDescripcionUbicacion(modoArticulo.form.origenAlmacen, modoArticulo.form.origenUbicacion)}`
+                    : `${getNombreAlmacen(modoUbicacion.ubicacionSeleccionada.almacen)} - ${getDescripcionUbicacion(modoUbicacion.ubicacionSeleccionada.almacen, modoUbicacion.ubicacionSeleccionada.ubicacion)}`}
                 </span>
               </div>
               <div className="detalle-item">
                 <span>Destino:</span>
                 <span>
-                  {getNombreAlmacen(form.destinoAlmacen)} - {getDescripcionUbicacion(form.destinoAlmacen, form.destinoUbicacion)}
+                  {activeTab === 'articulo' 
+                    ? `${getNombreAlmacen(modoArticulo.form.destinoAlmacen)} - ${getDescripcionUbicacion(modoArticulo.form.destinoAlmacen, modoArticulo.form.destinoUbicacion)}`
+                    : `${getNombreAlmacen(modoUbicacion.form.destinoAlmacen)} - ${getDescripcionUbicacion(modoUbicacion.form.destinoAlmacen, modoUbicacion.form.destinoUbicacion)}`}
                 </span>
               </div>
               <div className="detalle-item">
                 <span>Cantidad:</span>
-                <span>{form.cantidad}</span>
+                <span>
+                  {activeTab === 'articulo' 
+                    ? modoArticulo.form.cantidad
+                    : modoUbicacion.form.cantidad}
+                </span>
               </div>
               
               <div className="acciones-verificacion">
@@ -815,6 +1016,7 @@ const TraspasosPage = () => {
                   className="btn-confirmar"
                   onClick={confirmarTraspaso}
                   disabled={loading}
+                  aria-busy={loading}
                 >
                   {loading ? 'Confirmando...' : 'Confirmar Traspaso'}
                 </button>
@@ -827,7 +1029,7 @@ const TraspasosPage = () => {
               </div>
             </div>
           ) : (
-            <div className="sin-traspaso">
+            <div className="sin-traspaso" aria-live="polite">
               No hay traspaso pendiente de verificación
             </div>
           )}
@@ -839,52 +1041,65 @@ const TraspasosPage = () => {
           <h2>Historial de Traspasos</h2>
           
           {cargandoHistorial ? (
-            <div className="cargando-historial">
-              <div className="loading-spinner"></div>
+            <div className="cargando-historial" aria-live="polite">
+              <div className="loading-spinner" aria-hidden="true"></div>
               Cargando historial...
             </div>
           ) : historial.length > 0 ? (
-            <div className="lista-historial">
-              {historial.map((item, index) => (
-                <div key={`${item.FechaRegistro}-${index}`} className="historial-item">
-                  <div className="historial-header">
-                    <div className="historial-fecha">
-                      {formatFecha(item.FechaRegistro)}
+            <div className="lista-historial" role="list">
+              {historial.map((item, index) => {
+                const fechaFormateada = formatFecha(item.Fecha);
+                
+                return (
+                  <div 
+                    key={`${item.Fecha}-${index}`} 
+                    className="historial-item"
+                    role="listitem"
+                  >
+                    <div className="historial-header">
+                      <div className="historial-fecha">
+                        {fechaFormateada}
+                      </div>
+                      <div 
+                        className={`historial-tipo ${item.TipoMovimiento === 'Salida' ? 'salida' : 'entrada'}`}
+                        aria-label={item.TipoMovimiento}
+                      >
+                        {item.TipoMovimiento}
+                      </div>
                     </div>
-                    <div className={`historial-tipo ${item.TipoMovimiento === 3 ? 'salida' : 'entrada'}`}>
-                      {item.TipoMovimiento === 3 ? 'Salida' : 'Entrada'}
+                    
+                    <div className="historial-articulo">
+                      <span className="historial-label">Artículo:</span>
+                      {item.DescripcionArticulo} ({item.CodigoArticulo})
+                    </div>
+                    
+                    <div className="historial-detalle">
+                      <div>
+                        <span className="historial-label">Origen:</span> 
+                        {item.NombreOrigenAlmacen} - {item.OrigenUbicacion}
+                      </div>
+                      <div>
+                        <span className="historial-label">Destino:</span> 
+                        {item.NombreDestinoAlmacen} - {item.DestinoUbicacion}
+                      </div>
+                    </div>
+                    
+                    <div className="historial-info">
+                      <div className="historial-cantidad">
+                        <span className="historial-label">Cantidad:</span> 
+                        {formatCantidad(item.Cantidad)}
+                      </div>
+                      <div className="historial-usuario">
+                        <span className="historial-label">Usuario:</span> 
+                        {item.Comentario?.split(': ')[1] || 'Desconocido'}
+                      </div>
                     </div>
                   </div>
-                  
-                  <div className="historial-articulo">
-                    <span className="historial-label">Artículo:</span>
-                    {item.DescripcionArticulo} ({item.CodigoArticulo})
-                  </div>
-                  
-                  <div className="historial-detalle">
-                    <div>
-                      <span className="historial-label">Origen:</span> 
-                      {item.NombreOrigenAlmacen} - {item.Ubicacion}
-                    </div>
-                    <div>
-                      <span className="historial-label">Destino:</span> 
-                      {item.NombreDestinoAlmacen} - {item.UbicacionContrapartida}
-                    </div>
-                  </div>
-                  
-                  <div className="historial-info">
-                    <div className="historial-cantidad">
-                      <span className="historial-label">Cantidad:</span> {item.Unidades}
-                    </div>
-                    <div className="historial-usuario">
-                      <span className="historial-label">Usuario:</span> {item.Comentario.split(': ')[1]}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <div className="sin-historial">
+            <div className="sin-historial" aria-live="polite">
               No hay traspasos registrados
             </div>
           )}

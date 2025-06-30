@@ -28,10 +28,9 @@ function GestionRutas() {
           headers: headers 
         });
 
-        console.log("✅ Albaranes reales:", response.data);
         setAlbaranes(response.data);
       } catch (err) {
-        console.error("❌ Error cargando albaranes:", err);
+        console.error("Error cargando albaranes:", err);
         setError(err.message || 'No se pudieron cargar los albaranes');
       } finally {
         setLoading(false);
