@@ -20,7 +20,7 @@ const DesignarRutasScreen = () => {
         const user = JSON.parse(localStorage.getItem('user'));
         const codigoEmpresa = user.CodigoEmpresa;
         
-        // Obtener repartidores usando el endpoint correcto
+        // Obtener repartidores
         const repResponse = await axios.get(
           'http://localhost:3000/repartidores',
           { 
@@ -32,9 +32,9 @@ const DesignarRutasScreen = () => {
           }
         );
         
-        // Obtener albaranes pendientes
+        // Obtener albaranes pendientes con IDs únicos
         const albResponse = await axios.get(
-          `http://localhost:3000/albaranesPendientes`,
+          `http://localhost:3000/albaranesPendientesUnicos`,
           { 
             headers,
             params: { codigoEmpresa } 
@@ -67,10 +67,20 @@ const DesignarRutasScreen = () => {
       const headers = getAuthHeader();
       const user = JSON.parse(localStorage.getItem('user'));
       
+      // Transformar asignaciones para enviar al backend
+      const asignacionesParaEnviar = Object.entries(asignaciones).map(([idUnico, repartidorId]) => {
+        const [serie, numeroAlbaran] = idUnico.split('-');
+        return {
+          serieAlbaran: serie,
+          numeroAlbaran: parseInt(numeroAlbaran),
+          repartidorId
+        };
+      });
+      
       await axios.post(
         'http://localhost:3000/designar-rutas',
         { 
-          asignaciones,
+          asignaciones: asignacionesParaEnviar,
           codigoEmpresa: user.CodigoEmpresa
         },
         { headers }
@@ -114,7 +124,7 @@ const DesignarRutasScreen = () => {
         <tbody>
           {albaranes.map(albaran => (
             <tr key={albaran.id}>
-              <td>{albaran.numero}</td>
+              <td>{albaran.albaran}</td>
               <td>{albaran.cliente}</td>
               <td>{albaran.direccion}</td>
               <td>

@@ -1,65 +1,133 @@
+/* DesignarRutasScreen.css */
 .designar-rutas-container {
-  padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+  padding: 20px;
+}
+
+.screen-header {
+  position: relative;
+  margin-bottom: 30px;
+  text-align: center;
+  padding: 20px 0;
+}
+
+.screen-header h2 {
+  font-size: 28px;
+  color: #0056b3;
+  position: relative;
+  z-index: 2;
+  margin: 0;
+}
+
+.bubble {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(0, 86, 179, 0.1);
+  z-index: 1;
+}
+
+.bubble1 {
+  width: 100px;
+  height: 100px;
+  top: -30px;
+  left: -30px;
+}
+
+.bubble2 {
+  width: 150px;
+  height: 150px;
+  bottom: -50px;
+  right: -50px;
+}
+
+.error {
+  background: #ffebee;
+  color: #d32f2f;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  text-align: center;
+  border-left: 4px solid #d32f2f;
 }
 
 .designar-table {
   width: 100%;
   border-collapse: collapse;
-  margin: 20px 0;
-}
-
-.designar-table th, .designar-table td {
-  border: 1px solid #ddd;
-  padding: 12px;
-  text-align: left;
+  margin-bottom: 30px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .designar-table th {
-  background-color: #f2f2f2;
-  font-weight: bold;
+  background-color: #0056b3;
+  color: white;
+  padding: 15px;
+  text-align: left;
 }
 
-.designar-table tr:nth-child(even) {
-  background-color: #f9f9f9;
+.designar-table td {
+  padding: 12px 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.designar-table tr:last-child td {
+  border-bottom: none;
 }
 
 .designar-table tr:hover {
-  background-color: #f1f1f1;
+  background-color: #f5f9ff;
 }
 
 .designar-table select {
   width: 100%;
-  padding: 8px;
+  padding: 8px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
+  background-color: white;
+  font-size: 14px;
+}
+
+.designar-table select:focus {
+  border-color: #0056b3;
+  outline: none;
 }
 
 .btn-guardar {
-  background-color: #4CAF50;
+  background: #0056b3;
   color: white;
-  padding: 12px 20px;
   border: none;
-  border-radius: 4px;
-  cursor: pointer;
+  border-radius: 6px;
+  padding: 12px 24px;
   font-size: 16px;
-  margin-top: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  display: block;
+  margin: 0 auto;
+  transition: background 0.3s;
 }
 
 .btn-guardar:hover {
-  background-color: #45a049;
-}
-
-.error {
-  color: #ff0000;
-  background-color: #ffebee;
-  padding: 10px;
-  border-radius: 4px;
-  margin-bottom: 20px;
+  background: #003d82;
 }
 
 .loading {
   text-align: center;
-  padding: 20px;
+  padding: 40px;
+  font-size: 18px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .designar-table {
+    display: block;
+    overflow-x: auto;
+  }
+  
+  .designar-table th, 
+  .designar-table td {
+    min-width: 150px;
+  }
 }

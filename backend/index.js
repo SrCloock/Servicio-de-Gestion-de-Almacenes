@@ -440,7 +440,7 @@ app.get('/cobrosCliente', async (req, res) => {
 });
 
 // ============================================
-// ✅ 14. PEDIDOS PENDIENTES (CORREGIDO)
+// ✅ 14. PEDIDOS PENDIENTES (CON DETALLES DE TALLAS Y UNIDADES DE MEDIDA)
 // ============================================
 app.get('/pedidosPendientes', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
@@ -483,7 +483,11 @@ app.get('/pedidosPendientes', async (req, res) => {
           l.UnidadesPendientes,
           l.CodigoAlmacen,
           a.CodigoAlternativo,
-          l.LineasPosicion AS MovPosicionLinea  -- Nombre corregido
+          l.LineasPosicion AS MovPosicionLinea,
+          -- Nuevos campos para unidades de medida
+          l.UnidadMedida1_ AS UnidadBase,
+          l.UnidadMedida2_ AS UnidadAlternativa,
+          l.FactorConversion_ AS FactorConversion
         FROM CabeceraPedidoCliente c
         INNER JOIN LineasPedidoCliente l ON 
           c.CodigoEmpresa = l.CodigoEmpresa 
@@ -507,18 +511,22 @@ app.get('/pedidosPendientes', async (req, res) => {
       }
     });
 
-    // 3. Consulta para obtener detalles de tallas/colores
+    // 3. Consulta para obtener detalles de tallas/colores con descripciones
     let detallesPorLinea = {};
     if (lineasIds.length > 0) {
       const placeholders = lineasIds.map((_, i) => `@id${i}`).join(',');
       
       const detallesQuery = `
         SELECT 
-          lt.MovPosicionLinea_ AS MovPosicionLinea,  -- Alias para consistencia
+          lt.MovPosicionLinea_ AS MovPosicionLinea,
           lt.CodigoColor_,
           c.Color_ AS NombreColor,
           lt.GrupoTalla_,
           gt.DescripcionGrupoTalla_ AS NombreGrupoTalla,
+          gt.DescripcionTalla01_ AS DescTalla01,
+          gt.DescripcionTalla02_ AS DescTalla02,
+          gt.DescripcionTalla03_ AS DescTalla03,
+          gt.DescripcionTalla04_ AS DescTalla04,
           lt.UnidadesTotalTallas_ AS Unidades,
           lt.UnidadesTalla01_,
           lt.UnidadesTalla02_,
@@ -551,6 +559,26 @@ app.get('/pedidosPendientes', async (req, res) => {
           detallesPorLinea[key] = [];
         }
         
+        // Crear objeto con descripciones de tallas
+        const tallasConDescripciones = {
+          '01': {
+            descripcion: detalle.DescTalla01,
+            unidades: detalle.UnidadesTalla01_
+          },
+          '02': {
+            descripcion: detalle.DescTalla02,
+            unidades: detalle.UnidadesTalla02_
+          },
+          '03': {
+            descripcion: detalle.DescTalla03,
+            unidades: detalle.UnidadesTalla03_
+          },
+          '04': {
+            descripcion: detalle.DescTalla04,
+            unidades: detalle.UnidadesTalla04_
+          }
+        };
+        
         detallesPorLinea[key].push({
           color: {
             codigo: detalle.CodigoColor_,
@@ -561,12 +589,7 @@ app.get('/pedidosPendientes', async (req, res) => {
             nombre: detalle.NombreGrupoTalla
           },
           unidades: detalle.Unidades,
-          tallas: {
-            '01': detalle.UnidadesTalla01_,
-            '02': detalle.UnidadesTalla02_,
-            '03': detalle.UnidadesTalla03_,
-            '04': detalle.UnidadesTalla04_
-          }
+          tallas: tallasConDescripciones
         });
       });
     }
@@ -604,7 +627,11 @@ app.get('/pedidosPendientes', async (req, res) => {
         codigoAlmacen: row.CodigoAlmacen,
         codigoAlternativo: row.CodigoAlternativo,
         detalles: detalles.length > 0 ? detalles : null,
-        movPosicionLinea: row.MovPosicionLinea
+        movPosicionLinea: row.MovPosicionLinea,
+        // Nuevos campos para unidades de medida
+        unidadBase: row.UnidadBase,
+        unidadAlternativa: row.UnidadAlternativa,
+        factorConversion: row.FactorConversion
       });
     });
     

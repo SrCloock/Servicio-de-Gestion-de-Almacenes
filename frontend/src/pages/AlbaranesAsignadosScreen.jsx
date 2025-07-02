@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import '../styles/PedidosScreen.css';
+import '../styles/AlbaranesAsignadosScreen.css';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';

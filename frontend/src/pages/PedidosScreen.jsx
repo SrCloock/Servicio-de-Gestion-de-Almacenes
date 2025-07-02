@@ -28,6 +28,7 @@ const PedidosScreen = () => {
   const [repartidorSeleccionado, setRepartidorSeleccionado] = useState('');
   const [codigoVerificacion, setCodigoVerificacion] = useState('');
   const [lineaVerificando, setLineaVerificando] = useState(null);
+  const [detallesModal, setDetallesModal] = useState(null);
   
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user'));
@@ -78,7 +79,7 @@ const PedidosScreen = () => {
         
         setPedidos(response.data);
         
-        // Inicializar detalles como no visibles - CORRECCIÓN APLICADA AQUÍ
+        // Inicializar detalles como no visibles
         const initialDetalles = {};
         response.data.forEach(pedido => {
           pedido.articulos.forEach(linea => {
@@ -158,11 +159,12 @@ const PedidosScreen = () => {
     fetchPedidos();
   }, []);
 
-  const toggleDetalles = (movPosicionLinea) => {
-    setDetallesVisibles(prev => ({
-      ...prev,
-      [movPosicionLinea]: !prev[movPosicionLinea]
-    }));
+  const abrirModalDetalles = (detalles) => {
+    setDetallesModal(detalles);
+  };
+
+  const cerrarModalDetalles = () => {
+    setDetallesModal(null);
   };
 
   const handleLineaClick = async (codigoArticulo, unidadesPendientes) => {
@@ -259,6 +261,35 @@ const PedidosScreen = () => {
     }));
   };
 
+  // Función para formatear las unidades con su medida
+  const formatearUnidades = (linea) => {
+    const unidades = linea.unidadesPendientes;
+    
+    // Unidad base (física)
+    const unidadBase = `${unidades} ${linea.unidadBase || 'ud'}`;
+    
+    // Si no hay unidad alternativa o factor, no mostrar conversión
+    if (!linea.unidadAlternativa || linea.factorConversion === 1) {
+      return {
+        base: unidadBase,
+        conversion: null
+      };
+    }
+    
+    // Calcular unidades alternativas
+    const unidadesAlt = unidades * linea.factorConversion;
+    
+    // Formatear conversión
+    const formattedAlt = Number.isInteger(unidadesAlt) 
+      ? unidadesAlt 
+      : unidadesAlt.toFixed(2);
+    
+    return {
+      base: unidadBase,
+      conversion: `${formattedAlt} ${linea.unidadAlternativa}`
+    };
+  };
+
   const pedidosFiltrados = pedidos.filter(pedido => {
     const matchPedido = filtroPedido 
       ? pedido.numeroPedido.toString().includes(filtroPedido) || 
@@ -335,42 +366,55 @@ const PedidosScreen = () => {
     }
   };
 
-  const DetallesArticulo = ({ detalles }) => {
+  const DetallesArticuloModal = ({ detalles }) => {
     if (!detalles || detalles.length === 0) return null;
 
     return (
-      <div className="detalles-container">
-        <table className="detalles-table">
-          <thead>
-            <tr>
-              <th>Color</th>
-              <th>Grupo de Tallas</th>
-              <th>Detalle de Tallas</th>
-              <th>Unidades</th>
-            </tr>
-          </thead>
-          <tbody>
-            {detalles.map((detalle, index) => {
-              // Filtrar tallas con unidades > 0
-              const tallasConUnidades = Object.entries(detalle.tallas)
-                .filter(([_, unidades]) => unidades > 0)
-                .map(([codigoTalla, unidades]) => ({ codigoTalla, unidades }));
-
-              return (
-                <tr key={index}>
-                  <td>{detalle.color.nombre}</td>
-                  <td>{detalle.grupoTalla.nombre}</td>
-                  <td>
-                    {tallasConUnidades.map((talla, idx) => (
-                      <div key={idx}>Talla {talla.codigoTalla}: {talla.unidades}</div>
-                    ))}
-                  </td>
-                  <td>{detalle.unidades}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="modal-detalles">
+        <div className="modal-contenido">
+          <button className="cerrar-modal" onClick={cerrarModalDetalles}>
+            &times;
+          </button>
+          
+          <h3>Detalles de Variantes</h3>
+          
+          <div className="detalles-container">
+            {detalles.map((detalle, index) => (
+              <div key={index} className="variante-grupo">
+                <div className="variante-header">
+                  <span className="color-variante">
+                    <strong>Color:</strong> {detalle.color.nombre}
+                  </span>
+                </div>
+                
+                <table className="detalles-table">
+                  <thead>
+                    <tr>
+                      <th>Talla</th>
+                      <th>Descripción</th>
+                      <th>Unidades</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(detalle.tallas)
+                      .filter(([_, talla]) => talla.unidades > 0)
+                      .map(([codigoTalla, talla], idx) => (
+                        <tr key={idx}>
+                          <td>{codigoTalla}</td>
+                          <td>{talla.descripcion}</td>
+                          <td>{talla.unidades}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                
+                <div className="variante-total">
+                  <strong>Total unidades:</strong> {detalle.unidades}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   };
@@ -498,6 +542,7 @@ const PedidosScreen = () => {
                           <th>Artículo</th>
                           <th>Descripción</th>
                           <th>Pendiente</th>
+                          <th>Equivalencia</th>
                           <th>Ubicación</th>
                           <th>Cantidad</th>
                           <th>Acción</th>
@@ -523,6 +568,8 @@ const PedidosScreen = () => {
                             cantidad: '0'
                           };
                           
+                          const formattedUnidades = formatearUnidades(linea);
+                          
                           return (
                             <React.Fragment key={index}>
                               <tr 
@@ -540,12 +587,12 @@ const PedidosScreen = () => {
                                 <td className="td-centrado">
                                   {linea.unidadesPendientes > 0 ? (
                                     <div className="pendiente-container">
-                                      <span>{linea.unidadesPendientes}</span>
+                                      <span>{formattedUnidades.base}</span>
                                       {linea.detalles && linea.movPosicionLinea && (
                                         <button 
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            toggleDetalles(linea.movPosicionLinea);
+                                            abrirModalDetalles(linea.detalles);
                                           }}
                                           className="btn-detalles"
                                         >
@@ -555,6 +602,13 @@ const PedidosScreen = () => {
                                     </div>
                                   ) : (
                                     <span className="completada-badge">COMPLETADA</span>
+                                  )}
+                                </td>
+                                <td className="td-centrado">
+                                  {formattedUnidades.conversion && (
+                                    <span className="unidad-conversion">
+                                      {formattedUnidades.conversion}
+                                    </span>
                                   )}
                                 </td>
                                 <td>
@@ -616,15 +670,6 @@ const PedidosScreen = () => {
                                   </button>
                                 </td>
                               </tr>
-                              
-                              {/* FILA DE DETALLES */}
-                              {linea.movPosicionLinea && detallesVisibles[linea.movPosicionLinea] && (
-                                <tr className="detalles-row">
-                                  <td colSpan="6">
-                                    <DetallesArticulo detalles={linea.detalles} />
-                                  </td>
-                                </tr>
-                              )}
                             </React.Fragment>
                           );
                         })}
@@ -665,6 +710,9 @@ const PedidosScreen = () => {
           </>
         )}
       </div>
+      
+      {/* Modal de detalles */}
+      {detallesModal && <DetallesArticuloModal detalles={detallesModal} />}
       
       {pedidoAsignando && (
         <div className="modal-asignacion">
