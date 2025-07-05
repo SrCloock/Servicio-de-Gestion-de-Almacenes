@@ -439,9 +439,7 @@ app.get('/cobrosCliente', async (req, res) => {
   }
 });
 
-// ============================================
 // ✅ 14. PEDIDOS PENDIENTES (CON DETALLES DE TALLAS Y UNIDADES DE MEDIDA)
-// ============================================
 app.get('/pedidosPendientes', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ 
@@ -484,7 +482,7 @@ app.get('/pedidosPendientes', async (req, res) => {
           l.CodigoAlmacen,
           a.CodigoAlternativo,
           l.LineasPosicion AS MovPosicionLinea,
-          -- Nuevos campos para unidades de medida
+          -- Unidades de medida
           l.UnidadMedida1_ AS UnidadBase,
           l.UnidadMedida2_ AS UnidadAlternativa,
           l.FactorConversion_ AS FactorConversion
@@ -628,7 +626,7 @@ app.get('/pedidosPendientes', async (req, res) => {
         codigoAlternativo: row.CodigoAlternativo,
         detalles: detalles.length > 0 ? detalles : null,
         movPosicionLinea: row.MovPosicionLinea,
-        // Nuevos campos para unidades de medida
+        // Campos para unidades de medida
         unidadBase: row.UnidadBase,
         unidadAlternativa: row.UnidadAlternativa,
         factorConversion: row.FactorConversion
@@ -1611,6 +1609,8 @@ app.get('/inventario/stock-total', async (req, res) => {
         SELECT 
           s.CodigoArticulo,
           a.DescripcionArticulo,
+          a.CodigoFamilia,
+          a.CodigoSubfamilia,
           s.CodigoAlmacen,
           alm.Almacen AS NombreAlmacen,
           s.Ubicacion,
@@ -1646,6 +1646,7 @@ app.get('/inventario/stock-total', async (req, res) => {
 // ============================================
 // ✅ 31. AJUSTAR INVENTARIO (ACTUALIZADO CON PARTIDAS)
 // ============================================
+// ✅ 31. AJUSTAR INVENTARIO (CORREGIDO)
 app.post('/inventario/ajustar', async (req, res) => {
   const { ajustes } = req.body;
   const usuario = req.user.UsuarioLogicNet;
@@ -1658,25 +1659,29 @@ app.post('/inventario/ajustar', async (req, res) => {
     });
   }
 
-  const connection = await poolGlobal.connect();
-  const transaction = new sql.Transaction(connection);
+  const transaction = new sql.Transaction(poolGlobal);
   
   try {
     await transaction.begin();
     
     for (const ajuste of ajustes) {
-      // Parsear ubicación
-      const [almacenInfo, ubicacionStr] = ajuste.ubicacion.split(' - ');
-      const matches = almacenInfo.match(/\(([^)]+)\)/);
-      const codigoAlmacen = matches ? matches[1] : almacenInfo;
-      const ubicacion = ubicacionStr.trim();
-      const partida = ajuste.partida || '';
-      const codigoArticulo = ajuste.articulo;
-      const nuevaCantidad = ajuste.nuevaCantidad;
-      
+      // Recibir datos directamente del frontend
+      const { 
+        articulo: codigoArticulo,
+        codigoAlmacen,
+        ubicacionStr: ubicacion,
+        partida = '',
+        nuevaCantidad 
+      } = ajuste;
+
+      // Validar cantidad
+      if (isNaN(nuevaCantidad)) {
+        throw new Error(`Cantidad inválida para el artículo ${codigoArticulo}`);
+      }
+
       const request = new sql.Request(transaction);
       
-      // 1. Obtener cantidad actual (SQL corregido)
+      // 1. Obtener cantidad actual
       const result = await request
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
@@ -1694,10 +1699,22 @@ app.post('/inventario/ajustar', async (req, res) => {
             AND Periodo = 99
         `);
       
+      let cantidadActual = 0;
+      if (result.recordset.length > 0) {
+        cantidadActual = result.recordset[0].Cantidad;
+      }
+
+      const diferencia = nuevaCantidad - cantidadActual;
+      
       if (result.recordset.length === 0) {
         // Crear nuevo registro si no existe
-        await request
+        await new sql.Request(transaction)
+          .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+          .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+          .input('ubicacion', sql.VarChar, ubicacion)
+          .input('codigoArticulo', sql.VarChar, codigoArticulo)
           .input('nuevaCantidad', sql.Decimal(18,4), nuevaCantidad)
+          .input('partida', sql.VarChar, partida)
           .query(`
             INSERT INTO AcumuladoStockUbicacion (
               CodigoEmpresa, CodigoAlmacen, Ubicacion, 
@@ -1708,12 +1725,14 @@ app.post('/inventario/ajustar', async (req, res) => {
             )
           `);
       } else {
-        const cantidadActual = result.recordset[0].Cantidad;
-        const diferencia = nuevaCantidad - cantidadActual;
-        
         // 2. Actualizar stock
-        await request
+        await new sql.Request(transaction)
+          .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+          .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+          .input('ubicacion', sql.VarChar, ubicacion)
+          .input('codigoArticulo', sql.VarChar, codigoArticulo)
           .input('nuevaCantidad', sql.Decimal(18,4), nuevaCantidad)
+          .input('partida', sql.VarChar, partida)
           .query(`
             UPDATE AcumuladoStockUbicacion
             SET UnidadSaldo = @nuevaCantidad
@@ -1724,30 +1743,34 @@ app.post('/inventario/ajustar', async (req, res) => {
               AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
               AND Periodo = 99
           `);
+      }
+      
+      // 3. Registrar movimiento solo si hay cambio
+      if (diferencia !== 0) {
+        const fechaActual = new Date();
+        const periodo = fechaActual.getMonth() + 1;
         
-        // 3. Registrar movimiento solo si hay cambio
-        if (diferencia !== 0) {
-          const fechaActual = new Date();
-          const periodo = fechaActual.getMonth() + 1;
-          
-          await request
-            .input('ejercicio', sql.SmallInt, fechaActual.getFullYear())
-            .input('periodo', sql.Int, periodo)
-            .input('fecha', sql.DateTime, fechaActual)
-            .input('tipoMovimiento', sql.SmallInt, 5) // 5: Ajuste
-            .input('diferencia', sql.Decimal(18,4), diferencia)
-            .input('comentario', sql.VarChar, `Ajuste manual por ${usuario}`)
-            .input('partida', sql.VarChar, partida)
-            .query(`
-              INSERT INTO MovimientoStock (
-                CodigoEmpresa, Ejercicio, Periodo, FechaRegistro, TipoMovimiento,
-                CodigoArticulo, CodigoAlmacen, Ubicacion, Partida, Unidades, Comentario
-              ) VALUES (
-                @codigoEmpresa, @ejercicio, @periodo, @fecha, @tipoMovimiento,
-                @codigoArticulo, @codigoAlmacen, @ubicacion, @partida, @diferencia, @comentario
-              )
-            `);
-        }
+        await new sql.Request(transaction)
+          .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+          .input('ejercicio', sql.SmallInt, fechaActual.getFullYear())
+          .input('periodo', sql.Int, periodo)
+          .input('fecha', sql.DateTime, fechaActual)
+          .input('tipoMovimiento', sql.SmallInt, 5) // 5: Ajuste
+          .input('codigoArticulo', sql.VarChar, codigoArticulo)
+          .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+          .input('ubicacion', sql.VarChar, ubicacion)
+          .input('partida', sql.VarChar, partida)
+          .input('diferencia', sql.Decimal(18,4), diferencia)
+          .input('comentario', sql.VarChar, `Ajuste manual por ${usuario}`)
+          .query(`
+            INSERT INTO MovimientoStock (
+              CodigoEmpresa, Ejercicio, Periodo, FechaRegistro, TipoMovimiento,
+              CodigoArticulo, CodigoAlmacen, Ubicacion, Partida, Unidades, Comentario
+            ) VALUES (
+              @codigoEmpresa, @ejercicio, @periodo, @fecha, @tipoMovimiento,
+              @codigoArticulo, @codigoAlmacen, @ubicacion, @partida, @diferencia, @comentario
+            )
+          `);
       }
     }
 
@@ -1755,15 +1778,338 @@ app.post('/inventario/ajustar', async (req, res) => {
     res.json({ success: true, mensaje: 'Ajustes realizados correctamente' });
     
   } catch (err) {
-    await transaction.rollback();
+    if (transaction._aborted === false) {
+      await transaction.rollback();
+    }
     console.error('[ERROR AJUSTAR INVENTARIO]', err);
     res.status(500).json({ 
       success: false, 
       mensaje: 'Error al ajustar inventario',
       error: err.message 
     });
-  } finally {
-    connection.release(); // Liberar conexión al pool
+  }
+});
+
+// ============================================
+// ✅ 32. ASIGNAR PEDIDO A REPARTIDOR
+// ============================================
+app.post('/asignarPedido', async (req, res) => {
+  const { numeroPedido, codigoRepartidor, codigoEmpresa } = req.body;
+
+  if (!numeroPedido || !codigoRepartidor || !codigoEmpresa) {
+    return res.status(400).json({ success: false, mensaje: 'Faltan datos requeridos.' });
+  }
+
+  try {
+    // Obtener detalles del pedido
+    const pedidoResult = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .query(`
+        SELECT EjercicioPedido, SeriePedido 
+        FROM CabeceraPedidoCliente
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND NumeroPedido = @numeroPedido
+      `);
+
+    if (pedidoResult.recordset.length === 0) {
+      return res.status(404).json({ success: false, mensaje: 'Pedido no encontrado.' });
+    }
+
+    const pedido = pedidoResult.recordset[0];
+    
+    // Insertar o actualizar asignación
+    await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicioPedido', sql.SmallInt, pedido.EjercicioPedido)
+      .input('seriePedido', sql.VarChar, pedido.SeriePedido || '')
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .input('codigoRepartidor', sql.VarChar, codigoRepartidor)
+      .query(`
+        MERGE INTO AsignacionesPedidos AS target
+        USING (VALUES (
+          @codigoEmpresa, 
+          @ejercicioPedido, 
+          @seriePedido, 
+          @numeroPedido, 
+          @codigoRepartidor
+        )) AS source (
+          CodigoEmpresa, 
+          EjercicioPedido, 
+          SeriePedido, 
+          NumeroPedido, 
+          CodigoRepartidor
+        )
+        ON target.CodigoEmpresa = source.CodigoEmpresa
+          AND target.NumeroPedido = source.NumeroPedido
+        WHEN MATCHED THEN
+          UPDATE SET CodigoRepartidor = source.CodigoRepartidor
+        WHEN NOT MATCHED THEN
+          INSERT (
+            CodigoEmpresa, 
+            EjercicioPedido, 
+            SeriePedido, 
+            NumeroPedido, 
+            CodigoRepartidor
+          ) 
+          VALUES (
+            source.CodigoEmpresa, 
+            source.EjercicioPedido, 
+            source.SeriePedido, 
+            source.NumeroPedido, 
+            source.CodigoRepartidor
+          );
+      `);
+
+    res.json({ success: true, mensaje: 'Asignación guardada correctamente' });
+  } catch (err) {
+    console.error('[ERROR ASIGNAR PEDIDO]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al asignar pedido', error: err.message });
+  }
+});
+
+// ✅ 33. OBTENER HISTÓRICO DE AJUSTES DE INVENTARIO (AGRUPA POR DÍA)
+app.get('/inventario/historial-ajustes', async (req, res) => {
+  const { codigoEmpresa } = req.query;
+
+  if (!codigoEmpresa) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Código de empresa requerido.' 
+    });
+  }
+
+  try {
+    // 1. Obtener fechas con ajustes
+    const fechasResult = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT DISTINCT CONVERT(date, FechaRegistro) AS Fecha
+        FROM MovimientoStock
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND TipoMovimiento = 5  -- 5: Ajuste
+        ORDER BY Fecha DESC
+      `);
+    
+    const fechas = fechasResult.recordset;
+    const historial = [];
+    
+    // 2. Para cada fecha, obtener los ajustes
+    for (const fecha of fechas) {
+      const fechaStr = fecha.Fecha.toISOString().split('T')[0];
+      
+      const detallesResult = await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('fecha', sql.Date, fechaStr)
+        .query(`
+          SELECT 
+            m.CodigoArticulo,
+            a.DescripcionArticulo,
+            m.CodigoAlmacen,
+            alm.Almacen AS NombreAlmacen,
+            m.Ubicacion,
+            u.DescripcionUbicacion,
+            m.Partida,
+            m.Unidades AS Diferencia,
+            m.Comentario,
+            m.FechaRegistro
+          FROM MovimientoStock m
+          LEFT JOIN Articulos a 
+            ON a.CodigoArticulo = m.CodigoArticulo 
+            AND a.CodigoEmpresa = m.CodigoEmpresa
+          LEFT JOIN Almacenes alm 
+            ON alm.CodigoAlmacen = m.CodigoAlmacen 
+            AND alm.CodigoEmpresa = m.CodigoEmpresa
+          LEFT JOIN Ubicaciones u 
+            ON u.CodigoAlmacen = m.CodigoAlmacen 
+            AND u.Ubicacion = m.Ubicacion 
+            AND u.CodigoEmpresa = m.CodigoEmpresa
+          WHERE m.CodigoEmpresa = @codigoEmpresa
+            AND m.TipoMovimiento = 5  -- 5: Ajuste
+            AND CONVERT(date, m.FechaRegistro) = @fecha
+          ORDER BY m.FechaRegistro DESC
+        `);
+      
+      historial.push({
+        fecha: fechaStr,
+        totalAjustes: detallesResult.recordset.length,
+        detalles: detallesResult.recordset
+      });
+    }
+    
+    res.json(historial);
+  } catch (err) {
+    console.error('[ERROR HISTORIAL AJUSTES]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener historial de ajustes.',
+      error: err.message 
+    });
+  }
+});
+
+// ============================================
+// ✅ 34. OBTENER DETALLES POR MOV_POSICION_LINEA
+// ============================================
+app.get('/stock/detalles', async (req, res) => {
+  const { movPosicionLinea } = req.query;
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
+  if (!codigoEmpresa || !movPosicionLinea) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Faltan parámetros requeridos.' 
+    });
+  }
+
+  try {
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('movPosicionLinea', sql.VarChar, movPosicionLinea)
+      .query(`
+        SELECT 
+          lt.CodigoColor_,
+          c.Color_ AS NombreColor,
+          lt.GrupoTalla_,
+          gt.DescripcionGrupoTalla_ AS NombreGrupoTalla,
+          gt.DescripcionTalla01_ AS DescTalla01,
+          gt.DescripcionTalla02_ AS DescTalla02,
+          gt.DescripcionTalla03_ AS DescTalla03,
+          gt.DescripcionTalla04_ AS DescTalla04,
+          lt.UnidadesTotalTallas_ AS Unidades,
+          lt.UnidadesTalla01_,
+          lt.UnidadesTalla02_,
+          lt.UnidadesTalla03_,
+          lt.UnidadesTalla04_
+        FROM LineasPedidoClienteTallas lt
+        LEFT JOIN Colores_ c 
+          ON lt.CodigoColor_ = c.CodigoColor_ 
+          AND lt.CodigoEmpresa = c.CodigoEmpresa
+        LEFT JOIN GrupoTallas_ gt 
+          ON lt.GrupoTalla_ = gt.GrupoTalla_ 
+          AND lt.CodigoEmpresa = gt.CodigoEmpresa
+        WHERE lt.CodigoEmpresa = @codigoEmpresa
+          AND lt.MovPosicionLinea_ = @movPosicionLinea
+      `);
+
+    const detalles = result.recordset.map(detalle => {
+      const tallas = {
+        '01': {
+          descripcion: detalle.DescTalla01,
+          unidades: detalle.UnidadesTalla01_
+        },
+        '02': {
+          descripcion: detalle.DescTalla02,
+          unidades: detalle.UnidadesTalla02_
+        },
+        '03': {
+          descripcion: detalle.DescTalla03,
+          unidades: detalle.UnidadesTalla03_
+        },
+        '04': {
+          descripcion: detalle.DescTalla04,
+          unidades: detalle.UnidadesTalla04_
+        }
+      };
+
+      return {
+        color: {
+          codigo: detalle.CodigoColor_,
+          nombre: detalle.NombreColor
+        },
+        grupoTalla: {
+          codigo: detalle.GrupoTalla_,
+          nombre: detalle.NombreGrupoTalla
+        },
+        unidades: detalle.Unidades,
+        tallas
+      };
+    });
+
+    res.json(detalles);
+  } catch (err) {
+    console.error('[ERROR DETALLES STOCK]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener detalles del stock.',
+      error: err.message 
+    });
+  }
+});
+
+// ============================================
+// ✅ 35. OBTENER FAMILIAS
+// ============================================
+app.get('/familias', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
+  if (!codigoEmpresa) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Código de empresa requerido.' 
+    });
+  }
+
+  try {
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT DISTINCT 
+          CodigoFamilia AS codigo, 
+          CodigoFamilia AS nombre
+        FROM Articulos
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND CodigoFamilia IS NOT NULL
+          AND CodigoFamilia <> ''
+        ORDER BY CodigoFamilia
+      `);
+      
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR FAMILIAS]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener familias',
+      error: err.message 
+    });
+  }
+});
+
+// ============================================
+// ✅ 36. OBTENER SUBFAMILIAS
+// ============================================
+app.get('/subfamilias', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
+  if (!codigoEmpresa) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Código de empresa requerido.' 
+    });
+  }
+
+  try {
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT DISTINCT 
+          CodigoSubfamilia AS codigo, 
+          CodigoSubfamilia AS nombre
+        FROM Articulos
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND CodigoSubfamilia IS NOT NULL
+          AND CodigoSubfamilia <> ''
+        ORDER BY CodigoSubfamilia
+      `);
+      
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR SUBFAMILIAS]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener subfamilias',
+      error: err.message 
+    });
   }
 });
 

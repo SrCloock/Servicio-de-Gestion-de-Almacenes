@@ -3,34 +3,42 @@ import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
 import UserInfoBar from '../components/UserInfoBar';
 import Navbar from '../components/Navbar';
-import { FiSearch, FiChevronDown, FiChevronUp, FiDownload, FiFilter, FiEdit, FiX, FiCheck } from 'react-icons/fi';
+import { FiSearch, FiChevronDown, FiChevronUp, FiDownload, FiFilter, FiEdit, FiX, FiCheck, FiClock, FiList } from 'react-icons/fi';
 import '../styles/InventarioPage.css';
 
 const PAGE_SIZE = 30;
+const HISTORIAL_PAGE_SIZE = 10;
 
 const InventarioPage = () => {
+  // Estados principales
+  const [activeTab, setActiveTab] = useState('inventario'); // 'inventario' o 'historial'
   const [inventario, setInventario] = useState([]);
+  const [historialAjustes, setHistorialAjustes] = useState([]);
   const [articulosExpandidos, setArticulosExpandidos] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [fechasExpandidas, setFechasExpandidas] = useState({});
+  const [loading, setLoading] = useState({ inventario: true, historial: true });
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
     almacen: '',
     ubicacion: '',
-    minStock: '',
-    maxStock: ''
+    familia: '',
+    subfamilia: ''
   });
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [ajustesPendientes, setAjustesPendientes] = useState([]);
   const [editandoCantidad, setEditandoCantidad] = useState(null);
   const [nuevaCantidad, setNuevaCantidad] = useState('');
+  const [detallesModal, setDetallesModal] = useState(null);
+  const [cargandoDetalles, setCargandoDetalles] = useState(false);
   
+  // Datos de usuario
   const user = JSON.parse(localStorage.getItem('user'));
   const codigoEmpresa = user?.CodigoEmpresa;
   const nombreEmpresa = user?.Empresa || 'Demos';
 
-  // Agrupar inventario por artículo con claves únicas
+  // Funciones de agrupación
   const agruparPorArticulo = useCallback((data) => {
     const agrupado = {};
     let claveCounter = {};
@@ -38,7 +46,6 @@ const InventarioPage = () => {
     data.forEach(item => {
       const baseClave = `${item.CodigoArticulo}-${item.CodigoAlmacen}-${item.Ubicacion}`;
       
-      // Contador para garantizar claves únicas
       if (!claveCounter[baseClave]) {
         claveCounter[baseClave] = 0;
       }
@@ -50,6 +57,8 @@ const InventarioPage = () => {
         agrupado[item.CodigoArticulo] = {
           CodigoArticulo: item.CodigoArticulo,
           DescripcionArticulo: item.DescripcionArticulo,
+          CodigoFamilia: item.CodigoFamilia,
+          CodigoSubfamilia: item.CodigoSubfamilia,
           ubicaciones: [],
           totalStock: 0,
           estado: 'positivo'
@@ -62,14 +71,15 @@ const InventarioPage = () => {
         NombreAlmacen: item.NombreAlmacen,
         Ubicacion: item.Ubicacion,
         DescripcionUbicacion: item.DescripcionUbicacion,
-        Cantidad: item.Cantidad
+        Cantidad: item.Cantidad,
+        MovPosicionLinea: item.MovPosicionLinea,
+        detalles: item.detalles
       };
       
       agrupado[item.CodigoArticulo].ubicaciones.push(ubicacion);
       agrupado[item.CodigoArticulo].totalStock += item.Cantidad;
     });
     
-    // Determinar estado del artículo
     Object.values(agrupado).forEach(articulo => {
       if (articulo.totalStock === 0) {
         articulo.estado = 'agotado';
@@ -88,7 +98,7 @@ const InventarioPage = () => {
     if (!codigoEmpresa) return;
 
     try {
-      setLoading(true);
+      setLoading(prev => ({ ...prev, inventario: true }));
       setError('');
       const headers = getAuthHeader();
       const response = await axios.get(
@@ -97,19 +107,48 @@ const InventarioPage = () => {
       );
       
       setInventario(agruparPorArticulo(response.data));
-      setLoading(false);
+      setLoading(prev => ({ ...prev, inventario: false }));
     } catch (error) {
       console.error('Error al obtener inventario:', error);
       setError('Error al cargar el inventario. Intente nuevamente.');
-      setLoading(false);
+      setLoading(prev => ({ ...prev, inventario: false }));
     }
   }, [codigoEmpresa, agruparPorArticulo]);
 
-  useEffect(() => {
-    cargarInventario();
-  }, [cargarInventario]);
+  // Cargar historial de ajustes
+  const cargarHistorialAjustes = useCallback(async () => {
+    if (!codigoEmpresa) return;
 
-  // Alternar vista expandida
+    try {
+      setLoading(prev => ({ ...prev, historial: true }));
+      setError('');
+      const headers = getAuthHeader();
+      const response = await axios.get(
+        'http://localhost:3000/inventario/historial-ajustes',
+        { 
+          headers,
+          params: { codigoEmpresa } 
+        }
+      );
+      
+      setHistorialAjustes(response.data);
+      setLoading(prev => ({ ...prev, historial: false }));
+    } catch (error) {
+      console.error('Error al obtener historial:', error);
+      setError('Error al cargar el historial de ajustes. Intente nuevamente.');
+      setLoading(prev => ({ ...prev, historial: false }));
+    }
+  }, [codigoEmpresa]);
+
+  useEffect(() => {
+    if (activeTab === 'inventario') {
+      cargarInventario();
+    } else if (activeTab === 'historial') {
+      cargarHistorialAjustes();
+    }
+  }, [activeTab, cargarInventario, cargarHistorialAjustes]);
+
+  // Funciones de UI
   const toggleExpandirArticulo = (codigoArticulo) => {
     setArticulosExpandidos(prev => ({
       ...prev,
@@ -117,7 +156,13 @@ const InventarioPage = () => {
     }));
   };
 
-  // Expandir/contraer todos
+  const toggleExpandirFecha = (fecha) => {
+    setFechasExpandidas(prev => ({
+      ...prev,
+      [fecha]: !prev[fecha]
+    }));
+  };
+
   const toggleTodosArticulos = () => {
     if (Object.keys(articulosExpandidos).length > 0) {
       setArticulosExpandidos({});
@@ -130,14 +175,12 @@ const InventarioPage = () => {
     }
   };
 
-  // Manejar cambio de filtros
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
     setFilters(prev => ({ ...prev, [name]: value }));
     setCurrentPage(1);
   };
 
-  // Solicitar ordenamiento
   const requestSort = (key) => {
     let direction = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -146,11 +189,11 @@ const InventarioPage = () => {
     setSortConfig({ key, direction });
   };
 
-  // Inventario filtrado y ordenado
+  // Filtrado y paginación para inventario
   const filteredInventario = useMemo(() => {
     let result = [...inventario];
     
-    // Aplicar filtros
+    // Búsqueda general
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter(articulo => 
@@ -159,6 +202,7 @@ const InventarioPage = () => {
       );
     }
     
+    // Filtros individuales
     if (filters.almacen) {
       result = result.filter(articulo => 
         articulo.ubicaciones.some(ubic => 
@@ -170,22 +214,30 @@ const InventarioPage = () => {
     if (filters.ubicacion) {
       result = result.filter(articulo => 
         articulo.ubicaciones.some(ubic => 
-          ubic.Ubicacion.toLowerCase().includes(filters.ubicacion.toLowerCase())
+          ubic.Ubicacion.toLowerCase().includes(filters.ubicacion.toLowerCase()) ||
+          (ubic.DescripcionUbicacion && 
+          ubic.DescripcionUbicacion.toLowerCase().includes(filters.ubicacion.toLowerCase()))
         )
       );
     }
     
-    if (filters.minStock) {
-      const min = Number(filters.minStock);
-      result = result.filter(articulo => articulo.totalStock >= min);
+    if (filters.familia) {
+      const term = filters.familia.toLowerCase();
+      result = result.filter(articulo => 
+        articulo.CodigoFamilia && 
+        articulo.CodigoFamilia.toLowerCase().includes(term)
+      );
     }
     
-    if (filters.maxStock) {
-      const max = Number(filters.maxStock);
-      result = result.filter(articulo => articulo.totalStock <= max);
+    if (filters.subfamilia) {
+      const term = filters.subfamilia.toLowerCase();
+      result = result.filter(articulo => 
+        articulo.CodigoSubfamilia && 
+        articulo.CodigoSubfamilia.toLowerCase().includes(term)
+      );
     }
     
-    // Ordenamiento personalizado
+    // Ordenamiento
     result.sort((a, b) => {
       const estadoOrden = { 'positivo': 1, 'negativo': 2, 'agotado': 3 };
       if (estadoOrden[a.estado] < estadoOrden[b.estado]) return -1;
@@ -199,7 +251,7 @@ const InventarioPage = () => {
     return result;
   }, [inventario, searchTerm, filters, sortConfig]);
 
-  // Calcular estadísticas
+  // Estadísticas
   const stats = useMemo(() => {
     const totalArticulos = filteredInventario.length;
     const totalUnidades = filteredInventario.reduce((total, art) => total + art.totalStock, 0);
@@ -208,47 +260,54 @@ const InventarioPage = () => {
     return { totalArticulos, totalUnidades, totalUbicaciones };
   }, [filteredInventario]);
 
-  // Paginación
+  // Paginación para inventario
   const totalPages = Math.ceil(filteredInventario.length / PAGE_SIZE);
   const paginatedInventario = useMemo(() => {
     const startIndex = (currentPage - 1) * PAGE_SIZE;
     return filteredInventario.slice(startIndex, startIndex + PAGE_SIZE);
   }, [filteredInventario, currentPage]);
 
-  // Cambiar página
   const goToPage = (page) => {
     if (page < 1 || page > totalPages) return;
     setCurrentPage(page);
   };
 
-  // Exportar a CSV
+  // Exportación
   const exportToCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Código Artículo,Descripción,Almacén,Ubicación,Stock\n";
     
-    filteredInventario.forEach(articulo => {
-      articulo.ubicaciones.forEach(ubicacion => {
-        csvContent += `${articulo.CodigoArticulo},"${articulo.DescripcionArticulo}",${ubicacion.NombreAlmacen},${ubicacion.Ubicacion},${ubicacion.Cantidad}\n`;
+    if (activeTab === 'inventario') {
+      csvContent += "Código Artículo,Descripción,Almacén,Ubicación,Stock,Familia,Subfamilia\n";
+      filteredInventario.forEach(articulo => {
+        articulo.ubicaciones.forEach(ubicacion => {
+          csvContent += `${articulo.CodigoArticulo},"${articulo.DescripcionArticulo}",${ubicacion.NombreAlmacen},${ubicacion.Ubicacion},${ubicacion.Cantidad},"${articulo.CodigoFamilia || ''}","${articulo.CodigoSubfamilia || ''}"\n`;
+        });
       });
-    });
+    } else if (activeTab === 'historial') {
+      csvContent += "Fecha,Artículo,Descripción,Almacén,Ubicación,Ajuste,Comentario,Hora\n";
+      historialAjustes.forEach(fecha => {
+        fecha.detalles.forEach(ajuste => {
+          csvContent += `${fecha.fecha},"${ajuste.CodigoArticulo}","${ajuste.DescripcionArticulo}","${ajuste.NombreAlmacen}","${ajuste.Ubicacion}",${ajuste.Diferencia},"${ajuste.Comentario}",${new Date(ajuste.FechaRegistro).toLocaleTimeString()}\n`;
+        });
+      });
+    }
     
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `inventario_${nombreEmpresa}_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `${activeTab === 'inventario' ? 'inventario' : 'historial-ajustes'}_${nombreEmpresa}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Estilo para cantidad
+  // Funciones de estilo
   const getStockStyle = (cantidad) => {
     if (cantidad === 0) return { color: '#e74c3c', fontWeight: 'bold' };
     if (cantidad < 0) return { color: '#f39c12', fontWeight: '600' };
     return { color: '#27ae60' };
   };
 
-  // Color de estado
   const getEstadoColor = (estado) => {
     switch (estado) {
       case 'positivo': return '#2ecc71';
@@ -258,11 +317,11 @@ const InventarioPage = () => {
     }
   };
 
-  // Iniciar edición de una cantidad
-  const iniciarEdicionCantidad = (articulo, ubicacionInfo, cantidadActual, clave, codigoAlmacen, ubicacionStr) => {
+  // Funciones de ajuste
+  const iniciarEdicionCantidad = (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr) => {
     setEditandoCantidad({
       articulo,
-      ubicacion: `${ubicacionInfo} (${codigoAlmacen}) - ${ubicacionStr}`,
+      nombreAlmacen,
       cantidadActual,
       clave,
       codigoAlmacen,
@@ -271,26 +330,25 @@ const InventarioPage = () => {
     setNuevaCantidad(cantidadActual.toString());
   };
 
-  // Guardar ajuste pendiente
   const guardarAjustePendiente = () => {
     if (!editandoCantidad || !nuevaCantidad) return;
     
     const nuevoAjuste = {
-      ...editandoCantidad,
+      articulo: editandoCantidad.articulo,
+      codigoAlmacen: editandoCantidad.codigoAlmacen,
+      ubicacionStr: editandoCantidad.ubicacionStr,
+      partida: '', // Campo requerido
+      cantidadActual: editandoCantidad.cantidadActual,
       nuevaCantidad: parseFloat(nuevaCantidad),
       fecha: new Date().toISOString(),
       estado: 'pendiente'
     };
     
-    // Actualizar lista de ajustes pendientes
     setAjustesPendientes(prev => [...prev, nuevoAjuste]);
-    
-    // Cerrar modal
     setEditandoCantidad(null);
     setNuevaCantidad('');
   };
 
-  // Confirmar todos los ajustes
   const confirmarAjustes = async () => {
     try {
       const headers = getAuthHeader();
@@ -301,46 +359,81 @@ const InventarioPage = () => {
       );
       
       if (response.data.success) {
-        // Recargar inventario después de ajustar
         cargarInventario();
-        // Limpiar ajustes pendientes
         setAjustesPendientes([]);
         alert('Ajustes realizados correctamente');
       }
     } catch (error) {
       console.error('Error al confirmar ajustes:', error);
-      alert('Error al confirmar ajustes: ' + error.message);
+      
+      // Mostrar mensaje específico del servidor si está disponible
+      const errorMessage = error.response?.data?.error || 
+                          error.response?.data?.mensaje || 
+                          error.message;
+      
+      alert(`Error al confirmar ajustes: ${errorMessage}`);
     }
   };
 
-  // Eliminar un ajuste pendiente
   const eliminarAjustePendiente = (index) => {
     setAjustesPendientes(prev => prev.filter((_, i) => i !== index));
   };
 
-  return (
-    <div className="inventario-container">
-      <Navbar />
-      <UserInfoBar />
+  // Detalles de variantes
+  const verDetalles = async (movPosicionLinea) => {
+    if (!movPosicionLinea) return;
+    
+    try {
+      setCargandoDetalles(true);
+      const headers = getAuthHeader();
+      const response = await axios.get(
+        `http://localhost:3000/stock/detalles?movPosicionLinea=${movPosicionLinea}`,
+        { headers }
+      );
       
-      <div className="inventario-header">
-        <div>
-          <h1>Inventario de {nombreEmpresa}</h1>
-          <p className="subtitle">Visión completa del stock en todas las ubicaciones</p>
+      setDetallesModal(response.data);
+    } catch (error) {
+      console.error('Error cargando detalles:', error);
+      alert('Error al cargar los detalles');
+    } finally {
+      setCargandoDetalles(false);
+    }
+  };
+
+  // Formatear fecha
+  const formatearFecha = (fechaStr) => {
+    const fecha = new Date(fechaStr);
+    return fecha.toLocaleDateString('es-ES', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  // Componentes de UI
+  const InventarioHeader = () => (
+    <div className="inventario-header">
+      <div>
+        <h1>Inventario de {nombreEmpresa}</h1>
+        <p className="subtitle">Gestión completa de stock y ajustes</p>
+      </div>
+      
+      <div className="header-actions">
+        <div className="search-container">
+          <input
+            type="text"
+            placeholder={activeTab === 'inventario' 
+              ? "Buscar artículo..." 
+              : "Buscar en historial..."}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="search-input"
+          />
+          <FiSearch className="search-icon" />
         </div>
         
-        <div className="header-actions">
-          <div className="search-container">
-            <input
-              type="text"
-              placeholder="Buscar artículo..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="search-input"
-            />
-            <FiSearch className="search-icon" />
-          </div>
-          
+        {activeTab === 'inventario' && (
           <div className="inventario-stats">
             <div className="stat-card">
               <span className="stat-value">{stats.totalArticulos}</span>
@@ -357,18 +450,21 @@ const InventarioPage = () => {
               <span className="stat-label">Ubicaciones</span>
             </div>
           </div>
-          
-          <button 
-            className="btn-export"
-            onClick={exportToCSV}
-            title="Exportar a CSV"
-          >
-            <FiDownload /> Exportar
-          </button>
-        </div>
+        )}
+        
+        <button 
+          className="btn-export"
+          onClick={exportToCSV}
+          title="Exportar a CSV"
+        >
+          <FiDownload /> Exportar
+        </button>
       </div>
+    </div>
+  );
 
-      {/* Panel de Filtros */}
+  const FiltersPanel = () => (
+    activeTab === 'inventario' && (
       <div className="filters-panel">
         <div className="filter-group">
           <label htmlFor="almacen-filter">
@@ -399,142 +495,217 @@ const InventarioPage = () => {
         </div>
         
         <div className="filter-group">
-          <label htmlFor="minStock">Stock Mín:</label>
+          <label htmlFor="familia-filter">
+            <FiFilter /> Familia:
+          </label>
           <input
-            type="number"
-            id="minStock"
-            name="minStock"
-            placeholder="Mínimo"
-            value={filters.minStock}
+            type="text"
+            id="familia-filter"
+            name="familia"
+            placeholder="Buscar por familia"
+            value={filters.familia}
             onChange={handleFilterChange}
-            min="0"
           />
         </div>
         
         <div className="filter-group">
-          <label htmlFor="maxStock">Stock Máx:</label>
+          <label htmlFor="subfamilia-filter">
+            <FiFilter /> Subfamilia:
+          </label>
           <input
-            type="number"
-            id="maxStock"
-            name="maxStock"
-            placeholder="Máximo"
-            value={filters.maxStock}
+            type="text"
+            id="subfamilia-filter"
+            name="subfamilia"
+            placeholder="Buscar por subfamilia"
+            value={filters.subfamilia}
             onChange={handleFilterChange}
-            min="0"
           />
         </div>
         
         <button 
           className="btn-toggle-all"
           onClick={toggleTodosArticulos}
+          aria-label={Object.keys(articulosExpandidos).length > 0 
+            ? 'Contraer todos los artículos' 
+            : 'Expandir todos los artículos'}
         >
           {Object.keys(articulosExpandidos).length > 0 ? 'Contraer Todo' : 'Expandir Todo'}
         </button>
       </div>
+    )
+  );
 
-      {/* Panel de Ajustes Pendientes */}
-      {ajustesPendientes.length > 0 && (
-        <div className="panel-ajustes">
-          <div className="panel-header">
-            <h3>Ajustes Pendientes</h3>
-            <div className="panel-actions">
-              <span className="badge">{ajustesPendientes.length} pendientes</span>
+  const PendingAdjustmentsPanel = () => (
+    activeTab === 'inventario' && ajustesPendientes.length > 0 && (
+      <div className="panel-ajustes">
+        <div className="panel-header">
+          <h3>Ajustes Pendientes</h3>
+          <div className="panel-actions">
+            <span className="badge">{ajustesPendientes.length} pendientes</span>
+            <button 
+              className="btn-confirmar"
+              onClick={confirmarAjustes}
+            >
+              <FiCheck /> Confirmar Ajustes
+            </button>
+          </div>
+        </div>
+        
+        <div className="lista-ajustes">
+          {ajustesPendientes.map((ajuste, index) => (
+            <div key={index} className="ajuste-item">
+              <div className="ajuste-info">
+                <div className="articulo">
+                  <span className="label">Artículo:</span> 
+                  <span className="value">{ajuste.articulo}</span>
+                </div>
+                <div className="ubicacion">
+                  <span className="label">Ubicación:</span> 
+                  <span className="value">{ajuste.ubicacionStr}</span>
+                </div>
+                <div className="cantidad">
+                  <span className="label">Cantidad:</span> 
+                  <span className="value">
+                    {ajuste.cantidadActual} → <strong>{ajuste.nuevaCantidad}</strong>
+                  </span>
+                </div>
+              </div>
               <button 
-                className="btn-confirmar"
-                onClick={confirmarAjustes}
+                className="btn-eliminar"
+                onClick={() => eliminarAjustePendiente(index)}
               >
-                <FiCheck /> Confirmar Ajustes
+                <FiX /> Eliminar
               </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  );
+
+  const EditModal = () => (
+    editandoCantidad && (
+      <div className="modal-edicion">
+        <div className="modal-contenido">
+          <h3>Editar Cantidad</h3>
+          <div className="modal-details">
+            <div className="detail-item">
+              <span>Artículo:</span>
+              <span>{editandoCantidad.articulo}</span>
+            </div>
+            <div className="detail-item">
+              <span>Almacén:</span>
+              <span>{editandoCantidad.nombreAlmacen}</span>
+            </div>
+            <div className="detail-item">
+              <span>Ubicación:</span>
+              <span>{editandoCantidad.ubicacionStr}</span>
             </div>
           </div>
           
-          <div className="lista-ajustes">
-            {ajustesPendientes.map((ajuste, index) => (
-              <div key={index} className="ajuste-item">
-                <div className="ajuste-info">
-                  <div className="articulo">
-                    <span className="label">Artículo:</span> 
-                    <span className="value">{ajuste.articulo}</span>
-                  </div>
-                  <div className="ubicacion">
-                    <span className="label">Ubicación:</span> 
-                    <span className="value">{ajuste.ubicacion}</span>
-                  </div>
-                  <div className="cantidad">
-                    <span className="label">Cantidad:</span> 
-                    <span className="value">
-                      {ajuste.cantidadActual} → <strong>{ajuste.nuevaCantidad}</strong>
+          <div className="form-group">
+            <label>Cantidad Actual:</label>
+            <input 
+              type="text" 
+              value={editandoCantidad.cantidadActual} 
+              disabled 
+              className="cantidad-actual"
+            />
+          </div>
+          
+          <div className="form-group">
+            <label>Nueva Cantidad:</label>
+            <input 
+              type="number" 
+              value={nuevaCantidad}
+              onChange={(e) => setNuevaCantidad(e.target.value)}
+              autoFocus
+              className="nueva-cantidad"
+            />
+          </div>
+          
+          <div className="modal-acciones">
+            <button 
+              className="btn-cancelar"
+              onClick={() => setEditandoCantidad(null)}
+            >
+              Cancelar
+            </button>
+            <button 
+              className="btn-guardar"
+              onClick={guardarAjustePendiente}
+            >
+              Guardar Ajuste
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  );
+
+  const DetallesModalComponent = () => {
+    if (!detallesModal) return null;
+
+    return (
+      <div className="modal-detalles">
+        <div className="modal-contenido">
+          <button className="cerrar-modal" onClick={() => setDetallesModal(null)}>
+            &times;
+          </button>
+          
+          <h3>Detalles de Variantes</h3>
+          
+          <div className="detalles-container">
+            {detallesModal.length === 0 ? (
+              <p>No hay detalles de variantes para este artículo</p>
+            ) : (
+              detallesModal.map((detalle, index) => (
+                <div key={index} className="variante-grupo">
+                  <div className="variante-header">
+                    <span className="color-variante">
+                      <strong>Color:</strong> {detalle.color.nombre}
+                    </span>
+                    <span className="talla-grupo">
+                      <strong>Grupo Talla:</strong> {detalle.grupoTalla.nombre}
                     </span>
                   </div>
+                  
+                  <table className="detalles-table">
+                    <thead>
+                      <tr>
+                        <th>Talla</th>
+                        <th>Descripción</th>
+                        <th>Unidades</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(detalle.tallas)
+                        .filter(([_, talla]) => talla.unidades > 0)
+                        .map(([codigoTalla, talla], idx) => (
+                          <tr key={idx}>
+                            <td>{codigoTalla}</td>
+                            <td>{talla.descripcion}</td>
+                            <td>{talla.unidades}</td>
+                          </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  
+                  <div className="variante-total">
+                    <strong>Total unidades:</strong> {detalle.unidades}
+                  </div>
                 </div>
-                <button 
-                  className="btn-eliminar"
-                  onClick={() => eliminarAjustePendiente(index)}
-                >
-                  <FiX /> Eliminar
-                </button>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
-      )}
+      </div>
+    );
+  };
 
-      {/* Modal de Edición */}
-      {editandoCantidad && (
-        <div className="modal-edicion">
-          <div className="modal-contenido">
-            <h3>Editar Cantidad</h3>
-            <div className="modal-details">
-              <div className="detail-item">
-                <span className="label">Artículo:</span>
-                <span className="value">{editandoCantidad.articulo}</span>
-              </div>
-              <div className="detail-item">
-                <span className="label">Ubicación:</span>
-                <span className="value">{editandoCantidad.ubicacion}</span>
-              </div>
-            </div>
-            
-            <div className="form-group">
-              <label>Cantidad Actual:</label>
-              <input 
-                type="text" 
-                value={editandoCantidad.cantidadActual} 
-                disabled 
-                className="cantidad-actual"
-              />
-            </div>
-            
-            <div className="form-group">
-              <label>Nueva Cantidad:</label>
-              <input 
-                type="number" 
-                value={nuevaCantidad}
-                onChange={(e) => setNuevaCantidad(e.target.value)}
-                autoFocus
-                className="nueva-cantidad"
-              />
-            </div>
-            
-            <div className="modal-acciones">
-              <button 
-                className="btn-cancelar"
-                onClick={() => setEditandoCantidad(null)}
-              >
-                Cancelar
-              </button>
-              <button 
-                className="btn-guardar"
-                onClick={guardarAjustePendiente}
-              >
-                Guardar Ajuste
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {error ? (
+  const InventoryList = () => {
+    if (error) {
+      return (
         <div className="error-container">
           <div className="error-icon">⚠️</div>
           <p>{error}</p>
@@ -545,149 +716,329 @@ const InventarioPage = () => {
             Recargar Inventario
           </button>
         </div>
-      ) : loading ? (
+      );
+    }
+
+    if (loading.inventario) {
+      return (
         <div className="loading-container">
           <div className="spinner"></div>
           <p>Cargando inventario...</p>
         </div>
-      ) : (
-        <>
-          <div className="inventario-list">
-            {paginatedInventario.length === 0 ? (
-              <div className="no-results">
-                <p>No se encontraron artículos con los filtros seleccionados</p>
-                <button 
-                  className="btn-clear-filters"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setFilters({
-                      almacen: '',
-                      ubicacion: '',
-                      minStock: '',
-                      maxStock: ''
-                    });
-                  }}
-                >
-                  Limpiar Filtros
-                </button>
-              </div>
-            ) : (
-              paginatedInventario.map(articulo => (
-                <div 
-                  key={articulo.CodigoArticulo} 
-                  className={`inventario-item ${articulo.estado === 'agotado' ? 'estado-agotado' : ''} ${articulo.estado === 'negativo' ? 'estado-negativo' : ''}`}
-                  style={{ borderLeft: `5px solid ${getEstadoColor(articulo.estado)}` }}
-                >
-                  <div 
-                    className="articulo-header"
-                    onClick={() => toggleExpandirArticulo(articulo.CodigoArticulo)}
-                  >
-                    <div className="articulo-info">
-                      <span className="articulo-codigo">{articulo.CodigoArticulo}</span>
-                      <span className="articulo-descripcion">{articulo.DescripcionArticulo}</span>
-                    </div>
-                    <div className="articulo-total">
-                      <span className="total-unidades">
-                        {articulo.totalStock.toLocaleString()} unidades
-                        <span className="ubicaciones-count">
-                          ({articulo.ubicaciones.length} ubicaciones)
-                        </span>
-                      </span>
-                      <span className={`expand-icon ${articulosExpandidos[articulo.CodigoArticulo] ? 'expanded' : ''}`}>
-                        {articulosExpandidos[articulo.CodigoArticulo] ? <FiChevronUp /> : <FiChevronDown />}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  {articulosExpandidos[articulo.CodigoArticulo] && (
-                    <div className="ubicaciones-list">
-                      <div className="ubicaciones-header">
-                        <span onClick={() => requestSort('NombreAlmacen')}>
-                          Almacén {sortConfig.key === 'NombreAlmacen' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                        </span>
-                        <span onClick={() => requestSort('Ubicacion')}>
-                          Ubicación {sortConfig.key === 'Ubicacion' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                        </span>
-                        <span>Descripción</span>
-                        <span onClick={() => requestSort('Cantidad')}>
-                          Cantidad {sortConfig.key === 'Cantidad' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                        </span>
-                        <span>Acciones</span>
-                      </div>
-                      
-                      {articulo.ubicaciones
-                        .sort((a, b) => {
-                          if (!sortConfig.key) return 0;
-                          if (a[sortConfig.key] < b[sortConfig.key]) {
-                            return sortConfig.direction === 'asc' ? -1 : 1;
-                          }
-                          if (a[sortConfig.key] > b[sortConfig.key]) {
-                            return sortConfig.direction === 'asc' ? 1 : -1;
-                          }
-                          return 0;
-                        })
-                        .map(ubicacion => (
-                        <div 
-                          key={ubicacion.clave} 
-                          className="ubicacion-item"
-                        >
-                          <span className="ubicacion-almacen">
-                            {ubicacion.NombreAlmacen} <span className="codigo">({ubicacion.CodigoAlmacen})</span>
-                          </span>
-                          <span className="ubicacion-codigo">{ubicacion.Ubicacion}</span>
-                          <span className="ubicacion-desc">{ubicacion.DescripcionUbicacion || 'Sin descripción'}</span>
-                          <span 
-                            className="ubicacion-cantidad" 
-                            style={getStockStyle(ubicacion.Cantidad)}
-                          >
-                            {ubicacion.Cantidad.toLocaleString()}
-                          </span>
-                          <button 
-                            className="btn-editar"
-                            onClick={() => iniciarEdicionCantidad(
-                              articulo.CodigoArticulo,
-                              ubicacion.NombreAlmacen,
-                              ubicacion.Cantidad,
-                              ubicacion.clave,
-                              ubicacion.CodigoAlmacen,
-                              ubicacion.Ubicacion
-                            )}
-                          >
-                            <FiEdit /> Editar
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+      );
+    }
+
+    if (paginatedInventario.length === 0) {
+      return (
+        <div className="no-results">
+          <p>No se encontraron artículos con los filtros seleccionados</p>
+          <button 
+            className="btn-clear-filters"
+            onClick={() => {
+              setSearchTerm('');
+              setFilters({
+                almacen: '',
+                ubicacion: '',
+                familia: '',
+                subfamilia: ''
+              });
+            }}
+          >
+            Limpiar Filtros
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="inventario-list">
+        {paginatedInventario.map(articulo => (
+          <div 
+            key={articulo.CodigoArticulo} 
+            className={`inventario-item ${articulo.estado === 'agotado' ? 'estado-agotado' : ''} ${articulo.estado === 'negativo' ? 'estado-negativo' : ''}`}
+            style={{ borderLeft: `5px solid ${getEstadoColor(articulo.estado)}` }}
+          >
+            <div 
+              className="articulo-header"
+              onClick={() => toggleExpandirArticulo(articulo.CodigoArticulo)}
+            >
+              <div className="articulo-info">
+                <span className="articulo-codigo">{articulo.CodigoArticulo}</span>
+                <span className="articulo-descripcion">{articulo.DescripcionArticulo}</span>
+                <div className="articulo-categorias">
+                  {articulo.CodigoFamilia && (
+                    <span className="familia-tag">Familia: {articulo.CodigoFamilia}</span>
+                  )}
+                  {articulo.CodigoSubfamilia && (
+                    <span className="subfamilia-tag">Subfamilia: {articulo.CodigoSubfamilia}</span>
                   )}
                 </div>
-              ))
+              </div>
+              <div className="articulo-total">
+                <span className="total-unidades">
+                  {articulo.totalStock.toLocaleString()} unidades
+                  <span className="ubicaciones-count">
+                    ({articulo.ubicaciones.length} ubicaciones)
+                  </span>
+                </span>
+                <span className={`expand-icon ${articulosExpandidos[articulo.CodigoArticulo] ? 'expanded' : ''}`}>
+                  {articulosExpandidos[articulo.CodigoArticulo] ? <FiChevronUp /> : <FiChevronDown />}
+                </span>
+              </div>
+            </div>
+            
+            {articulosExpandidos[articulo.CodigoArticulo] && (
+              <div className="ubicaciones-list">
+                <div className="ubicaciones-header">
+                  <span onClick={() => requestSort('NombreAlmacen')}>
+                    Almacén {sortConfig.key === 'NombreAlmacen' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </span>
+                  <span onClick={() => requestSort('Ubicacion')}>
+                    Ubicación {sortConfig.key === 'Ubicacion' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </span>
+                  <span>Descripción</span>
+                  <span onClick={() => requestSort('Cantidad')}>
+                    Cantidad {sortConfig.key === 'Cantidad' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </span>
+                  <span>Acciones</span>
+                </div>
+                
+                {articulo.ubicaciones
+                  .sort((a, b) => {
+                    if (!sortConfig.key) return 0;
+                    if (a[sortConfig.key] < b[sortConfig.key]) {
+                      return sortConfig.direction === 'asc' ? -1 : 1;
+                    }
+                    if (a[sortConfig.key] > b[sortConfig.key]) {
+                      return sortConfig.direction === 'asc' ? 1 : -1;
+                    }
+                    return 0;
+                  })
+                  .map(ubicacion => (
+                  <div 
+                    key={ubicacion.clave} 
+                    className="ubicacion-item"
+                  >
+                    <span className="ubicacion-almacen">
+                      {ubicacion.NombreAlmacen}
+                    </span>
+                    <span className="ubicacion-codigo">{ubicacion.Ubicacion}</span>
+                    <span className="ubicacion-desc">{ubicacion.DescripcionUbicacion || 'Sin descripción'}</span>
+                    <span 
+                      className="ubicacion-cantidad" 
+                      style={getStockStyle(ubicacion.Cantidad)}
+                    >
+                      {ubicacion.Cantidad.toLocaleString()}
+                    </span>
+                    <div className="acciones-ubicacion">
+                      <button 
+                        className="btn-editar"
+                        onClick={() => iniciarEdicionCantidad(
+                          articulo.CodigoArticulo,
+                          ubicacion.NombreAlmacen,
+                          ubicacion.Cantidad,
+                          ubicacion.clave,
+                          ubicacion.CodigoAlmacen,
+                          ubicacion.Ubicacion
+                        )}
+                      >
+                        <FiEdit />
+                      </button>
+                      
+                      {ubicacion.detalles && (
+                        <button 
+                          className="btn-detalles"
+                          onClick={() => verDetalles(ubicacion.MovPosicionLinea)}
+                        >
+                          ...
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
+        ))}
+      </div>
+    );
+  };
 
-          {/* Paginación */}
-          {totalPages > 1 && (
-            <div className="pagination">
-              <button 
-                onClick={() => goToPage(currentPage - 1)} 
-                disabled={currentPage === 1}
-                className="pagination-btn"
+  const HistorialAjustesList = () => {
+    if (error) {
+      return (
+        <div className="error-container">
+          <div className="error-icon">⚠️</div>
+          <p>{error}</p>
+          <button 
+            className="btn-reload"
+            onClick={cargarHistorialAjustes}
+          >
+            Recargar Historial
+          </button>
+        </div>
+      );
+    }
+
+    if (loading.historial) {
+      return (
+        <div className="loading-container">
+          <div className="spinner"></div>
+          <p>Cargando historial de ajustes...</p>
+        </div>
+      );
+    }
+
+    if (historialAjustes.length === 0) {
+      return (
+        <div className="no-results">
+          <p>No se encontraron ajustes en el historial</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="historial-list">
+        {historialAjustes.map(item => {
+          const expandido = fechasExpandidas[item.fecha];
+          
+          return (
+            <div key={item.fecha} className="historial-item">
+              <div 
+                className="fecha-header"
+                onClick={() => toggleExpandirFecha(item.fecha)}
               >
-                Anterior
-              </button>
+                <div className="fecha-info">
+                  <span className="fecha">{formatearFecha(item.fecha)}</span>
+                  <span className="resumen">
+                    {item.totalAjustes} ajustes realizados
+                  </span>
+                </div>
+                <span className={`expand-icon ${expandido ? 'expanded' : ''}`}>
+                  {expandido ? <FiChevronUp /> : <FiChevronDown />}
+                </span>
+              </div>
               
-              <span>Página {currentPage} de {totalPages}</span>
-              
-              <button 
-                onClick={() => goToPage(currentPage + 1)} 
-                disabled={currentPage === totalPages}
-                className="pagination-btn"
-              >
-                Siguiente
-              </button>
+              {expandido && (
+                <div className="detalles-ajustes">
+                  <table className="detalles-table">
+                    <thead>
+                      <tr>
+                        <th>Artículo</th>
+                        <th>Almacén</th>
+                        <th>Ubicación</th>
+                        <th>Partida</th>
+                        <th>Ajuste</th>
+                        <th>Comentario</th>
+                        <th>Hora</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {item.detalles.map(detalle => (
+                        <tr key={`${detalle.CodigoArticulo}-${detalle.FechaRegistro}`}>
+                          <td>
+                            <div className="articulo-info">
+                              <span className="codigo">{detalle.CodigoArticulo}</span>
+                              <span className="descripcion">{detalle.DescripcionArticulo}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <span className="almacen">{detalle.NombreAlmacen}</span>
+                            <span className="codigo-almacen">({detalle.CodigoAlmacen})</span>
+                          </td>
+                          <td>
+                            <span className="ubicacion">{detalle.Ubicacion}</span>
+                            <span className="desc-ubicacion">{detalle.DescripcionUbicacion || 'N/A'}</span>
+                          </td>
+                          <td>{detalle.Partida || '-'}</td>
+                          <td className={detalle.Diferencia > 0 ? 'positivo' : 'negativo'}>
+                            {detalle.Diferencia > 0 ? '+' : ''}{detalle.Diferencia}
+                          </td>
+                          <td>{detalle.Comentario}</td>
+                          <td>
+                            {new Date(detalle.FechaRegistro).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          )}
-        </>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const PaginationComponent = () => (
+    activeTab === 'inventario' && totalPages > 1 && (
+      <div className="pagination">
+        <button 
+          onClick={() => goToPage(currentPage - 1)} 
+          disabled={currentPage === 1}
+          className="pagination-btn"
+        >
+          Anterior
+        </button>
+        
+        <span>Página {currentPage} de {totalPages}</span>
+        
+        <button 
+          onClick={() => goToPage(currentPage + 1)} 
+          disabled={currentPage === totalPages}
+          className="pagination-btn"
+        >
+          Siguiente
+        </button>
+      </div>
+    )
+  );
+
+  return (
+    <div className="inventario-container">
+      <Navbar />
+      <UserInfoBar />
+      
+      <InventarioHeader />
+      
+      {/* Controles de pestañas */}
+      <div className="tabs-container">
+        <button 
+          className={`tab-btn ${activeTab === 'inventario' ? 'active' : ''}`}
+          onClick={() => setActiveTab('inventario')}
+        >
+          <FiList /> Inventario Actual
+        </button>
+        <button 
+          className={`tab-btn ${activeTab === 'historial' ? 'active' : ''}`}
+          onClick={() => setActiveTab('historial')}
+        >
+          <FiClock /> Historial de Ajustes
+        </button>
+      </div>
+      
+      <FiltersPanel />
+      <PendingAdjustmentsPanel />
+      
+      {cargandoDetalles && (
+        <div className="cargando-detalles">
+          <div className="spinner"></div>
+          <p>Cargando detalles...</p>
+        </div>
       )}
+      
+      {activeTab === 'inventario' ? (
+        <>
+          <InventoryList />
+          <PaginationComponent />
+        </>
+      ) : (
+        <HistorialAjustesList />
+      )}
+      
+      <EditModal />
+      <DetallesModalComponent />
     </div>
   );
 };

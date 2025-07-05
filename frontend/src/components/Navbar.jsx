@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   FaRoute, 
@@ -9,7 +9,9 @@ import {
   FaUserFriends, 
   FaFileInvoice, 
   FaHome,
-  FaWarehouse
+  FaWarehouse,
+  FaTimes,
+  FaBars
 } from 'react-icons/fa';
 import '../styles/Navbar.css';
 
@@ -19,6 +21,7 @@ const Navbar = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeRoute, setActiveRoute] = useState(location.pathname);
   const [isScrolled, setIsScrolled] = useState(false);
+  const menuRef = useRef(null);
 
   // Actualizar ruta activa cuando cambia la ubicación
   useEffect(() => {
@@ -28,7 +31,9 @@ const Navbar = () => {
   // Cerrar menú móvil al cambiar tamaño de ventana
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth > 768) setIsMobileMenuOpen(false);
+      if (window.innerWidth > 992) {
+        setIsMobileMenuOpen(false);
+      }
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -43,13 +48,31 @@ const Navbar = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Manejar clics fuera del menú para cerrarlo
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (isMobileMenuOpen && menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMobileMenuOpen]);
+
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
   };
 
+  const closeMobileMenu = () => {
+    setIsMobileMenuOpen(false);
+  };
+
   const goTo = (path) => {
     navigate(path);
-    setIsMobileMenuOpen(false);
+    closeMobileMenu();
   };
 
   const navItems = [
@@ -75,17 +98,17 @@ const Navbar = () => {
           </div>
           
           <button 
-            className={`mobile-toggle ${isMobileMenuOpen ? 'open' : ''}`}
+            className="mobile-toggle"
             onClick={toggleMobileMenu}
             aria-label={isMobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
+            aria-expanded={isMobileMenuOpen}
           >
-            <span className="hamburger-line"></span>
-            <span className="hamburger-line"></span>
-            <span className="hamburger-line"></span>
+            {isMobileMenuOpen ? <FaTimes /> : <FaBars />}
           </button>
         </div>
 
         <div 
+          ref={menuRef}
           className={`navbar-links ${isMobileMenuOpen ? 'open' : ''}`}
           aria-hidden={!isMobileMenuOpen}
         >
@@ -94,6 +117,7 @@ const Navbar = () => {
               key={item.path}
               className={`nav-item ${activeRoute === item.path ? 'active' : ''}`}
               onClick={() => goTo(item.path)}
+              tabIndex={isMobileMenuOpen ? 0 : -1}
             >
               <div className="nav-icon">{item.icon}</div>
               <span className="nav-label">{item.label}</span>
