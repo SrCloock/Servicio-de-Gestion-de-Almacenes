@@ -1,124 +1,97 @@
+// AsignacionAlbaranesScreen.js
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import '../styles/AlbaranesAsignadosScreen.css';
-import Navbar from '../components/Navbar';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
-import UserInfoBar from '../components/UserInfoBar';
 
-const AlbaranesAsignadosScreen = () => {
+function AsignacionAlbaranesScreen() {
   const [albaranes, setAlbaranes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem('user'));
-
-  if (!user || user.CodigoCategoriaEmpleadoLc !== 'rep') {
-    return (
-      <div className="pedidos-container">
-        <div className="error-pedidos">
-          <p>No tienes permiso para acceder a esta página</p>
-          <button onClick={() => navigate('/')}>Volver al inicio</button>
-        </div>
-      </div>
-    );
-  }
+  const [empleados, setEmpleados] = useState([]);
+  const [asignaciones, setAsignaciones] = useState({});
 
   useEffect(() => {
-    const fetchAlbaranesAsignados = async () => {
-      try {
-        setLoading(true);
-        setError('');
-        
-        const headers = getAuthHeader();
-        const repartidorId = user.CodigoCliente;
-        
-        const response = await axios.get(
-          'http://localhost:3000/albaranes-asignados',
-          { 
-            headers,
-            params: { repartidorId } 
-          }
-        );
-        
-        setAlbaranes(response.data);
-        
-      } catch (err) {
-        setError('Error al cargar albaranes asignados');
-        console.error('Error:', err);
-      } finally {
-        setLoading(false);
-      }
+    const fetchData = async () => {
+      const headers = getAuthHeader();
+      
+      // Obtener albaranes sin filtrar
+      const albResponse = await axios.get(
+        'http://localhost:3000/albaranesPendientes?todos=true', 
+        { headers }
+      );
+      
+      // Obtener empleados
+      const empResponse = await axios.get(
+        'http://localhost:3000/empleados', 
+        { headers }
+      );
+      
+      setAlbaranes(albResponse.data);
+      setEmpleados(empResponse.data);
     };
     
-    fetchAlbaranesAsignados();
-  }, [user]);
+    fetchData();
+  }, []);
 
-  const abrirDetalle = (albaran) => {
-    navigate('/detalle-albaran', { state: { albaran } });
+  const handleAsignar = async (albaranId) => {
+    const usuarioAsignado = asignaciones[albaranId];
+    
+    try {
+      const headers = getAuthHeader();
+      await axios.post('http://localhost:3000/asignarAlbaran', {
+        numeroAlbaran: albaranId,
+        usuarioAsignado
+      }, { headers });
+      
+      alert('Asignación guardada');
+    } catch (error) {
+      alert('Error al guardar asignación');
+    }
   };
 
   return (
-    <div className="pedidos-container">
-      <UserInfoBar />
-      <BackButton />
+    <div className="asignacion-container">
+      <h2>Asignar Albaranes</h2>
       
-      <div className="screen-header">
-        <div className="bubble bubble1"></div>
-        <div className="bubble bubble2"></div>
-        <h2>Mis Albaranes Asignados</h2>
-      </div>
-      
-      <div className="pedidos-content">
-        {error ? (
-          <div className="error-pedidos">
-            <p>{error}</p>
-            <button onClick={() => window.location.reload()}>Reintentar</button>
-          </div>
-        ) : loading ? (
-          <div className="loading-pedidos">
-            <div className="loader"></div>
-            <p>Cargando albaranes...</p>
-          </div>
-        ) : albaranes.length === 0 ? (
-          <div className="no-pedidos">
-            <p>No hay albaranes asignados</p>
-          </div>
-        ) : (
-          <div className="albaranes-list">
-            {albaranes.map(albaran => (
-              <div key={`${albaran.id}-${albaran.albaran}`} className="pedido-card">
-                <div className="pedido-info">
-                  <span className="numero-pedido">#{albaran.albaran}</span>
-                  <span className="cliente">{albaran.cliente}</span>
-                  <span className="fecha-pedido">
-                    {new Date(albaran.FechaAlbaran).toLocaleDateString()}
-                  </span>
-                </div>
-                
-                <div className="pedido-details">
-                  <div><strong>Dirección:</strong> {albaran.direccion}</div>
-                  <div><strong>Total:</strong> {albaran.importeLiquido?.toFixed(2)} €</div>
-                  <div><strong>Artículos:</strong> {albaran.articulos?.length || 0}</div>
-                </div>
-                
-                <div className="toggle-button-container">
-                  <button 
-                    onClick={() => abrirDetalle(albaran)}
-                    className="btn-toggle"
-                  >
-                    Ver Detalles
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      
-      <Navbar />
+      <table>
+        <thead>
+          <tr>
+            <th>Albarán</th>
+            <th>Cliente</th>
+            <th>Asignar a</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {albaranes.map(albaran => (
+            <tr key={albaran.id}>
+              <td>{albaran.albaran}</td>
+              <td>{albaran.cliente}</td>
+              <td>
+                <select 
+                  value={asignaciones[albaran.id] || ''}
+                  onChange={(e) => setAsignaciones({
+                    ...asignaciones,
+                    [albaran.id]: e.target.value
+                  })}
+                >
+                  <option value="">Seleccionar</option>
+                  {empleados.map(emp => (
+                    <option key={emp.CodigoCliente} value={emp.UsuarioLogicNet}>
+                      {emp.Nombre}
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td>
+                <button onClick={() => handleAsignar(albaran.id)}>
+                  Asignar
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
-};
+}
 
-export default AlbaranesAsignadosScreen;
+export default AsignacionAlbaranesScreen;

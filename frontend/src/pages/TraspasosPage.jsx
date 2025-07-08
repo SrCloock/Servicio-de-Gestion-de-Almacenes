@@ -45,8 +45,7 @@ const TraspasosPage = () => {
     detalles: null
   });
   
-  // Referencias y datos de usuario
-  const user = JSON.parse(localStorage.getItem('user'));
+  // Referencias
   const timerRef = useRef(null);
 
   // ======================= EFECTOS ======================= //
@@ -208,7 +207,7 @@ const TraspasosPage = () => {
     try {
       const headers = getAuthHeader();
       const response = await axios.get(
-        `http://localhost:3000/historial-traspasos?codigoEmpresa=${user.CodigoEmpresa}&usuario=${user.UsuarioLogicNet}`,
+        `http://localhost:3000/historial-traspasos`,
         { headers }
       );
       setHistorial(response.data);
@@ -221,16 +220,24 @@ const TraspasosPage = () => {
 
   const formatFecha = (fechaStr) => {
     if (!fechaStr) return 'Fecha no disponible';
+    
     try {
-      const fecha = new Date(fechaStr);
-      return isNaN(fecha) ? fechaStr : fecha.toLocaleString('es-ES', {
+      const fechaUTC = new Date(fechaStr);
+      
+      // Convertir UTC a hora local de España (CEST = UTC+2)
+      const fechaLocal = new Date(fechaUTC);
+      fechaLocal.setHours(fechaLocal.getHours() + 2);
+      
+      return fechaLocal.toLocaleString('es-ES', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        hour12: false
       });
     } catch (error) {
+      console.error('Error formateando fecha:', error);
       return fechaStr;
     }
   };
@@ -324,24 +331,20 @@ const TraspasosPage = () => {
       const headers = getAuthHeader();
       const body = activeTab === 'articulo' 
         ? {
-            codigoEmpresa: user.CodigoEmpresa,
             articulo: modoArticulo.articuloSeleccionado.CodigoArticulo,
             origenAlmacen: modoArticulo.form.origenAlmacen,
             origenUbicacion: modoArticulo.form.origenUbicacion,
             destinoAlmacen: modoArticulo.form.destinoAlmacen,
             destinoUbicacion: modoArticulo.form.destinoUbicacion,
             cantidad: parseFloat(modoArticulo.form.cantidad),
-            usuario: user.UsuarioLogicNet
           }
         : {
-            codigoEmpresa: user.CodigoEmpresa,
             articulo: modoUbicacion.articuloSeleccionado.CodigoArticulo,
             origenAlmacen: modoUbicacion.ubicacionSeleccionada.almacen,
             origenUbicacion: modoUbicacion.ubicacionSeleccionada.ubicacion,
             destinoAlmacen: modoUbicacion.form.destinoAlmacen,
             destinoUbicacion: modoUbicacion.form.destinoUbicacion,
             cantidad: parseFloat(modoUbicacion.form.cantidad),
-            usuario: user.UsuarioLogicNet
           };
       
       await axios.post('http://localhost:3000/traspaso', body, { headers });
@@ -373,7 +376,11 @@ const TraspasosPage = () => {
       setActiveSection('movimientos');
     } catch (error) {
       console.error('Error en traspaso:', error);
-      alert('Error: ' + (error.response?.data?.mensaje || error.message));
+      let errorMsg = 'Error en el traspaso';
+      if (error.response && error.response.data && error.response.data.mensaje) {
+        errorMsg = error.response.data.mensaje;
+      }
+      alert(errorMsg);
     } finally {
       setLoading(false);
     }

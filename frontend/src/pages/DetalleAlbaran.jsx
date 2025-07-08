@@ -5,7 +5,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import '../styles/DetalleAlbaran.css';
 import Navbar from '../components/Navbar';
-import { getAuthHeader } from '../helpers/authHelper'; // Importar helper de autenticación
+import { getAuthHeader } from '../helpers/authHelper';
 
 function DetalleAlbaran() {
   const location = useLocation();

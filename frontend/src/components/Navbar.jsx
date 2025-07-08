@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+// src/components/Navbar.js
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import axios from 'axios';
 import { 
   FaRoute, 
   FaClipboardList, 
@@ -11,8 +13,11 @@ import {
   FaHome,
   FaWarehouse,
   FaTimes,
-  FaBars
+  FaBars,
+  FaBuilding,
+  FaChevronDown
 } from 'react-icons/fa';
+import { getAuthHeader } from '../helpers/authHelper';
 import '../styles/Navbar.css';
 
 const Navbar = () => {
@@ -21,18 +26,33 @@ const Navbar = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeRoute, setActiveRoute] = useState(location.pathname);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [empresas, setEmpresas] = useState([]);
+  const [user, setUser] = useState(null);
+  const [isSelectorOpen, setIsSelectorOpen] = useState(false);
   const menuRef = useRef(null);
+  const mobileToggleRef = useRef(null);
+  const selectorRef = useRef(null);
+
+  // Cargar usuario al montar
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+  }, []);
 
   // Actualizar ruta activa cuando cambia la ubicación
   useEffect(() => {
     setActiveRoute(location.pathname);
   }, [location]);
 
-  // Cerrar menú móvil al cambiar tamaño de ventana
+  // Cerrar menú móvil y selector al cambiar tamaño de ventana
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth > 992) {
-        setIsMobileMenuOpen(false);
+        closeMobileMenu();
+      } else {
+        setIsSelectorOpen(false);
       }
     };
     window.addEventListener('resize', handleResize);
@@ -48,11 +68,18 @@ const Navbar = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Manejar clics fuera del menú para cerrarlo
+  // Manejar clics fuera del menú
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (isMobileMenuOpen && menuRef.current && !menuRef.current.contains(event.target)) {
-        setIsMobileMenuOpen(false);
+      // Cerrar menú móvil
+      if (isMobileMenuOpen && menuRef.current && !menuRef.current.contains(event.target) && 
+          event.target !== mobileToggleRef.current) {
+        closeMobileMenu();
+      }
+      
+      // Cerrar selector de empresa
+      if (isSelectorOpen && selectorRef.current && !selectorRef.current.contains(event.target)) {
+        setIsSelectorOpen(false);
       }
     };
 
@@ -60,30 +87,70 @@ const Navbar = () => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isMobileMenuOpen]);
+  }, [isMobileMenuOpen, isSelectorOpen]);
+
+  // Obtener lista de empresas
+  useEffect(() => {
+    const fetchEmpresas = async () => {
+      if (!user) return;
+      
+      try {
+        const headers = getAuthHeader();
+        const response = await axios.get(
+          'http://localhost:3000/empresas',
+          { headers }
+        );
+        setEmpresas(response.data);
+      } catch (error) {
+        console.error('Error al obtener empresas:', error);
+      }
+    };
+    
+    if (user) {
+      fetchEmpresas();
+    }
+  }, [user]);
 
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
+    setIsSelectorOpen(false);
   };
 
-  const closeMobileMenu = () => {
+  const closeMobileMenu = useCallback(() => {
     setIsMobileMenuOpen(false);
-  };
+    setTimeout(() => {
+      if (mobileToggleRef.current) {
+        mobileToggleRef.current.focus();
+      }
+    }, 10);
+  }, []);
 
   const goTo = (path) => {
     navigate(path);
     closeMobileMenu();
   };
 
+  const toggleSelector = () => {
+    setIsSelectorOpen(!isSelectorOpen);
+  };
+
+  const handleEmpresaChange = (empresa) => {
+    const updatedUser = {...user, CodigoEmpresa: empresa.CodigoEmpresa};
+    localStorage.setItem('user', JSON.stringify(updatedUser));
+    setUser(updatedUser);
+    setIsSelectorOpen(false);
+    window.location.reload();
+  };
+
   const navItems = [
-    { path: '/rutas', label: 'Rutas', icon: <FaRoute /> },
+    { path: '/', label: 'Inicio', icon: <FaHome /> },
+    { path: '/rutas', label: 'Albaranes', icon: <FaRoute /> },
     { path: '/PedidosScreen', label: 'Todos los Pedidos', icon: <FaClipboardList /> },
     { path: '/pedidos-asignados', label: 'Pedidos Asignados', icon: <FaTruckLoading /> },
     { path: '/traspasos', label: 'Traspasos', icon: <FaExchangeAlt /> },
     { path: '/inventario', label: 'Inventario', icon: <FaBoxes /> },
     { path: '/designar-rutas', label: 'Designar Rutas', icon: <FaUserFriends /> },
     { path: '/albaranes-asignados', label: 'Albaranes Asignados', icon: <FaFileInvoice /> },
-    { path: '/', label: 'Inicio', icon: <FaHome /> },
   ];
 
   return (
@@ -97,32 +164,102 @@ const Navbar = () => {
             <span className="app-name">Gestión de Almacén</span>
           </div>
           
-          <button 
-            className="mobile-toggle"
-            onClick={toggleMobileMenu}
-            aria-label={isMobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
-            aria-expanded={isMobileMenuOpen}
-          >
-            {isMobileMenuOpen ? <FaTimes /> : <FaBars />}
-          </button>
+          <div className="navbar-center">
+            <div className="nav-items-container">
+              {navItems.map((item) => (
+                <div 
+                  key={item.path}
+                  className={`nav-item ${activeRoute === item.path ? 'active' : ''}`}
+                  onClick={() => goTo(item.path)}
+                >
+                  <div className="nav-icon">{item.icon}</div>
+                  <span className="nav-label">{item.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          <div className="navbar-right">
+            {/* Selector de empresa en escritorio - Versión mejorada */}
+            {user && (
+              <div className="empresa-selector-container" ref={selectorRef}>
+                <div 
+                  className="selector-header"
+                  onClick={toggleSelector}
+                >
+                  <FaBuilding className="empresa-icon" />
+                  <span className="selected-empresa">
+                    {user.CodigoEmpresa || 'Seleccionar'}
+                  </span>
+                  <FaChevronDown className={`selector-arrow ${isSelectorOpen ? 'open' : ''}`} />
+                </div>
+                
+                {isSelectorOpen && (
+                  <div className="empresa-selector-dropdown">
+                    {empresas.map(empresa => (
+                      <div 
+                        key={empresa.CodigoEmpresa}
+                        className={`empresa-option ${user.CodigoEmpresa === empresa.CodigoEmpresa ? 'selected' : ''}`}
+                        onClick={() => handleEmpresaChange(empresa)}
+                      >
+                        <span className="empresa-codigo">{empresa.CodigoEmpresa}</span>
+                        <span className="empresa-nombre">{empresa.Empresa}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <button 
+              ref={mobileToggleRef}
+              className="mobile-toggle"
+              onClick={toggleMobileMenu}
+              aria-label={isMobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
+              aria-expanded={isMobileMenuOpen}
+            >
+              {isMobileMenuOpen ? <FaTimes /> : <FaBars />}
+            </button>
+          </div>
         </div>
 
+        {/* Menú móvil */}
         <div 
           ref={menuRef}
-          className={`navbar-links ${isMobileMenuOpen ? 'open' : ''}`}
+          className={`mobile-menu ${isMobileMenuOpen ? 'open' : ''}`}
           aria-hidden={!isMobileMenuOpen}
         >
           {navItems.map((item) => (
             <div 
               key={item.path}
-              className={`nav-item ${activeRoute === item.path ? 'active' : ''}`}
+              className={`mobile-nav-item ${activeRoute === item.path ? 'active' : ''}`}
               onClick={() => goTo(item.path)}
               tabIndex={isMobileMenuOpen ? 0 : -1}
             >
-              <div className="nav-icon">{item.icon}</div>
-              <span className="nav-label">{item.label}</span>
+              <div className="mobile-nav-icon">{item.icon}</div>
+              <span className="mobile-nav-label">{item.label}</span>
             </div>
           ))}
+          
+          {user && (
+            <div className="mobile-user-section">
+              <div className="mobile-empresa-selector-container">
+                <FaBuilding className="mobile-empresa-icon" />
+                <select 
+                  value={user.CodigoEmpresa || ''} 
+                  onChange={(e) => handleEmpresaChange({CodigoEmpresa: e.target.value})}
+                  className="mobile-empresa-selector"
+                  aria-label="Seleccionar empresa"
+                >
+                  {empresas.map(empresa => (
+                    <option key={empresa.CodigoEmpresa} value={empresa.CodigoEmpresa}>
+                      {empresa.CodigoEmpresa}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </nav>

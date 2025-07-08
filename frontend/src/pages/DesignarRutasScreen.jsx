@@ -3,7 +3,6 @@ import axios from 'axios';
 import '../styles/DesignarRutasScreen.css';
 import Navbar from '../components/Navbar';
 import { getAuthHeader } from '../helpers/authHelper';
-import UserInfoBar from '../components/UserInfoBar';
 
 const DesignarRutasScreen = () => {
   const [repartidores, setRepartidores] = useState([]);
@@ -17,18 +16,12 @@ const DesignarRutasScreen = () => {
       try {
         setLoading(true);
         const headers = getAuthHeader();
-        const user = JSON.parse(localStorage.getItem('user'));
-        const codigoEmpresa = user.CodigoEmpresa;
         
         // Obtener repartidores
         const repResponse = await axios.get(
           'http://localhost:3000/repartidores',
           { 
-            headers,
-            params: { 
-              codigoEmpresa,
-              categoria: 'REP'
-            } 
+            headers
           }
         );
         
@@ -36,8 +29,7 @@ const DesignarRutasScreen = () => {
         const albResponse = await axios.get(
           `http://localhost:3000/albaranesPendientesUnicos`,
           { 
-            headers,
-            params: { codigoEmpresa } 
+            headers
           }
         );
         
@@ -65,7 +57,6 @@ const DesignarRutasScreen = () => {
     try {
       setLoading(true);
       const headers = getAuthHeader();
-      const user = JSON.parse(localStorage.getItem('user'));
       
       // Transformar asignaciones para enviar al backend
       const asignacionesParaEnviar = Object.entries(asignaciones).map(([idUnico, repartidorId]) => {
@@ -80,8 +71,7 @@ const DesignarRutasScreen = () => {
       await axios.post(
         'http://localhost:3000/designar-rutas',
         { 
-          asignaciones: asignacionesParaEnviar,
-          codigoEmpresa: user.CodigoEmpresa
+          asignaciones: asignacionesParaEnviar
         },
         { headers }
       );
@@ -102,8 +92,6 @@ const DesignarRutasScreen = () => {
 
   return (
     <div className="designar-rutas-container">
-      <UserInfoBar />
-      
       <div className="screen-header">
         <div className="bubble bubble1"></div>
         <div className="bubble bubble2"></div>

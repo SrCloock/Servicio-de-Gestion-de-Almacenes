@@ -75,11 +75,14 @@ function GestionRutas() {
         {albaranes.map((albaran) => (
           <div 
             key={`${albaran.id}-${albaran.albaran}`} 
-            className="ruta-card"
+            className={`ruta-card ${albaran.esParcial ? 'albaran-parcial' : ''}`}
             onClick={() => abrirDetalle(albaran)}
           >
             <div className="card-header">
               <h4>Albarán: {albaran.albaran}</h4>
+              {albaran.esParcial && (
+                <span className="parcial-badge">Parcial</span>
+              )}
               <span className="fecha-albaran">
                 {new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}
               </span>

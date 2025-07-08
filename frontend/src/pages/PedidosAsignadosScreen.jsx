@@ -4,8 +4,6 @@ import '../styles/PedidosScreen.css';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
-import UserInfoBar from '../components/UserInfoBar';
-import { getUserPermisos } from '../helpers/authHelper';
 
 const PedidosAsignadosScreen = () => {
   const [pedidos, setPedidos] = useState([]);
@@ -28,55 +26,17 @@ const PedidosAsignadosScreen = () => {
 
   const navigate = useNavigate();
 
-  // Memoizar el usuario y los permisos para evitar cambios en cada render
-  const user = useMemo(() => JSON.parse(localStorage.getItem('user') || {}, []));
-  const permisos = useMemo(() => getUserPermisos(), []);
-
   const fetchPedidosAsignados = useCallback(async () => {
-    // Obtener valores actuales en cada ejecución
-    const permisosActual = getUserPermisos();
-    const userActual = JSON.parse(localStorage.getItem('user')) || {};
-    
-    // Si no es admin ni repartidor, redirigir
-    if (!permisosActual.isAdmin && !permisosActual.isRepartidor) {
-      navigate('/', { replace: true });
-      return;
-    }
-
     try {
       setLoading(true);
       setError('');
       
-      // Preparar headers con autenticación y los headers específicos
-      const authHeader = getAuthHeader();
-      const headers = {
-        ...authHeader,
-        usuario: userActual.UsuarioLogicNet || '',
-        codigoempresa: userActual.CodigoEmpresa?.toString() || ''
-      };
-      
-      const params = {
-        codigoEmpresa: userActual.CodigoEmpresa
-      };
-      
-      if (permisosActual.isRepartidor) {
-        params.codigoRepartidor = permisosActual.CodigoCliente;
-      }
-      
-      console.log("Solicitando pedidos asignados con parámetros:", params);
-      
+      const headers = getAuthHeader();
       const response = await axios.get(
         'http://localhost:3000/pedidosAsignados',
-        { 
-          headers,
-          params,
-          timeout: 30000
-        }
+        { headers }
       );
       
-      console.log("Respuesta recibida con", response.data.length, "pedidos");
-      
-      // 1. Normalizar datos y asegurar identificadores únicos
       const pedidosNormalizados = response.data.map((pedido, index) => ({
         ...pedido,
         id: pedido.numeroPedido || `pedido-${index}-${Date.now()}`,
@@ -88,23 +48,17 @@ const PedidosAsignadosScreen = () => {
       
       setPedidos(pedidosNormalizados);
       
-      // 2. Obtener todos los artículos
       const todosLosArticulos = pedidosNormalizados.flatMap(pedido => 
         pedido.articulos.map(art => art.codigoArticulo)
       );
       
       const codigosArticulos = [...new Set(todosLosArticulos)].filter(cod => cod);
-      console.log("Solicitando ubicaciones para", codigosArticulos.length, "artículos");
       
-      // 3. Obtener ubicaciones solo si hay artículos
       if (codigosArticulos.length > 0) {
         const responseUbicaciones = await axios.post(
           'http://localhost:3000/ubicacionesMultiples',
           { articulos: codigosArticulos },
-          { 
-            headers: authHeader, // Usar solo authHeader para esta solicitud
-            timeout: 30000
-          }
+          { headers }
         );
         
         setUbicaciones(responseUbicaciones.data);
@@ -112,14 +66,12 @@ const PedidosAsignadosScreen = () => {
         setUbicaciones({});
       }
       
-      // 4. Preparar expediciones iniciales
       const nuevasExpediciones = {};
       pedidosNormalizados.forEach(pedido => {
         pedido.articulos.forEach(linea => {
           const key = `${pedido.id}-${linea.id}`;
           let ubicacionesConStock = [];
           
-          // Obtener ubicaciones para este artículo
           if (ubicaciones[linea.codigoArticulo]) {
             ubicacionesConStock = ubicaciones[linea.codigoArticulo].filter(ubi => ubi.unidadSaldo > 0);
           }
@@ -144,7 +96,6 @@ const PedidosAsignadosScreen = () => {
       });
       setExpediciones(nuevasExpediciones);
       
-      // 5. Inicializar modos de vista
       const initialModes = {};
       pedidosNormalizados.forEach(pedido => {
         initialModes[pedido.id] = 'show';
@@ -171,33 +122,17 @@ const PedidosAsignadosScreen = () => {
       
       setError(errorMessage);
       
-      // Limitar reintentos a 3
       if (retryCount < 3) {
-        // Programar reintento después de 2 segundos
         setRetryCount(prev => prev + 1);
       }
     } finally {
       setLoading(false);
     }
-  }, [retryCount, navigate]);
+  }, [retryCount]);
 
-  // Efecto principal para cargar los pedidos
   useEffect(() => {
-    // Solo ejecutar si tenemos permisos
-    if (permisos.isAdmin || permisos.isRepartidor) {
-      fetchPedidosAsignados();
-    }
-  }, [fetchPedidosAsignados, permisos]);
-
-  // Efecto para manejar reintentos
-  useEffect(() => {
-    if (retryCount > 0 && retryCount <= 3) {
-      const timer = setTimeout(() => {
-        fetchPedidosAsignados();
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [retryCount, fetchPedidosAsignados]);
+    fetchPedidosAsignados();
+  }, [fetchPedidosAsignados]);
 
   const handleExpedir = async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes) => {
     const pedido = pedidos.find(p => p.numeroPedido === numeroPedido);
@@ -225,7 +160,7 @@ const PedidosAsignadosScreen = () => {
           ubicacion: expedicion.ubicacion,
           partida: expedicion.partida
         },
-        { headers: headers }
+        { headers }
       );
 
       if (result.data.success) {
@@ -328,25 +263,12 @@ const PedidosAsignadosScreen = () => {
     }
   };
 
-  // Redirigir si no tiene permisos
-  if (!permisos.isAdmin && !permisos.isRepartidor) {
-    return (
-      <div className="pedidos-container">
-        <div className="error-pedidos">
-          <p>No tienes permiso para acceder a esta página</p>
-          <button onClick={() => navigate('/')}>Volver al inicio</button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="pedidos-container">
-      <UserInfoBar />
       <div className="screen-header">
         <div className="bubble bubble1"></div>
         <div className="bubble bubble2"></div>
-        <h2>{permisos.isAdmin ? 'Pedidos Asignados' : 'Mis Pedidos Asignados'}</h2>
+        <h2>Pedidos Asignados</h2>
       </div>
       
       <div className="pedidos-controls">
@@ -408,7 +330,6 @@ const PedidosAsignadosScreen = () => {
               <>
                 <p>Demasiados intentos fallidos</p>
                 <button onClick={() => window.location.reload()}>Recargar página</button>
-                <button onClick={() => navigate('/')}>Volver al inicio</button>
               </>
             )}
           </div>
@@ -434,11 +355,6 @@ const PedidosAsignadosScreen = () => {
                   <span className="fecha-entrega">
                     Entrega: {pedido.fechaEntrega ? new Date(pedido.fechaEntrega).toLocaleDateString() : 'Sin fecha'}
                   </span>
-                  {permisos.isAdmin && (
-                    <span className="repartidor-asignado">
-                      Repartidor: {pedido.repartidor || 'Sin asignar'}
-                    </span>
-                  )}
                 </div>
                 
                 <div className="pedido-details">

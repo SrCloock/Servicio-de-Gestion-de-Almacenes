@@ -1,17 +1,18 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
-import UserInfoBar from '../components/UserInfoBar';
 import Navbar from '../components/Navbar';
-import { FiSearch, FiChevronDown, FiChevronUp, FiDownload, FiFilter, FiEdit, FiX, FiCheck, FiClock, FiList } from 'react-icons/fi';
+import { 
+  FiSearch, FiChevronDown, FiChevronUp, 
+  FiDownload, FiFilter, FiEdit, FiX, 
+  FiCheck, FiClock, FiList 
+} from 'react-icons/fi';
 import '../styles/InventarioPage.css';
 
 const PAGE_SIZE = 30;
-const HISTORIAL_PAGE_SIZE = 10;
 
 const InventarioPage = () => {
-  // Estados principales
-  const [activeTab, setActiveTab] = useState('inventario'); // 'inventario' o 'historial'
+  const [activeTab, setActiveTab] = useState('inventario');
   const [inventario, setInventario] = useState([]);
   const [historialAjustes, setHistorialAjustes] = useState([]);
   const [articulosExpandidos, setArticulosExpandidos] = useState({});
@@ -33,25 +34,17 @@ const InventarioPage = () => {
   const [detallesModal, setDetallesModal] = useState(null);
   const [cargandoDetalles, setCargandoDetalles] = useState(false);
   
-  // Datos de usuario
-  const user = JSON.parse(localStorage.getItem('user'));
-  const codigoEmpresa = user?.CodigoEmpresa;
-  const nombreEmpresa = user?.Empresa || 'Demos';
+  const nombreEmpresa = 'Demos';
 
-  // Funciones de agrupación
+  // Función de agrupación con soporte para partidas
   const agruparPorArticulo = useCallback((data) => {
     const agrupado = {};
-    let claveCounter = {};
     
     data.forEach(item => {
-      const baseClave = `${item.CodigoArticulo}-${item.CodigoAlmacen}-${item.Ubicacion}`;
-      
-      if (!claveCounter[baseClave]) {
-        claveCounter[baseClave] = 0;
-      }
-      claveCounter[baseClave]++;
-      
-      const claveUnica = `${baseClave}-${claveCounter[baseClave]}`;
+      // Clave única que incluye partida (si existe)
+      const clave = item.Partida 
+        ? `${item.CodigoArticulo}-${item.CodigoAlmacen}-${item.Ubicacion}-${item.Partida}`
+        : `${item.CodigoArticulo}-${item.CodigoAlmacen}-${item.Ubicacion}`;
       
       if (!agrupado[item.CodigoArticulo]) {
         agrupado[item.CodigoArticulo] = {
@@ -66,11 +59,12 @@ const InventarioPage = () => {
       }
       
       const ubicacion = {
-        clave: claveUnica,
+        clave,
         CodigoAlmacen: item.CodigoAlmacen,
         NombreAlmacen: item.NombreAlmacen,
         Ubicacion: item.Ubicacion,
         DescripcionUbicacion: item.DescripcionUbicacion,
+        Partida: item.Partida, // Incluir partida
         Cantidad: item.Cantidad,
         MovPosicionLinea: item.MovPosicionLinea,
         detalles: item.detalles
@@ -95,8 +89,6 @@ const InventarioPage = () => {
 
   // Cargar inventario
   const cargarInventario = useCallback(async () => {
-    if (!codigoEmpresa) return;
-
     try {
       setLoading(prev => ({ ...prev, inventario: true }));
       setError('');
@@ -113,22 +105,17 @@ const InventarioPage = () => {
       setError('Error al cargar el inventario. Intente nuevamente.');
       setLoading(prev => ({ ...prev, inventario: false }));
     }
-  }, [codigoEmpresa, agruparPorArticulo]);
+  }, [agruparPorArticulo]);
 
   // Cargar historial de ajustes
   const cargarHistorialAjustes = useCallback(async () => {
-    if (!codigoEmpresa) return;
-
     try {
       setLoading(prev => ({ ...prev, historial: true }));
       setError('');
       const headers = getAuthHeader();
       const response = await axios.get(
         'http://localhost:3000/inventario/historial-ajustes',
-        { 
-          headers,
-          params: { codigoEmpresa } 
-        }
+        { headers }
       );
       
       setHistorialAjustes(response.data);
@@ -138,7 +125,7 @@ const InventarioPage = () => {
       setError('Error al cargar el historial de ajustes. Intente nuevamente.');
       setLoading(prev => ({ ...prev, historial: false }));
     }
-  }, [codigoEmpresa]);
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'inventario') {
@@ -147,6 +134,13 @@ const InventarioPage = () => {
       cargarHistorialAjustes();
     }
   }, [activeTab, cargarInventario, cargarHistorialAjustes]);
+
+  // Función para refrescar inventario después de ajustes
+  const refreshInventario = useCallback(() => {
+    if (activeTab === 'inventario') {
+      cargarInventario();
+    }
+  }, [activeTab, cargarInventario]);
 
   // Funciones de UI
   const toggleExpandirArticulo = (codigoArticulo) => {
@@ -193,7 +187,6 @@ const InventarioPage = () => {
   const filteredInventario = useMemo(() => {
     let result = [...inventario];
     
-    // Búsqueda general
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter(articulo => 
@@ -202,7 +195,6 @@ const InventarioPage = () => {
       );
     }
     
-    // Filtros individuales
     if (filters.almacen) {
       result = result.filter(articulo => 
         articulo.ubicaciones.some(ubic => 
@@ -277,17 +269,17 @@ const InventarioPage = () => {
     let csvContent = "data:text/csv;charset=utf-8,";
     
     if (activeTab === 'inventario') {
-      csvContent += "Código Artículo,Descripción,Almacén,Ubicación,Stock,Familia,Subfamilia\n";
+      csvContent += "Código Artículo,Descripción,Almacén,Ubicación,Partida,Stock,Familia,Subfamilia\n";
       filteredInventario.forEach(articulo => {
         articulo.ubicaciones.forEach(ubicacion => {
-          csvContent += `${articulo.CodigoArticulo},"${articulo.DescripcionArticulo}",${ubicacion.NombreAlmacen},${ubicacion.Ubicacion},${ubicacion.Cantidad},"${articulo.CodigoFamilia || ''}","${articulo.CodigoSubfamilia || ''}"\n`;
+          csvContent += `${articulo.CodigoArticulo},"${articulo.DescripcionArticulo}",${ubicacion.NombreAlmacen},${ubicacion.Ubicacion},${ubicacion.Partida || ''},${ubicacion.Cantidad},"${articulo.CodigoFamilia || ''}","${articulo.CodigoSubfamilia || ''}"\n`;
         });
       });
     } else if (activeTab === 'historial') {
-      csvContent += "Fecha,Artículo,Descripción,Almacén,Ubicación,Ajuste,Comentario,Hora\n";
+      csvContent += "Fecha,Artículo,Descripción,Almacén,Ubicación,Partida,Ajuste,Comentario,Hora\n";
       historialAjustes.forEach(fecha => {
         fecha.detalles.forEach(ajuste => {
-          csvContent += `${fecha.fecha},"${ajuste.CodigoArticulo}","${ajuste.DescripcionArticulo}","${ajuste.NombreAlmacen}","${ajuste.Ubicacion}",${ajuste.Diferencia},"${ajuste.Comentario}",${new Date(ajuste.FechaRegistro).toLocaleTimeString()}\n`;
+          csvContent += `${fecha.fecha},"${ajuste.CodigoArticulo}","${ajuste.DescripcionArticulo}","${ajuste.NombreAlmacen}","${ajuste.Ubicacion}","${ajuste.Partida || ''}",${ajuste.Diferencia},"${ajuste.Comentario}",${new Date(ajuste.FechaRegistro).toLocaleTimeString()}\n`;
         });
       });
     }
@@ -318,14 +310,15 @@ const InventarioPage = () => {
   };
 
   // Funciones de ajuste
-  const iniciarEdicionCantidad = (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr) => {
+  const iniciarEdicionCantidad = (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida) => {
     setEditandoCantidad({
       articulo,
       nombreAlmacen,
       cantidadActual,
       clave,
       codigoAlmacen,
-      ubicacionStr
+      ubicacionStr,
+      partida
     });
     setNuevaCantidad(cantidadActual.toString());
   };
@@ -337,11 +330,8 @@ const InventarioPage = () => {
       articulo: editandoCantidad.articulo,
       codigoAlmacen: editandoCantidad.codigoAlmacen,
       ubicacionStr: editandoCantidad.ubicacionStr,
-      partida: '', // Campo requerido
-      cantidadActual: editandoCantidad.cantidadActual,
-      nuevaCantidad: parseFloat(nuevaCantidad),
-      fecha: new Date().toISOString(),
-      estado: 'pendiente'
+      partida: editandoCantidad.partida || '',
+      nuevaCantidad: parseFloat(nuevaCantidad)
     };
     
     setAjustesPendientes(prev => [...prev, nuevoAjuste]);
@@ -359,18 +349,16 @@ const InventarioPage = () => {
       );
       
       if (response.data.success) {
-        cargarInventario();
+        refreshInventario();
+        cargarHistorialAjustes();
         setAjustesPendientes([]);
         alert('Ajustes realizados correctamente');
       }
     } catch (error) {
       console.error('Error al confirmar ajustes:', error);
-      
-      // Mostrar mensaje específico del servidor si está disponible
       const errorMessage = error.response?.data?.error || 
                           error.response?.data?.mensaje || 
                           error.message;
-      
       alert(`Error al confirmar ajustes: ${errorMessage}`);
     }
   };
@@ -563,10 +551,14 @@ const InventarioPage = () => {
                   <span className="label">Ubicación:</span> 
                   <span className="value">{ajuste.ubicacionStr}</span>
                 </div>
+                <div className="partida">
+                  <span className="label">Partida:</span> 
+                  <span className="value">{ajuste.partida || 'N/A'}</span>
+                </div>
                 <div className="cantidad">
-                  <span className="label">Cantidad:</span> 
+                  <span className="label">Nueva Cantidad:</span> 
                   <span className="value">
-                    {ajuste.cantidadActual} → <strong>{ajuste.nuevaCantidad}</strong>
+                    <strong>{ajuste.nuevaCantidad}</strong>
                   </span>
                 </div>
               </div>
@@ -600,6 +592,10 @@ const InventarioPage = () => {
             <div className="detail-item">
               <span>Ubicación:</span>
               <span>{editandoCantidad.ubicacionStr}</span>
+            </div>
+            <div className="detail-item">
+              <span>Partida:</span>
+              <span>{editandoCantidad.partida || 'N/A'}</span>
             </div>
           </div>
           
@@ -797,6 +793,7 @@ const InventarioPage = () => {
                     Ubicación {sortConfig.key === 'Ubicacion' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                   </span>
                   <span>Descripción</span>
+                  <span>Partida</span>
                   <span onClick={() => requestSort('Cantidad')}>
                     Cantidad {sortConfig.key === 'Cantidad' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                   </span>
@@ -824,6 +821,7 @@ const InventarioPage = () => {
                     </span>
                     <span className="ubicacion-codigo">{ubicacion.Ubicacion}</span>
                     <span className="ubicacion-desc">{ubicacion.DescripcionUbicacion || 'Sin descripción'}</span>
+                    <span className="ubicacion-partida">{ubicacion.Partida || 'N/A'}</span>
                     <span 
                       className="ubicacion-cantidad" 
                       style={getStockStyle(ubicacion.Cantidad)}
@@ -839,7 +837,8 @@ const InventarioPage = () => {
                           ubicacion.Cantidad,
                           ubicacion.clave,
                           ubicacion.CodigoAlmacen,
-                          ubicacion.Ubicacion
+                          ubicacion.Ubicacion,
+                          ubicacion.Partida
                         )}
                       >
                         <FiEdit />
@@ -998,11 +997,9 @@ const InventarioPage = () => {
   return (
     <div className="inventario-container">
       <Navbar />
-      <UserInfoBar />
       
       <InventarioHeader />
       
-      {/* Controles de pestañas */}
       <div className="tabs-container">
         <button 
           className={`tab-btn ${activeTab === 'inventario' ? 'active' : ''}`}

@@ -1318,13 +1318,16 @@ app.get('/stock/por-ubicacion', async (req, res) => {
 // ✅ 27. ACTUALIZAR STOCK Y REGISTRAR MOVIMIENTO (CORREGIDO)
 // ============================================
 app.post('/traspaso', async (req, res) => {
+  // Obtener datos del usuario autenticado
+  const codigoEmpresa = req.user.CodigoEmpresa;
+  const usuario = req.user.UsuarioLogicNet;
+
+  // Extraer datos del body
   const { 
-    codigoEmpresa,
     articulo,
     origenAlmacen, origenUbicacion, 
     destinoAlmacen, destinoUbicacion, 
-    cantidad,
-    usuario
+    cantidad
   } = req.body;
 
   // Validar que no sea la misma ubicación
@@ -1339,13 +1342,14 @@ app.post('/traspaso', async (req, res) => {
     return res.status(400).json({ success: false, mensaje: 'Faltan datos requeridos.' });
   }
 
-  const fechaActual = new Date();
-  const periodo = fechaActual.getMonth() + 1;
-  const ejercicio = fechaActual.getFullYear();
-
+  const transaction = new sql.Transaction(poolGlobal);
+  
   try {
-    // 1. Actualizar AcumuladoStockUbicacion (Origen)
-    await poolGlobal.request()
+    await transaction.begin();
+    
+    // 1. Actualizar stock en origen - NUEVO Request
+    const requestOrigen = new sql.Request(transaction);
+    await requestOrigen
       .input('cantidad', sql.Decimal(18,4), cantidad)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('codigoAlmacen', sql.VarChar, origenAlmacen)
@@ -1361,8 +1365,9 @@ app.post('/traspaso', async (req, res) => {
           AND Periodo = 99
       `);
 
-    // 2. Actualizar o insertar en destino
-    const existeDestino = await poolGlobal.request()
+    // 2. Verificar si existe en destino - NUEVO Request
+    const requestExisteDestino = new sql.Request(transaction);
+    const existeDestino = await requestExisteDestino
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('codigoAlmacen', sql.VarChar, destinoAlmacen)
       .input('ubicacion', sql.VarChar, destinoUbicacion)
@@ -1378,7 +1383,9 @@ app.post('/traspaso', async (req, res) => {
       `);
 
     if (existeDestino.recordset.length > 0) {
-      await poolGlobal.request()
+      // 3a. Actualizar destino si existe - NUEVO Request
+      const requestUpdateDestino = new sql.Request(transaction);
+      await requestUpdateDestino
         .input('cantidad', sql.Decimal(18,4), cantidad)
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('codigoAlmacen', sql.VarChar, destinoAlmacen)
@@ -1394,7 +1401,9 @@ app.post('/traspaso', async (req, res) => {
             AND Periodo = 99
         `);
     } else {
-      await poolGlobal.request()
+      // 3b. Insertar en destino si no existe - NUEVO Request
+      const requestInsertDestino = new sql.Request(transaction);
+      await requestInsertDestino
         .input('cantidad', sql.Decimal(18,4), cantidad)
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('codigoAlmacen', sql.VarChar, destinoAlmacen)
@@ -1411,17 +1420,22 @@ app.post('/traspaso', async (req, res) => {
         `);
     }
 
-    // 3. Registrar movimiento CORREGIDO (usar UnidadStock en lugar de Unidades)
-    await poolGlobal.request()
+    // 4. Registrar movimiento - NUEVO Request
+    const fechaActual = new Date();
+    const periodo = fechaActual.getMonth() + 1;
+    const ejercicio = fechaActual.getFullYear();
+    
+    const requestMovimiento = new sql.Request(transaction);
+    await requestMovimiento
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
       .input('periodo', sql.Int, periodo)
       .input('fecha', sql.DateTime, fechaActual)
-      .input('tipoMovimiento', sql.SmallInt, 3) // 3: Traspaso
+      .input('tipoMovimiento', sql.SmallInt, 3)
       .input('codigoArticulo', sql.VarChar, articulo)
       .input('codigoAlmacen', sql.VarChar, origenAlmacen)
       .input('almacenContrapartida', sql.VarChar, destinoAlmacen)
-      .input('unidadStock', sql.Decimal(18,4), cantidad) // CORRECCIÓN CLAVE
+      .input('unidadStock', sql.Decimal(18,4), cantidad)
       .input('comentario', sql.VarChar, `Traspaso por Usuario: ${usuario}`)
       .input('ubicacion', sql.VarChar, origenUbicacion)
       .input('ubicacionContrapartida', sql.VarChar, destinoUbicacion)
@@ -1437,8 +1451,10 @@ app.post('/traspaso', async (req, res) => {
         )
       `);
 
+    await transaction.commit();
     res.json({ success: true, mensaje: 'Traspaso realizado con éxito.' });
   } catch (err) {
+    await transaction.rollback();
     console.error('[ERROR TRASPASO]', err);
     res.status(500).json({ 
       success: false, 
@@ -1447,11 +1463,14 @@ app.post('/traspaso', async (req, res) => {
     });
   }
 });
+
 // ============================================
 // ✅ 28. OBTENER HISTÓRICO DE TRASPASOS (CORREGIDO)
 // ============================================
 app.get('/historial-traspasos', async (req, res) => {
-  const { codigoEmpresa, usuario } = req.query;
+  // Obtener datos del usuario autenticado
+  const codigoEmpresa = req.user.CodigoEmpresa;
+  const usuario = req.user.UsuarioLogicNet;
 
   if (!codigoEmpresa || !usuario) {
     return res.status(400).json({ 
@@ -1474,7 +1493,7 @@ app.get('/historial-traspasos', async (req, res) => {
           m.AlmacenContrapartida AS DestinoAlmacen,
           almDestino.Almacen AS NombreDestinoAlmacen,
           m.UbicacionContrapartida AS DestinoUbicacion,
-          m.UnidadStock AS Cantidad,  -- CORRECCIÓN CLAVE: Usar UnidadStock
+          m.UnidadStock AS Cantidad,
           m.Comentario,
           CASE 
             WHEN m.TipoMovimiento = 3 THEN 'Salida'
@@ -1615,6 +1634,7 @@ app.get('/inventario/stock-total', async (req, res) => {
           alm.Almacen AS NombreAlmacen,
           s.Ubicacion,
           u.DescripcionUbicacion,
+          s.Partida,  -- Añadido campo Partida
           s.UnidadSaldo AS Cantidad
         FROM AcumuladoStockUbicacion s
         INNER JOIN Articulos a 
@@ -1646,7 +1666,6 @@ app.get('/inventario/stock-total', async (req, res) => {
 // ============================================
 // ✅ 31. AJUSTAR INVENTARIO (ACTUALIZADO CON PARTIDAS)
 // ============================================
-// ✅ 31. AJUSTAR INVENTARIO (CORREGIDO)
 app.post('/inventario/ajustar', async (req, res) => {
   const { ajustes } = req.body;
   const usuario = req.user.UsuarioLogicNet;
@@ -1665,29 +1684,14 @@ app.post('/inventario/ajustar', async (req, res) => {
     await transaction.begin();
     
     for (const ajuste of ajustes) {
-      // Recibir datos directamente del frontend
-      const { 
-        articulo: codigoArticulo,
-        codigoAlmacen,
-        ubicacionStr: ubicacion,
-        partida = '',
-        nuevaCantidad 
-      } = ajuste;
-
-      // Validar cantidad
-      if (isNaN(nuevaCantidad)) {
-        throw new Error(`Cantidad inválida para el artículo ${codigoArticulo}`);
-      }
-
-      const request = new sql.Request(transaction);
-      
       // 1. Obtener cantidad actual
-      const result = await request
+      const requestGet = new sql.Request(transaction);
+      const result = await requestGet
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-        .input('ubicacion', sql.VarChar, ubicacion)
-        .input('codigoArticulo', sql.VarChar, codigoArticulo)
-        .input('partida', sql.VarChar, partida)
+        .input('codigoAlmacen', sql.VarChar, ajuste.codigoAlmacen)
+        .input('ubicacion', sql.VarChar, ajuste.ubicacionStr)
+        .input('codigoArticulo', sql.VarChar, ajuste.articulo)
+        .input('partida', sql.VarChar, ajuste.partida || '') // Manejar NULL
         .query(`
           SELECT UnidadSaldo AS Cantidad
           FROM AcumuladoStockUbicacion
@@ -1704,35 +1708,18 @@ app.post('/inventario/ajustar', async (req, res) => {
         cantidadActual = result.recordset[0].Cantidad;
       }
 
-      const diferencia = nuevaCantidad - cantidadActual;
+      const diferencia = ajuste.nuevaCantidad - cantidadActual;
       
-      if (result.recordset.length === 0) {
-        // Crear nuevo registro si no existe
-        await new sql.Request(transaction)
+      // 2. Actualizar o insertar
+      if (result.recordset.length > 0) {
+        const requestUpdate = new sql.Request(transaction);
+        await requestUpdate
+          .input('nuevaCantidad', sql.Decimal(18,4), ajuste.nuevaCantidad)
           .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-          .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-          .input('ubicacion', sql.VarChar, ubicacion)
-          .input('codigoArticulo', sql.VarChar, codigoArticulo)
-          .input('nuevaCantidad', sql.Decimal(18,4), nuevaCantidad)
-          .input('partida', sql.VarChar, partida)
-          .query(`
-            INSERT INTO AcumuladoStockUbicacion (
-              CodigoEmpresa, CodigoAlmacen, Ubicacion, 
-              CodigoArticulo, UnidadSaldo, Periodo, Partida
-            ) VALUES (
-              @codigoEmpresa, @codigoAlmacen, @ubicacion,
-              @codigoArticulo, @nuevaCantidad, 99, @partida
-            )
-          `);
-      } else {
-        // 2. Actualizar stock
-        await new sql.Request(transaction)
-          .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-          .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-          .input('ubicacion', sql.VarChar, ubicacion)
-          .input('codigoArticulo', sql.VarChar, codigoArticulo)
-          .input('nuevaCantidad', sql.Decimal(18,4), nuevaCantidad)
-          .input('partida', sql.VarChar, partida)
+          .input('codigoAlmacen', sql.VarChar, ajuste.codigoAlmacen)
+          .input('ubicacion', sql.VarChar, ajuste.ubicacionStr)
+          .input('codigoArticulo', sql.VarChar, ajuste.articulo)
+          .input('partida', sql.VarChar, ajuste.partida || '') // Manejar NULL
           .query(`
             UPDATE AcumuladoStockUbicacion
             SET UnidadSaldo = @nuevaCantidad
@@ -1743,23 +1730,41 @@ app.post('/inventario/ajustar', async (req, res) => {
               AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
               AND Periodo = 99
           `);
+      } else {
+        const requestInsert = new sql.Request(transaction);
+        await requestInsert
+          .input('nuevaCantidad', sql.Decimal(18,4), ajuste.nuevaCantidad)
+          .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+          .input('codigoAlmacen', sql.VarChar, ajuste.codigoAlmacen)
+          .input('ubicacion', sql.VarChar, ajuste.ubicacionStr)
+          .input('codigoArticulo', sql.VarChar, ajuste.articulo)
+          .input('partida', sql.VarChar, ajuste.partida || '') // Manejar NULL
+          .query(`
+            INSERT INTO AcumuladoStockUbicacion (
+              CodigoEmpresa, CodigoAlmacen, Ubicacion, 
+              CodigoArticulo, UnidadSaldo, Periodo, Partida
+            ) VALUES (
+              @codigoEmpresa, @codigoAlmacen, @ubicacion,
+              @codigoArticulo, @nuevaCantidad, 99, @partida
+            )
+          `);
       }
       
-      // 3. Registrar movimiento solo si hay cambio
+      // 3. Registrar movimiento
       if (diferencia !== 0) {
         const fechaActual = new Date();
         const periodo = fechaActual.getMonth() + 1;
-        
-        await new sql.Request(transaction)
+        const requestMov = new sql.Request(transaction);
+        await requestMov
           .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
           .input('ejercicio', sql.SmallInt, fechaActual.getFullYear())
           .input('periodo', sql.Int, periodo)
           .input('fecha', sql.DateTime, fechaActual)
-          .input('tipoMovimiento', sql.SmallInt, 5) // 5: Ajuste
-          .input('codigoArticulo', sql.VarChar, codigoArticulo)
-          .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-          .input('ubicacion', sql.VarChar, ubicacion)
-          .input('partida', sql.VarChar, partida)
+          .input('tipoMovimiento', sql.SmallInt, 5)
+          .input('codigoArticulo', sql.VarChar, ajuste.articulo)
+          .input('codigoAlmacen', sql.VarChar, ajuste.codigoAlmacen)
+          .input('ubicacion', sql.VarChar, ajuste.ubicacionStr)
+          .input('partida', sql.VarChar, ajuste.partida || '') // Manejar NULL
           .input('diferencia', sql.Decimal(18,4), diferencia)
           .input('comentario', sql.VarChar, `Ajuste manual por ${usuario}`)
           .query(`
@@ -1785,11 +1790,11 @@ app.post('/inventario/ajustar', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       mensaje: 'Error al ajustar inventario',
-      error: err.message 
+      error: err.message,
+      stack: err.stack
     });
   }
 });
-
 // ============================================
 // ✅ 32. ASIGNAR PEDIDO A REPARTIDOR
 // ============================================
@@ -1870,17 +1875,18 @@ app.post('/asignarPedido', async (req, res) => {
 
 // ✅ 33. OBTENER HISTÓRICO DE AJUSTES DE INVENTARIO (AGRUPA POR DÍA)
 app.get('/inventario/historial-ajustes', async (req, res) => {
-  const { codigoEmpresa } = req.query;
-
-  if (!codigoEmpresa) {
-    return res.status(400).json({ 
+  // 1. Obtener empresa del usuario autenticado
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ 
       success: false, 
-      mensaje: 'Código de empresa requerido.' 
+      mensaje: 'No autenticado' 
     });
   }
+  
+  const codigoEmpresa = req.user.CodigoEmpresa;
 
   try {
-    // 1. Obtener fechas con ajustes
+    // 2. Obtener fechas con ajustes
     const fechasResult = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(`
@@ -1894,7 +1900,7 @@ app.get('/inventario/historial-ajustes', async (req, res) => {
     const fechas = fechasResult.recordset;
     const historial = [];
     
-    // 2. Para cada fecha, obtener los ajustes
+    // 3. Para cada fecha, obtener los ajustes
     for (const fecha of fechas) {
       const fechaStr = fecha.Fecha.toISOString().split('T')[0];
       
@@ -2113,6 +2119,202 @@ app.get('/subfamilias', async (req, res) => {
   }
 });
 
+// ✅ 37. GENERAR ALBARÁN PARCIAL
+app.post('/generarAlbaranParcial', async (req, res) => {
+  const { codigoEmpresa, ejercicio, serie, numeroPedido, lineasExpedidas } = req.body;
+
+  if (!codigoEmpresa || !ejercicio || numeroPedido == null || !lineasExpedidas) {
+    return res.status(400).json({ success: false, mensaje: 'Faltan datos del pedido.' });
+  }
+
+  // Validar que haya líneas
+  if (lineasExpedidas.length === 0) {
+    return res.status(400).json({ success: false, mensaje: 'No hay líneas para expedir.' });
+  }
+
+  try {
+    const nextAlbaran = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .query(`
+        SELECT ISNULL(MAX(NumeroAlbaran), 0) + 1 AS SiguienteNumero
+        FROM CabeceraAlbaranCliente
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioAlbaran = @ejercicio
+          AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
+      `);
+
+    const numeroAlbaran = nextAlbaran.recordset[0].SiguienteNumero;
+
+    const cabeceraPedido = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .input('serie', sql.VarChar, serie || '')
+      .query(`
+        SELECT TOP 1 *
+        FROM CabeceraPedidoCliente
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioPedido = @ejercicio
+          AND NumeroPedido = @numeroPedido
+          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+      `);
+
+    if (cabeceraPedido.recordset.length === 0) {
+      return res.status(404).json({ success: false, mensaje: 'Pedido no encontrado.' });
+    }
+
+    const cab = cabeceraPedido.recordset[0];
+
+    // Calcular importe líquido total
+    let importeLiquidoTotal = 0;
+    lineasExpedidas.forEach(linea => {
+      importeLiquidoTotal += (linea.precio * linea.cantidad);
+    });
+
+    await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, cab.CodigoEmpresa)
+      .input('ejercicio', sql.SmallInt, cab.EjercicioPedido)
+      .input('serie', sql.VarChar, cab.SeriePedido || '')
+      .input('numeroAlbaran', sql.Int, numeroAlbaran)
+      .input('codigoCliente', sql.VarChar, cab.CodigoCliente)
+      .input('razonSocial', sql.VarChar, cab.RazonSocial)
+      .input('domicilio', sql.VarChar, cab.Domicilio)
+      .input('municipio', sql.VarChar, cab.Municipio)
+      .input('fecha', sql.DateTime, new Date())
+      .input('numeroLineas', sql.Int, lineasExpedidas.length)
+      .input('importeLiquido', sql.Decimal(18, 4), importeLiquidoTotal)
+      .query(`
+        INSERT INTO CabeceraAlbaranCliente (
+          CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+          CodigoCliente, RazonSocial, Domicilio, Municipio, FechaAlbaran,
+          NumeroLineas, ImporteLiquido, EsParcial
+        ) VALUES (
+          @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
+          @codigoCliente, @razonSocial, @domicilio, @municipio, @fecha,
+          @numeroLineas, @importeLiquido, 1
+        )
+      `);
+
+    // Insertar líneas del albarán
+    for (const [index, linea] of lineasExpedidas.entries()) {
+      const importeLinea = linea.precio * linea.cantidad;
+      
+      await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('ejercicio', sql.SmallInt, ejercicio)
+        .input('serie', sql.VarChar, serie || '')
+        .input('numeroAlbaran', sql.Int, numeroAlbaran)
+        .input('orden', sql.SmallInt, index + 1)
+        .input('codigoArticulo', sql.VarChar, linea.codigoArticulo)
+        .input('descripcionArticulo', sql.VarChar, linea.descripcionArticulo)
+        .input('unidades', sql.Decimal(18, 4), linea.cantidad)
+        .input('precio', sql.Decimal(18, 4), linea.precio)
+        .input('codigoAlmacen', sql.VarChar, linea.codigoAlmacen || '')
+        .input('partida', sql.VarChar, linea.partida || '')
+        .input('importeNeto', sql.Decimal(18, 4), importeLinea)
+        .query(`
+          INSERT INTO LineasAlbaranCliente (
+            CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+            Orden, CodigoArticulo, DescripcionArticulo, Unidades, Precio,
+            CodigoAlmacen, Partida, ImporteNeto
+          ) VALUES (
+            @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
+            @orden, @codigoArticulo, @descripcionArticulo, @unidades, @precio,
+            @codigoAlmacen, @partida, @importeNeto
+          )
+        `);
+    }
+
+    res.json({ 
+      success: true, 
+      mensaje: 'Albarán parcial generado',
+      numeroAlbaran,
+      serieAlbaran: serie || '',
+      esParcial: true
+    });
+  } catch (err) {
+    console.error('[ERROR ALBARAN PARCIAL]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al generar albarán parcial.',
+      error: err.message 
+    });
+  }
+});
+
+
+// ✅ 38. ASIGNAR ALBARÁN A USUARIO
+app.post('/asignarAlbaran', async (req, res) => {
+  const { codigoEmpresa, ejercicio, serie, numeroAlbaran, usuarioAsignado } = req.body;
+  const usuario = req.user.UsuarioLogicNet;
+
+  if (!codigoEmpresa || !ejercicio || !numeroAlbaran || !usuarioAsignado) {
+    return res.status(400).json({ success: false, mensaje: 'Faltan datos requeridos.' });
+  }
+
+  try {
+    // Verificar permisos del usuario que asigna
+    const permisoResult = await poolGlobal.request()
+      .input('usuario', sql.VarChar, usuario)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT StatusDesignarRutas
+        FROM Clientes
+        WHERE UsuarioLogicNet = @usuario
+          AND CodigoEmpresa = @codigoEmpresa
+      `);
+    
+    if (permisoResult.recordset.length === 0 || permisoResult.recordset[0].StatusDesignarRutas !== -1) {
+      return res.status(403).json({ success: false, mensaje: 'No tienes permiso para asignar albaranes' });
+    }
+
+    // Insertar asignación
+    await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .input('numeroAlbaran', sql.Int, numeroAlbaran)
+      .input('usuarioAsignado', sql.VarChar, usuarioAsignado)
+      .query(`
+        INSERT INTO AsignacionesAlbaranes (
+          CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran, CodigoUsuarioAsignado
+        ) VALUES (
+          @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran, @usuarioAsignado
+        )
+      `);
+
+    res.json({ success: true, mensaje: 'Albarán asignado correctamente' });
+  } catch (err) {
+    console.error('[ERROR ASIGNAR ALBARÁN]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al asignar albarán', error: err.message });
+  }
+});
+
+// ✅ 39. OBTENER EMPLEADOS
+app.get('/empleados', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
+  try {
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT 
+          CodigoCliente,
+          Nombre,
+          UsuarioLogicNet
+        FROM Clientes
+        WHERE CodigoCategoriaCliente_ = 'emp'
+          AND CodigoEmpresa = @codigoEmpresa
+      `);
+      
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR EMPLEADOS]', err);
+    res.status(500).json({ success: false, mensaje: 'Error al obtener empleados' });
+  }
+});
 
 // ============================================
 // ✅ INICIAR SERVIDOR
