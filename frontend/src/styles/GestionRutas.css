@@ -1,115 +1,53 @@
-/* ============================================
-   VARIABLES GLOBALES Y ESTILOS BASE
-   ============================================ */
-:root {
-  --primary-color: #0056b3;
-  --primary-light: rgba(0, 86, 179, 0.1);
-  --success-color: #28a745;
-  --danger-color: #dc3545;
-  --light-color: #f8f9fa;
-  --border-color: #dee2e6;
-  --text-color: #212529;
-  --text-secondary: #6c757d;
-  --shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  --shadow-hover: 0 8px 16px rgba(0, 0, 0, 0.15);
-  --radius: 12px;
-  --transition: all 0.3s ease;
+.gestion-rutas-screen {
+  min-height: 100vh;
+  background-color: #f5f7fa;
+  padding: 60px 15px 30px;
+  color: #333;
+  font-family: 'Roboto', sans-serif;
+  position: relative;
+  box-sizing: border-box;
 }
 
-.rutas-content {
-  padding: 20px;
+.gestion-rutas-screen .rutas-header {
+  width: 100%;
+  height: 80px;
+  background: linear-gradient(135deg, #2c3e50, #4ca1af);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom-left-radius: 30px;
+  border-bottom-right-radius: 30px;
+  position: relative;
+  margin-bottom: 20px;
+  overflow: hidden;
+  text-align: center;
+}
+
+.gestion-rutas-screen .rutas-header h2 {
+  color: white;
+  font-size: 28px;
+  font-weight: bold;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  z-index: 1;
+}
+
+.gestion-rutas-screen .rutas-content {
   max-width: 1400px;
   margin: 0 auto;
   position: relative;
   overflow: hidden;
 }
 
-/* ============================================
-   COMPONENTES REUTILIZABLES
-   ============================================ */
-.card {
-  background: white;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-  transition: var(--transition);
-}
-
-.card:hover {
-  transform: translateY(-5px);
-  box-shadow: var(--shadow-hover);
-}
-
-.card-header {
-  background-color: var(--primary-color);
-  color: white;
-  padding: 15px 20px;
-}
-
-/* ============================================
-   ENCABEZADO DE PANTALLA
-   ============================================ */
-.screen-header {
-  position: relative;
-  padding: 30px 0;
-  margin-bottom: 30px;
-  text-align: center;
-  z-index: 1;
-}
-
-.screen-header h2 {
-  font-size: 2.2rem;
-  color: var(--primary-color);
-  margin-bottom: 15px;
-  position: relative;
-  z-index: 3;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.bubble {
-  position: absolute;
-  border-radius: 50%;
-  background: var(--primary-light);
-  z-index: 2;
-  animation: float 15s infinite ease-in-out;
-}
-
-.bubble1 {
-  width: 120px;
-  height: 120px;
-  top: 0;
-  left: 10%;
-  animation-delay: 0s;
-}
-
-.bubble2 {
-  width: 180px;
-  height: 180px;
-  bottom: 20px;
-  right: 10%;
-  animation-delay: 2s;
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0) translateX(0); }
-  25% { transform: translateY(-20px) translateX(15px); }
-  50% { transform: translateY(10px) translateX(-10px); }
-  75% { transform: translateY(-15px) translateX(-15px); }
-}
-
-/* ============================================
-   CONTENIDO PRINCIPAL
-   ============================================ */
-h3 {
+.gestion-rutas-screen h3 {
   font-size: 1.5rem;
-  color: var(--text-color);
+  color: #2c3e50;
   margin-bottom: 25px;
   text-align: center;
   position: relative;
   padding-bottom: 15px;
 }
 
-h3::after {
+.gestion-rutas-screen h3::after {
   content: '';
   position: absolute;
   bottom: 0;
@@ -117,14 +55,11 @@ h3::after {
   transform: translateX(-50%);
   width: 100px;
   height: 3px;
-  background: var(--primary-color);
+  background: #0056b3;
   border-radius: 3px;
 }
 
-/* ============================================
-   ESTADOS DE CARGA Y ERROR
-   ============================================ */
-.loading-container {
+.gestion-rutas-screen .loading-container {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -132,9 +67,9 @@ h3::after {
   padding: 60px 20px;
 }
 
-.loading-spinner {
+.gestion-rutas-screen .loading-spinner {
   border: 5px solid #f3f3f3;
-  border-top: 5px solid var(--primary-color);
+  border-top: 5px solid #0056b3;
   border-radius: 50%;
   width: 60px;
   height: 60px;
@@ -147,61 +82,79 @@ h3::after {
   100% { transform: rotate(360deg); }
 }
 
-.error-message {
+.gestion-rutas-screen .error-message {
   background-color: #ffebee;
-  color: var(--danger-color);
+  color: #dc3545;
   padding: 20px;
-  border-radius: var(--radius);
+  border-radius: 12px;
   text-align: center;
   margin: 30px 0;
-  border-left: 4px solid var(--danger-color);
+  border-left: 4px solid #dc3545;
   font-weight: 500;
 }
 
-.no-albaranes {
+.gestion-rutas-screen .no-albaranes {
   text-align: center;
   padding: 50px 20px;
-  background-color: var(--light-color);
-  border-radius: var(--radius);
-  border: 2px dashed var(--border-color);
-  color: var(--text-secondary);
+  background-color: #f8f9fa;
+  border-radius: 12px;
+  border: 2px dashed #dee2e6;
+  color: #6c757d;
   margin: 20px 0;
 }
 
-/* ============================================
-   GRILLA DE ALBARANES
-   ============================================ */
-.albaranes-grid {
+.gestion-rutas-screen .albaranes-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 25px;
   margin-bottom: 100px;
 }
 
-.ruta-card {
+.gestion-rutas-screen .ruta-card {
   cursor: pointer;
   height: 100%;
   display: flex;
   flex-direction: column;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
 }
 
-.card-body {
+.gestion-rutas-screen .ruta-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+}
+
+.gestion-rutas-screen .card-header {
+  background-color: #0056b3;
+  color: white;
+  padding: 15px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.gestion-rutas-screen .card-body {
   padding: 20px;
   flex-grow: 1;
 }
 
-.cliente-info, .direccion-info {
+.gestion-rutas-screen .cliente-info, 
+.gestion-rutas-screen .direccion-info {
   display: flex;
   align-items: flex-start;
   margin-bottom: 15px;
 }
 
-.icon {
+.gestion-rutas-screen .icon {
   margin-right: 12px;
   font-size: 1.5rem;
   width: 30px;
   height: 30px;
-  background: var(--primary-light);
+  background: rgba(0, 86, 179, 0.2);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -209,49 +162,50 @@ h3::after {
   flex-shrink: 0;
 }
 
-.cliente-info .icon {
+.gestion-rutas-screen .cliente-info .icon {
   background: rgba(0, 86, 179, 0.2);
-  color: var(--primary-color);
+  color: #0056b3;
 }
 
-.direccion-info .icon {
+.gestion-rutas-screen .direccion-info .icon {
   background: rgba(40, 167, 69, 0.2);
-  color: var(--success-color);
+  color: #28a745;
 }
 
-.card-footer {
+.gestion-rutas-screen .card-footer {
   display: flex;
   justify-content: space-between;
   padding: 15px 20px;
-  background-color: var(--light-color);
-  border-top: 1px solid var(--border-color);
+  background-color: #f8f9fa;
+  border-top: 1px solid #dee2e6;
 }
 
-.importe-info, .articulos-info {
+.gestion-rutas-screen .importe-info, 
+.gestion-rutas-screen .articulos-info {
   display: flex;
   flex-direction: column;
 }
 
-.importe-info span:first-child,
-.articulos-info span:first-child {
+.gestion-rutas-screen .importe-info span:first-child,
+.gestion-rutas-screen .articulos-info span:first-child {
   font-size: 0.9rem;
-  color: var(--text-secondary);
+  color: #6c757d;
   margin-bottom: 5px;
 }
 
-.importe-valor {
+.gestion-rutas-screen .importe-valor {
   font-weight: bold;
-  color: var(--success-color);
+  color: #28a745;
   font-size: 1.2rem;
 }
 
-.articulos-count {
+.gestion-rutas-screen .articulos-count {
   font-weight: bold;
-  color: var(--primary-color);
+  color: #0056b3;
   font-size: 1.2rem;
 }
 
-.fecha-albaran {
+.gestion-rutas-screen .fecha-albaran {
   font-size: 0.9rem;
   opacity: 0.85;
   background: rgba(255, 255, 255, 0.2);
@@ -259,103 +213,12 @@ h3::after {
   border-radius: 20px;
 }
 
-/* ============================================
-   DISEÑO RESPONSIVE
-   ============================================ */
-@media (max-width: 1200px) {
-  .albaranes-grid {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  }
-}
-
-@media (max-width: 992px) {
-  .screen-header h2 {
-    font-size: 1.8rem;
-  }
-  
-  h3 {
-    font-size: 1.3rem;
-  }
-  
-  .bubble1 {
-    width: 100px;
-    height: 100px;
-    left: 5%;
-  }
-  
-  .bubble2 {
-    width: 150px;
-    height: 150px;
-    right: 5%;
-  }
-}
-
-@media (max-width: 768px) {
-  .rutas-content {
-    padding: 15px;
-  }
-  
-  .albaranes-grid {
-    grid-template-columns: 1fr;
-    gap: 20px;
-    margin-bottom: 90px;
-  }
-  
-  .screen-header {
-    padding: 25px 0 20px;
-  }
-  
-  .bubble {
-    display: none;
-  }
-  
-  .card-body {
-    padding: 15px;
-  }
-}
-
-@media (max-width: 480px) {
-  .screen-header h2 {
-    font-size: 1.6rem;
-  }
-  
-  h3 {
-    font-size: 1.2rem;
-    padding-bottom: 10px;
-  }
-  
-  h3::after {
-    width: 80px;
-  }
-  
-  .card-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-  
-  .fecha-albaran {
-    align-self: flex-end;
-  }
-  
-  .card-footer {
-    flex-direction: column;
-    gap: 15px;
-  }
-  
-  .loading-container {
-    padding: 40px 15px;
-  }
-}
-/* Agregar al final del archivo */
-
-/* Estilo para albaranes parciales */
-.albaran-parcial {
+.gestion-rutas-screen .albaran-parcial {
   border-left: 4px solid #ff9800;
   position: relative;
 }
 
-.parcial-badge {
+.gestion-rutas-screen .parcial-badge {
   background-color: #ff9800;
   color: white;
   padding: 2px 8px;
@@ -364,12 +227,81 @@ h3::after {
   margin-left: 8px;
 }
 
-/* Estilo para la tarjeta de albarán */
-.ruta-card {
-  transition: transform 0.3s;
+@media (max-width: 1200px) {
+  .gestion-rutas-screen .albaranes-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
 }
 
-.ruta-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+@media (max-width: 992px) {
+  .gestion-rutas-screen .rutas-header h2 {
+    font-size: 1.8rem;
+  }
+  
+  .gestion-rutas-screen h3 {
+    font-size: 1.3rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .gestion-rutas-screen .rutas-content {
+    padding: 15px;
+  }
+  
+  .gestion-rutas-screen .albaranes-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    margin-bottom: 90px;
+  }
+  
+  .gestion-rutas-screen .rutas-header {
+    padding: 25px 0 20px;
+    height: 60px;
+  }
+  
+  .gestion-rutas-screen .rutas-header h2 {
+    font-size: 22px;
+  }
+  
+  .gestion-rutas-screen .card-body {
+    padding: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .gestion-rutas-screen .rutas-header {
+    height: 50px;
+  }
+  
+  .gestion-rutas-screen .rutas-header h2 {
+    font-size: 18px;
+  }
+  
+  .gestion-rutas-screen h3 {
+    font-size: 1.2rem;
+    padding-bottom: 10px;
+  }
+  
+  .gestion-rutas-screen h3::after {
+    width: 80px;
+  }
+  
+  .gestion-rutas-screen .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .gestion-rutas-screen .fecha-albaran {
+    align-self: flex-end;
+  }
+  
+  .gestion-rutas-screen .card-footer {
+    flex-direction: column;
+    gap: 15px;
+  }
+  
+  .gestion-rutas-screen .loading-container {
+    padding: 40px 15px;
+  }
 }

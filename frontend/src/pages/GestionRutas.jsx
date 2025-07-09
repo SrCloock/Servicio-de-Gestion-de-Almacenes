@@ -3,7 +3,6 @@ import '../styles/GestionRutas.css';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
-import UserInfoBar from '../components/UserInfoBar';
 import Navbar from '../components/Navbar';
 
 function GestionRutas() {
@@ -45,76 +44,74 @@ function GestionRutas() {
   };
 
   return (
-    <div className="rutas-content">
-      <UserInfoBar />
-      
-      <div className="screen-header">
-        <h2>Gestión de Rutas</h2>
-        <div className="bubble bubble1"></div>
-        <div className="bubble bubble2"></div>
-      </div>
-
-      <h3>Entregas Asignadas a Tu Ruta</h3>
-
-      {loading && (
-        <div className="loading-container">
-          <div className="loading-spinner"></div>
-          <p>Cargando albaranes...</p>
+    <div className="gestion-rutas-screen">
+      <div className="rutas-content">
+        <div className="rutas-header">
+          <h2>Gestión de Rutas</h2>
         </div>
-      )}
-      
-      {error && <div className="error-message">{error}</div>}
 
-      {!loading && albaranes.length === 0 && (
-        <div className="no-albaranes">
-          <p>No hay albaranes pendientes de entrega</p>
-        </div>
-      )}
+        <h3>Entregas Asignadas a Tu Ruta</h3>
 
-      <div className="albaranes-grid">
-        {albaranes.map((albaran) => (
-          <div 
-            key={`${albaran.id}-${albaran.albaran}`} 
-            className={`ruta-card ${albaran.esParcial ? 'albaran-parcial' : ''}`}
-            onClick={() => abrirDetalle(albaran)}
-          >
-            <div className="card-header">
-              <h4>Albarán: {albaran.albaran}</h4>
-              {albaran.esParcial && (
-                <span className="parcial-badge">Parcial</span>
-              )}
-              <span className="fecha-albaran">
-                {new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}
-              </span>
-            </div>
-            
-            <div className="card-body">
-              <p className="cliente-info">
-                <span className="icon">👤</span> 
-                <strong>{albaran.cliente}</strong>
-              </p>
-              <p className="direccion-info">
-                <span className="icon">📍</span> 
-                {albaran.direccion}
-              </p>
-            </div>
-            
-            <div className="card-footer">
-              <div className="importe-info">
-                <span>Importe:</span>
-                <span className="importe-valor">{albaran.importeLiquido?.toFixed(2)} €</span>
-              </div>
-              <div className="articulos-info">
-                <span>Artículos:</span>
-                <span className="articulos-count">
-                  {albaran.articulos?.length || 0}
+        {loading && (
+          <div className="loading-container">
+            <div className="loading-spinner"></div>
+            <p>Cargando albaranes...</p>
+          </div>
+        )}
+        
+        {error && <div className="error-message">{error}</div>}
+
+        {!loading && albaranes.length === 0 && (
+          <div className="no-albaranes">
+            <p>No hay albaranes pendientes de entrega</p>
+          </div>
+        )}
+
+        <div className="albaranes-grid">
+          {albaranes.map((albaran) => (
+            <div 
+              key={`${albaran.id}-${albaran.albaran}`} 
+              className={`ruta-card ${albaran.esParcial ? 'albaran-parcial' : ''}`}
+              onClick={() => abrirDetalle(albaran)}
+            >
+              <div className="card-header">
+                <h4>Albarán: {albaran.albaran}</h4>
+                {albaran.esParcial && (
+                  <span className="parcial-badge">Parcial</span>
+                )}
+                <span className="fecha-albaran">
+                  {new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}
                 </span>
               </div>
+              
+              <div className="card-body">
+                <p className="cliente-info">
+                  <span className="icon">👤</span> 
+                  <strong>{albaran.cliente}</strong>
+                </p>
+                <p className="direccion-info">
+                  <span className="icon">📍</span> 
+                  {albaran.direccion}
+                </p>
+              </div>
+              
+              <div className="card-footer">
+                <div className="importe-info">
+                  <span>Importe:</span>
+                  <span className="importe-valor">{albaran.importeLiquido?.toFixed(2)} €</span>
+                </div>
+                <div className="articulos-info">
+                  <span>Artículos:</span>
+                  <span className="articulos-count">
+                    {albaran.articulos?.length || 0}
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+        <Navbar />
       </div>
-      <Navbar />
     </div>
   );
 }

@@ -2,12 +2,10 @@
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
-import UserInfoBar from '../components/UserInfoBar';
 import Navbar from '../components/Navbar';
-import { Html5Qrcode, Html5QrcodeScanner } from 'html5-qrcode'; // Importación corregida
+import { Html5Qrcode, Html5QrcodeScanner } from 'html5-qrcode';
 import '../styles/PedidosScreen.css';
 
-// Componente para el modal de detalles del artículo
 const DetallesArticuloModal = ({ 
   detalles, 
   linea, 
@@ -110,7 +108,6 @@ const DetallesArticuloModal = ({
   );
 };
 
-// Componente para cada línea de pedido
 const LineaPedido = ({ 
   linea, 
   pedido, 
@@ -250,7 +247,6 @@ const LineaPedido = ({
   );
 };
 
-// Componente para la tarjeta de pedido
 const PedidoCard = ({ 
   pedido, 
   togglePedidoView, 
@@ -375,7 +371,6 @@ const PedidoCard = ({
   );
 };
 
-// Componente para la paginación
 const Paginacion = ({ totalPaginas, paginaActual, cambiarPagina }) => {
   return (
     totalPaginas > 1 && (
@@ -408,7 +403,6 @@ const Paginacion = ({ totalPaginas, paginaActual, cambiarPagina }) => {
   );
 };
 
-// Componente para el modal de asignación
 const AsignacionModal = ({ 
   pedidoAsignando, 
   setPedidoAsignando, 
@@ -455,7 +449,6 @@ const AsignacionModal = ({
   );
 };
 
-// Componente para el modal de la cámara
 const CameraModal = ({ 
   showCamera, 
   setShowCamera, 
@@ -542,13 +535,11 @@ const CameraModal = ({
   );
 };
 
-// Componente principal
 const PedidosScreen = () => {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user'));
   const pedidosPorPagina = 20;
   
-  // Estados
   const [pedidos, setPedidos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState({});
   const [expediciones, setExpediciones] = useState({});
@@ -575,7 +566,6 @@ const PedidosScreen = () => {
   const [selectedCamera, setSelectedCamera] = useState('');
   const scannerRef = useRef(null);
 
-  // Efecto para cargar pedidos
   useEffect(() => {
     const cargarPedidos = async () => {
       try {
@@ -591,21 +581,18 @@ const PedidosScreen = () => {
         const codigoEmpresa = user.CodigoEmpresa;
         const headers = getAuthHeader();
         
-        // Cargar repartidores
         const repResponse = await axios.get('http://localhost:3000/repartidores', { 
           headers,
           params: { codigoEmpresa } 
         });
         setRepartidores(repResponse.data);
         
-        // Cargar pedidos pendientes
         const response = await axios.get(`http://localhost:3000/pedidosPendientes`, { 
           headers,
           params: { codigoEmpresa } 
         });
         setPedidos(response.data);
         
-        // Cargar ubicaciones de artículos
         const codigosArticulos = [...new Set(response.data.flatMap(p => p.articulos.map(a => a.codigoArticulo)))];
         const responseUbicaciones = await axios.post(
           'http://localhost:3000/ubicacionesMultiples',
@@ -614,14 +601,12 @@ const PedidosScreen = () => {
         );
         setUbicaciones(responseUbicaciones.data);
         
-        // Inicializar expediciones
         const nuevasExpediciones = {};
         response.data.forEach(pedido => {
           pedido.articulos.forEach(linea => {
             const key = `${pedido.numeroPedido}-${linea.codigoArticulo}`;
             let ubicacionesConStock = responseUbicaciones.data[linea.codigoArticulo]?.filter(ubi => ubi.unidadSaldo > 0) || [];
             
-            // Calcular cantidad inicial
             const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
             const factor = parseFloat(linea.factorConversion) || 1;
             let cantidadInicial = unidadesPendientes / factor;
@@ -634,7 +619,6 @@ const PedidosScreen = () => {
               cantidadInicial = Math.ceil(cantidadInicial);
             }
             
-            // Si no hay stock, usar "Zona descarga"
             if (ubicacionesConStock.length === 0) {
               ubicacionesConStock.push({
                 ubicacion: "Zona descarga",
@@ -652,7 +636,6 @@ const PedidosScreen = () => {
         });
         setExpediciones(nuevasExpediciones);
         
-        // Inicializar modos de vista
         const initialModes = {};
         response.data.forEach(pedido => {
           initialModes[pedido.numeroPedido] = 'show';
@@ -679,7 +662,6 @@ const PedidosScreen = () => {
     cargarPedidos();
   }, []);
 
-  // Obtener cámaras disponibles
   useEffect(() => {
     if (showCamera && Html5Qrcode) {
       Html5Qrcode.getCameras().then(devices => {
@@ -694,7 +676,6 @@ const PedidosScreen = () => {
     }
   }, [showCamera]);
 
-  // Iniciar la cámara
   useEffect(() => {
     if (showCamera && selectedCamera && !scannerRef.current) {
       const scanner = new Html5QrcodeScanner(
@@ -725,7 +706,6 @@ const PedidosScreen = () => {
     };
   }, [showCamera, selectedCamera]);
 
-  // Funciones
   const abrirModalDetalles = async (detalles, linea, pedido) => {
     try {
       const headers = getAuthHeader();
@@ -986,7 +966,6 @@ const PedidosScreen = () => {
     }
   };
 
-  // Filtrado y paginación
   const pedidosFiltrados = pedidos.filter(pedido => {
     const matchPedido = filtroPedido 
       ? pedido.numeroPedido.toString().includes(filtroPedido) || 
@@ -1018,144 +997,141 @@ const PedidosScreen = () => {
   const totalPaginas = Math.ceil(pedidosOrdenados.length / pedidosPorPagina);
 
   return (
-    <div className="pedidos-container">
-      <UserInfoBar />
-      
-      <div className="screen-header">
-        <div className="bubble bubble1"></div>
-        <div className="bubble bubble2"></div>
-        <h2>Preparación de Pedidos</h2>
-      </div>
-      
-      <div className="pedidos-controls">
-        <div className="filtros-container">
-          <div className="filtro-group">
-            <label>Buscar pedido o cliente:</label>
-            <input
-              type="text"
-              placeholder="Nº pedido, cliente..."
-              value={filtroPedido}
-              onChange={e => setFiltroPedido(e.target.value)}
-              className="search-input"
-            />
-          </div>
-          
-          <div className="filtro-group">
-            <label>Buscar artículo:</label>
-            <input
-              type="text"
-              placeholder="Código o descripción..."
-              value={filtroArticulo}
-              onChange={e => setFiltroArticulo(e.target.value)}
-              className="search-input"
-            />
-          </div>
+    <div className="pedidos-screen">
+      <div className="pedidos-container">
+        <div className="pedidos-header">
+          <h2>Preparación de Pedidos</h2>
+        </div>
+        
+        <div className="pedidos-controls">
+          <div className="filtros-container">
+            <div className="filtro-group">
+              <label>Buscar pedido o cliente:</label>
+              <input
+                type="text"
+                placeholder="Nº pedido, cliente..."
+                value={filtroPedido}
+                onChange={e => setFiltroPedido(e.target.value)}
+                className="search-input"
+              />
+            </div>
+            
+            <div className="filtro-group">
+              <label>Buscar artículo:</label>
+              <input
+                type="text"
+                placeholder="Código o descripción..."
+                value={filtroArticulo}
+                onChange={e => setFiltroArticulo(e.target.value)}
+                className="search-input"
+              />
+            </div>
 
-          <div className="filtro-group">
-            <label>Buscar dirección:</label>
-            <input
-              type="text"
-              placeholder="Dirección..."
-              value={filtroDireccion}
-              onChange={e => setFiltroDireccion(e.target.value)}
-              className="search-input"
-            />
-          </div>
-          
-          <div className="filtro-group">
-            <label>Ordenar por:</label>
-            <select
-              value={orden}
-              onChange={e => setOrden(e.target.value)}
-              className="sort-select"
-            >
-              <option value="fecha">Fecha más reciente</option>
-              <option value="cliente">Nombre de cliente</option>
-            </select>
+            <div className="filtro-group">
+              <label>Buscar dirección:</label>
+              <input
+                type="text"
+                placeholder="Dirección..."
+                value={filtroDireccion}
+                onChange={e => setFiltroDireccion(e.target.value)}
+                className="search-input"
+              />
+            </div>
+            
+            <div className="filtro-group">
+              <label>Ordenar por:</label>
+              <select
+                value={orden}
+                onChange={e => setOrden(e.target.value)}
+                className="sort-select"
+              >
+                <option value="fecha">Fecha más reciente</option>
+                <option value="cliente">Nombre de cliente</option>
+              </select>
+            </div>
           </div>
         </div>
-      </div>
-      
-      <div className="pedidos-content">
-        {error ? (
-          <div className="error-pedidos">
-            <p>{error}</p>
-            <button onClick={() => window.location.reload()}>Reintentar</button>
-          </div>
-        ) : loading ? (
-          <div className="loading-pedidos">
-            <div className="loader"></div>
-            <p>Cargando pedidos...</p>
-          </div>
-        ) : pedidosOrdenados.length === 0 ? (
-          <div className="no-pedidos">
-            <p>No hay pedidos pendientes</p>
-          </div>
-        ) : (
-          <>
-            {pedidosActuales.map(pedido => (
-              <PedidoCard 
-                key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}`}
-                pedido={pedido} 
-                togglePedidoView={togglePedidoView}
-                pedidoViewModes={pedidoViewModes}
-                setPedidoAsignando={setPedidoAsignando}
-                generarAlbaranParcial={generarAlbaranParcial}
-                generandoAlbaran={generandoAlbaran}
-                ubicaciones={ubicaciones}
-                expediciones={expediciones}
-                handleExpedicionChange={handleExpedicionChange}
-                iniciarEscaneo={iniciarEscaneo}
-                abrirModalDetalles={abrirModalDetalles}
+        
+        <div className="pedidos-content">
+          {error ? (
+            <div className="error-pedidos">
+              <p>{error}</p>
+              <button onClick={() => window.location.reload()}>Reintentar</button>
+            </div>
+          ) : loading ? (
+            <div className="loading-pedidos">
+              <div className="loader"></div>
+              <p>Cargando pedidos...</p>
+            </div>
+          ) : pedidosOrdenados.length === 0 ? (
+            <div className="no-pedidos">
+              <p>No hay pedidos pendientes</p>
+            </div>
+          ) : (
+            <>
+              {pedidosActuales.map(pedido => (
+                <PedidoCard 
+                  key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}`}
+                  pedido={pedido} 
+                  togglePedidoView={togglePedidoView}
+                  pedidoViewModes={pedidoViewModes}
+                  setPedidoAsignando={setPedidoAsignando}
+                  generarAlbaranParcial={generarAlbaranParcial}
+                  generandoAlbaran={generandoAlbaran}
+                  ubicaciones={ubicaciones}
+                  expediciones={expediciones}
+                  handleExpedicionChange={handleExpedicionChange}
+                  iniciarEscaneo={iniciarEscaneo}
+                  abrirModalDetalles={abrirModalDetalles}
+                />
+              ))}
+              
+              <Paginacion 
+                totalPaginas={totalPaginas} 
+                paginaActual={paginaActual} 
+                cambiarPagina={cambiarPagina} 
               />
-            ))}
-            
-            <Paginacion 
-              totalPaginas={totalPaginas} 
-              paginaActual={paginaActual} 
-              cambiarPagina={cambiarPagina} 
-            />
-          </>
+            </>
+          )}
+        </div>
+        
+        {detallesModal && (
+          <DetallesArticuloModal 
+            detalles={detallesModal.detalles}
+            linea={detallesModal.linea}
+            pedido={detallesModal.pedido}
+            onExpedir={cerrarModalDetalles}
+            ubicacionesStock={ubicacionesModal}
+            scannedItems={scannedItems}
+            setScannedItems={setScannedItems}
+            iniciarEscaneo={iniciarEscaneo}
+          />
         )}
-      </div>
-      
-      {/* Modales */}
-      {detallesModal && (
-        <DetallesArticuloModal 
-          detalles={detallesModal.detalles}
-          linea={detallesModal.linea}
-          pedido={detallesModal.pedido}
-          onExpedir={cerrarModalDetalles}
-          ubicacionesStock={ubicacionesModal}
-          scannedItems={scannedItems}
-          setScannedItems={setScannedItems}
-          iniciarEscaneo={iniciarEscaneo}
+        
+        <AsignacionModal 
+          pedidoAsignando={pedidoAsignando}
+          setPedidoAsignando={setPedidoAsignando}
+          repartidores={repartidores}
+          repartidorSeleccionado={repartidorSeleccionado}
+          setRepartidorSeleccionado={setRepartidorSeleccionado}
+          asignarPedido={asignarPedido}
         />
-      )}
-      
-      <AsignacionModal 
-        pedidoAsignando={pedidoAsignando}
-        setPedidoAsignando={setPedidoAsignando}
-        repartidores={repartidores}
-        repartidorSeleccionado={repartidorSeleccionado}
-        setRepartidorSeleccionado={setRepartidorSeleccionado}
-        asignarPedido={asignarPedido}
-      />
-      
-      <CameraModal 
-        showCamera={showCamera}
-        setShowCamera={setShowCamera}
-        cameras={cameras}
-        selectedCamera={selectedCamera}
-        setSelectedCamera={setSelectedCamera}
-        manualCode={manualCode}
-        setManualCode={setManualCode}
-        handleScanSuccess={handleScanSuccess}
-        handleManualVerification={handleManualVerification}
-        cameraError={cameraError}
-      />
+        
+        <CameraModal 
+          showCamera={showCamera}
+          setShowCamera={setShowCamera}
+          cameras={cameras}
+          selectedCamera={selectedCamera}
+          setSelectedCamera={setSelectedCamera}
+          manualCode={manualCode}
+          setManualCode={setManualCode}
+          handleScanSuccess={handleScanSuccess}
+          handleManualVerification={handleManualVerification}
+          cameraError={cameraError}
+        />
 
-      <Navbar />
+        <Navbar />
+      </div>
     </div>
   );
 };

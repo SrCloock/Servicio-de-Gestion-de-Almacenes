@@ -1,6 +1,8 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
+import { FixedSizeList as List } from 'react-window';
+import AutoSizer from 'react-virtualized-auto-sizer';
 import '../styles/TraspasosPage.css';
 
 const TraspasosPage = () => {
@@ -42,7 +44,14 @@ const TraspasosPage = () => {
       destinoUbicacion: '',
       cantidad: ''
     },
-    detalles: null
+    detalles: null,
+    pagination: {
+      page: 1,
+      pageSize: 100,
+      totalItems: 0
+    },
+    searchTerm: '',
+    filteredArticulos: []
   });
   
   // Referencias
@@ -63,7 +72,7 @@ const TraspasosPage = () => {
   }, []);
 
   useEffect(() => {
-    // Debounce para búsqueda de artículos
+    // Debounce para búsqueda de artículos (modo artículo)
     if (timerRef.current) clearTimeout(timerRef.current);
     
     const buscarArticulos = async () => {
@@ -102,15 +111,15 @@ const TraspasosPage = () => {
     return () => clearTimeout(timerRef.current);
   }, [modoArticulo.terminoBusqueda]);
 
+  // Efecto para cargar ubicaciones de origen (modo Ubicación)
   useEffect(() => {
-    // Cargar ubicaciones de origen (modo Ubicación)
     if (modoUbicacion.ubicacionSeleccionada?.almacen) {
       cargarUbicaciones(modoUbicacion.ubicacionSeleccionada.almacen, setUbicacionesOrigen);
     }
   }, [modoUbicacion.ubicacionSeleccionada?.almacen]);
 
+  // Efecto para cargar ubicaciones de destino
   useEffect(() => {
-    // Cargar ubicaciones de destino
     const destinoAlmacen = activeTab === 'articulo' 
       ? modoArticulo.form.destinoAlmacen 
       : modoUbicacion.form.destinoAlmacen;
@@ -137,8 +146,22 @@ const TraspasosPage = () => {
     modoUbicacion.ubicacionSeleccionada
   ]);
 
+  // Efecto para filtrar artículos en modo ubicación
   useEffect(() => {
-    // Resetear estados al cambiar pestaña
+    if (!modoUbicacion.searchTerm) {
+      setModoUbicacion(prev => ({ ...prev, filteredArticulos: prev.articulosUbicacion }));
+    } else {
+      const term = modoUbicacion.searchTerm.toLowerCase();
+      const filtered = modoUbicacion.articulosUbicacion.filter(articulo => 
+        articulo.CodigoArticulo.toLowerCase().includes(term) || 
+        articulo.DescripcionArticulo.toLowerCase().includes(term)
+      );
+      setModoUbicacion(prev => ({ ...prev, filteredArticulos: filtered }));
+    }
+  }, [modoUbicacion.searchTerm, modoUbicacion.articulosUbicacion]);
+
+  // Resetear estados al cambiar pestaña
+  useEffect(() => {
     setUbicacionesOrigen([]);
     setUbicacionesDestino([]);
   }, [activeTab]);
@@ -182,17 +205,34 @@ const TraspasosPage = () => {
     }
   };
 
-  const cargarArticulosPorUbicacion = async (codigoAlmacen, ubicacion) => {
+  const cargarArticulosPorUbicacion = async (page = 1) => {
+    if (!modoUbicacion.ubicacionSeleccionada) return;
+    
     setCargandoUbicaciones(true);
     try {
       const headers = getAuthHeader();
       const response = await axios.get(
-        `http://localhost:3000/stock/por-ubicacion?codigoAlmacen=${codigoAlmacen}&ubicacion=${ubicacion}`,
-        { headers }
+        `http://localhost:3000/stock/por-ubicacion`,
+        { 
+          headers,
+          params: {
+            codigoAlmacen: modoUbicacion.ubicacionSeleccionada.almacen,
+            ubicacion: modoUbicacion.ubicacionSeleccionada.ubicacion,
+            page,
+            pageSize: modoUbicacion.pagination.pageSize
+          }
+        }
       );
+      
       setModoUbicacion(prev => ({ 
         ...prev, 
-        articulosUbicacion: response.data,
+        articulosUbicacion: response.data.articulos,
+        filteredArticulos: response.data.articulos,
+        pagination: {
+          ...prev.pagination,
+          page,
+          totalItems: response.data.total
+        },
         detalles: null
       }));
     } catch (error) {
@@ -272,6 +312,10 @@ const TraspasosPage = () => {
   const handleChangeModoUbicacion = (e) => {
     const { name, value } = e.target;
     setModoUbicacion(prev => ({ ...prev, form: { ...prev.form, [name]: value } }));
+  };
+
+  const handleSearchChangeModoUbicacion = (e) => {
+    setModoUbicacion(prev => ({ ...prev, searchTerm: e.target.value }));
   };
 
   const validarFormulario = () => {
@@ -362,12 +406,20 @@ const TraspasosPage = () => {
           errorBusqueda: ''
         });
       } else {
-        setModoUbicacion({
+        setModoUbicacion(prev => ({
+          ...prev,
           ubicacionSeleccionada: null,
           articulosUbicacion: [],
+          filteredArticulos: [],
           articuloSeleccionado: null,
-          form: { destinoAlmacen: '', destinoUbicacion: '', cantidad: '' }
-        });
+          form: { destinoAlmacen: '', destinoUbicacion: '', cantidad: '' },
+          pagination: {
+            page: 1,
+            pageSize: 100,
+            totalItems: 0
+          },
+          searchTerm: ''
+        }));
       }
       
       setUbicacionesDestino([]);
@@ -479,6 +531,35 @@ const TraspasosPage = () => {
             )}
           </div>
         </div>
+      </div>
+    );
+  };
+
+  // Renderizado de fila para virtualización
+  const Row = ({ index, style }) => {
+    const articulo = modoUbicacion.filteredArticulos[index];
+    if (!articulo) return null;
+    
+    return (
+      <div 
+        style={style}
+        className={`articulo-item ${modoUbicacion.articuloSeleccionado?.CodigoArticulo === articulo.CodigoArticulo ? 'seleccionado' : ''}`}
+        onClick={() => seleccionarArticuloModoUbicacion(articulo)}
+      >
+        <div className="articulo-codigo">{articulo.CodigoArticulo}</div>
+        <div className="articulo-descripcion">{articulo.DescripcionArticulo}</div>
+        <div className="articulo-cantidad">Stock: {articulo.Cantidad}</div>
+        {articulo.MovPosicionLinea && (
+          <button 
+            className="btn-detalles"
+            onClick={(e) => {
+              e.stopPropagation();
+              cargarDetalles(articulo.MovPosicionLinea);
+            }}
+          >
+            ...
+          </button>
+        )}
       </div>
     );
   };
@@ -806,14 +887,7 @@ const TraspasosPage = () => {
 
                 <button 
                   className="btn-cargar"
-                  onClick={() => {
-                    if (modoUbicacion.ubicacionSeleccionada?.almacen && modoUbicacion.ubicacionSeleccionada?.ubicacion) {
-                      cargarArticulosPorUbicacion(
-                        modoUbicacion.ubicacionSeleccionada.almacen, 
-                        modoUbicacion.ubicacionSeleccionada.ubicacion
-                      );
-                    }
-                  }}
+                  onClick={() => cargarArticulosPorUbicacion(1)}
                   disabled={!modoUbicacion.ubicacionSeleccionada?.almacen || !modoUbicacion.ubicacionSeleccionada?.ubicacion}
                 >
                   Cargar Artículos
@@ -823,31 +897,51 @@ const TraspasosPage = () => {
               {modoUbicacion.articulosUbicacion.length > 0 && (
                 <div className="form-section">
                   <h2>Artículos Disponibles</h2>
+                  
+                  <div className="form-group">
+                    <label htmlFor="buscar-articulo-ubic">Buscar artículo:</label>
+                    <input
+                      id="buscar-articulo-ubic"
+                      type="text"
+                      value={modoUbicacion.searchTerm}
+                      onChange={handleSearchChangeModoUbicacion}
+                      placeholder="Buscar por código o descripción..."
+                      className="search-input"
+                    />
+                  </div>
+                  
                   <div className="articulos-ubicacion">
-                    {modoUbicacion.articulosUbicacion.map((articulo, index) => (
-                      <div 
-                        key={`${articulo.CodigoArticulo}-${index}`}
-                        className={`articulo-item ${modoUbicacion.articuloSeleccionado?.CodigoArticulo === articulo.CodigoArticulo ? 'seleccionado' : ''}`}
-                        onClick={() => seleccionarArticuloModoUbicacion(articulo)}
-                        role="button"
-                        tabIndex="0"
-                      >
-                        <div className="articulo-codigo">{articulo.CodigoArticulo}</div>
-                        <div className="articulo-descripcion">{articulo.DescripcionArticulo}</div>
-                        <div className="articulo-cantidad">Stock: {articulo.Cantidad}</div>
-                        {articulo.MovPosicionLinea && (
-                          <button 
-                            className="btn-detalles"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              cargarDetalles(articulo.MovPosicionLinea);
-                            }}
-                          >
-                            ...
-                          </button>
-                        )}
-                      </div>
-                    ))}
+                    <AutoSizer>
+                      {({ height, width }) => (
+                        <List
+                          height={400}
+                          itemCount={modoUbicacion.filteredArticulos.length}
+                          itemSize={80}
+                          width={width}
+                        >
+                          {Row}
+                        </List>
+                      )}
+                    </AutoSizer>
+                  </div>
+                  
+                  {/* Paginación */}
+                  <div className="pagination-controls">
+                    <button 
+                      disabled={modoUbicacion.pagination.page === 1}
+                      onClick={() => cargarArticulosPorUbicacion(modoUbicacion.pagination.page - 1)}
+                    >
+                      Anterior
+                    </button>
+                    
+                    <span>Página {modoUbicacion.pagination.page} de {Math.ceil(modoUbicacion.pagination.totalItems / modoUbicacion.pagination.pageSize)}</span>
+                    
+                    <button 
+                      disabled={(modoUbicacion.pagination.page * modoUbicacion.pagination.pageSize) >= modoUbicacion.pagination.totalItems}
+                      onClick={() => cargarArticulosPorUbicacion(modoUbicacion.pagination.page + 1)}
+                    >
+                      Siguiente
+                    </button>
                   </div>
                 </div>
               )}

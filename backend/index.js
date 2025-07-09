@@ -1271,7 +1271,7 @@ app.get('/buscar-articulos', async (req, res) => {
 // ✅ 26. OBTENER ARTÍCULOS POR UBICACIÓN (CORREGIDO - SOLO PERIODO 99)
 // ============================================
 app.get('/stock/por-ubicacion', async (req, res) => {
-  const { codigoAlmacen, ubicacion } = req.query;
+  const { codigoAlmacen, ubicacion, page = 1, pageSize = 100 } = req.query;
   const codigoEmpresa = req.user.CodigoEmpresa;
 
   if (!codigoEmpresa || !codigoAlmacen || !ubicacion) {
@@ -1282,6 +1282,8 @@ app.get('/stock/por-ubicacion', async (req, res) => {
   }
 
   try {
+    const offset = (page - 1) * pageSize;
+    
     const result = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
@@ -1290,7 +1292,8 @@ app.get('/stock/por-ubicacion', async (req, res) => {
         SELECT 
           s.CodigoArticulo,
           a.DescripcionArticulo,
-          s.UnidadSaldo AS Cantidad
+          s.UnidadSaldo AS Cantidad,
+          COUNT(*) OVER() AS TotalCount
         FROM AcumuladoStockUbicacion s
         INNER JOIN Articulos a 
           ON a.CodigoEmpresa = s.CodigoEmpresa 
@@ -1300,9 +1303,22 @@ app.get('/stock/por-ubicacion', async (req, res) => {
           AND s.Ubicacion = @ubicacion
           AND s.Periodo = 99  -- Solo periodo 99 (stock actual)
           AND s.UnidadSaldo > 0
+        ORDER BY s.CodigoArticulo
+        OFFSET ${offset} ROWS
+        FETCH NEXT ${pageSize} ROWS ONLY
       `);
       
-    res.json(result.recordset);
+    const totalCount = result.recordset.length > 0 ? result.recordset[0].TotalCount : 0;
+    const articulos = result.recordset.map(item => {
+      const { TotalCount, ...rest } = item;
+      return rest;
+    });
+    
+    res.json({
+      success: true,
+      articulos,
+      total: totalCount
+    });
   } catch (err) {
     console.error('[ERROR STOCK UBICACION]', err);
     res.status(500).json({ 
@@ -2313,6 +2329,74 @@ app.get('/empleados', async (req, res) => {
   } catch (err) {
     console.error('[ERROR EMPLEADOS]', err);
     res.status(500).json({ success: false, mensaje: 'Error al obtener empleados' });
+  }
+});
+
+// ✅ 40. OBTENER TODAS LAS UBICACIONES AGRUPADAS POR ALMACÉN
+app.get('/ubicaciones-agrupadas', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
+  if (!codigoEmpresa) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Código de empresa requerido.' 
+    });
+  }
+
+  try {
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT 
+          a.CodigoAlmacen,
+          a.Almacen AS NombreAlmacen,
+          u.Ubicacion,
+          u.DescripcionUbicacion,
+          COUNT(s.CodigoArticulo) AS CantidadArticulos
+        FROM Ubicaciones u
+        INNER JOIN Almacenes a 
+          ON a.CodigoEmpresa = u.CodigoEmpresa 
+          AND a.CodigoAlmacen = u.CodigoAlmacen
+        LEFT JOIN AcumuladoStockUbicacion s 
+          ON s.CodigoEmpresa = u.CodigoEmpresa 
+          AND s.CodigoAlmacen = u.CodigoAlmacen 
+          AND s.Ubicacion = u.Ubicacion
+          AND s.Periodo = 99
+          AND s.UnidadSaldo > 0
+        WHERE u.CodigoEmpresa = @codigoEmpresa
+        GROUP BY a.CodigoAlmacen, a.Almacen, u.Ubicacion, u.DescripcionUbicacion
+        ORDER BY a.Almacen, u.Ubicacion
+      `);
+    
+    // Agrupar por almacén
+    const almacenesMap = {};
+    result.recordset.forEach(row => {
+      const key = row.CodigoAlmacen;
+      
+      if (!almacenesMap[key]) {
+        almacenesMap[key] = {
+          codigo: row.CodigoAlmacen,
+          nombre: row.NombreAlmacen,
+          ubicaciones: []
+        };
+      }
+      
+      almacenesMap[key].ubicaciones.push({
+        codigo: row.Ubicacion,
+        descripcion: row.DescripcionUbicacion || row.Ubicacion,
+        cantidadArticulos: row.CantidadArticulos
+      });
+    });
+    
+    const almacenesArray = Object.values(almacenesMap);
+    res.json(almacenesArray);
+  } catch (err) {
+    console.error('[ERROR UBICACIONES AGRUPADAS]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener ubicaciones agrupadas.',
+      error: err.message 
+    });
   }
 });
 

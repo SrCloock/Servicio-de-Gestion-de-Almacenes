@@ -4,7 +4,7 @@ import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
 import { 
   FiSearch, FiChevronDown, FiChevronUp, 
-  FiDownload, FiFilter, FiEdit, FiX, 
+  FiFilter, FiEdit, FiX, 
   FiCheck, FiClock, FiList 
 } from 'react-icons/fi';
 import '../styles/InventarioPage.css';
@@ -41,7 +41,6 @@ const InventarioPage = () => {
     const agrupado = {};
     
     data.forEach(item => {
-      // Clave única que incluye partida (si existe)
       const clave = item.Partida 
         ? `${item.CodigoArticulo}-${item.CodigoAlmacen}-${item.Ubicacion}-${item.Partida}`
         : `${item.CodigoArticulo}-${item.CodigoAlmacen}-${item.Ubicacion}`;
@@ -64,7 +63,7 @@ const InventarioPage = () => {
         NombreAlmacen: item.NombreAlmacen,
         Ubicacion: item.Ubicacion,
         DescripcionUbicacion: item.DescripcionUbicacion,
-        Partida: item.Partida, // Incluir partida
+        Partida: item.Partida,
         Cantidad: item.Cantidad,
         MovPosicionLinea: item.MovPosicionLinea,
         detalles: item.detalles
@@ -135,14 +134,12 @@ const InventarioPage = () => {
     }
   }, [activeTab, cargarInventario, cargarHistorialAjustes]);
 
-  // Función para refrescar inventario después de ajustes
   const refreshInventario = useCallback(() => {
     if (activeTab === 'inventario') {
       cargarInventario();
     }
   }, [activeTab, cargarInventario]);
 
-  // Funciones de UI
   const toggleExpandirArticulo = (codigoArticulo) => {
     setArticulosExpandidos(prev => ({
       ...prev,
@@ -183,7 +180,6 @@ const InventarioPage = () => {
     setSortConfig({ key, direction });
   };
 
-  // Filtrado y paginación para inventario
   const filteredInventario = useMemo(() => {
     let result = [...inventario];
     
@@ -229,7 +225,6 @@ const InventarioPage = () => {
       );
     }
     
-    // Ordenamiento
     result.sort((a, b) => {
       const estadoOrden = { 'positivo': 1, 'negativo': 2, 'agotado': 3 };
       if (estadoOrden[a.estado] < estadoOrden[b.estado]) return -1;
@@ -243,7 +238,6 @@ const InventarioPage = () => {
     return result;
   }, [inventario, searchTerm, filters, sortConfig]);
 
-  // Estadísticas
   const stats = useMemo(() => {
     const totalArticulos = filteredInventario.length;
     const totalUnidades = filteredInventario.reduce((total, art) => total + art.totalStock, 0);
@@ -252,7 +246,6 @@ const InventarioPage = () => {
     return { totalArticulos, totalUnidades, totalUbicaciones };
   }, [filteredInventario]);
 
-  // Paginación para inventario
   const totalPages = Math.ceil(filteredInventario.length / PAGE_SIZE);
   const paginatedInventario = useMemo(() => {
     const startIndex = (currentPage - 1) * PAGE_SIZE;
@@ -264,36 +257,6 @@ const InventarioPage = () => {
     setCurrentPage(page);
   };
 
-  // Exportación
-  const exportToCSV = () => {
-    let csvContent = "data:text/csv;charset=utf-8,";
-    
-    if (activeTab === 'inventario') {
-      csvContent += "Código Artículo,Descripción,Almacén,Ubicación,Partida,Stock,Familia,Subfamilia\n";
-      filteredInventario.forEach(articulo => {
-        articulo.ubicaciones.forEach(ubicacion => {
-          csvContent += `${articulo.CodigoArticulo},"${articulo.DescripcionArticulo}",${ubicacion.NombreAlmacen},${ubicacion.Ubicacion},${ubicacion.Partida || ''},${ubicacion.Cantidad},"${articulo.CodigoFamilia || ''}","${articulo.CodigoSubfamilia || ''}"\n`;
-        });
-      });
-    } else if (activeTab === 'historial') {
-      csvContent += "Fecha,Artículo,Descripción,Almacén,Ubicación,Partida,Ajuste,Comentario,Hora\n";
-      historialAjustes.forEach(fecha => {
-        fecha.detalles.forEach(ajuste => {
-          csvContent += `${fecha.fecha},"${ajuste.CodigoArticulo}","${ajuste.DescripcionArticulo}","${ajuste.NombreAlmacen}","${ajuste.Ubicacion}","${ajuste.Partida || ''}",${ajuste.Diferencia},"${ajuste.Comentario}",${new Date(ajuste.FechaRegistro).toLocaleTimeString()}\n`;
-        });
-      });
-    }
-    
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `${activeTab === 'inventario' ? 'inventario' : 'historial-ajustes'}_${nombreEmpresa}_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // Funciones de estilo
   const getStockStyle = (cantidad) => {
     if (cantidad === 0) return { color: '#e74c3c', fontWeight: 'bold' };
     if (cantidad < 0) return { color: '#f39c12', fontWeight: '600' };
@@ -309,7 +272,6 @@ const InventarioPage = () => {
     }
   };
 
-  // Funciones de ajuste
   const iniciarEdicionCantidad = (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida) => {
     setEditandoCantidad({
       articulo,
@@ -367,7 +329,6 @@ const InventarioPage = () => {
     setAjustesPendientes(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Detalles de variantes
   const verDetalles = async (movPosicionLinea) => {
     if (!movPosicionLinea) return;
     
@@ -388,7 +349,6 @@ const InventarioPage = () => {
     }
   };
 
-  // Formatear fecha
   const formatearFecha = (fechaStr) => {
     const fecha = new Date(fechaStr);
     return fecha.toLocaleDateString('es-ES', {
@@ -399,7 +359,6 @@ const InventarioPage = () => {
     });
   };
 
-  // Componentes de UI
   const InventarioHeader = () => (
     <div className="inventario-header">
       <div>
@@ -439,14 +398,6 @@ const InventarioPage = () => {
             </div>
           </div>
         )}
-        
-        <button 
-          className="btn-export"
-          onClick={exportToCSV}
-          title="Exportar a CSV"
-        >
-          <FiDownload /> Exportar
-        </button>
       </div>
     </div>
   );
@@ -517,7 +468,15 @@ const InventarioPage = () => {
             ? 'Contraer todos los artículos' 
             : 'Expandir todos los artículos'}
         >
-          {Object.keys(articulosExpandidos).length > 0 ? 'Contraer Todo' : 'Expandir Todo'}
+          {Object.keys(articulosExpandidos).length > 0 ? (
+            <>
+              <FiChevronUp /> Contraer Todo
+            </>
+          ) : (
+            <>
+              <FiChevronDown /> Expandir Todo
+            </>
+          )}
         </button>
       </div>
     )
