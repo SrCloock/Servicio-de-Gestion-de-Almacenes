@@ -36,14 +36,88 @@ const InventarioPage = () => {
   
   const nombreEmpresa = 'Demos';
 
-  // Función de agrupación con soporte para partidas
+  // Función para formatear unidades (singular/plural) - MEJORADA
+  const formatearUnidad = (cantidad, unidad) => {
+    // Si no hay unidad, usar 'ud' por defecto
+    if (!unidad || unidad.trim() === '') {
+      unidad = 'ud';
+    }
+    
+    // Redondear a 2 decimales si es decimal, pero si es entero mostrarlo sin decimales
+    let cantidadFormateada = cantidad;
+    if (!Number.isInteger(cantidad)) {
+      cantidadFormateada = parseFloat(cantidad.toFixed(2));
+    }
+
+    // Manejar casos especiales de unidades invariables
+    const unidadesInvariables = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
+    
+    // Verificar si es una unidad invariable
+    if (unidadesInvariables.includes(unidad.toLowerCase())) {
+      return `${cantidadFormateada} ${unidad}`;
+    }
+    
+    // Diccionario de plurales irregulares
+    const pluralesIrregulares = {
+      'ud': 'uds',
+      'par': 'pares',
+      'metro': 'metros',
+      'pack': 'packs',
+      'saco': 'sacos',
+      'barra': 'barras',
+      'caja': 'cajas',
+      'rollo': 'rollos',
+      'lata': 'latas',
+      'bote': 'botes',
+      'tubo': 'tubos',
+      'unidad': 'unidades',
+      'juego': 'juegos',
+      'kit': 'kits',
+      'paquete': 'paquetes',
+      'cajetin': 'cajetines',
+      'bidon': 'bidones',
+      'palet': 'palets',
+      'bobina': 'bobinas',
+      'fardo': 'fardos',
+      'cubeta': 'cubetas',
+      'garrafa': 'garrafas',
+      'tambor': 'tambores',
+      'cubos': 'cubos', // Invariable
+      'pares': 'pares' // Invariable
+    };
+
+    // Si es 1, usar singular
+    if (cantidadFormateada === 1) {
+      return `1 ${unidad}`;
+    } 
+    // Plural
+    else {
+      // Verificar si es una unidad irregular
+      if (pluralesIrregulares[unidad.toLowerCase()]) {
+        return `${cantidadFormateada} ${pluralesIrregulares[unidad.toLowerCase()]}`;
+      }
+      
+      // Reglas para formar el plural
+      const ultimaLetra = unidad.charAt(unidad.length - 1);
+      const penultimaLetra = unidad.charAt(unidad.length - 2);
+      
+      // Si termina en vocal, agregar 's'
+      if (['a', 'e', 'i', 'o', 'u'].includes(ultimaLetra)) {
+        return `${cantidadFormateada} ${unidad}s`;
+      } 
+      // Si termina en consonante, agregar 'es'
+      else {
+        return `${cantidadFormateada} ${unidad}es`;
+      }
+    }
+  };
+
+  // Función de agrupación con manejo correcto de unidades
   const agruparPorArticulo = useCallback((data) => {
     const agrupado = {};
     
     data.forEach(item => {
-      const clave = item.Partida 
-        ? `${item.CodigoArticulo}-${item.CodigoAlmacen}-${item.Ubicacion}-${item.Partida}`
-        : `${item.CodigoArticulo}-${item.CodigoAlmacen}-${item.Ubicacion}`;
+      const clave = `${item.CodigoArticulo}-${item.CodigoAlmacen}-${item.Ubicacion}-${item.Partida || 'NOPARTIDA'}-${item.UnidadStock}`;
       
       if (!agrupado[item.CodigoArticulo]) {
         agrupado[item.CodigoArticulo] = {
@@ -51,8 +125,12 @@ const InventarioPage = () => {
           DescripcionArticulo: item.DescripcionArticulo,
           CodigoFamilia: item.CodigoFamilia,
           CodigoSubfamilia: item.CodigoSubfamilia,
+          // Campos para unidades de medida
+          UnidadBase: item.UnidadBase,
+          UnidadAlternativa: item.UnidadAlternativa,
+          FactorConversion: item.FactorConversion,
           ubicaciones: [],
-          totalStock: 0,
+          totalStockBase: 0,
           estado: 'positivo'
         };
       }
@@ -64,19 +142,21 @@ const InventarioPage = () => {
         Ubicacion: item.Ubicacion,
         DescripcionUbicacion: item.DescripcionUbicacion,
         Partida: item.Partida,
+        UnidadStock: item.UnidadStock,
         Cantidad: item.Cantidad,
+        CantidadBase: item.CantidadBase,
         MovPosicionLinea: item.MovPosicionLinea,
         detalles: item.detalles
       };
       
       agrupado[item.CodigoArticulo].ubicaciones.push(ubicacion);
-      agrupado[item.CodigoArticulo].totalStock += item.Cantidad;
+      agrupado[item.CodigoArticulo].totalStockBase += item.CantidadBase;
     });
     
     Object.values(agrupado).forEach(articulo => {
-      if (articulo.totalStock === 0) {
+      if (articulo.totalStockBase === 0) {
         articulo.estado = 'agotado';
-      } else if (articulo.totalStock < 0) {
+      } else if (articulo.totalStockBase < 0) {
         articulo.estado = 'negativo';
       } else {
         articulo.estado = 'positivo';
@@ -240,7 +320,7 @@ const InventarioPage = () => {
 
   const stats = useMemo(() => {
     const totalArticulos = filteredInventario.length;
-    const totalUnidades = filteredInventario.reduce((total, art) => total + art.totalStock, 0);
+    const totalUnidades = filteredInventario.reduce((total, art) => total + art.totalStockBase, 0);
     const totalUbicaciones = filteredInventario.reduce((total, art) => total + art.ubicaciones.length, 0);
     
     return { totalArticulos, totalUnidades, totalUbicaciones };
@@ -272,7 +352,7 @@ const InventarioPage = () => {
     }
   };
 
-  const iniciarEdicionCantidad = (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida) => {
+  const iniciarEdicionCantidad = (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida, unidadStock) => {
     setEditandoCantidad({
       articulo,
       nombreAlmacen,
@@ -280,7 +360,8 @@ const InventarioPage = () => {
       clave,
       codigoAlmacen,
       ubicacionStr,
-      partida
+      partida,
+      unidadStock
     });
     setNuevaCantidad(cantidadActual.toString());
   };
@@ -293,36 +374,13 @@ const InventarioPage = () => {
       codigoAlmacen: editandoCantidad.codigoAlmacen,
       ubicacionStr: editandoCantidad.ubicacionStr,
       partida: editandoCantidad.partida || '',
+      unidadStock: editandoCantidad.unidadStock, // Mantener la unidad original
       nuevaCantidad: parseFloat(nuevaCantidad)
     };
     
     setAjustesPendientes(prev => [...prev, nuevoAjuste]);
     setEditandoCantidad(null);
     setNuevaCantidad('');
-  };
-
-  const confirmarAjustes = async () => {
-    try {
-      const headers = getAuthHeader();
-      const response = await axios.post(
-        'http://localhost:3000/inventario/ajustar',
-        { ajustes: ajustesPendientes },
-        { headers }
-      );
-      
-      if (response.data.success) {
-        refreshInventario();
-        cargarHistorialAjustes();
-        setAjustesPendientes([]);
-        alert('Ajustes realizados correctamente');
-      }
-    } catch (error) {
-      console.error('Error al confirmar ajustes:', error);
-      const errorMessage = error.response?.data?.error || 
-                          error.response?.data?.mensaje || 
-                          error.message;
-      alert(`Error al confirmar ajustes: ${errorMessage}`);
-    }
   };
 
   const eliminarAjustePendiente = (index) => {
@@ -517,7 +575,7 @@ const InventarioPage = () => {
                 <div className="cantidad">
                   <span className="label">Nueva Cantidad:</span> 
                   <span className="value">
-                    <strong>{ajuste.nuevaCantidad}</strong>
+                    <strong>{formatearUnidad(ajuste.nuevaCantidad, ajuste.unidadStock)}</strong>
                   </span>
                 </div>
               </div>
@@ -556,13 +614,17 @@ const InventarioPage = () => {
               <span>Partida:</span>
               <span>{editandoCantidad.partida || 'N/A'}</span>
             </div>
+            <div className="detail-item">
+              <span>Unidad:</span>
+              <span>{editandoCantidad.unidadStock}</span>
+            </div>
           </div>
           
           <div className="form-group">
             <label>Cantidad Actual:</label>
             <input 
               type="text" 
-              value={editandoCantidad.cantidadActual} 
+              value={formatearUnidad(editandoCantidad.cantidadActual, editandoCantidad.unidadStock)} 
               disabled 
               className="cantidad-actual"
             />
@@ -658,6 +720,30 @@ const InventarioPage = () => {
     );
   };
 
+  const confirmarAjustes = async () => {
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.post(
+        'http://localhost:3000/inventario/ajustar',
+        { ajustes: ajustesPendientes },
+        { headers }
+      );
+      
+      if (response.data.success) {
+        refreshInventario();
+        cargarHistorialAjustes();
+        setAjustesPendientes([]);
+        alert('Ajustes realizados correctamente');
+      }
+    } catch (error) {
+      console.error('Error al confirmar ajustes:', error);
+      const errorMessage = error.response?.data?.error || 
+                          error.response?.data?.mensaje || 
+                          error.message;
+      alert(`Error al confirmar ajustes: ${errorMessage}`);
+    }
+  };
+
   const InventoryList = () => {
     if (error) {
       return (
@@ -731,7 +817,7 @@ const InventarioPage = () => {
               </div>
               <div className="articulo-total">
                 <span className="total-unidades">
-                  {articulo.totalStock.toLocaleString()} unidades
+                  {formatearUnidad(articulo.totalStockBase, articulo.UnidadBase)}
                   <span className="ubicaciones-count">
                     ({articulo.ubicaciones.length} ubicaciones)
                   </span>
@@ -785,7 +871,15 @@ const InventarioPage = () => {
                       className="ubicacion-cantidad" 
                       style={getStockStyle(ubicacion.Cantidad)}
                     >
-                      {ubicacion.Cantidad.toLocaleString()}
+                      {formatearUnidad(ubicacion.Cantidad, ubicacion.UnidadStock)}
+                      
+                      {/* Mostrar conversión SOLO si es diferente de la unidad base */}
+                      {articulo.UnidadAlternativa && 
+                       ubicacion.UnidadStock === articulo.UnidadAlternativa && (
+                        <span className="conversion-info">
+                          ({formatearUnidad(ubicacion.CantidadBase, articulo.UnidadBase)})
+                        </span>
+                      )}
                     </span>
                     <div className="acciones-ubicacion">
                       <button 
@@ -797,7 +891,8 @@ const InventarioPage = () => {
                           ubicacion.clave,
                           ubicacion.CodigoAlmacen,
                           ubicacion.Ubicacion,
-                          ubicacion.Partida
+                          ubicacion.Partida,
+                          ubicacion.UnidadStock
                         )}
                       >
                         <FiEdit />

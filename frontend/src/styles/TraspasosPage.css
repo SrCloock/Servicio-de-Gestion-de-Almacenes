@@ -282,7 +282,8 @@ select:focus {
 .btn-cargar,
 .btn-enviar, 
 .btn-confirmar,
-.btn-editar {
+.btn-editar,
+.btn-agregar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -322,6 +323,12 @@ select:focus {
   color: var(--high-contrast);
 }
 
+.btn-agregar {
+  background-color: var(--success-color);
+  border-color: var(--success-color);
+  color: var(--light-bg);
+}
+
 .btn-cancelar:hover, 
 .btn-cargar:hover {
   background-color: #f5f5f5;
@@ -337,6 +344,11 @@ select:focus {
 .btn-editar:hover {
   background-color: #ff8f00;
   border-color: #ff8f00;
+}
+
+.btn-agregar:hover {
+  background-color: #2e7d32;
+  border-color: #2e7d32;
 }
 
 /* ======================= ACCIONES FORMULARIO ======================= */
@@ -538,6 +550,129 @@ select:focus {
   padding-top: 10px;
 }
 
+/* ======================= UBICACIONES AGRUPADAS ======================= */
+.ubicaciones-agrupadas {
+  margin-top: 15px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+}
+
+.almacen-item {
+  background-color: var(--light-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.almacen-item:last-child {
+  border-bottom: none;
+}
+
+.almacen-header {
+  padding: 15px;
+  background-color: #e9ecef;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 700;
+  transition: var(--transition);
+}
+
+.almacen-header:hover {
+  background-color: #dee2e6;
+}
+
+.ubicaciones-list {
+  padding: 10px;
+  background-color: var(--section-bg);
+}
+
+.ubicacion-item {
+  padding: 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.ubicacion-item:hover {
+  background-color: var(--hover-bg);
+  border-color: var(--primary-color);
+}
+
+.ubicacion-item.seleccionada {
+  background-color: var(--hover-bg);
+  border-left: 4px solid var(--primary-color);
+}
+
+.ubicacion-codigo {
+  font-weight: 700;
+  width: 100px;
+  color: var(--primary-color);
+}
+
+.ubicacion-descripcion {
+  flex: 1;
+  min-width: 200px;
+}
+
+.ubicacion-stock {
+  width: 100%;
+  font-size: 0.9rem;
+  margin-top: 5px;
+  color: var(--medium-contrast);
+}
+
+.ubicacion-seleccionada-info {
+  background-color: var(--hover-bg);
+  padding: 10px;
+  border-radius: 6px;
+  margin-bottom: 15px;
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+/* ======================= LISTA TRASPASOS ======================= */
+.lista-traspasos {
+  margin-top: 20px;
+}
+
+.traspaso-item {
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: white;
+}
+
+.traspaso-info {
+  flex: 1;
+}
+
+.traspaso-info div {
+  margin-bottom: 5px;
+}
+
+.btn-eliminar {
+  background-color: var(--danger-color);
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-eliminar:hover {
+  background-color: #c62828;
+}
+
 /* ======================= MENSAJES ======================= */
 .error-message {
   color: var(--danger-color);
@@ -632,7 +767,8 @@ select:focus {
   .btn-enviar,
   .btn-confirmar,
   .btn-editar,
-  .btn-cargar {
+  .btn-cargar,
+  .btn-agregar {
     width: 100%;
     margin-bottom: 10px;
   }
@@ -663,5 +799,14 @@ select:focus {
   
   .detalle-item span:first-child {
     margin-bottom: 5px;
+  }
+  
+  .ubicacion-item {
+    flex-direction: column;
+  }
+  
+  .ubicacion-codigo,
+  .ubicacion-descripcion {
+    width: 100%;
   }
 }

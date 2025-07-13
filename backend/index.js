@@ -667,21 +667,28 @@ app.get('/stock/por-articulo', async (req, res) => {
       .query(`
         SELECT 
           s.CodigoAlmacen,
-          a.Almacen AS NombreAlmacen,
+          alm.Almacen AS NombreAlmacen,
           s.Ubicacion,
           u.DescripcionUbicacion,
-          s.UnidadSaldo AS Cantidad
+          s.UnidadSaldo AS Cantidad,
+          s.TipoUnidadMedida_ AS UnidadMedida,
+          art.UnidadMedida2_ AS UnidadBase,
+          art.UnidadMedidaAlternativa_ AS UnidadAlternativa,
+          art.FactorConversion_ AS FactorConversion
         FROM AcumuladoStockUbicacion s
-        INNER JOIN Almacenes a 
-          ON a.CodigoEmpresa = s.CodigoEmpresa 
-          AND a.CodigoAlmacen = s.CodigoAlmacen
+        INNER JOIN Almacenes alm 
+          ON alm.CodigoEmpresa = s.CodigoEmpresa 
+          AND alm.CodigoAlmacen = s.CodigoAlmacen
         LEFT JOIN Ubicaciones u 
           ON u.CodigoEmpresa = s.CodigoEmpresa 
           AND u.CodigoAlmacen = s.CodigoAlmacen 
           AND u.Ubicacion = s.Ubicacion
+        INNER JOIN Articulos art
+          ON art.CodigoEmpresa = s.CodigoEmpresa
+          AND art.CodigoArticulo = s.CodigoArticulo
         WHERE s.CodigoEmpresa = @codigoEmpresa
           AND s.CodigoArticulo = @codigoArticulo
-          AND s.Periodo = 99   -- Solo periodo 99 (stock actual)
+          AND s.Periodo = 99
           AND s.UnidadSaldo > 0
         ORDER BY s.CodigoAlmacen, s.Ubicacion
       `);
@@ -1270,6 +1277,7 @@ app.get('/buscar-articulos', async (req, res) => {
 // ============================================
 // ✅ 26. OBTENER ARTÍCULOS POR UBICACIÓN (CORREGIDO - SOLO PERIODO 99)
 // ============================================
+// ✅ 26. OBTENER ARTÍCULOS POR UBICACIÓN (ACTUALIZADO CON UNIDADES DE MEDIDA)
 app.get('/stock/por-ubicacion', async (req, res) => {
   const { codigoAlmacen, ubicacion, page = 1, pageSize = 100 } = req.query;
   const codigoEmpresa = req.user.CodigoEmpresa;
@@ -1291,17 +1299,21 @@ app.get('/stock/por-ubicacion', async (req, res) => {
       .query(`
         SELECT 
           s.CodigoArticulo,
-          a.DescripcionArticulo,
+          art.DescripcionArticulo,
           s.UnidadSaldo AS Cantidad,
+          s.TipoUnidadMedida_ AS UnidadMedida,
+          art.UnidadMedida2_ AS UnidadBase,
+          art.UnidadMedidaAlternativa_ AS UnidadAlternativa,
+          art.FactorConversion_ AS FactorConversion,
           COUNT(*) OVER() AS TotalCount
         FROM AcumuladoStockUbicacion s
-        INNER JOIN Articulos a 
-          ON a.CodigoEmpresa = s.CodigoEmpresa 
-          AND a.CodigoArticulo = s.CodigoArticulo
+        INNER JOIN Articulos art 
+          ON art.CodigoEmpresa = s.CodigoEmpresa 
+          AND art.CodigoArticulo = s.CodigoArticulo
         WHERE s.CodigoEmpresa = @codigoEmpresa
           AND s.CodigoAlmacen = @codigoAlmacen
           AND s.Ubicacion = @ubicacion
-          AND s.Periodo = 99  -- Solo periodo 99 (stock actual)
+          AND s.Periodo = 99
           AND s.UnidadSaldo > 0
         ORDER BY s.CodigoArticulo
         OFFSET ${offset} ROWS
@@ -1329,10 +1341,10 @@ app.get('/stock/por-ubicacion', async (req, res) => {
   }
 });
 
-
 // ============================================
 // ✅ 27. ACTUALIZAR STOCK Y REGISTRAR MOVIMIENTO (CORREGIDO)
 // ============================================
+
 app.post('/traspaso', async (req, res) => {
   // Obtener datos del usuario autenticado
   const codigoEmpresa = req.user.CodigoEmpresa;
@@ -1343,7 +1355,9 @@ app.post('/traspaso', async (req, res) => {
     articulo,
     origenAlmacen, origenUbicacion, 
     destinoAlmacen, destinoUbicacion, 
-    cantidad
+    cantidad,
+    unidadMedidaOrigen,
+    factorConversionOrigen
   } = req.body;
 
   // Validar que no sea la misma ubicación
@@ -1363,17 +1377,20 @@ app.post('/traspaso', async (req, res) => {
   try {
     await transaction.begin();
     
+    // Convertir la cantidad a la unidad base usando el factor de conversión
+    const cantidadBase = cantidad * (factorConversionOrigen || 1);
+    
     // 1. Actualizar stock en origen - NUEVO Request
     const requestOrigen = new sql.Request(transaction);
     await requestOrigen
-      .input('cantidad', sql.Decimal(18,4), cantidad)
+      .input('cantidadBase', sql.Decimal(18,4), cantidadBase)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('codigoAlmacen', sql.VarChar, origenAlmacen)
       .input('ubicacion', sql.VarChar, origenUbicacion)
       .input('codigoArticulo', sql.VarChar, articulo)
       .query(`
         UPDATE AcumuladoStockUbicacion
-        SET UnidadSaldo = UnidadSaldo - @cantidad
+        SET UnidadSaldo = UnidadSaldo - @cantidadBase
         WHERE CodigoEmpresa = @codigoEmpresa
           AND CodigoAlmacen = @codigoAlmacen
           AND Ubicacion = @ubicacion
@@ -1402,14 +1419,14 @@ app.post('/traspaso', async (req, res) => {
       // 3a. Actualizar destino si existe - NUEVO Request
       const requestUpdateDestino = new sql.Request(transaction);
       await requestUpdateDestino
-        .input('cantidad', sql.Decimal(18,4), cantidad)
+        .input('cantidadBase', sql.Decimal(18,4), cantidadBase)
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('codigoAlmacen', sql.VarChar, destinoAlmacen)
         .input('ubicacion', sql.VarChar, destinoUbicacion)
         .input('codigoArticulo', sql.VarChar, articulo)
         .query(`
           UPDATE AcumuladoStockUbicacion
-          SET UnidadSaldo = UnidadSaldo + @cantidad
+          SET UnidadSaldo = UnidadSaldo + @cantidadBase
           WHERE CodigoEmpresa = @codigoEmpresa
             AND CodigoAlmacen = @codigoAlmacen
             AND Ubicacion = @ubicacion
@@ -1420,18 +1437,20 @@ app.post('/traspaso', async (req, res) => {
       // 3b. Insertar en destino si no existe - NUEVO Request
       const requestInsertDestino = new sql.Request(transaction);
       await requestInsertDestino
-        .input('cantidad', sql.Decimal(18,4), cantidad)
+        .input('cantidadBase', sql.Decimal(18,4), cantidadBase)
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('codigoAlmacen', sql.VarChar, destinoAlmacen)
         .input('ubicacion', sql.VarChar, destinoUbicacion)
         .input('codigoArticulo', sql.VarChar, articulo)
+        .input('tipoUnidadMedida', sql.VarChar, unidadMedidaOrigen) // Usamos la misma unidad que el origen
+        .input('factorConversion', sql.Decimal(18,4), factorConversionOrigen || 1)
         .query(`
           INSERT INTO AcumuladoStockUbicacion (
             CodigoEmpresa, CodigoAlmacen, Ubicacion, CodigoArticulo,
-            UnidadSaldo, Periodo
+            UnidadSaldo, Periodo, TipoUnidadMedida_, FactorConversion_
           ) VALUES (
             @codigoEmpresa, @codigoAlmacen, @ubicacion, @codigoArticulo,
-            @cantidad, 99
+            @cantidadBase, 99, @tipoUnidadMedida, @factorConversion
           )
         `);
     }
@@ -1451,19 +1470,24 @@ app.post('/traspaso', async (req, res) => {
       .input('codigoArticulo', sql.VarChar, articulo)
       .input('codigoAlmacen', sql.VarChar, origenAlmacen)
       .input('almacenContrapartida', sql.VarChar, destinoAlmacen)
-      .input('unidadStock', sql.Decimal(18,4), cantidad)
+      .input('unidadStock', sql.Decimal(18,4), cantidadBase) // En base
       .input('comentario', sql.VarChar, `Traspaso por Usuario: ${usuario}`)
       .input('ubicacion', sql.VarChar, origenUbicacion)
       .input('ubicacionContrapartida', sql.VarChar, destinoUbicacion)
+      .input('unidadMedidaOrigen', sql.VarChar, unidadMedidaOrigen)
+      .input('unidadMedidaDestino', sql.VarChar, unidadMedidaOrigen) // Por defecto la misma, pero podria ser diferente
+      .input('factorConversion', sql.Decimal(18,4), factorConversionOrigen || 1)
       .query(`
         INSERT INTO MovimientoStock (
           CodigoEmpresa, Ejercicio, Periodo, FechaRegistro, TipoMovimiento,
           CodigoArticulo, CodigoAlmacen, AlmacenContrapartida,
-          UnidadStock, Comentario, Ubicacion, UbicacionContrapartida
+          UnidadStock, Comentario, Ubicacion, UbicacionContrapartida,
+          UnidadMedidaOrigen, UnidadMedidaDestino, FactorConversion_
         ) VALUES (
           @codigoEmpresa, @ejercicio, @periodo, @fecha, @tipoMovimiento,
           @codigoArticulo, @codigoAlmacen, @almacenContrapartida,
-          @unidadStock, @comentario, @ubicacion, @ubicacionContrapartida
+          @unidadStock, @comentario, @ubicacion, @ubicacionContrapartida,
+          @unidadMedidaOrigen, @unidadMedidaDestino, @factorConversion
         )
       `);
 
@@ -1650,8 +1674,19 @@ app.get('/inventario/stock-total', async (req, res) => {
           alm.Almacen AS NombreAlmacen,
           s.Ubicacion,
           u.DescripcionUbicacion,
-          s.Partida,  -- Añadido campo Partida
-          s.UnidadSaldo AS Cantidad
+          s.Partida,
+          s.UnidadSaldo AS Cantidad,
+          s.TipoUnidadMedida_ AS UnidadStock,  -- Unidad en la que está registrado el stock
+          -- Campos de unidades del artículo
+          a.UnidadMedida2_ AS UnidadBase,
+          a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
+          a.FactorConversion_ AS FactorConversion,
+          -- Calcular cantidad en unidad base
+          CASE 
+            WHEN s.TipoUnidadMedida_ = a.UnidadMedidaAlternativa_ 
+              THEN s.UnidadSaldo * a.FactorConversion_
+            ELSE s.UnidadSaldo
+          END AS CantidadBase
         FROM AcumuladoStockUbicacion s
         INNER JOIN Articulos a 
           ON a.CodigoEmpresa = s.CodigoEmpresa 
