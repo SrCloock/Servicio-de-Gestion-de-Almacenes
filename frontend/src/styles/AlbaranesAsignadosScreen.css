@@ -1,156 +1,68 @@
-/* AlbaranesAsignadosScreen.css */
-.pedidos-container {
+/* AsignacionAlbaranesScreen.css */
+.asignacion-container {
+  padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 20px;
 }
 
-.screen-header {
-  position: relative;
-  margin-bottom: 30px;
-  text-align: center;
+.tabla-asignacion {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
 }
 
-.screen-header h2 {
-  font-size: 28px;
-  color: #0056b3;
-  position: relative;
-  z-index: 2;
+.tabla-asignacion th, 
+.tabla-asignacion td {
+  border: 1px solid #ddd;
+  padding: 12px;
+  text-align: left;
 }
 
-.bubble {
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(0, 86, 179, 0.1);
-  z-index: 1;
+.tabla-asignacion th {
+  background-color: #f2f2f2;
+  font-weight: bold;
 }
 
-.bubble1 {
-  width: 100px;
-  height: 100px;
-  top: -30px;
-  left: -30px;
+.lista-articulos {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+  max-height: 150px;
+  overflow-y: auto;
 }
 
-.bubble2 {
-  width: 150px;
-  height: 150px;
-  bottom: -50px;
-  right: -50px;
+.lista-articulos li {
+  padding: 4px 0;
+  border-bottom: 1px solid #eee;
 }
 
-.error-pedidos, .loading-pedidos, .no-pedidos {
+.selector-repartidor {
+  width: 100%;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+
+.btn-asignar {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.btn-asignar:hover {
+  background-color: #45a049;
+}
+
+.cargando, .error, .no-albaranes {
   text-align: center;
   padding: 40px;
-  margin: 20px 0;
-  border-radius: 8px;
-}
-
-.error-pedidos {
-  background: #ffebee;
-  border-left: 4px solid #d32f2f;
-}
-
-.loading-pedidos {
-  background: #f8f9fa;
-}
-
-.no-pedidos {
-  background: #f8f9fa;
-  border: 2px dashed #dee2e6;
-}
-
-.loader {
-  border: 5px solid #f3f3f3;
-  border-top: 5px solid #3498db;
-  border-radius: 50%;
-  width: 50px;
-  height: 50px;
-  animation: spin 1s linear infinite;
-  margin: 0 auto 20px;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.albaranes-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 20px;
-  margin-bottom: 80px;
-}
-
-.pedido-card {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  padding: 20px;
-  transition: transform 0.3s ease;
-}
-
-.pedido-card:hover {
-  transform: translateY(-5px);
-}
-
-.pedido-info {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 15px;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 10px;
-}
-
-.numero-pedido {
-  font-weight: bold;
-  color: #0056b3;
   font-size: 18px;
 }
 
-.cliente {
-  font-weight: 600;
-}
-
-.fecha-pedido {
-  color: #6c757d;
-  font-size: 14px;
-}
-
-.pedido-details {
-  margin-bottom: 15px;
-}
-
-.pedido-details div {
-  margin-bottom: 8px;
-}
-
-.toggle-button-container {
-  text-align: center;
-}
-
-.btn-toggle {
-  background: #0056b3;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  padding: 10px 20px;
-  cursor: pointer;
-  transition: background 0.3s;
-}
-
-.btn-toggle:hover {
-  background: #003d82;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .albaranes-list {
-    grid-template-columns: 1fr;
-  }
-  
-  .pedido-info {
-    flex-direction: column;
-    gap: 5px;
-  }
+.error {
+  color: #d32f2f;
 }

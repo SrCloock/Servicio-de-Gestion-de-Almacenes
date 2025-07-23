@@ -1,7 +1,6 @@
 // src/components/Navbar.js
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import axios from 'axios';
 import { 
   FaRoute, 
   FaClipboardList, 
@@ -18,11 +17,13 @@ import {
   FaChevronDown
 } from 'react-icons/fa';
 import { getAuthHeader } from '../helpers/authHelper';
+import { usePermissions } from '../PermissionsManager';
 import '../styles/Navbar.css';
 
 const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const permissions = usePermissions();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeRoute, setActiveRoute] = useState(location.pathname);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -142,16 +143,63 @@ const Navbar = () => {
     window.location.reload();
   };
 
+  // Definición de elementos de navegación con permisos
   const navItems = [
-    { path: '/', label: 'Inicio', icon: <FaHome /> },
-    { path: '/rutas', label: 'Albaranes', icon: <FaRoute /> },
-    { path: '/PedidosScreen', label: 'Todos los Pedidos', icon: <FaClipboardList /> },
-    { path: '/pedidos-asignados', label: 'Pedidos Asignados', icon: <FaTruckLoading /> },
-    { path: '/traspasos', label: 'Traspasos', icon: <FaExchangeAlt /> },
-    { path: '/inventario', label: 'Inventario', icon: <FaBoxes /> },
-    { path: '/designar-rutas', label: 'Designar Rutas', icon: <FaUserFriends /> },
-    { path: '/albaranes-asignados', label: 'Albaranes Asignados', icon: <FaFileInvoice /> },
+    { 
+      path: '/', 
+      label: 'Inicio', 
+      icon: <FaHome />,
+      visible: true // Siempre visible
+    },
+    { 
+      path: '/rutas', 
+      label: 'Albaranes', 
+      icon: <FaRoute />,
+      visible: permissions.canViewWaybills
+    },
+    { 
+      path: '/PedidosScreen', 
+      label: 'Todos los Pedidos', 
+      icon: <FaClipboardList />,
+      visible: permissions.canViewAllOrders
+    },
+    { 
+      path: '/pedidos-asignados', 
+      label: 'Pedidos Asignados', 
+      icon: <FaTruckLoading />,
+      visible: permissions.canViewAssignedOrders
+    },
+    { 
+      path: '/traspasos', 
+      label: 'Traspasos', 
+      icon: <FaExchangeAlt />,
+      visible: permissions.canViewTransfers
+    },
+    { 
+      path: '/inventario', 
+      label: 'Inventario', 
+      icon: <FaBoxes />,
+      visible: permissions.canViewInventory
+    },
+    { 
+      path: '/designar-rutas', 
+      label: 'Designar Rutas', 
+      icon: <FaUserFriends />,
+      visible: permissions.canAssignRoutes
+    },
+    { 
+      path: '/albaranes-asignados', 
+      label: 'Albaranes Asignados', 
+      icon: <FaFileInvoice />,
+      visible: permissions.canViewWaybills
+    },
   ];
+
+  // Filtrar elementos visibles según permisos
+  const visibleNavItems = navItems.filter(item => item.visible);
+  
+  // Mostrar solo si hay al menos 2 elementos visibles
+  if (visibleNavItems.length < 2) return null;
 
   return (
     <nav className={`navbar ${isScrolled ? 'scrolled' : ''}`}>
@@ -166,7 +214,7 @@ const Navbar = () => {
           
           <div className="navbar-center">
             <div className="nav-items-container">
-              {navItems.map((item) => (
+              {visibleNavItems.map((item) => (
                 <div 
                   key={item.path}
                   className={`nav-item ${activeRoute === item.path ? 'active' : ''}`}
@@ -180,7 +228,7 @@ const Navbar = () => {
           </div>
           
           <div className="navbar-right">
-            {/* Selector de empresa en escritorio - Versión mejorada */}
+            {/* Selector de empresa */}
             {user && (
               <div className="empresa-selector-container" ref={selectorRef}>
                 <div 
@@ -229,7 +277,7 @@ const Navbar = () => {
           className={`mobile-menu ${isMobileMenuOpen ? 'open' : ''}`}
           aria-hidden={!isMobileMenuOpen}
         >
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <div 
               key={item.path}
               className={`mobile-nav-item ${activeRoute === item.path ? 'active' : ''}`}

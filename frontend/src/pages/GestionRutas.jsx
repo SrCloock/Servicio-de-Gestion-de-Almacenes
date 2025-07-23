@@ -1,21 +1,31 @@
 ﻿﻿import React, { useState, useEffect } from 'react';
-import '../styles/GestionRutas.css';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
+import { usePermissions } from '../PermissionsManager';
+import '../styles/GestionRutas.css';
 
 function GestionRutas() {
+  const navigate = useNavigate();
   const [albaranes, setAlbaranes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const navigate = useNavigate();
-
+  
+  // Obtener permisos del usuario
+  const { 
+    canViewWaybills, 
+    canPerformActions 
+  } = usePermissions();
+  
   useEffect(() => {
     const fetchAlbaranes = async () => {
       try {
         setLoading(true);
         setError(null);
+        
+        // Verificar permisos antes de cargar datos
+        if (!canViewWaybills) return;
         
         const headers = getAuthHeader();
         
@@ -37,17 +47,41 @@ function GestionRutas() {
     };
 
     fetchAlbaranes();
-  }, []);
+  }, [canViewWaybills]);
 
   const abrirDetalle = (albaran) => {
+    if (!canPerformActions) return;
     navigate('/detalle-albaran', { state: { albaran } });
   };
+
+  // Si no tiene permiso para ver esta pantalla
+  if (!canViewWaybills) {
+    return (
+      <div className="gestion-rutas-screen">
+        <div className="no-permission">
+          <h2>Acceso restringido</h2>
+          <p>No tienes permiso para ver esta sección.</p>
+          <button onClick={() => navigate('/')} className="btn-volver">
+            Volver al inicio
+          </button>
+        </div>
+        <Navbar />
+      </div>
+    );
+  }
 
   return (
     <div className="gestion-rutas-screen">
       <div className="rutas-content">
         <div className="rutas-header">
           <h2>Gestión de Rutas</h2>
+          <div className="permiso-indicator">
+            {canPerformActions ? (
+              <span className="permiso-full">Acceso completo</span>
+            ) : (
+              <span className="permiso-readonly">Solo lectura</span>
+            )}
+          </div>
         </div>
 
         <h3>Entregas Asignadas a Tu Ruta</h3>
@@ -71,7 +105,7 @@ function GestionRutas() {
           {albaranes.map((albaran) => (
             <div 
               key={`${albaran.id}-${albaran.albaran}`} 
-              className={`ruta-card ${albaran.esParcial ? 'albaran-parcial' : ''}`}
+              className={`ruta-card ${albaran.esParcial ? 'albaran-parcial' : ''} ${canPerformActions ? 'clickable' : ''}`}
               onClick={() => abrirDetalle(albaran)}
             >
               <div className="card-header">
@@ -107,6 +141,12 @@ function GestionRutas() {
                   </span>
                 </div>
               </div>
+              
+              {!canPerformActions && (
+                <div className="view-only-overlay">
+                  Solo lectura
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -1,4 +1,5 @@
-﻿import React from 'react';
+﻿// src/App.js
+import React from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import LoginPage from './pages/LoginPage';
@@ -11,6 +12,7 @@ import DesignarRutasScreen from './pages/DesignarRutasScreen';
 import AlbaranesAsignadosScreen from './pages/AlbaranesAsignadosScreen';
 import TraspasosPage from './pages/TraspasosPage';
 import InventarioPage from './pages/InventarioPage';
+import { PermissionsProvider, ProtectedRouteWithPermission, usePermissions } from './PermissionsManager';
 
 const ProtectedRoute = ({ children }) => {
   const location = useLocation();
@@ -31,68 +33,97 @@ function App() {
   
   return (
     <div className="app-container">
-      {showNavbar && <Navbar />}
-      
-      <div className="content-container">
-        <Routes>
-          <Route path="/" element={<Navigate to="/login" />} />
-          <Route path="/login" element={<LoginPage />} />
+      <PermissionsProvider user={userData}>
+        {showNavbar && <Navbar />}
+        
+        <div className="content-container">
+          <Routes>
+            <Route path="/" element={<Navigate to="/login" />} />
+            <Route path="/login" element={<LoginPage />} />
 
-          <Route path="/PedidosScreen" element={
-            <ProtectedRoute>
-              <PedidosScreen />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/designar-rutas" element={
-            <ProtectedRoute>
-              <DesignarRutasScreen />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/rutas" element={
-            <ProtectedRoute>
-              <GestionRutas />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/confirmacion-entrega" element={
-            <ProtectedRoute>
-              <ConfirmacionEntrega />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/detalle-albaran" element={
-            <ProtectedRoute>
-              <DetalleAlbaran />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/pedidos-asignados" element={
-            <ProtectedRoute>
-              <PedidosAsignadosScreen />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/albaranes-asignados" element={
-            <ProtectedRoute>
-              <AlbaranesAsignadosScreen />
-            </ProtectedRoute>
-          } />
+            {/* Pantalla de Pedidos */}
+            <Route path="/PedidosScreen" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewAllOrders">
+                  <PedidosScreen />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+            
+            {/* Designar rutas */}
+            <Route path="/designar-rutas" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canAssignRoutes">
+                  <DesignarRutasScreen />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+            
+            {/* Gestión de rutas */}
+            <Route path="/rutas" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewWaybills">
+                  <GestionRutas />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+            
+            {/* Confirmación de entrega */}
+            <Route path="/confirmacion-entrega" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewWaybills">
+                  <ConfirmacionEntrega />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+            
+            {/* Detalle de albarán */}
+            <Route path="/detalle-albaran" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewWaybills">
+                  <DetalleAlbaran />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+            
+            {/* Pedidos asignados */}
+            <Route path="/pedidos-asignados" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewAssignedOrders">
+                  <PedidosAsignadosScreen />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+            
+            {/* Albaranes asignados */}
+            <Route path="/albaranes-asignados" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewWaybills">
+                  <AlbaranesAsignadosScreen />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
 
-          <Route path="/traspasos" element={
-            <ProtectedRoute>
-              <TraspasosPage />
-            </ProtectedRoute>
-          } />
+            {/* Traspasos */}
+            <Route path="/traspasos" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewTransfers">
+                  <TraspasosPage />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
 
-          <Route path="/inventario" element={
-            <ProtectedRoute>
-              <InventarioPage />
-            </ProtectedRoute>
-          } />
-        </Routes>
-      </div>
+            {/* Inventario */}
+            <Route path="/inventario" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewInventory">
+                  <InventarioPage />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+          </Routes>
+        </div>
+      </PermissionsProvider>
     </div>
   );
 }

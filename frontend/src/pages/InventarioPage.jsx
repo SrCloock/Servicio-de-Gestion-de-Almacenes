@@ -1,15 +1,13 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
 import { 
   FiSearch, FiChevronDown, FiChevronUp, 
   FiFilter, FiEdit, FiX, 
-  FiCheck, FiClock, FiList 
+  FiCheck, FiClock, FiList, FiRefreshCw, FiPlus, FiMinus
 } from 'react-icons/fi';
 import '../styles/InventarioPage.css';
-
-const PAGE_SIZE = 30;
 
 const InventarioPage = () => {
   const [activeTab, setActiveTab] = useState('inventario');
@@ -28,36 +26,34 @@ const InventarioPage = () => {
   });
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [ajustesPendientes, setAjustesPendientes] = useState([]);
   const [editandoCantidad, setEditandoCantidad] = useState(null);
   const [nuevaCantidad, setNuevaCantidad] = useState('');
   const [detallesModal, setDetallesModal] = useState(null);
   const [cargandoDetalles, setCargandoDetalles] = useState(false);
-  
-  const nombreEmpresa = 'Demos';
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
 
-  // Función para formatear unidades (singular/plural) - MEJORADA
   const formatearUnidad = (cantidad, unidad) => {
-    // Si no hay unidad, usar 'ud' por defecto
+    // Si no hay unidad o está vacía, usar "unidad" por defecto
     if (!unidad || unidad.trim() === '') {
-      unidad = 'ud';
+      unidad = 'unidad';
     }
     
-    // Redondear a 2 decimales si es decimal, pero si es entero mostrarlo sin decimales
     let cantidadFormateada = cantidad;
     if (!Number.isInteger(cantidad)) {
       cantidadFormateada = parseFloat(cantidad.toFixed(2));
     }
 
-    // Manejar casos especiales de unidades invariables
     const unidadesInvariables = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
     
-    // Verificar si es una unidad invariable
-    if (unidadesInvariables.includes(unidad.toLowerCase())) {
+    // Convertir a minúsculas para la comparación, pero mantener la original para mostrar
+    const unidadLower = unidad.toLowerCase();
+    
+    if (unidadesInvariables.includes(unidadLower)) {
       return `${cantidadFormateada} ${unidad}`;
     }
     
-    // Diccionario de plurales irregulares
     const pluralesIrregulares = {
       'ud': 'uds',
       'par': 'pares',
@@ -82,42 +78,44 @@ const InventarioPage = () => {
       'cubeta': 'cubetas',
       'garrafa': 'garrafas',
       'tambor': 'tambores',
-      'cubos': 'cubos', // Invariable
-      'pares': 'pares' // Invariable
+      'cubos': 'cubos',
+      'pares': 'pares'
     };
 
-    // Si es 1, usar singular
     if (cantidadFormateada === 1) {
+      // Manejar caso especial para "unidad"
+      if (unidadLower === 'unidad' || unidadLower === 'unidades') {
+        return '1 unidad';
+      }
       return `1 ${unidad}`;
-    } 
-    // Plural
-    else {
-      // Verificar si es una unidad irregular
-      if (pluralesIrregulares[unidad.toLowerCase()]) {
-        return `${cantidadFormateada} ${pluralesIrregulares[unidad.toLowerCase()]}`;
+    } else {
+      // Manejar caso especial para "unidad" en plural
+      if (unidadLower === 'unidad' || unidadLower === 'unidades') {
+        return `${cantidadFormateada} unidades`;
       }
       
-      // Reglas para formar el plural
+      if (pluralesIrregulares[unidadLower]) {
+        return `${cantidadFormateada} ${pluralesIrregulares[unidadLower]}`;
+      }
+      
       const ultimaLetra = unidad.charAt(unidad.length - 1);
       const penultimaLetra = unidad.charAt(unidad.length - 2);
       
-      // Si termina en vocal, agregar 's'
       if (['a', 'e', 'i', 'o', 'u'].includes(ultimaLetra)) {
         return `${cantidadFormateada} ${unidad}s`;
-      } 
-      // Si termina en consonante, agregar 'es'
-      else {
+      } else {
         return `${cantidadFormateada} ${unidad}es`;
       }
     }
   };
 
-  // Función de agrupación con manejo correcto de unidades
+  // FUNCIÓN CORREGIDA DE AGRUPACIÓN (CON GRUPO ÚNICO)
   const agruparPorArticulo = useCallback((data) => {
     const agrupado = {};
     
     data.forEach(item => {
-      const clave = `${item.CodigoArticulo}-${item.CodigoAlmacen}-${item.Ubicacion}-${item.Partida || 'NOPARTIDA'}-${item.UnidadStock}`;
+      // Clave única por artículo + almacén + ubicación + unidad + partida
+      const clave = `${item.CodigoAlmacen}-${item.Ubicacion}-${item.UnidadStock}-${item.Partida || ''}`;
       
       if (!agrupado[item.CodigoArticulo]) {
         agrupado[item.CodigoArticulo] = {
@@ -125,7 +123,6 @@ const InventarioPage = () => {
           DescripcionArticulo: item.DescripcionArticulo,
           CodigoFamilia: item.CodigoFamilia,
           CodigoSubfamilia: item.CodigoSubfamilia,
-          // Campos para unidades de medida
           UnidadBase: item.UnidadBase,
           UnidadAlternativa: item.UnidadAlternativa,
           FactorConversion: item.FactorConversion,
@@ -142,18 +139,32 @@ const InventarioPage = () => {
         Ubicacion: item.Ubicacion,
         DescripcionUbicacion: item.DescripcionUbicacion,
         Partida: item.Partida,
-        UnidadStock: item.UnidadStock,
+        UnidadStock: item.UnidadStock, // Usamos la unidad real del stock
         Cantidad: item.Cantidad,
-        CantidadBase: item.CantidadBase,
-        MovPosicionLinea: item.MovPosicionLinea,
-        detalles: item.detalles
+        CantidadBase: item.Cantidad * (item.FactorConversion || 1), // Convertir a base
+        GrupoUnico: clave
       };
       
       agrupado[item.CodigoArticulo].ubicaciones.push(ubicacion);
-      agrupado[item.CodigoArticulo].totalStockBase += item.CantidadBase;
+      agrupado[item.CodigoArticulo].totalStockBase += ubicacion.CantidadBase;
     });
     
     Object.values(agrupado).forEach(articulo => {
+      articulo.ubicaciones.sort((a, b) => {
+        if (a.NombreAlmacen < b.NombreAlmacen) return -1;
+        if (a.NombreAlmacen > b.NombreAlmacen) return 1;
+        
+        if (a.Ubicacion < b.Ubicacion) return -1;
+        if (a.Ubicacion > b.Ubicacion) return 1;
+        
+        if (a.Partida && b.Partida) {
+          if (a.Partida < b.Partida) return -1;
+          if (a.Partida > b.Partida) return 1;
+        }
+        
+        return 0;
+      });
+      
       if (articulo.totalStockBase === 0) {
         articulo.estado = 'agotado';
       } else if (articulo.totalStockBase < 0) {
@@ -166,7 +177,6 @@ const InventarioPage = () => {
     return Object.values(agrupado);
   }, []);
 
-  // Cargar inventario
   const cargarInventario = useCallback(async () => {
     try {
       setLoading(prev => ({ ...prev, inventario: true }));
@@ -186,7 +196,6 @@ const InventarioPage = () => {
     }
   }, [agruparPorArticulo]);
 
-  // Cargar historial de ajustes
   const cargarHistorialAjustes = useCallback(async () => {
     try {
       setLoading(prev => ({ ...prev, historial: true }));
@@ -207,18 +216,20 @@ const InventarioPage = () => {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'inventario') {
+    if (activeTab === 'inventario' && inventario.length === 0) {
       cargarInventario();
-    } else if (activeTab === 'historial') {
+    } else if (activeTab === 'historial' && historialAjustes.length === 0) {
       cargarHistorialAjustes();
     }
-  }, [activeTab, cargarInventario, cargarHistorialAjustes]);
+  }, [activeTab, cargarInventario, cargarHistorialAjustes, inventario.length, historialAjustes.length]);
 
   const refreshInventario = useCallback(() => {
     if (activeTab === 'inventario') {
       cargarInventario();
+    } else {
+      cargarHistorialAjustes();
     }
-  }, [activeTab, cargarInventario]);
+  }, [activeTab, cargarInventario, cargarHistorialAjustes]);
 
   const toggleExpandirArticulo = (codigoArticulo) => {
     setArticulosExpandidos(prev => ({
@@ -235,11 +246,11 @@ const InventarioPage = () => {
   };
 
   const toggleTodosArticulos = () => {
-    if (Object.keys(articulosExpandidos).length > 0) {
+    if (Object.keys(articulosExpandidos).length === filteredInventario.length) {
       setArticulosExpandidos({});
     } else {
       const allExpanded = {};
-      paginatedInventario.forEach(art => {
+      filteredInventario.forEach(art => {
         allExpanded[art.CodigoArticulo] = true;
       });
       setArticulosExpandidos(allExpanded);
@@ -259,6 +270,9 @@ const InventarioPage = () => {
     }
     setSortConfig({ key, direction });
   };
+
+  // Define el orden de los estados
+  const estadoOrden = { 'positivo': 1, 'negativo': 2, 'agotado': 3 };
 
   const filteredInventario = useMemo(() => {
     let result = [...inventario];
@@ -305,15 +319,38 @@ const InventarioPage = () => {
       );
     }
     
-    result.sort((a, b) => {
-      const estadoOrden = { 'positivo': 1, 'negativo': 2, 'agotado': 3 };
-      if (estadoOrden[a.estado] < estadoOrden[b.estado]) return -1;
-      if (estadoOrden[a.estado] > estadoOrden[b.estado]) return 1;
-      
-      if (a.CodigoArticulo < b.CodigoArticulo) return -1;
-      if (a.CodigoArticulo > b.CodigoArticulo) return 1;
-      return 0;
-    });
+    // Ordenar
+    if (sortConfig.key) {
+      result.sort((a, b) => {
+        let aValue, bValue;
+        
+        if (sortConfig.key === 'estado') {
+          aValue = estadoOrden[a.estado];
+          bValue = estadoOrden[b.estado];
+        } else {
+          aValue = a[sortConfig.key];
+          bValue = b[sortConfig.key];
+        }
+        
+        if (aValue < bValue) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (aValue > bValue) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    } else {
+      // Ordenación por defecto: estado y luego código
+      result.sort((a, b) => {
+        if (estadoOrden[a.estado] < estadoOrden[b.estado]) return -1;
+        if (estadoOrden[a.estado] > estadoOrden[b.estado]) return 1;
+        
+        if (a.CodigoArticulo < b.CodigoArticulo) return -1;
+        if (a.CodigoArticulo > b.CodigoArticulo) return 1;
+        return 0;
+      });
+    }
     
     return result;
   }, [inventario, searchTerm, filters, sortConfig]);
@@ -326,11 +363,11 @@ const InventarioPage = () => {
     return { totalArticulos, totalUnidades, totalUbicaciones };
   }, [filteredInventario]);
 
-  const totalPages = Math.ceil(filteredInventario.length / PAGE_SIZE);
+  const totalPages = Math.ceil(filteredInventario.length / pageSize);
   const paginatedInventario = useMemo(() => {
-    const startIndex = (currentPage - 1) * PAGE_SIZE;
-    return filteredInventario.slice(startIndex, startIndex + PAGE_SIZE);
-  }, [filteredInventario, currentPage]);
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredInventario.slice(startIndex, startIndex + pageSize);
+  }, [filteredInventario, currentPage, pageSize]);
 
   const goToPage = (page) => {
     if (page < 1 || page > totalPages) return;
@@ -369,13 +406,19 @@ const InventarioPage = () => {
   const guardarAjustePendiente = () => {
     if (!editandoCantidad || !nuevaCantidad) return;
     
+    const cantidad = parseFloat(nuevaCantidad);
+    if (isNaN(cantidad)) {
+      alert("Por favor ingrese un número válido");
+      return;
+    }
+    
     const nuevoAjuste = {
       articulo: editandoCantidad.articulo,
       codigoAlmacen: editandoCantidad.codigoAlmacen,
       ubicacionStr: editandoCantidad.ubicacionStr,
       partida: editandoCantidad.partida || '',
-      unidadStock: editandoCantidad.unidadStock, // Mantener la unidad original
-      nuevaCantidad: parseFloat(nuevaCantidad)
+      unidadStock: editandoCantidad.unidadStock || 'unidades',
+      nuevaCantidad: cantidad
     };
     
     setAjustesPendientes(prev => [...prev, nuevoAjuste]);
@@ -417,309 +460,6 @@ const InventarioPage = () => {
     });
   };
 
-  const InventarioHeader = () => (
-    <div className="inventario-header">
-      <div>
-        <h1>Inventario de {nombreEmpresa}</h1>
-        <p className="subtitle">Gestión completa de stock y ajustes</p>
-      </div>
-      
-      <div className="header-actions">
-        <div className="search-container">
-          <input
-            type="text"
-            placeholder={activeTab === 'inventario' 
-              ? "Buscar artículo..." 
-              : "Buscar en historial..."}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="search-input"
-          />
-          <FiSearch className="search-icon" />
-        </div>
-        
-        {activeTab === 'inventario' && (
-          <div className="inventario-stats">
-            <div className="stat-card">
-              <span className="stat-value">{stats.totalArticulos}</span>
-              <span className="stat-label">Artículos</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-value">
-                {stats.totalUnidades.toLocaleString()}
-              </span>
-              <span className="stat-label">Unidades</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-value">{stats.totalUbicaciones}</span>
-              <span className="stat-label">Ubicaciones</span>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  const FiltersPanel = () => (
-    activeTab === 'inventario' && (
-      <div className="filters-panel">
-        <div className="filter-group">
-          <label htmlFor="almacen-filter">
-            <FiFilter /> Almacén:
-          </label>
-          <input
-            type="text"
-            id="almacen-filter"
-            name="almacen"
-            placeholder="Filtrar por almacén"
-            value={filters.almacen}
-            onChange={handleFilterChange}
-          />
-        </div>
-        
-        <div className="filter-group">
-          <label htmlFor="ubicacion-filter">
-            <FiFilter /> Ubicación:
-          </label>
-          <input
-            type="text"
-            id="ubicacion-filter"
-            name="ubicacion"
-            placeholder="Filtrar por ubicación"
-            value={filters.ubicacion}
-            onChange={handleFilterChange}
-          />
-        </div>
-        
-        <div className="filter-group">
-          <label htmlFor="familia-filter">
-            <FiFilter /> Familia:
-          </label>
-          <input
-            type="text"
-            id="familia-filter"
-            name="familia"
-            placeholder="Buscar por familia"
-            value={filters.familia}
-            onChange={handleFilterChange}
-          />
-        </div>
-        
-        <div className="filter-group">
-          <label htmlFor="subfamilia-filter">
-            <FiFilter /> Subfamilia:
-          </label>
-          <input
-            type="text"
-            id="subfamilia-filter"
-            name="subfamilia"
-            placeholder="Buscar por subfamilia"
-            value={filters.subfamilia}
-            onChange={handleFilterChange}
-          />
-        </div>
-        
-        <button 
-          className="btn-toggle-all"
-          onClick={toggleTodosArticulos}
-          aria-label={Object.keys(articulosExpandidos).length > 0 
-            ? 'Contraer todos los artículos' 
-            : 'Expandir todos los artículos'}
-        >
-          {Object.keys(articulosExpandidos).length > 0 ? (
-            <>
-              <FiChevronUp /> Contraer Todo
-            </>
-          ) : (
-            <>
-              <FiChevronDown /> Expandir Todo
-            </>
-          )}
-        </button>
-      </div>
-    )
-  );
-
-  const PendingAdjustmentsPanel = () => (
-    activeTab === 'inventario' && ajustesPendientes.length > 0 && (
-      <div className="panel-ajustes">
-        <div className="panel-header">
-          <h3>Ajustes Pendientes</h3>
-          <div className="panel-actions">
-            <span className="badge">{ajustesPendientes.length} pendientes</span>
-            <button 
-              className="btn-confirmar"
-              onClick={confirmarAjustes}
-            >
-              <FiCheck /> Confirmar Ajustes
-            </button>
-          </div>
-        </div>
-        
-        <div className="lista-ajustes">
-          {ajustesPendientes.map((ajuste, index) => (
-            <div key={index} className="ajuste-item">
-              <div className="ajuste-info">
-                <div className="articulo">
-                  <span className="label">Artículo:</span> 
-                  <span className="value">{ajuste.articulo}</span>
-                </div>
-                <div className="ubicacion">
-                  <span className="label">Ubicación:</span> 
-                  <span className="value">{ajuste.ubicacionStr}</span>
-                </div>
-                <div className="partida">
-                  <span className="label">Partida:</span> 
-                  <span className="value">{ajuste.partida || 'N/A'}</span>
-                </div>
-                <div className="cantidad">
-                  <span className="label">Nueva Cantidad:</span> 
-                  <span className="value">
-                    <strong>{formatearUnidad(ajuste.nuevaCantidad, ajuste.unidadStock)}</strong>
-                  </span>
-                </div>
-              </div>
-              <button 
-                className="btn-eliminar"
-                onClick={() => eliminarAjustePendiente(index)}
-              >
-                <FiX /> Eliminar
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  );
-
-  const EditModal = () => (
-    editandoCantidad && (
-      <div className="modal-edicion">
-        <div className="modal-contenido">
-          <h3>Editar Cantidad</h3>
-          <div className="modal-details">
-            <div className="detail-item">
-              <span>Artículo:</span>
-              <span>{editandoCantidad.articulo}</span>
-            </div>
-            <div className="detail-item">
-              <span>Almacén:</span>
-              <span>{editandoCantidad.nombreAlmacen}</span>
-            </div>
-            <div className="detail-item">
-              <span>Ubicación:</span>
-              <span>{editandoCantidad.ubicacionStr}</span>
-            </div>
-            <div className="detail-item">
-              <span>Partida:</span>
-              <span>{editandoCantidad.partida || 'N/A'}</span>
-            </div>
-            <div className="detail-item">
-              <span>Unidad:</span>
-              <span>{editandoCantidad.unidadStock}</span>
-            </div>
-          </div>
-          
-          <div className="form-group">
-            <label>Cantidad Actual:</label>
-            <input 
-              type="text" 
-              value={formatearUnidad(editandoCantidad.cantidadActual, editandoCantidad.unidadStock)} 
-              disabled 
-              className="cantidad-actual"
-            />
-          </div>
-          
-          <div className="form-group">
-            <label>Nueva Cantidad:</label>
-            <input 
-              type="number" 
-              value={nuevaCantidad}
-              onChange={(e) => setNuevaCantidad(e.target.value)}
-              autoFocus
-              className="nueva-cantidad"
-            />
-          </div>
-          
-          <div className="modal-acciones">
-            <button 
-              className="btn-cancelar"
-              onClick={() => setEditandoCantidad(null)}
-            >
-              Cancelar
-            </button>
-            <button 
-              className="btn-guardar"
-              onClick={guardarAjustePendiente}
-            >
-              Guardar Ajuste
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  );
-
-  const DetallesModalComponent = () => {
-    if (!detallesModal) return null;
-
-    return (
-      <div className="modal-detalles">
-        <div className="modal-contenido">
-          <button className="cerrar-modal" onClick={() => setDetallesModal(null)}>
-            &times;
-          </button>
-          
-          <h3>Detalles de Variantes</h3>
-          
-          <div className="detalles-container">
-            {detallesModal.length === 0 ? (
-              <p>No hay detalles de variantes para este artículo</p>
-            ) : (
-              detallesModal.map((detalle, index) => (
-                <div key={index} className="variante-grupo">
-                  <div className="variante-header">
-                    <span className="color-variante">
-                      <strong>Color:</strong> {detalle.color.nombre}
-                    </span>
-                    <span className="talla-grupo">
-                      <strong>Grupo Talla:</strong> {detalle.grupoTalla.nombre}
-                    </span>
-                  </div>
-                  
-                  <table className="detalles-table">
-                    <thead>
-                      <tr>
-                        <th>Talla</th>
-                        <th>Descripción</th>
-                        <th>Unidades</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(detalle.tallas)
-                        .filter(([_, talla]) => talla.unidades > 0)
-                        .map(([codigoTalla, talla], idx) => (
-                          <tr key={idx}>
-                            <td>{codigoTalla}</td>
-                            <td>{talla.descripcion}</td>
-                            <td>{talla.unidades}</td>
-                          </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  
-                  <div className="variante-total">
-                    <strong>Total unidades:</strong> {detalle.unidades}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   const confirmarAjustes = async () => {
     try {
       const headers = getAuthHeader();
@@ -744,352 +484,667 @@ const InventarioPage = () => {
     }
   };
 
-  const InventoryList = () => {
-    if (error) {
-      return (
-        <div className="error-container">
-          <div className="error-icon">⚠️</div>
-          <p>{error}</p>
-          <button 
-            className="btn-reload"
-            onClick={() => window.location.reload()}
-          >
-            Recargar Inventario
-          </button>
-        </div>
-      );
-    }
-
-    if (loading.inventario) {
-      return (
-        <div className="loading-container">
-          <div className="spinner"></div>
-          <p>Cargando inventario...</p>
-        </div>
-      );
-    }
-
-    if (paginatedInventario.length === 0) {
-      return (
-        <div className="no-results">
-          <p>No se encontraron artículos con los filtros seleccionados</p>
-          <button 
-            className="btn-clear-filters"
-            onClick={() => {
-              setSearchTerm('');
-              setFilters({
-                almacen: '',
-                ubicacion: '',
-                familia: '',
-                subfamilia: ''
-              });
-            }}
-          >
-            Limpiar Filtros
-          </button>
-        </div>
-      );
-    }
-
-    return (
-      <div className="inventario-list">
-        {paginatedInventario.map(articulo => (
-          <div 
-            key={articulo.CodigoArticulo} 
-            className={`inventario-item ${articulo.estado === 'agotado' ? 'estado-agotado' : ''} ${articulo.estado === 'negativo' ? 'estado-negativo' : ''}`}
-            style={{ borderLeft: `5px solid ${getEstadoColor(articulo.estado)}` }}
-          >
-            <div 
-              className="articulo-header"
-              onClick={() => toggleExpandirArticulo(articulo.CodigoArticulo)}
-            >
-              <div className="articulo-info">
-                <span className="articulo-codigo">{articulo.CodigoArticulo}</span>
-                <span className="articulo-descripcion">{articulo.DescripcionArticulo}</span>
-                <div className="articulo-categorias">
-                  {articulo.CodigoFamilia && (
-                    <span className="familia-tag">Familia: {articulo.CodigoFamilia}</span>
-                  )}
-                  {articulo.CodigoSubfamilia && (
-                    <span className="subfamilia-tag">Subfamilia: {articulo.CodigoSubfamilia}</span>
-                  )}
-                </div>
-              </div>
-              <div className="articulo-total">
-                <span className="total-unidades">
-                  {formatearUnidad(articulo.totalStockBase, articulo.UnidadBase)}
-                  <span className="ubicaciones-count">
-                    ({articulo.ubicaciones.length} ubicaciones)
-                  </span>
-                </span>
-                <span className={`expand-icon ${articulosExpandidos[articulo.CodigoArticulo] ? 'expanded' : ''}`}>
-                  {articulosExpandidos[articulo.CodigoArticulo] ? <FiChevronUp /> : <FiChevronDown />}
-                </span>
-              </div>
-            </div>
-            
-            {articulosExpandidos[articulo.CodigoArticulo] && (
-              <div className="ubicaciones-list">
-                <div className="ubicaciones-header">
-                  <span onClick={() => requestSort('NombreAlmacen')}>
-                    Almacén {sortConfig.key === 'NombreAlmacen' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                  </span>
-                  <span onClick={() => requestSort('Ubicacion')}>
-                    Ubicación {sortConfig.key === 'Ubicacion' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                  </span>
-                  <span>Descripción</span>
-                  <span>Partida</span>
-                  <span onClick={() => requestSort('Cantidad')}>
-                    Cantidad {sortConfig.key === 'Cantidad' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                  </span>
-                  <span>Acciones</span>
-                </div>
-                
-                {articulo.ubicaciones
-                  .sort((a, b) => {
-                    if (!sortConfig.key) return 0;
-                    if (a[sortConfig.key] < b[sortConfig.key]) {
-                      return sortConfig.direction === 'asc' ? -1 : 1;
-                    }
-                    if (a[sortConfig.key] > b[sortConfig.key]) {
-                      return sortConfig.direction === 'asc' ? 1 : -1;
-                    }
-                    return 0;
-                  })
-                  .map(ubicacion => (
-                  <div 
-                    key={ubicacion.clave} 
-                    className="ubicacion-item"
-                  >
-                    <span className="ubicacion-almacen">
-                      {ubicacion.NombreAlmacen}
-                    </span>
-                    <span className="ubicacion-codigo">{ubicacion.Ubicacion}</span>
-                    <span className="ubicacion-desc">{ubicacion.DescripcionUbicacion || 'Sin descripción'}</span>
-                    <span className="ubicacion-partida">{ubicacion.Partida || 'N/A'}</span>
-                    <span 
-                      className="ubicacion-cantidad" 
-                      style={getStockStyle(ubicacion.Cantidad)}
-                    >
-                      {formatearUnidad(ubicacion.Cantidad, ubicacion.UnidadStock)}
-                      
-                      {/* Mostrar conversión SOLO si es diferente de la unidad base */}
-                      {articulo.UnidadAlternativa && 
-                       ubicacion.UnidadStock === articulo.UnidadAlternativa && (
-                        <span className="conversion-info">
-                          ({formatearUnidad(ubicacion.CantidadBase, articulo.UnidadBase)})
-                        </span>
-                      )}
-                    </span>
-                    <div className="acciones-ubicacion">
-                      <button 
-                        className="btn-editar"
-                        onClick={() => iniciarEdicionCantidad(
-                          articulo.CodigoArticulo,
-                          ubicacion.NombreAlmacen,
-                          ubicacion.Cantidad,
-                          ubicacion.clave,
-                          ubicacion.CodigoAlmacen,
-                          ubicacion.Ubicacion,
-                          ubicacion.Partida,
-                          ubicacion.UnidadStock
-                        )}
-                      >
-                        <FiEdit />
-                      </button>
-                      
-                      {ubicacion.detalles && (
-                        <button 
-                          className="btn-detalles"
-                          onClick={() => verDetalles(ubicacion.MovPosicionLinea)}
-                        >
-                          ...
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  const HistorialAjustesList = () => {
-    if (error) {
-      return (
-        <div className="error-container">
-          <div className="error-icon">⚠️</div>
-          <p>{error}</p>
-          <button 
-            className="btn-reload"
-            onClick={cargarHistorialAjustes}
-          >
-            Recargar Historial
-          </button>
-        </div>
-      );
-    }
-
-    if (loading.historial) {
-      return (
-        <div className="loading-container">
-          <div className="spinner"></div>
-          <p>Cargando historial de ajustes...</p>
-        </div>
-      );
-    }
-
-    if (historialAjustes.length === 0) {
-      return (
-        <div className="no-results">
-          <p>No se encontraron ajustes en el historial</p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="historial-list">
-        {historialAjustes.map(item => {
-          const expandido = fechasExpandidas[item.fecha];
-          
-          return (
-            <div key={item.fecha} className="historial-item">
-              <div 
-                className="fecha-header"
-                onClick={() => toggleExpandirFecha(item.fecha)}
-              >
-                <div className="fecha-info">
-                  <span className="fecha">{formatearFecha(item.fecha)}</span>
-                  <span className="resumen">
-                    {item.totalAjustes} ajustes realizados
-                  </span>
-                </div>
-                <span className={`expand-icon ${expandido ? 'expanded' : ''}`}>
-                  {expandido ? <FiChevronUp /> : <FiChevronDown />}
-                </span>
-              </div>
-              
-              {expandido && (
-                <div className="detalles-ajustes">
-                  <table className="detalles-table">
-                    <thead>
-                      <tr>
-                        <th>Artículo</th>
-                        <th>Almacén</th>
-                        <th>Ubicación</th>
-                        <th>Partida</th>
-                        <th>Ajuste</th>
-                        <th>Comentario</th>
-                        <th>Hora</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {item.detalles.map(detalle => (
-                        <tr key={`${detalle.CodigoArticulo}-${detalle.FechaRegistro}`}>
-                          <td>
-                            <div className="articulo-info">
-                              <span className="codigo">{detalle.CodigoArticulo}</span>
-                              <span className="descripcion">{detalle.DescripcionArticulo}</span>
-                            </div>
-                          </td>
-                          <td>
-                            <span className="almacen">{detalle.NombreAlmacen}</span>
-                            <span className="codigo-almacen">({detalle.CodigoAlmacen})</span>
-                          </td>
-                          <td>
-                            <span className="ubicacion">{detalle.Ubicacion}</span>
-                            <span className="desc-ubicacion">{detalle.DescripcionUbicacion || 'N/A'}</span>
-                          </td>
-                          <td>{detalle.Partida || '-'}</td>
-                          <td className={detalle.Diferencia > 0 ? 'positivo' : 'negativo'}>
-                            {detalle.Diferencia > 0 ? '+' : ''}{detalle.Diferencia}
-                          </td>
-                          <td>{detalle.Comentario}</td>
-                          <td>
-                            {new Date(detalle.FechaRegistro).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const PaginationComponent = () => (
-    activeTab === 'inventario' && totalPages > 1 && (
-      <div className="pagination">
-        <button 
-          onClick={() => goToPage(currentPage - 1)} 
-          disabled={currentPage === 1}
-          className="pagination-btn"
-        >
-          Anterior
-        </button>
-        
-        <span>Página {currentPage} de {totalPages}</span>
-        
-        <button 
-          onClick={() => goToPage(currentPage + 1)} 
-          disabled={currentPage === totalPages}
-          className="pagination-btn"
-        >
-          Siguiente
-        </button>
-      </div>
-    )
-  );
-
   return (
     <div className="inventario-container">
       <Navbar />
       
-      <InventarioHeader />
-      
-      <div className="tabs-container">
-        <button 
-          className={`tab-btn ${activeTab === 'inventario' ? 'active' : ''}`}
-          onClick={() => setActiveTab('inventario')}
-        >
-          <FiList /> Inventario Actual
-        </button>
-        <button 
-          className={`tab-btn ${activeTab === 'historial' ? 'active' : ''}`}
-          onClick={() => setActiveTab('historial')}
-        >
-          <FiClock /> Historial de Ajustes
-        </button>
+      <div className="inventario-content">
+        <div className="inventario-search-and-refresh">
+          <div className="inventario-search-container">
+            <input
+              type="text"
+              placeholder={activeTab === 'inventario' ? "Buscar artículo..." : "Buscar en historial..."}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="inventario-search-input"
+              aria-label="Buscar"
+            />
+          </div>
+          <button className="inventario-refresh-btn" onClick={refreshInventario} aria-label="Actualizar">
+            <FiRefreshCw /> Actualizar
+          </button>
+        </div>
+
+        <div className="inventario-tabs-container">
+          <button 
+            className={`inventario-tab-btn ${activeTab === 'inventario' ? 'inventario-active' : ''}`}
+            onClick={() => setActiveTab('inventario')}
+            aria-label="Ver inventario actual"
+          >
+            <FiList /> Inventario Actual
+          </button>
+          <button 
+            className={`inventario-tab-btn ${activeTab === 'historial' ? 'inventario-active' : ''}`}
+            onClick={() => setActiveTab('historial')}
+            aria-label="Ver historial de ajustes"
+          >
+            <FiClock /> Historial de Ajustes
+          </button>
+        </div>
+        
+        {activeTab === 'inventario' && (
+          <div className="inventario-filters-container">
+            <button 
+              className="inventario-filters-toggle"
+              onClick={() => setFiltrosAbiertos(!filtrosAbiertos)}
+              aria-expanded={filtrosAbiertos}
+              aria-label={filtrosAbiertos ? 'Ocultar filtros' : 'Mostrar filtros'}
+            >
+              <FiFilter /> {filtrosAbiertos ? 'Ocultar Filtros' : 'Mostrar Filtros'}
+            </button>
+            
+            {filtrosAbiertos && (
+              <div className="inventario-filters-panel">
+                <div className="inventario-filter-group">
+                  <label htmlFor="almacen-filter">
+                    Almacén:
+                  </label>
+                  <input
+                    type="text"
+                    id="almacen-filter"
+                    name="almacen"
+                    placeholder="Filtrar por almacén"
+                    value={filters.almacen}
+                    onChange={handleFilterChange}
+                    aria-label="Filtrar por almacén"
+                  />
+                </div>
+                
+                <div className="inventario-filter-group">
+                  <label htmlFor="ubicacion-filter">
+                    Ubicación:
+                  </label>
+                  <input
+                    type="text"
+                    id="ubicacion-filter"
+                    name="ubicacion"
+                    placeholder="Filtrar por ubicación"
+                    value={filters.ubicacion}
+                    onChange={handleFilterChange}
+                    aria-label="Filtrar por ubicación"
+                  />
+                </div>
+                
+                <div className="inventario-filter-group">
+                  <label htmlFor="familia-filter">
+                    Familia:
+                  </label>
+                  <input
+                    type="text"
+                    id="familia-filter"
+                    name="familia"
+                    placeholder="Buscar por familia"
+                    value={filters.familia}
+                    onChange={handleFilterChange}
+                    aria-label="Buscar por familia"
+                  />
+                </div>
+                
+                <div className="inventario-filter-group">
+                  <label htmlFor="subfamilia-filter">
+                    Subfamilia:
+                  </label>
+                  <input
+                    type="text"
+                    id="subfamilia-filter"
+                    name="subfamilia"
+                    placeholder="Buscar por subfamilia"
+                    value={filters.subfamilia}
+                    onChange={handleFilterChange}
+                    aria-label="Buscar por subfamilia"
+                  />
+                </div>
+                
+                <button 
+                  className="inventario-btn-toggle-all"
+                  onClick={toggleTodosArticulos}
+                  aria-label={Object.keys(articulosExpandidos).length > 0 
+                    ? 'Contraer todos los artículos' 
+                    : 'Expandir todos los artículos'}
+                >
+                  {Object.keys(articulosExpandidos).length > 0 ? (
+                    <>
+                      <FiMinus /> Contraer Todo
+                    </>
+                  ) : (
+                    <>
+                      <FiPlus /> Expandir Todo
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        
+        {activeTab === 'inventario' && ajustesPendientes.length > 0 && (
+          <div className="inventario-panel-ajustes">
+            <div className="inventario-panel-header">
+              <h3>Ajustes Pendientes <span className="inventario-badge">{ajustesPendientes.length}</span></h3>
+              <div className="inventario-panel-actions">
+                <button 
+                  className="inventario-btn-confirmar"
+                  onClick={confirmarAjustes}
+                  aria-label="Confirmar todos los ajustes pendientes"
+                >
+                  <FiCheck /> Confirmar Ajustes
+                </button>
+              </div>
+            </div>
+            
+            <div className="inventario-lista-ajustes">
+              {ajustesPendientes.map((ajuste, index) => (
+                <div key={index} className="inventario-ajuste-item">
+                  <div className="inventario-ajuste-info">
+                    <div className="inventario-articulo">
+                      <span className="inventario-label">Artículo:</span> 
+                      <span className="inventario-value">{ajuste.articulo}</span>
+                    </div>
+                    <div className="inventario-ubicacion">
+                      <span className="inventario-label">Ubicación:</span> 
+                      <span className="inventario-value">{ajuste.ubicacionStr}</span>
+                    </div>
+                    <div className="inventario-cantidad">
+                      <span className="inventario-label">Nueva Cantidad:</span> 
+                      <span className="inventario-value">
+                        <strong>{formatearUnidad(ajuste.nuevaCantidad, ajuste.unidadStock)}</strong>
+                      </span>
+                    </div>
+                  </div>
+                  <button 
+                    className="inventario-btn-eliminar"
+                    onClick={() => eliminarAjustePendiente(index)}
+                    aria-label="Eliminar ajuste pendiente"
+                  >
+                    <FiX />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {activeTab === 'inventario' && (
+          <div className="inventario-stats">
+            <div className="inventario-stat-card">
+              <div className="inventario-stat-icon">
+                <FiList />
+              </div>
+              <div>
+                <span className="inventario-stat-value">{stats.totalArticulos}</span>
+                <span className="inventario-stat-label">Artículos</span>
+              </div>
+            </div>
+            <div className="inventario-stat-card">
+              <div className="inventario-stat-icon">
+                <FiCheck />
+              </div>
+              <div>
+                <span className="inventario-stat-value">
+                  {stats.totalUnidades.toLocaleString()}
+                </span>
+                <span className="inventario-stat-label">Unidades</span>
+              </div>
+            </div>
+            <div className="inventario-stat-card">
+              <div className="inventario-stat-icon">
+                <FiFilter />
+              </div>
+              <div>
+                <span className="inventario-stat-value">{stats.totalUbicaciones}</span>
+                <span className="inventario-stat-label">Ubicaciones</span>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {cargandoDetalles && (
+          <div className="inventario-cargando-detalles">
+            <div className="inventario-spinner"></div>
+            <p>Cargando detalles...</p>
+          </div>
+        )}
+        
+        <div className="inventario-main-content">
+          {activeTab === 'inventario' ? (
+            <>
+              {error ? (
+                <div className="inventario-error-container">
+                  <div className="inventario-error-icon">⚠️</div>
+                  <h3>Error al cargar datos</h3>
+                  <p>{error}</p>
+                  <button 
+                    className="inventario-btn-reload"
+                    onClick={() => window.location.reload()}
+                    aria-label="Recargar página"
+                  >
+                    <FiRefreshCw /> Recargar Inventario
+                  </button>
+                </div>
+              ) : loading.inventario ? (
+                <div className="inventario-loading-container">
+                  <div className="inventario-spinner"></div>
+                  <p>Cargando inventario...</p>
+                </div>
+              ) : paginatedInventario.length === 0 ? (
+                <div className="inventario-no-results">
+                  <h3>No se encontraron artículos</h3>
+                  <p>Intenta ajustar tus filtros de búsqueda</p>
+                  <button 
+                    className="inventario-btn-clear-filters"
+                    onClick={() => {
+                      setSearchTerm('');
+                      setFilters({
+                        almacen: '',
+                        ubicacion: '',
+                        familia: '',
+                        subfamilia: ''
+                      });
+                    }}
+                    aria-label="Limpiar todos los filtros"
+                  >
+                    Limpiar Filtros
+                  </button>
+                </div>
+              ) : (
+                <div className="inventario-list">
+                  {paginatedInventario.map(articulo => (
+                    <div 
+                      key={articulo.CodigoArticulo} 
+                      className={`inventario-item ${articulo.estado === 'agotado' ? 'inventario-estado-agotado' : ''} ${articulo.estado === 'negativo' ? 'inventario-estado-negativo' : ''}`}
+                      style={{ borderLeft: `5px solid ${getEstadoColor(articulo.estado)}` }}
+                    >
+                      <div 
+                        className="inventario-articulo-header"
+                        onClick={() => toggleExpandirArticulo(articulo.CodigoArticulo)}
+                        aria-expanded={!!articulosExpandidos[articulo.CodigoArticulo]}
+                      >
+                        <div className="inventario-articulo-info">
+                          <span className="inventario-articulo-codigo">{articulo.CodigoArticulo}</span>
+                          <span className="inventario-articulo-descripcion">{articulo.DescripcionArticulo}</span>
+                          <div className="inventario-articulo-categorias">
+                            {articulo.CodigoFamilia && (
+                              <span className="inventario-familia-tag">Familia: {articulo.CodigoFamilia}</span>
+                            )}
+                            {articulo.CodigoSubfamilia && (
+                              <span className="inventario-subfamilia-tag">Subfamilia: {articulo.CodigoSubfamilia}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="inventario-articulo-total">
+                          <span className="inventario-total-unidades">
+                            {formatearUnidad(articulo.totalStockBase, articulo.UnidadBase)}
+                            <span className="inventario-ubicaciones-count">
+                              ({articulo.ubicaciones.length} ubicaciones)
+                            </span>
+                          </span>
+                          <span className={`inventario-expand-icon ${articulosExpandidos[articulo.CodigoArticulo] ? 'expanded' : ''}`}>
+                            {articulosExpandidos[articulo.CodigoArticulo] ? <FiChevronUp /> : <FiChevronDown />}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {articulosExpandidos[articulo.CodigoArticulo] && (
+                        <div className="inventario-ubicaciones-list">
+                          <div className="inventario-ubicaciones-header">
+                            <span onClick={() => requestSort('NombreAlmacen')}>
+                              Almacén {sortConfig.key === 'NombreAlmacen' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                            </span>
+                            <span onClick={() => requestSort('Ubicacion')}>
+                              Ubicación {sortConfig.key === 'Ubicacion' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                            </span>
+                            <span>Descripción</span>
+                            <span>Partida</span>
+                            <span>Unidad</span>
+                            <span onClick={() => requestSort('Cantidad')}>
+                              Cantidad {sortConfig.key === 'Cantidad' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                            </span>
+                            <span>Acciones</span>
+                          </div>
+                          
+                          {articulo.ubicaciones
+                            .sort((a, b) => {
+                              if (!sortConfig.key) return 0;
+                              if (a[sortConfig.key] < b[sortConfig.key]) {
+                                return sortConfig.direction === 'asc' ? -1 : 1;
+                              }
+                              if (a[sortConfig.key] > b[sortConfig.key]) {
+                                return sortConfig.direction === 'asc' ? 1 : -1;
+                              }
+                              return 0;
+                            })
+                            .map(ubicacion => (
+                            <div 
+                              key={ubicacion.clave} 
+                              className="inventario-ubicacion-item"
+                            >
+                              <span className="inventario-ubicacion-almacen">
+                                {ubicacion.NombreAlmacen}
+                              </span>
+                              <span className="inventario-ubicacion-codigo">{ubicacion.Ubicacion}</span>
+                              <span className="inventario-ubicacion-desc">{ubicacion.DescripcionUbicacion || 'Sin descripción'}</span>
+                              <span className="inventario-ubicacion-partida">{ubicacion.Partida || 'N/A'}</span>
+                              <span className="inventario-ubicacion-unidad">
+                                {ubicacion.UnidadStock || 'unidades'}
+                              </span>
+                              <span 
+                                className="inventario-ubicacion-cantidad" 
+                                style={getStockStyle(ubicacion.Cantidad)}
+                              >
+                                {formatearUnidad(ubicacion.Cantidad, ubicacion.UnidadStock)}
+                                
+                                {articulo.UnidadAlternativa && 
+                                 ubicacion.UnidadStock === articulo.UnidadAlternativa && (
+                                  <span className="inventario-conversion-info">
+                                    ({formatearUnidad(ubicacion.CantidadBase, articulo.UnidadBase)})
+                                  </span>
+                                )}
+                              </span>
+                              <div className="inventario-acciones-ubicacion">
+                                <button 
+                                  className="inventario-btn-editar"
+                                  onClick={() => iniciarEdicionCantidad(
+                                    articulo.CodigoArticulo,
+                                    ubicacion.NombreAlmacen,
+                                    ubicacion.Cantidad,
+                                    ubicacion.clave,
+                                    ubicacion.CodigoAlmacen,
+                                    ubicacion.Ubicacion,
+                                    ubicacion.Partida,
+                                    ubicacion.UnidadStock
+                                  )}
+                                  aria-label={`Editar cantidad de ${articulo.CodigoArticulo} en ${ubicacion.NombreAlmacen}`}
+                                >
+                                  <FiEdit /> Editar
+                                </button>
+                                
+                                {ubicacion.detalles && (
+                                  <button 
+                                    className="inventario-btn-detalles"
+                                    onClick={() => verDetalles(ubicacion.MovPosicionLinea)}
+                                    aria-label={`Ver detalles de ${articulo.CodigoArticulo} en ${ubicacion.Ubicacion}`}
+                                  >
+                                    Detalles
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {totalPages > 1 && (
+                <div className="inventario-pagination">
+                  <div className="inventario-pagination-controls">
+                    <button 
+                      onClick={() => goToPage(currentPage - 1)} 
+                      disabled={currentPage === 1}
+                      className="inventario-pagination-btn"
+                      aria-label="Página anterior"
+                    >
+                      Anterior
+                    </button>
+                    
+                    <span className="inventario-page-info">Página {currentPage} de {totalPages}</span>
+                    
+                    <button 
+                      onClick={() => goToPage(currentPage + 1)} 
+                      disabled={currentPage === totalPages}
+                      className="inventario-pagination-btn"
+                      aria-label="Página siguiente"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                  
+                  <div className="inventario-page-size-selector">
+                    <label>Artículos por página:</label>
+                    <select 
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="inventario-page-size-select"
+                      aria-label="Cambiar número de artículos por página"
+                    >
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={75}>75</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {error ? (
+                <div className="inventario-error-container">
+                  <div className="inventario-error-icon">⚠️</div>
+                  <h3>Error al cargar datos</h3>
+                  <p>{error}</p>
+                  <button 
+                    className="inventario-btn-reload"
+                    onClick={cargarHistorialAjustes}
+                    aria-label="Recargar historial"
+                  >
+                    <FiRefreshCw /> Recargar Historial
+                  </button>
+                </div>
+              ) : loading.historial ? (
+                <div className="inventario-loading-container">
+                  <div className="inventario-spinner"></div>
+                  <p>Cargando historial de ajustes...</p>
+                </div>
+              ) : historialAjustes.length === 0 ? (
+                <div className="inventario-no-results">
+                  <h3>No se encontraron ajustes</h3>
+                  <p>No hay registros en el historial de ajustes</p>
+                </div>
+              ) : (
+                <div className="inventario-historial-list">
+                  {historialAjustes.map(item => {
+                    const expandido = fechasExpandidas[item.fecha];
+                    
+                    return (
+                      <div key={`${item.fecha}-${item.totalAjustes}`} className="inventario-historial-item">
+                        <div 
+                          className="inventario-fecha-header"
+                          onClick={() => toggleExpandirFecha(item.fecha)}
+                          style={{ background: expandido ? '#f0f7ff' : '#f5f7fa' }}
+                          aria-expanded={expandido}
+                        >
+                          <div className="inventario-fecha-info">
+                            <span className="inventario-fecha">{formatearFecha(item.fecha)}</span>
+                            <span className="inventario-resumen">
+                              {item.totalAjustes} ajustes realizados
+                            </span>
+                          </div>
+                          <span className={`inventario-expand-icon ${expandido ? 'expanded' : ''}`}>
+                            {expandido ? <FiChevronUp /> : <FiChevronDown />}
+                          </span>
+                        </div>
+                        
+                        {expandido && (
+                          <div className="inventario-detalles-ajustes">
+                            {item.detalles.map((detalle, idx) => (
+                              <div key={`${detalle.CodigoArticulo}-${detalle.FechaRegistro}`} 
+                                   className={`inventario-ajuste-detalle ${detalle.Diferencia > 0 ? 'ajuste-positivo' : 'ajuste-negativo'}`}>
+                                <div className="inventario-ajuste-detalle-header">
+                                  <span className="inventario-ajuste-articulo">
+                                    <strong>{detalle.CodigoArticulo}</strong> - {detalle.DescripcionArticulo}
+                                  </span>
+                                  <span className="inventario-ajuste-cantidad">
+                                    {detalle.Diferencia > 0 ? '+' : ''}{detalle.Diferencia}
+                                  </span>
+                                </div>
+                                
+                                <div className="inventario-ajuste-detalle-info">
+                                  <div>
+                                    <span className="inventario-ajuste-label">Almacén:</span>
+                                    <span>{detalle.NombreAlmacen} ({detalle.CodigoAlmacen})</span>
+                                  </div>
+                                  <div>
+                                    <span className="inventario-ajuste-label">Ubicación:</span>
+                                    <span>{detalle.Ubicacion} - {detalle.DescripcionUbicacion || 'N/A'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="inventario-ajuste-label">Partida:</span>
+                                    <span>{detalle.Partida || '-'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="inventario-ajuste-label">Comentario:</span>
+                                    <span>{detalle.Comentario || 'Sin comentario'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="inventario-ajuste-label">Hora:</span>
+                                    <span>
+                                      {new Date(detalle.FechaRegistro).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
       
-      <FiltersPanel />
-      <PendingAdjustmentsPanel />
-      
-      {cargandoDetalles && (
-        <div className="cargando-detalles">
-          <div className="spinner"></div>
-          <p>Cargando detalles...</p>
+      {editandoCantidad && (
+        <div className="inventario-modal-edicion">
+          <div className="inventario-modal-contenido">
+            <h3>Editar Cantidad</h3>
+            <div className="inventario-modal-details">
+              <div className="inventario-detail-item">
+                <span>Artículo:</span>
+                <span>{editandoCantidad.articulo}</span>
+              </div>
+              <div className="inventario-detail-item">
+                <span>Almacén:</span>
+                <span>{editandoCantidad.nombreAlmacen}</span>
+              </div>
+              <div className="inventario-detail-item">
+                <span>Ubicación:</span>
+                <span>{editandoCantidad.ubicacionStr}</span>
+              </div>
+              <div className="inventario-detail-item">
+                <span>Partida:</span>
+                <span>{editandoCantidad.partida || 'N/A'}</span>
+              </div>
+              <div className="inventario-detail-item">
+                <span>Unidad:</span>
+                <span>{editandoCantidad.unidadStock || 'unidades'}</span>
+              </div>
+            </div>
+            
+            <div className="inventario-form-group">
+              <label>Cantidad Actual:</label>
+              <input 
+                type="text" 
+                value={formatearUnidad(editandoCantidad.cantidadActual, editandoCantidad.unidadStock)} 
+                disabled 
+                className="inventario-cantidad-actual"
+              />
+            </div>
+            
+            <div className="inventario-form-group">
+              <label>Nueva Cantidad:</label>
+              <input 
+                type="number" 
+                value={nuevaCantidad}
+                onChange={(e) => setNuevaCantidad(e.target.value)}
+                autoFocus
+                className="inventario-nueva-cantidad"
+                step="any"
+              />
+            </div>
+            
+            <div className="inventario-modal-acciones">
+              <button 
+                className="inventario-btn-cancelar"
+                onClick={() => setEditandoCantidad(null)}
+                aria-label="Cancelar edición"
+              >
+                Cancelar
+              </button>
+              <button 
+                className="inventario-btn-guardar"
+                onClick={guardarAjustePendiente}
+                aria-label="Guardar ajuste"
+              >
+                Guardar Ajuste
+              </button>
+            </div>
+          </div>
         </div>
       )}
       
-      {activeTab === 'inventario' ? (
-        <>
-          <InventoryList />
-          <PaginationComponent />
-        </>
-      ) : (
-        <HistorialAjustesList />
+      {detallesModal && (
+        <div className="inventario-modal-detalles">
+          <div className="inventario-modal-contenido">
+            <button className="inventario-cerrar-modal" onClick={() => setDetallesModal(null)} aria-label="Cerrar modal">
+              &times;
+            </button>
+            
+            <h3>Detalles de Variantes</h3>
+            
+            <div className="inventario-detalles-container">
+              {detallesModal.length === 0 ? (
+                <p>No hay detalles de variantes para este artículo</p>
+              ) : (
+                detallesModal.map((detalle, index) => (
+                  <div key={`${detalle.color.codigo}-${detalle.grupoTalla.codigo}-${index}`} className="inventario-variante-grupo">
+                    <div className="inventario-variante-header">
+                      <span className="inventario-color-variante">
+                        <strong>Color:</strong> {detalle.color.nombre}
+                      </span>
+                      <span className="inventario-talla-grupo">
+                        <strong>Grupo Talla:</strong> {detalle.grupoTalla.nombre}
+                      </span>
+                    </div>
+                    
+                    <table className="inventario-detalles-table">
+                      <thead>
+                        <tr>
+                          <th>Talla</th>
+                          <th>Descripción</th>
+                          <th>Unidades</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(detalle.tallas)
+                          .filter(([_, talla]) => talla.unidades > 0)
+                          .map(([codigoTalla, talla], idx) => (
+                            <tr key={`${codigoTalla}-${idx}`}>
+                              <td>{codigoTalla}</td>
+                              <td>{talla.descripcion}</td>
+                              <td>{talla.unidades}</td>
+                            </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    
+                    <div className="inventario-variante-total">
+                      <strong>Total unidades:</strong> {detalle.unidades}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       )}
-      
-      <EditModal />
-      <DetallesModalComponent />
     </div>
   );
 };

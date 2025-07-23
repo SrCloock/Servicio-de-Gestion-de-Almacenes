@@ -4,7 +4,53 @@ import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
 import { Html5Qrcode, Html5QrcodeScanner } from 'html5-qrcode';
+import { usePermissions } from '../PermissionsManager';
 import '../styles/PedidosScreen.css';
+
+const formatearUnidad = (cantidad, unidad) => {
+  if (!unidad || unidad.trim() === '') return `${cantidad} ud`;
+  
+  const unidadesInvariables = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
+  const pluralesIrregulares = {
+    'ud': 'uds',
+    'par': 'pares',
+    'metro': 'metros',
+    'pack': 'packs',
+    'saco': 'sacos',
+    'barra': 'barras',
+    'caja': 'cajas',
+    'rollo': 'rollos',
+    'lata': 'latas',
+    'bote': 'botes',
+    'tubo': 'tubos',
+    'unidad': 'unidades',
+    'juego': 'juegos',
+    'kit': 'kits',
+    'paquete': 'paquetes',
+    'cajetin': 'cajetines',
+    'bidon': 'bidones',
+    'palet': 'palets',
+    'bobina': 'bobinas',
+    'fardo': 'fardos',
+    'cubeta': 'cubetas',
+    'garrafa': 'garrafas',
+    'tambor': 'tambores',
+    'cubos': 'cubos',
+    'pares': 'pares'
+  };
+
+  if (unidadesInvariables.includes(unidad.toLowerCase())) {
+    return `${cantidad} ${unidad}`;
+  }
+
+  if (cantidad === 1) {
+    return `1 ${unidad}`;
+  } else {
+    return pluralesIrregulares[unidad.toLowerCase()] 
+      ? `${cantidad} ${pluralesIrregulares[unidad.toLowerCase()]}`
+      : `${cantidad} ${unidad}s`;
+  }
+};
 
 const DetallesArticuloModal = ({ 
   detalles, 
@@ -14,7 +60,8 @@ const DetallesArticuloModal = ({
   ubicacionesStock,
   scannedItems,
   setScannedItems,
-  iniciarEscaneo
+  iniciarEscaneo,
+  canPerformActions
 }) => {
   const [selectedUbicacion, setSelectedUbicacion] = useState(
     ubicacionesStock.length > 0 ? ubicacionesStock[0].Ubicacion : ''
@@ -55,11 +102,11 @@ const DetallesArticuloModal = ({
                         <div className="talla-codigo">Talla {codigoTalla}</div>
                         <div className="talla-desc">{talla.descripcion}</div>
                         <div className="talla-stock">
-                          {talla.unidades > 0 ? `${escaneado}/${talla.unidades} unidades` : 'Agotado'}
+                          {talla.unidades > 0 ? `${escaneado}/${formatearUnidad(talla.unidades, linea.unidadBase)}` : 'Agotado'}
                         </div>
                       </div>
                       
-                      {talla.unidades > 0 && !completado && (
+                      {talla.unidades > 0 && !completado && canPerformActions && (
                         <button 
                           className="btn-escanear"
                           onClick={() => iniciarEscaneo(linea, pedido, detalle)}
@@ -86,10 +133,14 @@ const DetallesArticuloModal = ({
           <select
             value={selectedUbicacion}
             onChange={(e) => setSelectedUbicacion(e.target.value)}
+            disabled={!canPerformActions}
           >
             {ubicacionesStock.map((ubi, idx) => (
               <option key={idx} value={ubi.Ubicacion}>
-                {ubi.Ubicacion} {ubi.DescripcionUbicacion ? `(${ubi.DescripcionUbicacion})` : ''}
+                {ubi.Ubicacion} {ubi.DescripcionUbicacion ? `(${ubi.DescripcionUbicacion})` : ''} - 
+                Stock: {ubi.unidadSaldo === Infinity 
+                  ? 'Ilimitado' 
+                  : formatearUnidad(ubi.unidadSaldo, ubi.unidadMedida)}
               </option>
             ))}
           </select>
@@ -115,14 +166,16 @@ const LineaPedido = ({
   handleExpedicionChange, 
   ubicaciones, 
   iniciarEscaneo,
-  abrirModalDetalles
+  abrirModalDetalles,
+  canPerformActions
 }) => {
   let ubicacionesConStock = ubicaciones[linea.codigoArticulo]?.filter(ubi => ubi.unidadSaldo > 0) || [];
   if (ubicacionesConStock.length === 0) {
     ubicacionesConStock.push({
       ubicacion: "Zona descarga",
       partida: null,
-      unidadSaldo: Infinity
+      unidadSaldo: Infinity,
+      unidadMedida: linea.unidadBase || 'ud'
     });
   }
 
@@ -139,11 +192,16 @@ const LineaPedido = ({
     const unidadVenta = linea.unidadBase || 'ud';
     const unidadStock = linea.unidadAlternativa || 'ud';
     const factor = parseFloat(linea.factorConversion) || 1;
-    const equivalencia = unidadesPendientes / factor;
+    
+    const equivalencia = unidadesPendientes * factor;
+    
+    const mostrarEquivalencia = factor !== 1 || unidadStock !== unidadVenta;
     
     return {
-      pendiente: `${unidadesPendientes} ${unidadVenta}`,
-      equivalencia: `${equivalencia % 1 === 0 ? equivalencia : equivalencia.toFixed(2)} ${unidadStock}`
+      pendiente: formatearUnidad(unidadesPendientes, unidadVenta),
+      equivalencia: mostrarEquivalencia 
+        ? formatearUnidad(equivalencia, unidadStock) 
+        : null
     };
   };
   
@@ -166,6 +224,11 @@ const LineaPedido = ({
         {linea.unidadesPendientes > 0 ? (
           <div className="pendiente-container">
             <span>{formatted.pendiente}</span>
+            {formatted.equivalencia && (
+              <div className="equivalencia-stock">
+                {formatted.equivalencia}
+              </div>
+            )}
             {linea.detalles && linea.movPosicionLinea && (
               <button 
                 onClick={(e) => {
@@ -182,15 +245,6 @@ const LineaPedido = ({
           <span className="completada-badge">COMPLETADA</span>
         )}
       </td>
-      <td className="td-centrado">
-        {formatted.equivalencia ? (
-          <span className="unidad-conversion">
-            {formatted.equivalencia}
-          </span>
-        ) : (
-          <span className="sin-conversion">-</span>
-        )}
-      </td>
       <td>
         <div className="ubicacion-select-container">
           <select
@@ -202,17 +256,24 @@ const LineaPedido = ({
               e.target.value
             )}
             className={`ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'zona-descarga' : ''}`}
+            disabled={!canPerformActions}
           >
-            {ubicacionesConStock.map((ubicacion, locIndex) => (
-              <option 
-                key={`${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
-                value={ubicacion.ubicacion}
-                className={ubicacion.ubicacion === "Zona descarga" ? 'zona-descarga-option' : ''}
-              >
-                {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''} - 
-                Stock: {ubicacion.unidadSaldo === Infinity ? 'Ilimitado' : ubicacion.unidadSaldo}
-              </option>
-            ))}
+            {ubicacionesConStock.map((ubicacion, locIndex) => {
+              const mostrarUnidad = ubicacion.unidadMedida !== linea.unidadBase;
+              
+              return (
+                <option 
+                  key={`${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
+                  value={ubicacion.ubicacion}
+                  className={ubicacion.ubicacion === "Zona descarga" ? 'zona-descarga-option' : ''}
+                >
+                  {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''} - 
+                  Stock: {ubicacion.unidadSaldo === Infinity 
+                    ? 'Ilimitado' 
+                    : `${ubicacion.unidadSaldo}${mostrarUnidad ? ` ${ubicacion.unidadMedida}` : ''}`}
+                </option>
+              );
+            })}
           </select>
         </div>
       </td>
@@ -229,16 +290,18 @@ const LineaPedido = ({
             e.target.value
           )}
           className={expedicion.ubicacion === "Zona descarga" ? 'zona-descarga-input' : ''}
+          disabled={!canPerformActions}
         />
-        <div className="unidad-info">en {linea.unidadAlternativa || 'ud'}</div>
+        <div className="unidad-info">en {linea.unidadBase || 'ud'}</div>
       </td>
       <td className="td-centrado">
         <button
           className="btn-expedir"
           onClick={(e) => {
             e.stopPropagation();
-            iniciarEscaneo(linea, pedido);
+            if (canPerformActions) iniciarEscaneo(linea, pedido);
           }}
+          disabled={!canPerformActions}
         >
           <i className="fas fa-camera"></i> Escanear
         </button>
@@ -251,14 +314,14 @@ const PedidoCard = ({
   pedido, 
   togglePedidoView, 
   pedidoViewModes, 
-  setPedidoAsignando, 
   generarAlbaranParcial, 
   generandoAlbaran, 
   ubicaciones,
   expediciones,
   handleExpedicionChange,
   iniciarEscaneo,
-  abrirModalDetalles
+  abrirModalDetalles,
+  canPerformActions
 }) => {
   const tieneLineasParciales = () => {
     return pedido.articulos.some(articulo => {
@@ -295,26 +358,20 @@ const PedidoCard = ({
         </div>
         
         <div className="pedido-header-right">
-          <button 
-            onClick={() => setPedidoAsignando(pedido)}
-            className="btn-asignar"
-          >
-            Asignar Repartidor
-          </button>
-          
           {parcial && !completo && (
             <button 
               onClick={() => generarAlbaranParcial(pedido)}
               className="btn-albaran-parcial"
-              disabled={generandoAlbaran}
+              disabled={!canPerformActions || generandoAlbaran}
             >
-              {generandoAlbaran ? 'Generando...' : 'Crear Albarán Parcial'}
+              {generandoAlbaran ? 'Completando...' : 'Completar Pedido'}
             </button>
           )}
         </div>
       </div>
       
       <div className="pedido-details">
+        <div><strong>Forma de entrega:</strong> {pedido.formaEntrega}</div>
         <div><strong>Obra:</strong> {pedido.obra || 'Sin obra especificada'}</div>
         <div><strong>Dirección:</strong> {pedido.domicilio}</div>
         <div><strong>Municipio:</strong> {pedido.municipio}</div>
@@ -344,9 +401,8 @@ const PedidoCard = ({
                 <th>Artículo</th>
                 <th>Descripción</th>
                 <th>Pendiente (Venta)</th>
-                <th>Equivalencia (Stock)</th>
                 <th>Ubicación</th>
-                <th>Cantidad a Expedir (Stock)</th>
+                <th>Cantidad a Expedir (Venta)</th>
                 <th>Acción</th>
               </tr>
             </thead>
@@ -361,6 +417,7 @@ const PedidoCard = ({
                   ubicaciones={ubicaciones}
                   iniciarEscaneo={iniciarEscaneo}
                   abrirModalDetalles={abrirModalDetalles}
+                  canPerformActions={canPerformActions}
                 />
               ))}
             </tbody>
@@ -400,52 +457,6 @@ const Paginacion = ({ totalPaginas, paginaActual, cambiarPagina }) => {
         </button>
       </div>
     )
-  );
-};
-
-const AsignacionModal = ({ 
-  pedidoAsignando, 
-  setPedidoAsignando, 
-  repartidores, 
-  repartidorSeleccionado, 
-  setRepartidorSeleccionado, 
-  asignarPedido 
-}) => {
-  if (!pedidoAsignando) return null;
-
-  return (
-    <div className="modal-asignacion">
-      <div className="modal-contenido">
-        <button className="cerrar-modal" onClick={() => setPedidoAsignando(null)}>&times;</button>
-        <h3>Asignar repartidor al pedido #{pedidoAsignando.numeroPedido}</h3>
-        <select
-          value={repartidorSeleccionado}
-          onChange={(e) => setRepartidorSeleccionado(e.target.value)}
-        >
-          <option value="">Seleccionar repartidor</option>
-          {repartidores.map(rep => (
-            <option key={rep.CodigoCliente} value={rep.CodigoCliente}>
-              {rep.Nombre}
-            </option>
-          ))}
-        </select>
-        <div className="modal-buttons">
-          <button 
-            onClick={asignarPedido}
-            disabled={!repartidorSeleccionado}
-            className="btn-confirmar"
-          >
-            Asignar
-          </button>
-          <button 
-            onClick={() => setPedidoAsignando(null)}
-            className="btn-cancelar"
-          >
-            Cancelar
-          </button>
-        </div>
-      </div>
-    </div>
   );
 };
 
@@ -540,21 +551,24 @@ const PedidosScreen = () => {
   const user = JSON.parse(localStorage.getItem('user'));
   const pedidosPorPagina = 20;
   
+  // Obtener permisos del usuario
+  const { 
+    canViewAllOrders, 
+    canPerformActions 
+  } = usePermissions();
+  
   const [pedidos, setPedidos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState({});
   const [expediciones, setExpediciones] = useState({});
-  const [repartidores, setRepartidores] = useState([]);
   const [pedidoViewModes, setPedidoViewModes] = useState({});
   const [loading, setLoading] = useState(true);
   const [generandoAlbaran, setGenerandoAlbaran] = useState(false);
   const [filtroPedido, setFiltroPedido] = useState('');
-  const [filtroArticulo, setFiltroArticulo] = useState('');
   const [filtroDireccion, setFiltroDireccion] = useState('');
-  const [orden, setOrden] = useState('fecha');
+  const [rangoFechas, setRangoFechas] = useState('semana');
+  const [filtroFormaEntrega, setFiltroFormaEntrega] = useState('');
   const [paginaActual, setPaginaActual] = useState(1);
   const [error, setError] = useState('');
-  const [pedidoAsignando, setPedidoAsignando] = useState(null);
-  const [repartidorSeleccionado, setRepartidorSeleccionado] = useState('');
   const [detallesModal, setDetallesModal] = useState(null);
   const [ubicacionesModal, setUbicacionesModal] = useState([]);
   const [showCamera, setShowCamera] = useState(false);
@@ -565,6 +579,14 @@ const PedidosScreen = () => {
   const [cameras, setCameras] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState('');
   const scannerRef = useRef(null);
+
+  const formasEntrega = [
+    { id: 1, nombre: 'Pájaro Rojo' },
+    { id: 2, nombre: 'Pájaro Azul' },
+    { id: 3, nombre: 'Pájaro Verde' },
+    { id: 4, nombre: 'Pájaro Naranja' },
+    { id: 5, nombre: 'Pájaro Blanco' }
+  ];
 
   useEffect(() => {
     const cargarPedidos = async () => {
@@ -581,15 +603,13 @@ const PedidosScreen = () => {
         const codigoEmpresa = user.CodigoEmpresa;
         const headers = getAuthHeader();
         
-        const repResponse = await axios.get('http://localhost:3000/repartidores', { 
-          headers,
-          params: { codigoEmpresa } 
-        });
-        setRepartidores(repResponse.data);
-        
         const response = await axios.get(`http://localhost:3000/pedidosPendientes`, { 
           headers,
-          params: { codigoEmpresa } 
+          params: { 
+            codigoEmpresa,
+            rango: rangoFechas,
+            formaEntrega: filtroFormaEntrega 
+          } 
         });
         setPedidos(response.data);
         
@@ -609,10 +629,11 @@ const PedidosScreen = () => {
             
             const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
             const factor = parseFloat(linea.factorConversion) || 1;
-            let cantidadInicial = unidadesPendientes / factor;
+            let cantidadInicial = unidadesPendientes;
             
             if (ubicacionesConStock.length > 0 && ubicacionesConStock[0].unidadSaldo !== Infinity) {
-              cantidadInicial = Math.min(cantidadInicial, ubicacionesConStock[0].unidadSaldo);
+              const stockDisponible = ubicacionesConStock[0].unidadSaldo / factor;
+              cantidadInicial = Math.min(cantidadInicial, stockDisponible);
             }
             
             if (!Number.isInteger(cantidadInicial)) {
@@ -623,7 +644,8 @@ const PedidosScreen = () => {
               ubicacionesConStock.push({
                 ubicacion: "Zona descarga",
                 partida: null,
-                unidadSaldo: Infinity
+                unidadSaldo: Infinity,
+                unidadMedida: linea.unidadBase || 'ud'
               });
             }
             
@@ -660,7 +682,7 @@ const PedidosScreen = () => {
     };
     
     cargarPedidos();
-  }, []);
+  }, [rangoFechas, filtroFormaEntrega]);
 
   useEffect(() => {
     if (showCamera && Html5Qrcode) {
@@ -755,13 +777,15 @@ const PedidosScreen = () => {
   };
 
   const handleExpedir = async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea) => {
+    if (!canPerformActions) return;
+    
     const key = `${numeroPedido}-${codigoArticulo}`;
     const expedicion = expediciones[key];
     if (!expedicion) return;
 
     let cantidadExpedida = parseFloat(expedicion.cantidad);
     const factor = parseFloat(linea.factorConversion) || 1;
-    cantidadExpedida = cantidadExpedida * factor;
+    const cantidadEnStock = cantidadExpedida * factor;
 
     if (isNaN(cantidadExpedida) || cantidadExpedida <= 0) return;
 
@@ -776,7 +800,7 @@ const PedidosScreen = () => {
           serie,
           numeroPedido,
           codigoArticulo,
-          cantidadExpedida,
+          cantidadExpedida: cantidadEnStock,
           ubicacion: expedicion.ubicacion,
           partida: expedicion.partida
         },
@@ -802,6 +826,8 @@ const PedidosScreen = () => {
   };
 
   const iniciarEscaneo = (linea, pedido, detalle = null) => {
+    if (!canPerformActions) return;
+    
     setCurrentScanningLine({ linea, pedido, detalle });
     setShowCamera(true);
     setManualCode('');
@@ -902,28 +928,13 @@ const PedidosScreen = () => {
   };
 
   const handleExpedicionChange = (numeroPedido, codigoArticulo, field, value) => {
+    if (!canPerformActions) return;
+    
     const key = `${numeroPedido}-${codigoArticulo}`;
     setExpediciones(prev => ({
       ...prev,
       [key]: { ...(prev[key] || {}), [field]: value }
     }));
-  };
-
-  const asignarPedido = async () => {
-    if (!pedidoAsignando || !repartidorSeleccionado) return;
-    
-    try {
-      await axios.post('http://localhost:3000/asignarPedido', {
-        pedidoId: pedidoAsignando.numeroPedido,
-        codigoRepartidor: repartidorSeleccionado,
-        codigoEmpresa: user.CodigoEmpresa
-      });
-      alert(`Pedido #${pedidoAsignando.numeroPedido} asignado`);
-      setPedidoAsignando(null);
-    } catch (error) {
-      console.error('Error al asignar pedido:', error);
-      alert('Error al asignar pedido');
-    }
   };
 
   const cambiarPagina = (numeroPagina) => {
@@ -932,12 +943,14 @@ const PedidosScreen = () => {
   };
 
   const generarAlbaranParcial = async (pedido) => {
+    if (!canPerformActions) return;
+    
     try {
       setGenerandoAlbaran(true);
       const headers = getAuthHeader();
       
       await axios.post(
-        'http://localhost:3000/generarAlbaranParcial',
+        'http://localhost:3000/marcarPedidoCompletado',
         {
           codigoEmpresa: pedido.codigoEmpresa,
           ejercicio: pedido.ejercicioPedido,
@@ -947,20 +960,14 @@ const PedidosScreen = () => {
         { headers }
       );
 
-      setPedidos(prev => prev.map(p => 
-        p.numeroPedido === pedido.numeroPedido
-          ? {
-              ...p,
-              articulos: p.articulos.map(a => ({
-                ...a,
-                unidadesPendientes: a.unidadesPendientes
-              }))
-            }
-          : p
-      ));
+      setPedidos(prev => 
+        prev.filter(p => p.numeroPedido !== pedido.numeroPedido)
+      );
+      
+      alert('Pedido marcado como completado. Ahora debe ser asignado a un empleado para generar el albarán.');
     } catch (error) {
-      console.error('Error al generar albarán parcial:', error);
-      alert('Error al generar albarán parcial: ' + error.message);
+      console.error('Error al completar pedido:', error);
+      alert('Error al completar pedido: ' + (error.response?.data?.mensaje || error.message));
     } finally {
       setGenerandoAlbaran(false);
     }
@@ -972,30 +979,36 @@ const PedidosScreen = () => {
         pedido.razonSocial.toLowerCase().includes(filtroPedido.toLowerCase())
       : true;
 
-    const matchArticulo = filtroArticulo
-      ? pedido.articulos.some(art => 
-          art.codigoArticulo.includes(filtroArticulo) || 
-          art.descripcionArticulo.toLowerCase().includes(filtroArticulo.toLowerCase()))
-      : true;
-
     const matchDireccion = filtroDireccion
-      ? `${pedido.domicilio} ${pedido.municipio}`.toLowerCase().includes(filtroDireccion.toLowerCase())
+      ? `${pedido.domicilio} ${pedido.municipio} ${pedido.obra || ''}`.toLowerCase().includes(filtroDireccion.toLowerCase())
       : true;
 
-    return matchPedido && matchArticulo && matchDireccion;
+    return matchPedido && matchDireccion;
   });
 
-  const pedidosOrdenados = [...pedidosFiltrados].sort((a, b) => {
-    return orden === 'fecha' 
-      ? new Date(a.fechaPedido) - new Date(b.fechaPedido)
-      : a.razonSocial.localeCompare(b.razonSocial);
-  });
+  const pedidosOrdenados = [...pedidosFiltrados];
   
   const indexUltimoPedido = paginaActual * pedidosPorPagina;
   const indexPrimerPedido = indexUltimoPedido - pedidosPorPagina;
   const pedidosActuales = pedidosOrdenados.slice(indexPrimerPedido, indexUltimoPedido);
   const totalPaginas = Math.ceil(pedidosOrdenados.length / pedidosPorPagina);
 
+  // Si no tiene permiso para ver esta pantalla
+  if (!canViewAllOrders) {
+    return (
+      <div className="pedidos-screen">
+        <div className="no-permission">
+          <h2>Acceso restringido</h2>
+          <p>No tienes permiso para ver esta sección.</p>
+          <button onClick={() => navigate('/')} className="btn-volver">
+            Volver al inicio
+          </button>
+        </div>
+        <Navbar />
+      </div>
+    );
+  }
+  
   return (
     <div className="pedidos-screen">
       <div className="pedidos-container">
@@ -1017,21 +1030,10 @@ const PedidosScreen = () => {
             </div>
             
             <div className="filtro-group">
-              <label>Buscar artículo:</label>
+              <label>Buscar dirección/obra:</label>
               <input
                 type="text"
-                placeholder="Código o descripción..."
-                value={filtroArticulo}
-                onChange={e => setFiltroArticulo(e.target.value)}
-                className="search-input"
-              />
-            </div>
-
-            <div className="filtro-group">
-              <label>Buscar dirección:</label>
-              <input
-                type="text"
-                placeholder="Dirección..."
+                placeholder="Dirección u obra..."
                 value={filtroDireccion}
                 onChange={e => setFiltroDireccion(e.target.value)}
                 className="search-input"
@@ -1039,14 +1041,30 @@ const PedidosScreen = () => {
             </div>
             
             <div className="filtro-group">
-              <label>Ordenar por:</label>
+              <label>Rango de fechas:</label>
               <select
-                value={orden}
-                onChange={e => setOrden(e.target.value)}
+                value={rangoFechas}
+                onChange={e => setRangoFechas(e.target.value)}
                 className="sort-select"
               >
-                <option value="fecha">Fecha más reciente</option>
-                <option value="cliente">Nombre de cliente</option>
+                <option value="semana">Una semana</option>
+                <option value="dia">Un día</option>
+              </select>
+            </div>
+            
+            <div className="filtro-group">
+              <label>Forma de entrega:</label>
+              <select
+                value={filtroFormaEntrega}
+                onChange={e => setFiltroFormaEntrega(e.target.value)}
+                className="sort-select"
+              >
+                <option value="">Todas</option>
+                {formasEntrega.map(forma => (
+                  <option key={forma.id} value={forma.id}>
+                    {forma.nombre}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -1075,7 +1093,6 @@ const PedidosScreen = () => {
                   pedido={pedido} 
                   togglePedidoView={togglePedidoView}
                   pedidoViewModes={pedidoViewModes}
-                  setPedidoAsignando={setPedidoAsignando}
                   generarAlbaranParcial={generarAlbaranParcial}
                   generandoAlbaran={generandoAlbaran}
                   ubicaciones={ubicaciones}
@@ -1083,6 +1100,7 @@ const PedidosScreen = () => {
                   handleExpedicionChange={handleExpedicionChange}
                   iniciarEscaneo={iniciarEscaneo}
                   abrirModalDetalles={abrirModalDetalles}
+                  canPerformActions={canPerformActions}
                 />
               ))}
               
@@ -1105,17 +1123,9 @@ const PedidosScreen = () => {
             scannedItems={scannedItems}
             setScannedItems={setScannedItems}
             iniciarEscaneo={iniciarEscaneo}
+            canPerformActions={canPerformActions}
           />
         )}
-        
-        <AsignacionModal 
-          pedidoAsignando={pedidoAsignando}
-          setPedidoAsignando={setPedidoAsignando}
-          repartidores={repartidores}
-          repartidorSeleccionado={repartidorSeleccionado}
-          setRepartidorSeleccionado={setRepartidorSeleccionado}
-          asignarPedido={asignarPedido}
-        />
         
         <CameraModal 
           showCamera={showCamera}

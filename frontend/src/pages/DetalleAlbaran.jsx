@@ -6,17 +6,40 @@ import autoTable from 'jspdf-autotable';
 import '../styles/DetalleAlbaran.css';
 import Navbar from '../components/Navbar';
 import { getAuthHeader } from '../helpers/authHelper';
+import { usePermissions } from '../PermissionsManager';
 
 function DetalleAlbaran() {
   const location = useLocation();
   const navigate = useNavigate();
   const { albaran } = location.state || {};
   
+  // Obtener permisos del usuario
+  const { 
+    canViewWaybills, 
+    canPerformActions 
+  } = usePermissions();
+  
   const [firmaGuardadaCliente, setFirmaGuardadaCliente] = useState(false);
   const [firmaGuardadaRepartidor, setFirmaGuardadaRepartidor] = useState(false);
   
   const clienteRef = useRef(null);
   const repartidorRef = useRef(null);
+
+  // Si no tiene permiso para ver albaranes
+  if (!canViewWaybills) {
+    return (
+      <div className="detalle-albaran">
+        <div className="no-permission">
+          <h2>Acceso restringido</h2>
+          <p>No tienes permiso para ver esta sección.</p>
+          <button onClick={() => navigate('/')} className="btn-volver">
+            Volver al inicio
+          </button>
+        </div>
+        <Navbar />
+      </div>
+    );
+  }
 
   const limpiarFirmaCliente = () => {
     if (clienteRef.current) {
@@ -208,7 +231,13 @@ function DetalleAlbaran() {
               onEnd={() => setFirmaGuardadaCliente(true)}
             />
             <div className="firma-controls">
-              <button className="btn-borrar" onClick={limpiarFirmaCliente}>Borrar Firma</button>
+              <button 
+                className="btn-borrar" 
+                onClick={limpiarFirmaCliente}
+                disabled={!canPerformActions}
+              >
+                Borrar Firma
+              </button>
               {firmaGuardadaCliente && <span className="firma-status">✓ Firma guardada</span>}
             </div>
           </div>
@@ -235,7 +264,13 @@ function DetalleAlbaran() {
               onEnd={() => setFirmaGuardadaRepartidor(true)}
             />
             <div className="firma-controls">
-              <button className="btn-borrar" onClick={limpiarFirmaRepartidor}>Borrar Firma</button>
+              <button 
+                className="btn-borrar" 
+                onClick={limpiarFirmaRepartidor}
+                disabled={!canPerformActions}
+              >
+                Borrar Firma
+              </button>
               {firmaGuardadaRepartidor && <span className="firma-status">✓ Firma guardada</span>}
             </div>
           </div>
@@ -244,7 +279,7 @@ function DetalleAlbaran() {
         <button 
           className="btn-guardar" 
           onClick={guardarFirma}
-          disabled={!firmaGuardadaCliente || !firmaGuardadaRepartidor}
+          disabled={!canPerformActions || (!firmaGuardadaCliente || !firmaGuardadaRepartidor)}
         >
           {firmaGuardadaCliente && firmaGuardadaRepartidor 
             ? 'Guardar y Enviar' 
