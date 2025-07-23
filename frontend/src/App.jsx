@@ -1,5 +1,4 @@
-﻿// src/App.js
-import React from 'react';
+﻿import React from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import LoginPage from './pages/LoginPage';
@@ -21,35 +20,35 @@ const ProtectedRoute = ({ children }) => {
   if (!userData) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
-  
+
   return children;
 };
 
 function App() {
   const location = useLocation();
   const userData = JSON.parse(localStorage.getItem('user'));
-  
+
   const showNavbar = userData && location.pathname !== '/login';
-  
+
   return (
     <div className="app-container">
       <PermissionsProvider user={userData}>
         {showNavbar && <Navbar />}
-        
+
         <div className="content-container">
           <Routes>
             <Route path="/" element={<Navigate to="/login" />} />
             <Route path="/login" element={<LoginPage />} />
 
-            {/* Pantalla de Pedidos */}
+            {/* Pedidos */}
             <Route path="/PedidosScreen" element={
               <ProtectedRoute>
-                <ProtectedRouteWithPermission requiredPermission="canViewAllOrders">
+                <ProtectedRouteWithPermission requiredPermission="canViewPedidosScreen">
                   <PedidosScreen />
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
-            
+
             {/* Designar rutas */}
             <Route path="/designar-rutas" element={
               <ProtectedRoute>
@@ -58,7 +57,7 @@ function App() {
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
-            
+
             {/* Gestión de rutas */}
             <Route path="/rutas" element={
               <ProtectedRoute>
@@ -67,7 +66,7 @@ function App() {
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
-            
+
             {/* Confirmación de entrega */}
             <Route path="/confirmacion-entrega" element={
               <ProtectedRoute>
@@ -76,7 +75,7 @@ function App() {
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
-            
+
             {/* Detalle de albarán */}
             <Route path="/detalle-albaran" element={
               <ProtectedRoute>
@@ -85,7 +84,7 @@ function App() {
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
-            
+
             {/* Pedidos asignados */}
             <Route path="/pedidos-asignados" element={
               <ProtectedRoute>
@@ -94,7 +93,7 @@ function App() {
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
-            
+
             {/* Albaranes asignados */}
             <Route path="/albaranes-asignados" element={
               <ProtectedRoute>

@@ -1,5 +1,5 @@
 ﻿﻿import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
@@ -12,20 +12,22 @@ function GestionRutas() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  // Obtener permisos del usuario
   const { 
     canViewWaybills, 
-    canPerformActions 
+    canPerformActions,
+    isReadOnly
   } = usePermissions();
   
+  // Redirigir inmediatamente si no tiene permisos
+  if (!canViewWaybills) {
+    return <Navigate to="/" replace />;
+  }
+
   useEffect(() => {
     const fetchAlbaranes = async () => {
       try {
         setLoading(true);
         setError(null);
-        
-        // Verificar permisos antes de cargar datos
-        if (!canViewWaybills) return;
         
         const headers = getAuthHeader();
         
@@ -47,28 +49,12 @@ function GestionRutas() {
     };
 
     fetchAlbaranes();
-  }, [canViewWaybills]);
+  }, []);
 
   const abrirDetalle = (albaran) => {
     if (!canPerformActions) return;
     navigate('/detalle-albaran', { state: { albaran } });
   };
-
-  // Si no tiene permiso para ver esta pantalla
-  if (!canViewWaybills) {
-    return (
-      <div className="gestion-rutas-screen">
-        <div className="no-permission">
-          <h2>Acceso restringido</h2>
-          <p>No tienes permiso para ver esta sección.</p>
-          <button onClick={() => navigate('/')} className="btn-volver">
-            Volver al inicio
-          </button>
-        </div>
-        <Navbar />
-      </div>
-    );
-  }
 
   return (
     <div className="gestion-rutas-screen">
@@ -76,10 +62,12 @@ function GestionRutas() {
         <div className="rutas-header">
           <h2>Gestión de Rutas</h2>
           <div className="permiso-indicator">
-            {canPerformActions ? (
+            {isReadOnly ? (
+              <span className="permiso-readonly">Solo lectura</span>
+            ) : canPerformActions ? (
               <span className="permiso-full">Acceso completo</span>
             ) : (
-              <span className="permiso-readonly">Solo lectura</span>
+              <span className="permiso-limited">Acceso limitado</span>
             )}
           </div>
         </div>
@@ -150,8 +138,8 @@ function GestionRutas() {
             </div>
           ))}
         </div>
-        <Navbar />
       </div>
+      <Navbar />
     </div>
   );
 }

@@ -1,149 +1,124 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { Navigate } from 'react-router-dom';
+import { usePermissions } from '../PermissionsManager';
 import { getAuthHeader } from '../helpers/authHelper';
+import '../styles/AlbaranesAsignadosScreen.css';
 
-function AsignacionAlbaranesScreen() {
+function AlbaranesAsignadosScreen() {
+  const permissions = usePermissions();
   const [albaranes, setAlbaranes] = useState([]);
-  const [empleados, setEmpleados] = useState([]);
-  const [asignaciones, setAsignaciones] = useState({});
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
 
+  // Verificar permisos
+  const hasPermission = 
+    permissions.isAdmin || 
+    permissions.isAdvancedUser || 
+    permissions.isReadOnly || 
+    permissions.canAssignRoutes;
+  
+  if (!hasPermission) {
+    return <Navigate to="/" replace />;
+  }
+
   useEffect(() => {
-    const cargarDatos = async () => {
+    const cargarAlbaranes = async () => {
       try {
         setCargando(true);
         const headers = getAuthHeader();
-        
-        // Obtener albaranes pendientes de asignación
-        const albResponse = await axios.get(
-          'http://localhost:3000/albaranesPendientes?todos=true', 
+        const response = await axios.get(
+          'http://localhost:3000/albaranesPendientes', 
           { headers }
         );
-        
-        // Obtener empleados repartidores
-        const empResponse = await axios.get(
-          'http://localhost:3000/empleados', 
-          { headers }
-        );
-        
-        setAlbaranes(albResponse.data);
-        setEmpleados(empResponse.data);
+        setAlbaranes(response.data);
         setError(null);
       } catch (err) {
-        console.error('Error cargando datos:', err);
-        setError('Error al cargar datos. Intente nuevamente.');
+        console.error('Error cargando albaranes:', err);
+        setError('Error al cargar los albaranes. Intente nuevamente.');
       } finally {
         setCargando(false);
       }
     };
     
-    cargarDatos();
+    cargarAlbaranes();
   }, []);
 
-  const handleAsignar = async (albaran) => {
-    const usuarioAsignado = asignaciones[albaran.id];
-    
-    if (!usuarioAsignado) {
-      alert('Seleccione un repartidor');
-      return;
-    }
-    
+  const marcarComoEntregado = async (albaranId) => {
     try {
       const headers = getAuthHeader();
-      await axios.post('http://localhost:3000/asignarAlbaran', {
-        codigoEmpresa: albaran.codigoEmpresa,
-        ejercicio: albaran.ejercicio,
-        serie: albaran.serie,
-        numeroAlbaran: albaran.numero,
-        usuarioAsignado
-      }, { headers });
-      
-      // Eliminar albarán asignado de la lista
-      setAlbaranes(albaranes.filter(a => a.id !== albaran.id));
-      
-      alert('Albarán asignado correctamente');
+      await axios.post(
+        'http://localhost:3000/marcarAlbaranEntregado',
+        { albaranId },
+        { headers }
+      );
+      setAlbaranes(albaranes.filter(a => a.id !== albaranId));
     } catch (error) {
-      console.error('Error asignando albarán:', error);
-      alert('Error al asignar albarán: ' + (error.response?.data?.mensaje || error.message));
+      console.error('Error marcando albarán:', error);
+      alert('Error al marcar albarán como entregado');
     }
   };
 
   if (cargando) {
-    return <div className="cargando">Cargando...</div>;
+    return <div className="cargando">Cargando albaranes...</div>;
   }
 
   if (error) {
-    return <div className="error">{error}</div>;
+    return <div className="error-albaranes">{error}</div>;
   }
 
   return (
-    <div className="asignacion-container">
-      <h2>Asignar Albaranes a Repartidores</h2>
+    <div className="albaranes-container">
+      <h2>Albaranes Asignados</h2>
       
       {albaranes.length === 0 ? (
-        <div className="no-albaranes">
-          <p>No hay albaranes pendientes de asignación</p>
+        <div className="sin-albaranes">
+          No hay albaranes asignados pendientes
         </div>
       ) : (
-        <table className="tabla-asignacion">
-          <thead>
-            <tr>
-              <th>Albarán</th>
-              <th>Cliente</th>
-              <th>Fecha</th>
-              <th>Artículos</th>
-              <th>Asignar a</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            {albaranes.map(albaran => (
-              <tr key={albaran.id}>
-                <td>{albaran.albaran}</td>
-                <td>{albaran.cliente}</td>
-                <td>{new Date(albaran.FechaAlbaran).toLocaleDateString()}</td>
-                <td>
-                  <ul className="lista-articulos">
-                    {albaran.articulos.map((articulo, idx) => (
-                      <li key={idx}>
-                        {articulo.nombre} - {articulo.cantidad} und
-                      </li>
-                    ))}
-                  </ul>
-                </td>
-                <td>
-                  <select 
-                    value={asignaciones[albaran.id] || ''}
-                    onChange={(e) => setAsignaciones({
-                      ...asignaciones,
-                      [albaran.id]: e.target.value
-                    })}
-                    className="selector-repartidor"
-                  >
-                    <option value="">Seleccionar repartidor</option>
-                    {empleados.map(emp => (
-                      <option key={emp.CodigoCliente} value={emp.UsuarioLogicNet}>
-                        {emp.Nombre}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <button 
-                    onClick={() => handleAsignar(albaran)}
-                    className="btn-asignar"
-                  >
-                    Asignar
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="lista-albaranes">
+          {albaranes.map(albaran => (
+            <div key={albaran.id} className="tarjeta-albaran">
+              <div className="cabecera-albaran">
+                <span className="numero-albaran">{albaran.albaran}</span>
+                <span className="fecha-albaran">
+                  {new Date(albaran.FechaAlbaran).toLocaleDateString()}
+                </span>
+              </div>
+              
+              <div className="cliente-albaran">
+                <strong>Cliente:</strong> {albaran.cliente}
+              </div>
+              
+              <div className="direccion-albaran">
+                <strong>Dirección:</strong> {albaran.direccion}
+              </div>
+              
+              <div className="articulos-albaran">
+                <strong>Artículos:</strong>
+                <ul>
+                  {albaran.articulos.map((articulo, idx) => (
+                    <li key={idx}>
+                      {articulo.cantidad} x {articulo.nombre}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              
+              <div className="acciones-albaran">
+                <button 
+                  onClick={() => marcarComoEntregado(albaran.id)}
+                  className="btn-entregado"
+                >
+                  Marcar como entregado
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
 }
 
-export default AsignacionAlbaranesScreen;
+export default AlbaranesAsignadosScreen;

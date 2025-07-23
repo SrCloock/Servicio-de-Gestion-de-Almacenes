@@ -305,3 +305,42 @@
     padding: 40px 15px;
   }
 }
+
+/* Estilos para los indicadores de permiso */
+.permiso-indicator {
+  margin-left: auto;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.permiso-full {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.permiso-readonly {
+  background-color: #FFC107;
+  color: black;
+}
+
+.permiso-limited {
+  background-color: #2196F3;
+  color: white;
+}
+
+/* Estilo para tarjetas cuando no se pueden interactuar */
+.view-only-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: #333;
+}

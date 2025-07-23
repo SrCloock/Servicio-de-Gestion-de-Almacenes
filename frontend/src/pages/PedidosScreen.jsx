@@ -1,4 +1,5 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+﻿// src/pages/PedidosScreen.js
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
@@ -553,8 +554,8 @@ const PedidosScreen = () => {
   
   // Obtener permisos del usuario
   const { 
-    canViewAllOrders, 
-    canPerformActions 
+    canViewPedidosScreen,
+    canPerformActionsInPedidos 
   } = usePermissions();
   
   const [pedidos, setPedidos] = useState([]);
@@ -685,6 +686,12 @@ const PedidosScreen = () => {
   }, [rangoFechas, filtroFormaEntrega]);
 
   useEffect(() => {
+    if (!canViewPedidosScreen) {
+      navigate('/');
+    }
+  }, [canViewPedidosScreen, navigate]);
+
+  useEffect(() => {
     if (showCamera && Html5Qrcode) {
       Html5Qrcode.getCameras().then(devices => {
         if (devices && devices.length) {
@@ -777,7 +784,7 @@ const PedidosScreen = () => {
   };
 
   const handleExpedir = async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea) => {
-    if (!canPerformActions) return;
+    if (!canPerformActionsInPedidos) return;
     
     const key = `${numeroPedido}-${codigoArticulo}`;
     const expedicion = expediciones[key];
@@ -826,7 +833,7 @@ const PedidosScreen = () => {
   };
 
   const iniciarEscaneo = (linea, pedido, detalle = null) => {
-    if (!canPerformActions) return;
+    if (!canPerformActionsInPedidos) return;
     
     setCurrentScanningLine({ linea, pedido, detalle });
     setShowCamera(true);
@@ -928,7 +935,7 @@ const PedidosScreen = () => {
   };
 
   const handleExpedicionChange = (numeroPedido, codigoArticulo, field, value) => {
-    if (!canPerformActions) return;
+    if (!canPerformActionsInPedidos) return;
     
     const key = `${numeroPedido}-${codigoArticulo}`;
     setExpediciones(prev => ({
@@ -943,7 +950,7 @@ const PedidosScreen = () => {
   };
 
   const generarAlbaranParcial = async (pedido) => {
-    if (!canPerformActions) return;
+    if (!canPerformActionsInPedidos) return;
     
     try {
       setGenerandoAlbaran(true);
@@ -993,8 +1000,7 @@ const PedidosScreen = () => {
   const pedidosActuales = pedidosOrdenados.slice(indexPrimerPedido, indexUltimoPedido);
   const totalPaginas = Math.ceil(pedidosOrdenados.length / pedidosPorPagina);
 
-  // Si no tiene permiso para ver esta pantalla
-  if (!canViewAllOrders) {
+  if (!canViewPedidosScreen) {
     return (
       <div className="pedidos-screen">
         <div className="no-permission">
@@ -1100,7 +1106,7 @@ const PedidosScreen = () => {
                   handleExpedicionChange={handleExpedicionChange}
                   iniciarEscaneo={iniciarEscaneo}
                   abrirModalDetalles={abrirModalDetalles}
-                  canPerformActions={canPerformActions}
+                  canPerformActions={canPerformActionsInPedidos}
                 />
               ))}
               
@@ -1123,7 +1129,7 @@ const PedidosScreen = () => {
             scannedItems={scannedItems}
             setScannedItems={setScannedItems}
             iniciarEscaneo={iniciarEscaneo}
-            canPerformActions={canPerformActions}
+            canPerformActions={canPerformActionsInPedidos}
           />
         )}
         
