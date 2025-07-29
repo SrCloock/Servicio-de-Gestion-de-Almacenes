@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import axios from 'axios';
 import '../styles/DetalleAlbaran.css';
 import Navbar from '../components/Navbar';
 import { getAuthHeader } from '../helpers/authHelper';
@@ -11,7 +12,7 @@ import { usePermissions } from '../PermissionsManager';
 function DetalleAlbaran() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { albaran } = location.state || {};
+  const { albaran: initialAlbaran } = location.state || {};
   
   // Obtener permisos del usuario
   const { 
@@ -21,6 +22,9 @@ function DetalleAlbaran() {
   
   const [firmaGuardadaCliente, setFirmaGuardadaCliente] = useState(false);
   const [firmaGuardadaRepartidor, setFirmaGuardadaRepartidor] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [albaran, setAlbaran] = useState(initialAlbaran);
+  const [totalAlbaran, setTotalAlbaran] = useState(initialAlbaran?.importeLiquido || 0);
   
   const clienteRef = useRef(null);
   const repartidorRef = useRef(null);
@@ -55,7 +59,53 @@ function DetalleAlbaran() {
     }
   };
 
+  const handleCantidadChange = (index, newCantidad) => {
+    if (!albaran || !albaran.articulos) return;
+    
+    const updatedArticulos = [...albaran.articulos];
+    updatedArticulos[index] = {
+      ...updatedArticulos[index],
+      cantidadEntregada: parseFloat(newCantidad) || 0
+    };
+    
+    // Calcular nuevo total
+    const nuevoTotal = updatedArticulos.reduce((total, art) => {
+      return total + (art.cantidadEntregada * (art.precioUnitario || 0));
+    }, 0);
+    
+    setAlbaran({...albaran, articulos: updatedArticulos});
+    setTotalAlbaran(nuevoTotal);
+  };
+
+  const guardarCambios = async () => {
+    try {
+      const headers = getAuthHeader();
+      const lineas = albaran.articulos.map(art => ({
+        codigo: art.codigo,
+        orden: art.orden,
+        cantidadEntregada: art.cantidadEntregada
+      }));
+      
+      await axios.put('http://localhost:3000/actualizarCantidadesAlbaran', {
+        codigoEmpresa: albaran.codigoEmpresa,
+        ejercicio: albaran.ejercicio,
+        serie: albaran.serie,
+        numeroAlbaran: albaran.numero,
+        lineas
+      }, { headers });
+      
+      setEditMode(false);
+      alert('Cambios guardados correctamente');
+    } catch (error) {
+      console.error('Error guardando cambios:', error);
+      alert('Error al guardar cambios');
+    }
+  };
+
   const guardarFirma = async () => {
+    const to = 'sergitaberner@hotmail.es';
+    const pdfName = `entrega_albaran_${albaran.albaran}.pdf`;
+
     if (!albaran) {
       alert('No hay albarán para procesar');
       return;
@@ -81,19 +131,22 @@ function DetalleAlbaran() {
     doc.setFontSize(12);
     doc.text(`Cliente: ${albaran.cliente}`, 20, 30);
     doc.text(`Dirección: ${albaran.direccion}`, 20, 38);
-    doc.text(`Fecha: ${new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}`, 20, 46);
+    doc.text(`Obra: ${albaran.obra || 'No especificada'}`, 20, 46);
+    doc.text(`Contacto: ${albaran.contacto || 'No especificado'}`, 20, 54);
+    doc.text(`Teléfono: ${albaran.telefonoContacto || 'No especificado'}`, 20, 62);
+    doc.text(`Fecha: ${new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}`, 20, 70);
 
     // Artículos entregados
     if (albaran.articulos && albaran.articulos.length > 0) {
-      doc.text('Artículos entregados:', 20, 56);
+      doc.text('Artículos entregados:', 20, 80);
       autoTable(doc, {
-        startY: 60,
+        startY: 85,
         head: [['Artículo', 'Cantidad', 'Precio', 'Total']],
         body: albaran.articulos.map(a => [
           a.nombre, 
-          `${a.cantidad} uds`, 
+          `${a.cantidadEntregada} uds`, 
           `${a.precioUnitario?.toFixed(2) || '0.00'} €`, 
-          `${(a.cantidad * (a.precioUnitario || 0)).toFixed(2)} €`
+          `${(a.cantidadEntregada * (a.precioUnitario || 0)).toFixed(2)} €`
         ]),
         theme: 'grid',
         styles: { fontSize: 10 },
@@ -101,12 +154,12 @@ function DetalleAlbaran() {
       });
     }
 
-    let finalY = doc.lastAutoTable?.finalY || 70;
+    let finalY = doc.lastAutoTable?.finalY || 95;
     
     // Total del albarán
     doc.setFontSize(12);
     doc.setFont(undefined, 'bold');
-    doc.text(`Total del albarán: ${albaran.importeLiquido?.toFixed(2) || '0.00'} €`, 20, finalY + 10);
+    doc.text(`Total del albarán: ${totalAlbaran.toFixed(2)} €`, 20, finalY + 10);
     doc.setFont(undefined, 'normal');
     
     // Firmas
@@ -123,8 +176,8 @@ function DetalleAlbaran() {
 
     const pdfBlob = doc.output('blob');
     const formData = new FormData();
-    formData.append('pdf', pdfBlob, `entrega_albaran_${albaran.albaran}.pdf`);
-    formData.append('to', 'sergitaberner@hotmail.es');
+    formData.append('pdf', pdfBlob, pdfName);
+    formData.append('to', to);
 
     try {
       // Obtener headers de autenticación
@@ -175,13 +228,27 @@ function DetalleAlbaran() {
             <h3>Datos del Cliente</h3>
             <p><strong>Cliente:</strong> {albaran.cliente}</p>
             <p><strong>Dirección:</strong> {albaran.direccion}</p>
+            <p><strong>Obra:</strong> {albaran.obra || 'No especificada'}</p>
+            <p><strong>Contacto:</strong> {albaran.contacto || 'No especificado'}</p>
+            <p><strong>Teléfono:</strong> {albaran.telefonoContacto || 'No especificado'}</p>
             <p><strong>Fecha:</strong> {new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}</p>
-            <p><strong>Total:</strong> {albaran.importeLiquido?.toFixed(2)} €</p>
+            <p><strong>Total:</strong> {totalAlbaran.toFixed(2)} €</p>
           </div>
 
           <div className="articulos-section">
-            <h3>Líneas del Albarán</h3>
-            {albaran.articulos && albaran.articulos.length > 0 ? (
+            <div className="section-header">
+              <h3>Líneas del Albarán</h3>
+              {canPerformActions && (
+                <button 
+                  className={`btn-edit ${editMode ? 'editing' : ''}`}
+                  onClick={() => editMode ? guardarCambios() : setEditMode(true)}
+                >
+                  {editMode ? 'Guardar Cambios' : 'Editar Cantidades'}
+                </button>
+              )}
+            </div>
+            
+            {albaran.articulos?.length > 0 ? (
               <table>
                 <thead>
                   <tr>
@@ -195,9 +262,29 @@ function DetalleAlbaran() {
                   {albaran.articulos.map((art, idx) => (
                     <tr key={idx}>
                       <td>{art.nombre}</td>
-                      <td>{art.cantidad} uds</td>
+                      <td>
+                        {editMode ? (
+                          <div className="cantidad-edit">
+                            <span className="original">{art.cantidad}</span>
+                            <input
+                              type="number"
+                              min="0"
+                              max={art.cantidad}
+                              value={art.cantidadEntregada}
+                              onChange={(e) => handleCantidadChange(idx, e.target.value)}
+                            />
+                          </div>
+                        ) : art.cantidadEntregada !== undefined && art.cantidadEntregada !== art.cantidad ? (
+                          <div className="cantidad-modified">
+                            <del>{art.cantidad}</del>
+                            <span>{art.cantidadEntregada}</span>
+                          </div>
+                        ) : (
+                          art.cantidad
+                        )}
+                      </td>
                       <td>{art.precioUnitario?.toFixed(2) || '0.00'} €</td>
-                      <td>{(art.cantidad * (art.precioUnitario || 0)).toFixed(2)} €</td>
+                      <td>{(art.cantidadEntregada * (art.precioUnitario || 0)).toFixed(2)} €</td>
                     </tr>
                   ))}
                 </tbody>

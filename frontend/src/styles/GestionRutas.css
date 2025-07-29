@@ -1,34 +1,76 @@
+:root {
+  --primary-color: #1a365d;
+  --primary-dark: #0d1e3a;
+  --secondary-color: #2c5282;
+  --light-bg: #ffffff;
+  --dark-text: #2d3748;
+  --light-text: #f8f9fa;
+  --accent-color: #4299e1;
+  --hover-bg: rgba(255, 255, 255, 0.1);
+  --border-color: rgba(255, 255, 255, 0.15);
+  --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --selector-bg: rgba(0, 0, 0, 0.2);
+  --dropdown-bg: #0d1e3a;
+  --success-color: #38a169;
+  --warning-color: #ed8936;
+  --danger-color: #e53e3e;
+  --info-color: #4299e1;
+  --gray-100: #f8f9fa;
+  --gray-200: #e9ecef;
+  --gray-300: #dee2e6;
+  --gray-500: #adb5bd;
+  --gray-700: #495057;
+  --gray-900: #212529;
+  --border-radius-sm: 4px;
+  --border-radius: 8px;
+  --border-radius-lg: 12px;
+  --transition: all 0.3s ease;
+  --navbar-height: 70px;
+}
+
 .gestion-rutas-screen {
   min-height: 100vh;
   background-color: #f5f7fa;
-  padding: 60px 15px 30px;
-  color: #333;
+  padding: calc(var(--navbar-height) + 20px) 15px 80px;
+  color: var(--dark-text);
   font-family: 'Roboto', sans-serif;
   position: relative;
   box-sizing: border-box;
+  background: linear-gradient(to bottom, #f0f4f8, #e6edf5);
 }
 
 .gestion-rutas-screen .rutas-header {
   width: 100%;
   height: 80px;
-  background: linear-gradient(135deg, #2c3e50, #4ca1af);
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
   display: flex;
   align-items: center;
-  justify-content: center;
-  border-bottom-left-radius: 30px;
-  border-bottom-right-radius: 30px;
+  justify-content: space-between;
+  border-radius: var(--border-radius-lg);
   position: relative;
-  margin-bottom: 20px;
+  margin-bottom: 25px;
   overflow: hidden;
-  text-align: center;
+  padding: 0 25px;
+  box-shadow: var(--shadow);
+}
+
+.gestion-rutas-screen .rutas-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--accent-color);
 }
 
 .gestion-rutas-screen .rutas-header h2 {
-  color: white;
-  font-size: 28px;
-  font-weight: bold;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  color: var(--light-text);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
   z-index: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .gestion-rutas-screen .rutas-content {
@@ -36,15 +78,25 @@
   margin: 0 auto;
   position: relative;
   overflow: hidden;
+  padding: 0 15px;
+}
+
+.subtitle-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 30px;
 }
 
 .gestion-rutas-screen h3 {
-  font-size: 1.5rem;
-  color: #2c3e50;
-  margin-bottom: 25px;
+  font-size: 1.4rem;
+  color: var(--primary-dark);
+  margin: 0;
   text-align: center;
   position: relative;
-  padding-bottom: 15px;
+  padding-bottom: 10px;
+  font-weight: 500;
 }
 
 .gestion-rutas-screen h3::after {
@@ -53,10 +105,30 @@
   bottom: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 100px;
+  width: 120px;
   height: 3px;
-  background: #0056b3;
+  background: var(--accent-color);
   border-radius: 3px;
+}
+
+.info-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.info-icon:hover {
+  background: var(--primary-dark);
+  transform: scale(1.1);
 }
 
 .gestion-rutas-screen .loading-container {
@@ -68,8 +140,8 @@
 }
 
 .gestion-rutas-screen .loading-spinner {
-  border: 5px solid #f3f3f3;
-  border-top: 5px solid #0056b3;
+  border: 5px solid var(--gray-200);
+  border-top: 5px solid var(--accent-color);
   border-radius: 50%;
   width: 60px;
   height: 60px;
@@ -84,30 +156,40 @@
 
 .gestion-rutas-screen .error-message {
   background-color: #ffebee;
-  color: #dc3545;
+  color: var(--danger-color);
   padding: 20px;
-  border-radius: 12px;
+  border-radius: var(--border-radius);
   text-align: center;
   margin: 30px 0;
-  border-left: 4px solid #dc3545;
+  border-left: 4px solid var(--danger-color);
   font-weight: 500;
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .gestion-rutas-screen .no-albaranes {
   text-align: center;
   padding: 50px 20px;
-  background-color: #f8f9fa;
-  border-radius: 12px;
-  border: 2px dashed #dee2e6;
-  color: #6c757d;
-  margin: 20px 0;
+  background-color: var(--light-bg);
+  border-radius: var(--border-radius-lg);
+  border: 2px dashed var(--gray-300);
+  color: var(--gray-700);
+  margin: 20px auto;
+  max-width: 500px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 15px;
 }
 
 .gestion-rutas-screen .albaranes-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 25px;
-  margin-bottom: 100px;
+  margin-bottom: 40px;
 }
 
 .gestion-rutas-screen .ruta-card {
@@ -115,31 +197,46 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: white;
-  border-radius: 12px;
+  background: var(--light-bg);
+  border-radius: var(--border-radius-lg);
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: var(--transition);
+  position: relative;
+  border: 1px solid var(--gray-200);
 }
 
 .gestion-rutas-screen .ruta-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+}
+
+.gestion-rutas-screen .ruta-card.clickable:hover {
+  cursor: pointer;
 }
 
 .gestion-rutas-screen .card-header {
-  background-color: #0056b3;
-  color: white;
+  background-color: var(--secondary-color);
+  color: var(--light-text);
   padding: 15px 20px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
+}
+
+.gestion-rutas-screen .card-header h4 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
 }
 
 .gestion-rutas-screen .card-body {
   padding: 20px;
   flex-grow: 1;
+  background: var(--light-bg);
 }
 
 .gestion-rutas-screen .cliente-info, 
@@ -151,24 +248,25 @@
 
 .gestion-rutas-screen .icon {
   margin-right: 12px;
-  font-size: 1.5rem;
-  width: 30px;
-  height: 30px;
-  background: rgba(0, 86, 179, 0.2);
+  font-size: 1.2rem;
+  width: 28px;
+  height: 28px;
+  background: rgba(66, 153, 225, 0.15);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  color: var(--accent-color);
 }
 
 .gestion-rutas-screen .cliente-info .icon {
-  background: rgba(0, 86, 179, 0.2);
-  color: #0056b3;
+  background: rgba(66, 153, 225, 0.15);
+  color: var(--accent-color);
 }
 
 .gestion-rutas-screen .direccion-info .icon {
-  background: rgba(40, 167, 69, 0.2);
+  background: rgba(40, 167, 69, 0.15);
   color: #28a745;
 }
 
@@ -176,8 +274,8 @@
   display: flex;
   justify-content: space-between;
   padding: 15px 20px;
-  background-color: #f8f9fa;
-  border-top: 1px solid #dee2e6;
+  background-color: var(--gray-100);
+  border-top: 1px solid var(--gray-300);
 }
 
 .gestion-rutas-screen .importe-info, 
@@ -189,144 +287,69 @@
 .gestion-rutas-screen .importe-info span:first-child,
 .gestion-rutas-screen .articulos-info span:first-child {
   font-size: 0.9rem;
-  color: #6c757d;
+  color: var(--gray-700);
   margin-bottom: 5px;
+  font-weight: 500;
 }
 
 .gestion-rutas-screen .importe-valor {
   font-weight: bold;
-  color: #28a745;
-  font-size: 1.2rem;
+  color: var(--success-color);
+  font-size: 1.1rem;
 }
 
 .gestion-rutas-screen .articulos-count {
   font-weight: bold;
-  color: #0056b3;
-  font-size: 1.2rem;
+  color: var(--accent-color);
+  font-size: 1.1rem;
 }
 
 .gestion-rutas-screen .fecha-albaran {
-  font-size: 0.9rem;
-  opacity: 0.85;
-  background: rgba(255, 255, 255, 0.2);
-  padding: 3px 10px;
+  font-size: 0.85rem;
+  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 4px 10px;
   border-radius: 20px;
+  font-weight: 500;
 }
 
 .gestion-rutas-screen .albaran-parcial {
-  border-left: 4px solid #ff9800;
-  position: relative;
+  border-left: 4px solid var(--warning-color);
 }
 
 .gestion-rutas-screen .parcial-badge {
-  background-color: #ff9800;
+  background-color: var(--warning-color);
   color: white;
-  padding: 2px 8px;
+  padding: 4px 10px;
   border-radius: 4px;
-  font-size: 0.8em;
-  margin-left: 8px;
-}
-
-@media (max-width: 1200px) {
-  .gestion-rutas-screen .albaranes-grid {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  }
-}
-
-@media (max-width: 992px) {
-  .gestion-rutas-screen .rutas-header h2 {
-    font-size: 1.8rem;
-  }
-  
-  .gestion-rutas-screen h3 {
-    font-size: 1.3rem;
-  }
-}
-
-@media (max-width: 768px) {
-  .gestion-rutas-screen .rutas-content {
-    padding: 15px;
-  }
-  
-  .gestion-rutas-screen .albaranes-grid {
-    grid-template-columns: 1fr;
-    gap: 20px;
-    margin-bottom: 90px;
-  }
-  
-  .gestion-rutas-screen .rutas-header {
-    padding: 25px 0 20px;
-    height: 60px;
-  }
-  
-  .gestion-rutas-screen .rutas-header h2 {
-    font-size: 22px;
-  }
-  
-  .gestion-rutas-screen .card-body {
-    padding: 15px;
-  }
-}
-
-@media (max-width: 480px) {
-  .gestion-rutas-screen .rutas-header {
-    height: 50px;
-  }
-  
-  .gestion-rutas-screen .rutas-header h2 {
-    font-size: 18px;
-  }
-  
-  .gestion-rutas-screen h3 {
-    font-size: 1.2rem;
-    padding-bottom: 10px;
-  }
-  
-  .gestion-rutas-screen h3::after {
-    width: 80px;
-  }
-  
-  .gestion-rutas-screen .card-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-  
-  .gestion-rutas-screen .fecha-albaran {
-    align-self: flex-end;
-  }
-  
-  .gestion-rutas-screen .card-footer {
-    flex-direction: column;
-    gap: 15px;
-  }
-  
-  .gestion-rutas-screen .loading-container {
-    padding: 40px 15px;
-  }
+  font-size: 0.85em;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 /* Estilos para los indicadores de permiso */
 .permiso-indicator {
-  margin-left: auto;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  font-weight: bold;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  z-index: 1;
 }
 
 .permiso-full {
-  background-color: #4CAF50;
+  background-color: var(--success-color);
   color: white;
 }
 
 .permiso-readonly {
-  background-color: #FFC107;
-  color: black;
+  background-color: var(--warning-color);
+  color: white;
 }
 
 .permiso-limited {
-  background-color: #2196F3;
+  background-color: var(--accent-color);
   color: white;
 }
 
@@ -337,10 +360,285 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(255, 255, 255, 0.7);
+  background-color: rgba(255, 255, 255, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: bold;
-  color: #333;
+  color: var(--gray-700);
+  font-size: 1.1rem;
+  backdrop-filter: blur(2px);
 }
+
+/* Nuevos estilos para GestionRutas */
+.search-and-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.search-bar {
+  position: relative;
+  flex-grow: 1;
+  max-width: 600px;
+}
+
+.search-bar input {
+  width: 100%;
+  padding: 12px 20px 12px 45px;
+  border: 2px solid var(--primary-color);
+  border-radius: 30px;
+  font-size: 1rem;
+  transition: var(--transition);
+}
+
+.search-bar input:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.3);
+  outline: none;
+}
+
+.search-icon {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.2rem;
+  color: var(--primary-color);
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  background: white;
+  padding: 8px 15px;
+  border-radius: 30px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.pagination-controls button {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.pagination-controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-controls button:not(:disabled):hover {
+  background: var(--accent-color);
+  transform: scale(1.1);
+}
+
+.articulos-list {
+  margin-top: 15px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 15px;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+}
+
+.articulos-list ul {
+  margin: 10px 0 0 20px;
+  padding: 0;
+}
+
+.articulos-list li {
+  margin-bottom: 8px;
+  font-size: 0.95rem;
+}
+
+.more-items {
+  font-style: italic;
+  color: var(--gray-700);
+  margin-top: 8px;
+  font-size: 0.9rem;
+}
+
+.obra-info, .contacto-info, .telefono-info {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--gray-300);
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .gestion-rutas-screen .albaranes-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+}
+
+@media (max-width: 992px) {
+  .gestion-rutas-screen .rutas-header h2 {
+    font-size: 1.4rem;
+  }
+  
+  .gestion-rutas-screen h3 {
+    font-size: 1.2rem;
+  }
+  
+  .gestion-rutas-screen .rutas-header {
+    height: 70px;
+    padding: 0 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .gestion-rutas-screen {
+    padding: calc(var(--navbar-height) + 15px) 10px 70px;
+  }
+  
+  .gestion-rutas-screen .rutas-content {
+    padding: 0 10px;
+  }
+  
+  .gestion-rutas-screen .albaranes-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    margin-bottom: 30px;
+  }
+  
+  .gestion-rutas-screen .rutas-header {
+    height: 60px;
+    padding: 0 15px;
+  }
+  
+  .gestion-rutas-screen .rutas-header h2 {
+    font-size: 1.3rem;
+  }
+  
+  .gestion-rutas-screen .card-body {
+    padding: 15px;
+  }
+  
+  .subtitle-container {
+    margin-bottom: 25px;
+  }
+
+  .search-and-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .pagination-controls {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .gestion-rutas-screen {
+    padding: calc(var(--navbar-height) + 10px) 8px 60px;
+  }
+  
+  .gestion-rutas-screen .rutas-header {
+    height: 55px;
+    padding: 0 12px;
+    border-radius: var(--border-radius);
+  }
+  
+  .gestion-rutas-screen .rutas-header h2 {
+    font-size: 1.2rem;
+  }
+  
+  .gestion-rutas-screen h3 {
+    font-size: 1.1rem;
+    padding-bottom: 8px;
+  }
+  
+  .gestion-rutas-screen h3::after {
+    width: 90px;
+  }
+  
+  .gestion-rutas-screen .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px;
+  }
+  
+  .gestion-rutas-screen .fecha-albaran {
+    align-self: flex-end;
+    font-size: 0.8rem;
+  }
+  
+  .gestion-rutas-screen .card-footer {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .gestion-rutas-screen .loading-container {
+    padding: 40px 15px;
+  }
+  
+  .permiso-indicator {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+  }
+  
+  .info-icon {
+    width: 22px;
+    height: 22px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 320px) {
+  .gestion-rutas-screen .rutas-header {
+    flex-direction: column;
+    height: auto;
+    padding: 12px;
+    gap: 8px;
+  }
+  
+  .permiso-indicator {
+    margin-top: 5px;
+  }
+  
+  .gestion-rutas-screen .card-header h4 {
+    font-size: 1rem;
+  }
+}/* En tu archivo GestionRutas.css */
+.completar-btn {
+  background-color: #28a745;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  width: 100%;
+  justify-content: center;
+}
+
+.completar-btn:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.completar-btn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+}
+
+.completar-btn .icon {
+  font-size: 1.2em;
+}
+
+

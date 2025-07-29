@@ -1,23 +1,24 @@
 import React, { createContext, useContext, useMemo } from 'react';
-import { Navigate } from 'react-router-dom';
 
 const PermissionsContext = createContext();
 
 export const PermissionsProvider = ({ children, user }) => {
   const permissions = useMemo(() => {
+    if (!user) return {};
+    
     // Roles principales
-    const isAdmin = user?.StatusAdministrador === -1;
-    const isAdvancedUser = user?.StatusUsuarioAvanzado === -1;
-    const isReadOnly = user?.StatusUsuarioConsulta === -1;
+    const isAdmin = user.StatusAdministrador === -1;
+    const isAdvancedUser = user.StatusUsuarioAvanzado === -1;
+    const isReadOnly = user.StatusUsuarioConsulta === -1;
 
     // Permisos individuales
-    const hasWaybillsPermission = user?.StatusVerAlbaranesAsignados === -1;
-    const hasOrdersPermission = user?.StatusTodosLosPedidos === -1;
-    const hasAssignedOrdersPermission = user?.StatusVerPedidosAsignados === -1;
-    const hasRoutesPermission = user?.StatusDesignarRutas === -1;
-    const hasTransfersPermission = user?.StatusVerTraspasosAlmacen === -1;
-    const hasInventoryPermission = user?.StatusVerInventarios === -1;
-    const hasReceivingPermission = user?.StatusVerRecepcionMercancia === -1;
+    const hasWaybillsPermission = user.StatusVerAlbaranesAsignados === -1;
+    const hasOrdersPermission = user.StatusTodosLosPedidos === -1;
+    const hasAssignedOrdersPermission = user.StatusVerPedidosAsignados === -1;
+    const hasRoutesPermission = user.StatusDesignarRutas === -1;
+    const hasTransfersPermission = user.StatusVerTraspasosAlmacen === -1;
+    const hasInventoryPermission = user.StatusVerInventarios === -1;
+    const hasReceivingPermission = user.StatusVerRecepcionMercancia === -1;
 
     // Permisos agrupados
     const canViewWaybills = isAdmin || isAdvancedUser || isReadOnly || hasWaybillsPermission;
@@ -32,21 +33,16 @@ export const PermissionsProvider = ({ children, user }) => {
     const canViewPedidosScreen = isAdmin || isAdvancedUser || isReadOnly || hasOrdersPermission;
     const canPerformActionsInPedidos = !isReadOnly && (isAdmin || isAdvancedUser || hasOrdersPermission);
 
-    // Permiso genérico para acciones (sin ser solo lectura)
-    const canPerformActions = (isAdmin || isAdvancedUser ||
-                                hasWaybillsPermission ||
-                                hasOrdersPermission ||
-                                hasAssignedOrdersPermission ||
-                                hasRoutesPermission ||
-                                hasTransfersPermission ||
-                                hasInventoryPermission ||
-                                hasReceivingPermission) && !isReadOnly;
+    // Permiso para asignar pedidos (solo admin y avanzado)
+    const canAssignOrders = isAdmin || isAdvancedUser;
+    const isPreparer = hasOrdersPermission && !isAdmin && !isAdvancedUser;
 
     return {
       // Roles
       isAdmin,
       isAdvancedUser,
       isReadOnly,
+      isPreparer,
 
       // Permisos generales
       canViewWaybills,
@@ -56,11 +52,19 @@ export const PermissionsProvider = ({ children, user }) => {
       canViewTransfers,
       canViewInventory,
       canViewReceiving,
-      canPerformActions,
+      canPerformActions: !isReadOnly && (isAdmin || isAdvancedUser || 
+        hasWaybillsPermission ||
+        hasOrdersPermission ||
+        hasAssignedOrdersPermission ||
+        hasRoutesPermission ||
+        hasTransfersPermission ||
+        hasInventoryPermission ||
+        hasReceivingPermission),
 
       // Permisos específicos para Pedidos
       canViewPedidosScreen,
       canPerformActionsInPedidos,
+      canAssignOrders
     };
   }, [user]);
 

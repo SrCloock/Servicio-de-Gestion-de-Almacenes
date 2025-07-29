@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import '../styles/TraspasosPage.css';
 
 const TraspasosPage = () => {
+  // Estados de la aplicación
   const [activeSection, setActiveSection] = useState('traspasos');
   const [activeTab, setActiveTab] = useState('articulo');
   const [loading, setLoading] = useState(false);
@@ -17,7 +18,7 @@ const TraspasosPage = () => {
   const [articulosFiltrados, setArticulosFiltrados] = useState([]);
   const [pagination, setPagination] = useState({ 
     page: 1, 
-    pageSize: 50, 
+    pageSize: 15,  // Changed to 15 items per page
     total: 0, 
     totalPages: 1 
   });
@@ -30,6 +31,7 @@ const TraspasosPage = () => {
   const [ubicacionDestino, setUbicacionDestino] = useState('');
   const [cantidad, setCantidad] = useState('');
   const [unidadMedida, setUnidadMedida] = useState(null);
+  const [partida, setPartida] = useState('');
   const [showListaArticulos, setShowListaArticulos] = useState(false);
   const [allArticulosLoaded, setAllArticulosLoaded] = useState(false);
   const [ubicacionesAgrupadas, setUbicacionesAgrupadas] = useState([]);
@@ -38,16 +40,19 @@ const TraspasosPage = () => {
   const [articulosUbicacion, setArticulosUbicacion] = useState([]);
   const [paginationUbicacion, setPaginationUbicacion] = useState({ 
     page: 1, 
-    pageSize: 50, 
+    pageSize: 15,  // Changed to 15 items per page
     total: 0 
   });
   const [articuloUbicacionSeleccionado, setArticuloUbicacionSeleccionado] = useState(null);
   const [vistaUbicacion, setVistaUbicacion] = useState('seleccion');
   const [grupoUnicoOrigen, setGrupoUnicoOrigen] = useState('');
+  
+  // Referencias para manejar clics fuera del área de búsqueda
   const searchTimer = useRef(null);
   const searchRef = useRef(null);
   const listaRef = useRef(null);
 
+  // Cargar datos iniciales al montar el componente
   useEffect(() => {
     const cargarDatosIniciales = async () => {
       try {
@@ -67,6 +72,7 @@ const TraspasosPage = () => {
     
     cargarDatosIniciales();
     
+    // Manejador para cerrar la lista de artículos al hacer clic fuera
     const handleClickOutside = (e) => {
       if (searchRef.current && !searchRef.current.contains(e.target)) {
         setShowListaArticulos(false);
@@ -77,6 +83,7 @@ const TraspasosPage = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Cargar artículos con stock
   const cargarArticulosConStock = async (page = 1, search = '', append = false) => {
     setLoadingArticulos(true);
     try {
@@ -111,6 +118,7 @@ const TraspasosPage = () => {
     }
   };
 
+  // Filtrar artículos según término de búsqueda
   useEffect(() => {
     if (articuloBusqueda.trim() === '') {
       setArticulosFiltrados(articulosConStock);
@@ -126,6 +134,7 @@ const TraspasosPage = () => {
     setArticulosFiltrados(filtrados);
   }, [articuloBusqueda, articulosConStock]);
 
+  // Manejar scroll infinito en la lista de artículos
   const handleScrollLista = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.target;
     const isNearBottom = scrollHeight - scrollTop <= clientHeight * 1.2;
@@ -135,6 +144,7 @@ const TraspasosPage = () => {
     }
   };
 
+  // Cargar stock cuando se selecciona un artículo
   useEffect(() => {
     const cargarStock = async () => {
       if (!articuloSeleccionado) return;
@@ -156,6 +166,7 @@ const TraspasosPage = () => {
           setAlmacenOrigen(almacenConMasStock.CodigoAlmacen);
           setUbicacionOrigen(almacenConMasStock.Ubicacion);
           setUnidadMedida(almacenConMasStock.UnidadMedida || null);
+          setPartida(almacenConMasStock.Partida || '');
         }
       } catch (error) {
         console.error('Error cargando stock:', error);
@@ -166,6 +177,7 @@ const TraspasosPage = () => {
     cargarStock();
   }, [articuloSeleccionado]);
 
+  // Cargar artículos por ubicación
   const cargarArticulosUbicacion = useCallback(async (almacen, ubicacion, page = 1) => {
     try {
       const headers = getAuthHeader();
@@ -177,7 +189,7 @@ const TraspasosPage = () => {
             codigoAlmacen: almacen,
             ubicacion: ubicacion,
             page,
-            pageSize: 50
+            pageSize: paginationUbicacion.pageSize
           }
         }
       );
@@ -195,8 +207,9 @@ const TraspasosPage = () => {
       console.error('Error cargando artículos:', error);
       setArticulosUbicacion([]);
     }
-  }, []);
+  }, [paginationUbicacion.pageSize]);
 
+  // Cargar ubicaciones de destino
   const cargarUbicacionesDestino = useCallback(async (excluirUbicacion = '') => {
     if (!almacenDestino) return;
     
@@ -224,6 +237,7 @@ const TraspasosPage = () => {
     cargarUbicacionesDestino();
   }, [almacenDestino, cargarUbicacionesDestino]);
 
+  // Cargar historial de traspasos
   const cargarHistorial = useCallback(async () => {
     try {
       const headers = getAuthHeader();
@@ -237,16 +251,20 @@ const TraspasosPage = () => {
     }
   }, []);
 
+  // Seleccionar artículo de la lista
   const seleccionarArticulo = (articulo) => {
     setArticuloSeleccionado(articulo);
-    setArticuloBusqueda(articulo.DescripcionArticulo);
+    setArticuloBusqueda(''); // Clear search input
     setShowListaArticulos(false);
     setAllArticulosLoaded(false);
   };
 
+  // Cambiar almacén de origen
   const cambiarAlmacenOrigen = (codigoAlmacen) => {
     setAlmacenOrigen(codigoAlmacen);
     setUbicacionOrigen('');
+    setUnidadMedida(null);
+    setPartida('');
     
     const ubicacionesEnAlmacen = stockDisponible.filter(
       item => item.CodigoAlmacen === codigoAlmacen
@@ -259,16 +277,20 @@ const TraspasosPage = () => {
       
       setUbicacionOrigen(ubicacionConMasStock.Ubicacion);
       setUnidadMedida(ubicacionConMasStock.UnidadMedida || null);
+      setPartida(ubicacionConMasStock.Partida || '');
     }
   };
 
-  const cambiarUbicacionOrigen = (ubicacion, unidad, grupoUnico) => {
+  // Cambiar ubicación de origen
+  const cambiarUbicacionOrigen = (ubicacion, unidad, grupoUnico, partida) => {
     setUbicacionOrigen(ubicacion);
     setUnidadMedida(unidad || null);
     setGrupoUnicoOrigen(grupoUnico);
+    setPartida(partida || '');
     cargarUbicacionesDestino(ubicacion);
   };
 
+  // Manejar cambio de cantidad
   const handleCantidadChange = (e) => {
     const value = e.target.value;
     if (/^\d*$/.test(value)) {
@@ -277,7 +299,9 @@ const TraspasosPage = () => {
       if (articuloSeleccionado && stockDisponible.length > 0) {
         const stockItem = stockDisponible.find(
           item => item.CodigoAlmacen === almacenOrigen && 
-                  item.Ubicacion === ubicacionOrigen
+                  item.Ubicacion === ubicacionOrigen &&
+                  item.UnidadMedida === unidadMedida &&
+                  item.Partida === partida
         );
         
         if (stockItem && parseInt(value) > stockItem.Cantidad) {
@@ -287,6 +311,7 @@ const TraspasosPage = () => {
     }
   };
 
+  // Agregar traspaso desde modo artículo
   const agregarTraspasoArticulo = () => {
     const cantidadNum = parseInt(cantidad);
     if (isNaN(cantidadNum)) {
@@ -299,14 +324,16 @@ const TraspasosPage = () => {
       return;
     }
 
-    if (!articuloSeleccionado || !almacenOrigen || !ubicacionOrigen || !almacenDestino || !ubicacionDestino || !cantidad) {
+    if (!articuloSeleccionado || !almacenOrigen || !ubicacionOrigen || !almacenDestino || !ubicacionDestino || !cantidad || !unidadMedida) {
       alert('Complete todos los campos');
       return;
     }
     
     const stockItem = stockDisponible.find(
       item => item.CodigoAlmacen === almacenOrigen && 
-              item.Ubicacion === ubicacionOrigen
+              item.Ubicacion === ubicacionOrigen &&
+              item.UnidadMedida === unidadMedida &&
+              (item.Partida || '') === partida
     );
     
     if (!stockItem || cantidadNum > stockItem.Cantidad) {
@@ -318,7 +345,8 @@ const TraspasosPage = () => {
       id: uuidv4(),
       articulo: {
         ...articuloSeleccionado,
-        unidadMedida: stockItem?.UnidadMedida || null
+        unidadMedida: stockItem?.UnidadMedida || null,
+        partida: stockItem?.Partida || ''
       },
       origen: {
         almacen: almacenOrigen,
@@ -329,7 +357,9 @@ const TraspasosPage = () => {
         almacen: almacenDestino,
         ubicacion: ubicacionDestino
       },
-      cantidad: cantidadNum
+      cantidad: cantidadNum,
+      unidadMedida: stockItem?.UnidadMedida || null,
+      partida: stockItem?.Partida || ''
     };
     
     setTraspasosPendientes([...traspasosPendientes, nuevoTraspaso]);
@@ -341,8 +371,11 @@ const TraspasosPage = () => {
     setAlmacenDestino('');
     setUbicacionDestino('');
     setCantidad('');
+    setUnidadMedida(null);
+    setPartida('');
   };
 
+  // Agregar traspaso desde modo ubicación
   const agregarTraspasoUbicacion = () => {
     const cantidadNum = parseInt(cantidad);
     if (isNaN(cantidadNum)) {
@@ -369,7 +402,8 @@ const TraspasosPage = () => {
       id: uuidv4(),
       articulo: {
         ...articuloUbicacionSeleccionado,
-        unidadMedida: articuloUbicacionSeleccionado.UnidadMedida || null
+        unidadMedida: articuloUbicacionSeleccionado.UnidadMedida || null,
+        partida: articuloUbicacionSeleccionado.Partida || ''
       },
       origen: {
         almacen: ubicacionSeleccionada.almacen,
@@ -379,7 +413,9 @@ const TraspasosPage = () => {
         almacen: almacenDestino,
         ubicacion: ubicacionDestino
       },
-      cantidad: cantidadNum
+      cantidad: cantidadNum,
+      unidadMedida: articuloUbicacionSeleccionado.UnidadMedida || null,
+      partida: articuloUbicacionSeleccionado.Partida || ''
     };
     
     setTraspasosPendientes([...traspasosPendientes, nuevoTraspaso]);
@@ -390,6 +426,7 @@ const TraspasosPage = () => {
     setCantidad('');
   };
 
+  // Confirmar traspasos pendientes
   const confirmarTraspasos = async () => {
     if (traspasosPendientes.length === 0) {
       alert('No hay traspasos para confirmar');
@@ -410,6 +447,8 @@ const TraspasosPage = () => {
           destinoAlmacen: traspaso.destino.almacen,
           destinoUbicacion: traspaso.destino.ubicacion,
           cantidad: traspaso.cantidad,
+          unidadMedida: traspaso.unidadMedida,
+          partida: traspaso.partida,
           codigoEmpresa: empresa
         }, { headers }))
       );
@@ -426,28 +465,55 @@ const TraspasosPage = () => {
     }
   };
 
+  // Obtener nombre del almacén
   const getNombreAlmacen = (codigo) => {
     const almacen = almacenes.find(a => a.CodigoAlmacen === codigo);
     return almacen ? `${almacen.Almacen} (${codigo})` : codigo;
   };
 
+  // Formatear fecha para mostrar
   const formatFecha = (fechaStr) => {
+    if (!fechaStr) return 'Fecha no disponible';
+    
     try {
-      const fecha = new Date(fechaStr);
-      const fechaEspana = new Date(fecha.getTime() + 60 * 60 * 1000);
+      // Si ya viene formateada desde el backend
+      if (typeof fechaStr === 'string' && fechaStr.includes('/')) {
+        return fechaStr;
+      }
       
-      return fechaEspana.toLocaleString('es-ES', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
+      // Si es un objeto Date
+      if (fechaStr instanceof Date) {
+        return fechaStr.toLocaleString('es-ES', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+      }
+      
+      // Si es una cadena ISO
+      const fecha = new Date(fechaStr);
+      if (!isNaN(fecha.getTime())) {
+        return fecha.toLocaleString('es-ES', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+      }
+      
+      return fechaStr; // Devolver original si no se puede parsear
     } catch (e) {
+      console.error('Error formateando fecha:', e);
       return fechaStr;
     }
   };
 
+  // Formatear cantidad para mostrar
   const formatCantidad = (valor) => {
     const num = parseFloat(valor);
     return isNaN(num) ? '0' : num.toLocaleString('es-ES', {
@@ -456,10 +522,12 @@ const TraspasosPage = () => {
     });
   };
 
+  // Formatear unidad de medida
   const formatUnidadMedida = (unidad) => {
     return unidad || 'unidades';
   };
 
+  // Renderizado completo del componente
   return (
     <div className="traspasos-container">
       <h1>Traspaso entre Ubicaciones</h1>
@@ -588,9 +656,10 @@ const TraspasosPage = () => {
                 <>
                   <div className="form-section">
                     <h2>Origen</h2>
-                    <div className="form-group">
+                    <div className="form-control-group">
                       <label>Almacén:</label>
                       <select 
+                        className="form-control-enhanced"
                         value={almacenOrigen}
                         onChange={(e) => cambiarAlmacenOrigen(e.target.value)}
                         required
@@ -605,15 +674,17 @@ const TraspasosPage = () => {
                       </select>
                     </div>
 
-                    <div className="form-group">
+                    <div className="form-control-group">
                       <label>Ubicación:</label>
                       <select 
+                        className="form-control-enhanced"
                         value={ubicacionOrigen}
                         onChange={(e) => {
                           const selectedOption = e.target.options[e.target.selectedIndex];
                           const unidad = selectedOption.getAttribute('data-unidad');
                           const grupoUnico = selectedOption.getAttribute('data-grupounico');
-                          cambiarUbicacionOrigen(e.target.value, unidad, grupoUnico);
+                          const partida = selectedOption.getAttribute('data-partida');
+                          cambiarUbicacionOrigen(e.target.value, unidad, grupoUnico, partida);
                         }}
                         required
                         disabled={!almacenOrigen}
@@ -623,13 +694,15 @@ const TraspasosPage = () => {
                           .filter(item => item.CodigoAlmacen === almacenOrigen)
                           .map((item) => (
                             <option 
-                              key={`${item.Ubicacion}-${item.UnidadMedida}`} 
+                              key={`${item.Ubicacion}-${item.UnidadMedida}-${item.Partida || ''}`} 
                               value={item.Ubicacion}
                               data-unidad={item.UnidadMedida}
                               data-grupounico={`${item.CodigoAlmacen}-${item.Ubicacion}-${item.UnidadMedida}-${item.Partida || ''}`}
+                              data-partida={item.Partida || ''}
                             >
-                              {item.DescripcionUbicacion || item.Ubicacion} - 
+                              {item.Ubicacion} - 
                               {formatCantidad(item.Cantidad)} {item.UnidadMedida || 'unidades'}
+                              {item.Partida && ` (Lote: ${item.Partida})`}
                             </option>
                           ))}
                       </select>
@@ -638,15 +711,17 @@ const TraspasosPage = () => {
                     {ubicacionOrigen && (
                       <div className="unidad-info">
                         <strong>Unidad seleccionada:</strong> {formatUnidadMedida(unidadMedida)}
+                        {partida && <span>, <strong>Lote:</strong> {partida}</span>}
                       </div>
                     )}
                   </div>
 
                   <div className="form-section">
                     <h2>Destino</h2>
-                    <div className="form-group">
+                    <div className="form-control-group">
                       <label>Almacén:</label>
                       <select 
+                        className="form-control-enhanced"
                         value={almacenDestino}
                         onChange={(e) => {
                           setAlmacenDestino(e.target.value);
@@ -663,29 +738,35 @@ const TraspasosPage = () => {
                       </select>
                     </div>
 
-                    <div className="form-group">
+                    <div className="form-control-group">
                       <label>Ubicación:</label>
                       <select 
+                        className="form-control-enhanced"
                         value={ubicacionDestino}
                         onChange={(e) => setUbicacionDestino(e.target.value)}
                         required
                         disabled={!almacenDestino}
                       >
                         <option value="">Seleccionar ubicación</option>
-                        {ubicacionesDestino.map((ubicacion) => (
-                          <option key={ubicacion.Ubicacion} value={ubicacion.Ubicacion}>
-                            {ubicacion.DescripcionUbicacion || ubicacion.Ubicacion}
-                          </option>
-                        ))}
+                        {ubicacionesDestino
+                          .filter(ubicacion => 
+                            almacenDestino !== almacenOrigen || ubicacion.Ubicacion !== ubicacionOrigen
+                          )
+                          .map((ubicacion) => (
+                            <option key={ubicacion.Ubicacion} value={ubicacion.Ubicacion}>
+                              {ubicacion.Ubicacion}
+                            </option>
+                          ))}
                       </select>
                     </div>
                   </div>
 
                   <div className="form-section">
                     <h2>Cantidad</h2>
-                    <div className="form-group">
+                    <div className="form-control-group">
                       <label>Cantidad a traspasar:</label>
                       <input 
+                        className="form-control-enhanced"
                         type="number" 
                         value={cantidad}
                         onChange={handleCantidadChange}
@@ -698,7 +779,9 @@ const TraspasosPage = () => {
                           <strong>Stock disponible:</strong> {formatCantidad(
                             stockDisponible.find(
                               item => item.CodigoAlmacen === almacenOrigen && 
-                                      item.Ubicacion === ubicacionOrigen
+                                      item.Ubicacion === ubicacionOrigen &&
+                                      item.UnidadMedida === unidadMedida &&
+                                      (item.Partida || '') === partida
                             )?.Cantidad || 0
                           )} {formatUnidadMedida(unidadMedida)}
                         </div>
@@ -752,7 +835,6 @@ const TraspasosPage = () => {
                                 onClick={() => cargarArticulosUbicacion(almacen.codigo, ubicacion.codigo)}
                               >
                                 <span className="ubicacion-codigo">{ubicacion.codigo}</span>
-                                <span className="ubicacion-descripcion">{ubicacion.descripcion}</span>
                                 <span className="ubicacion-stock">
                                   {ubicacion.cantidadArticulos} artículos
                                 </span>
@@ -787,7 +869,7 @@ const TraspasosPage = () => {
                     </div>
                     
                     <div className="articulos-ubicacion">
-                      <div className="tabla-articulos">
+                      <div className="responsive-table-container">
                         <table>
                           <thead>
                             <tr>
@@ -795,6 +877,7 @@ const TraspasosPage = () => {
                               <th>Descripción</th>
                               <th>Stock</th>
                               <th>Unidad</th>
+                              <th>Lote</th>
                               <th>Acciones</th>
                             </tr>
                           </thead>
@@ -816,6 +899,7 @@ const TraspasosPage = () => {
                                   )}
                                 </td>
                                 <td>{articulo.UnidadMedida || 'unidades'}</td>
+                                <td>{articulo.Partida || '-'}</td>
                                 <td>
                                   <button className="btn-seleccionar">
                                     Seleccionar
@@ -827,108 +911,121 @@ const TraspasosPage = () => {
                         </table>
                       </div>
                       
-                      <div className="pagination-controls">
-                        <button
-                          disabled={paginationUbicacion.page === 1}
-                          onClick={() => cargarArticulosUbicacion(
-                            ubicacionSeleccionada.almacen, 
-                            ubicacionSeleccionada.ubicacion, 
-                            paginationUbicacion.page - 1
-                          )}
-                        >
-                          &larr; Anterior
-                        </button>
-                        
-                        <span>Página {paginationUbicacion.page} de {Math.ceil(paginationUbicacion.total / paginationUbicacion.pageSize)}</span>
-                        
-                        <button
-                          disabled={paginationUbicacion.page * paginationUbicacion.pageSize >= paginationUbicacion.total}
-                          onClick={() => cargarArticulosUbicacion(
-                            ubicacionSeleccionada.almacen, 
-                            ubicacionSeleccionada.ubicacion, 
-                            paginationUbicacion.page + 1
-                          )}
-                        >
-                          Siguiente &rarr;
-                        </button>
-                      </div>
+                      {paginationUbicacion.totalPages > 1 && (
+                        <div className="pagination-controls">
+                          <button
+                            disabled={paginationUbicacion.page === 1}
+                            onClick={() => cargarArticulosUbicacion(
+                              ubicacionSeleccionada.almacen, 
+                              ubicacionSeleccionada.ubicacion, 
+                              paginationUbicacion.page - 1
+                            )}
+                          >
+                            &larr; Anterior
+                          </button>
+                          
+                          <span>Página {paginationUbicacion.page} de {Math.ceil(paginationUbicacion.total / paginationUbicacion.pageSize)}</span>
+                          
+                          <button
+                            disabled={paginationUbicacion.page * paginationUbicacion.pageSize >= paginationUbicacion.total}
+                            onClick={() => cargarArticulosUbicacion(
+                              ubicacionSeleccionada.almacen, 
+                              ubicacionSeleccionada.ubicacion, 
+                              paginationUbicacion.page + 1
+                            )}
+                          >
+                            Siguiente &rarr;
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>
               )}
 
               {articuloUbicacionSeleccionado && (
-                <div className="form-section">
-                  <h2>Detalles del Traspaso</h2>
-                  <div className="articulo-seleccionado">
-                    <span>Artículo seleccionado: </span>
-                    {articuloUbicacionSeleccionado.DescripcionArticulo} 
-                    ({articuloUbicacionSeleccionado.CodigoArticulo})
-                    <div className="unidad-info">
-                      <strong>Unidad:</strong> {formatUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida)}
+                <div className="detail-card">
+                  <div className="card-header">Detalles del Traspaso</div>
+                  <div className="card-body">
+                    <div className="articulo-seleccionado">
+                      <span>Artículo seleccionado: </span>
+                      {articuloUbicacionSeleccionado.DescripcionArticulo} 
+                      ({articuloUbicacionSeleccionado.CodigoArticulo})
+                      <div className="unidad-info">
+                        <strong>Unidad:</strong> {formatUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida)}
+                        {articuloUbicacionSeleccionado.Partida && <span>, <strong>Lote:</strong> {articuloUbicacionSeleccionado.Partida}</span>}
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="form-group">
-                    <label>Almacén de destino:</label>
-                    <select 
-                      value={almacenDestino}
-                      onChange={(e) => {
-                        setAlmacenDestino(e.target.value);
-                        setUbicacionDestino('');
-                      }}
-                      required
-                    >
-                      <option value="">Seleccionar almacén</option>
-                      {almacenes.map(almacen => (
-                        <option key={almacen.CodigoAlmacen} value={almacen.CodigoAlmacen}>
-                          {almacen.Almacen} ({almacen.CodigoAlmacen})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label>Ubicación de destino:</label>
-                    <select 
-                      value={ubicacionDestino}
-                      onChange={(e) => setUbicacionDestino(e.target.value)}
-                      required
-                      disabled={!almacenDestino}
-                    >
-                      <option value="">Seleccionar ubicación</option>
-                      {ubicacionesDestino.map(ubicacion => (
-                        <option key={ubicacion.Ubicacion} value={ubicacion.Ubicacion}>
-                          {ubicacion.DescripcionUbicacion || ubicacion.Ubicacion}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label>Cantidad a traspasar:</label>
-                    <input 
-                      type="number" 
-                      value={cantidad}
-                      onChange={handleCantidadChange}
-                      required
-                      min="1"
-                      step="1"
-                      max={articuloUbicacionSeleccionado.Cantidad}
-                    />
-                    <div className="stock-info">
-                      <strong>Stock disponible:</strong> {formatCantidad(articuloUbicacionSeleccionado.Cantidad)} {formatUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida)}
+                    
+                    <div className="form-control-group">
+                      <label>Almacén de destino:</label>
+                      <select 
+                        className="form-control-enhanced"
+                        value={almacenDestino}
+                        onChange={(e) => {
+                          setAlmacenDestino(e.target.value);
+                          setUbicacionDestino('');
+                        }}
+                        required
+                      >
+                        <option value="">Seleccionar almacén</option>
+                        {almacenes.map(almacen => (
+                          <option key={almacen.CodigoAlmacen} value={almacen.CodigoAlmacen}>
+                            {almacen.Almacen} ({almacen.CodigoAlmacen})
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  </div>
 
-                  <div className="form-actions">
-                    <button 
-                      className="btn-agregar"
-                      onClick={agregarTraspasoUbicacion}
-                      disabled={loading}
-                    >
-                      {loading ? 'Agregando...' : 'Agregar Traspaso'}
-                    </button>
+                    <div className="form-control-group">
+                      <label>Ubicación de destino:</label>
+                      <select 
+                        className="form-control-enhanced"
+                        value={ubicacionDestino}
+                        onChange={(e) => setUbicacionDestino(e.target.value)}
+                        required
+                        disabled={!almacenDestino}
+                      >
+                        <option value="">Seleccionar ubicación</option>
+                        {ubicacionesDestino
+                          .filter(ubicacion => 
+                            almacenDestino !== ubicacionSeleccionada.almacen || 
+                            ubicacion.Ubicacion !== ubicacionSeleccionada.ubicacion
+                          )
+                          .map((ubicacion) => (
+                            <option key={ubicacion.Ubicacion} value={ubicacion.Ubicacion}>
+                              {ubicacion.Ubicacion}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    <div className="form-control-group">
+                      <label>Cantidad a traspasar:</label>
+                      <input 
+                        className="form-control-enhanced"
+                        type="number" 
+                        value={cantidad}
+                        onChange={handleCantidadChange}
+                        required
+                        min="1"
+                        step="1"
+                        max={articuloUbicacionSeleccionado.Cantidad}
+                      />
+                      <div className="stock-info">
+                        <strong>Stock disponible:</strong> {formatCantidad(articuloUbicacionSeleccionado.Cantidad)} {formatUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida)}
+                      </div>
+                    </div>
+
+                    <div className="form-actions">
+                      <button 
+                        className="btn-agregar"
+                        onClick={agregarTraspasoUbicacion}
+                        disabled={loading}
+                      >
+                        {loading ? 'Agregando...' : 'Agregar Traspaso'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -956,7 +1053,8 @@ const TraspasosPage = () => {
                         ({traspaso.articulo.CodigoArticulo})
                       </div>
                       <div>
-                        <strong>Unidad:</strong> {formatUnidadMedida(traspaso.articulo.unidadMedida)}
+                        <strong>Unidad:</strong> {formatUnidadMedida(traspaso.unidadMedida)}
+                        {traspaso.partida && <span>, <strong>Lote:</strong> {traspaso.partida}</span>}
                       </div>
                       <div>
                         <strong>Origen:</strong> {getNombreAlmacen(traspaso.origen.almacen)} - 
@@ -967,7 +1065,7 @@ const TraspasosPage = () => {
                         {traspaso.destino.ubicacion}
                       </div>
                       <div>
-                        <strong>Cantidad:</strong> {formatCantidad(traspaso.cantidad)} {formatUnidadMedida(traspaso.articulo.unidadMedida)}
+                        <strong>Cantidad:</strong> {formatCantidad(traspaso.cantidad)} {formatUnidadMedida(traspaso.unidadMedida)}
                       </div>
                     </div>
                     <button 
@@ -1014,9 +1112,11 @@ const TraspasosPage = () => {
           ) : (
             <div className="lista-historial">
               {historial.map((item, index) => (
-                <div key={`${item.Fecha}-${index}-${item.CodigoArticulo}`} className="historial-item">
+                <div key={`${item.FechaRegistro}-${index}-${item.CodigoArticulo}`} className="historial-item">
                   <div className="historial-header">
-                    <div className="historial-fecha">{formatFecha(item.Fecha)}</div>
+                    <div className="historial-fecha">
+                      {item.FechaFormateada || formatFecha(item.FechaRegistro)}
+                    </div>
                     <div className="historial-tipo">{item.TipoMovimiento}</div>
                   </div>
                   
@@ -1043,6 +1143,10 @@ const TraspasosPage = () => {
                     <div className="historial-usuario">
                       <span>Usuario:</span> 
                       {item.Comentario?.split(': ')[1] || 'Desconocido'}
+                    </div>
+                    <div className="historial-lote">
+                      <span>Lote:</span> 
+                      {item.Partida || 'N/A'}
                     </div>
                   </div>
                 </div>

@@ -1,4 +1,3 @@
-// src/components/Navbar.js
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
@@ -140,26 +139,36 @@ const Navbar = () => {
       visible: true
     },
     {
+      path: '/PedidosScreen',
+      label: 'Todos los pedidos',
+      icon: <FaClipboardList />,
+      visible: permissions.canViewPedidosScreen
+    },
+    {
+      path: '/pedidos-asignados',
+      label: 'Asignación de pedidos',
+      icon: <FaTruckLoading />,
+      visible: permissions.canViewAssignedOrders
+    },
+    {
       path: '/rutas',
       label: 'Albaranes',
       icon: <FaRoute />,
       visible: permissions.canViewWaybills
     },
     {
-      path: '/PedidosScreen',
-      label: 'Todos los Pedidos',
-      icon: <FaClipboardList />,
-      visible: permissions.canViewPedidosScreen
-    },
-    {
-      path: '/pedidos-asignados',
-      label: 'Pedidos Asignados',
-      icon: <FaTruckLoading />,
-      visible: permissions.canViewAssignedOrders
+      path: '/albaranes-asignados',
+      label: 'Asignación de albaranes',
+      icon: <FaFileInvoice />,
+      visible:
+        permissions.isAdmin ||
+        permissions.isAdvancedUser ||
+        permissions.isReadOnly ||
+        permissions.canAssignRoutes
     },
     {
       path: '/traspasos',
-      label: 'Traspasos',
+      label: 'Traspaso',
       icon: <FaExchangeAlt />,
       visible: permissions.canViewTransfers
     },
@@ -168,22 +177,6 @@ const Navbar = () => {
       label: 'Inventario',
       icon: <FaBoxes />,
       visible: permissions.canViewInventory
-    },
-    {
-      path: '/designar-rutas',
-      label: 'Designar Rutas',
-      icon: <FaUserFriends />,
-      visible: permissions.canAssignRoutes
-    },
-    {
-      path: '/albaranes-asignados',
-      label: 'Albaranes Asignados',
-      icon: <FaFileInvoice />,
-      visible:
-        permissions.isAdmin ||
-        permissions.isAdvancedUser ||
-        permissions.isReadOnly ||
-        permissions.canAssignRoutes
     }
   ];
 

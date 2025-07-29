@@ -35,7 +35,6 @@ const InventarioPage = () => {
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
 
   const formatearUnidad = (cantidad, unidad) => {
-    // Si no hay unidad o está vacía, usar "unidad" por defecto
     if (!unidad || unidad.trim() === '') {
       unidad = 'unidad';
     }
@@ -47,7 +46,6 @@ const InventarioPage = () => {
 
     const unidadesInvariables = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
     
-    // Convertir a minúsculas para la comparación, pero mantener la original para mostrar
     const unidadLower = unidad.toLowerCase();
     
     if (unidadesInvariables.includes(unidadLower)) {
@@ -83,13 +81,11 @@ const InventarioPage = () => {
     };
 
     if (cantidadFormateada === 1) {
-      // Manejar caso especial para "unidad"
       if (unidadLower === 'unidad' || unidadLower === 'unidades') {
         return '1 unidad';
       }
       return `1 ${unidad}`;
     } else {
-      // Manejar caso especial para "unidad" en plural
       if (unidadLower === 'unidad' || unidadLower === 'unidades') {
         return `${cantidadFormateada} unidades`;
       }
@@ -109,12 +105,34 @@ const InventarioPage = () => {
     }
   };
 
-  // FUNCIÓN CORREGIDA DE AGRUPACIÓN (CON GRUPO ÚNICO)
+  // Función corregida para mostrar fecha en hora de Madrid
+  const formatearFecha = (fechaStr) => {
+    if (!fechaStr) return 'Fecha inválida';
+    
+    try {
+      // Convertir a objeto Date
+      const fecha = new Date(fechaStr);
+      
+      // Formatear en hora de Madrid
+      return fecha.toLocaleString('es-ES', {
+        timeZone: 'Europe/Madrid',
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      console.error('Error formateando fecha:', fechaStr, error);
+      return 'Fecha inválida';
+    }
+  };
+
   const agruparPorArticulo = useCallback((data) => {
     const agrupado = {};
     
     data.forEach(item => {
-      // Clave única por artículo + almacén + ubicación + unidad + partida
       const clave = `${item.CodigoAlmacen}-${item.Ubicacion}-${item.UnidadStock}-${item.Partida || ''}`;
       
       if (!agrupado[item.CodigoArticulo]) {
@@ -139,9 +157,9 @@ const InventarioPage = () => {
         Ubicacion: item.Ubicacion,
         DescripcionUbicacion: item.DescripcionUbicacion,
         Partida: item.Partida,
-        UnidadStock: item.UnidadStock, // Usamos la unidad real del stock
+        UnidadStock: item.UnidadStock,
         Cantidad: item.Cantidad,
-        CantidadBase: item.Cantidad * (item.FactorConversion || 1), // Convertir a base
+        CantidadBase: item.Cantidad * (item.FactorConversion || 1),
         GrupoUnico: clave
       };
       
@@ -271,7 +289,6 @@ const InventarioPage = () => {
     setSortConfig({ key, direction });
   };
 
-  // Define el orden de los estados
   const estadoOrden = { 'positivo': 1, 'negativo': 2, 'agotado': 3 };
 
   const filteredInventario = useMemo(() => {
@@ -319,7 +336,6 @@ const InventarioPage = () => {
       );
     }
     
-    // Ordenar
     if (sortConfig.key) {
       result.sort((a, b) => {
         let aValue, bValue;
@@ -341,7 +357,6 @@ const InventarioPage = () => {
         return 0;
       });
     } else {
-      // Ordenación por defecto: estado y luego código
       result.sort((a, b) => {
         if (estadoOrden[a.estado] < estadoOrden[b.estado]) return -1;
         if (estadoOrden[a.estado] > estadoOrden[b.estado]) return 1;
@@ -398,7 +413,7 @@ const InventarioPage = () => {
       codigoAlmacen,
       ubicacionStr,
       partida,
-      unidadStock
+      unidadStock  // Asegurarnos de pasar la unidad
     });
     setNuevaCantidad(cantidadActual.toString());
   };
@@ -417,7 +432,7 @@ const InventarioPage = () => {
       codigoAlmacen: editandoCantidad.codigoAlmacen,
       ubicacionStr: editandoCantidad.ubicacionStr,
       partida: editandoCantidad.partida || '',
-      unidadStock: editandoCantidad.unidadStock || 'unidades',
+      unidadStock: editandoCantidad.unidadStock || 'unidades', // ENVIAR UNIDAD AL BACKEND
       nuevaCantidad: cantidad
     };
     
@@ -448,16 +463,6 @@ const InventarioPage = () => {
     } finally {
       setCargandoDetalles(false);
     }
-  };
-
-  const formatearFecha = (fechaStr) => {
-    const fecha = new Date(fechaStr);
-    return fecha.toLocaleDateString('es-ES', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
   };
 
   const confirmarAjustes = async () => {
@@ -1001,9 +1006,9 @@ const InventarioPage = () => {
                                     <span>{detalle.Comentario || 'Sin comentario'}</span>
                                   </div>
                                   <div>
-                                    <span className="inventario-ajuste-label">Hora:</span>
+                                    <span className="inventario-ajuste-label">Fecha y hora:</span>
                                     <span>
-                                      {new Date(detalle.FechaRegistro).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {formatearFecha(detalle.FechaRegistro)}
                                     </span>
                                   </div>
                                 </div>
@@ -1042,6 +1047,7 @@ const InventarioPage = () => {
                 <span>Partida:</span>
                 <span>{editandoCantidad.partida || 'N/A'}</span>
               </div>
+              {/* MOSTRAR UNIDAD EN EL MODAL */}
               <div className="inventario-detail-item">
                 <span>Unidad:</span>
                 <span>{editandoCantidad.unidadStock || 'unidades'}</span>

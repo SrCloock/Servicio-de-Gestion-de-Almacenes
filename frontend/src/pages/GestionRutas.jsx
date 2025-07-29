@@ -1,5 +1,5 @@
 ﻿﻿import React, { useState, useEffect } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
@@ -11,6 +11,9 @@ function GestionRutas() {
   const [albaranes, setAlbaranes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   
   const { 
     canViewWaybills, 
@@ -18,7 +21,6 @@ function GestionRutas() {
     isReadOnly
   } = usePermissions();
   
-  // Redirigir inmediatamente si no tiene permisos
   if (!canViewWaybills) {
     return <Navigate to="/" replace />;
   }
@@ -39,7 +41,16 @@ function GestionRutas() {
           headers: headers 
         });
 
-        setAlbaranes(response.data);
+        // Asegurar que cada artículo tenga cantidadEntregada
+        const albaranesConCantidad = response.data.map(albaran => ({
+          ...albaran,
+          articulos: albaran.articulos.map(articulo => ({
+            ...articulo,
+            cantidadEntregada: articulo.cantidadEntregada || articulo.cantidad
+          }))
+        }));
+
+        setAlbaranes(albaranesConCantidad);
       } catch (err) {
         console.error("Error cargando albaranes:", err);
         setError(err.message || 'No se pudieron cargar los albaranes');
@@ -55,6 +66,44 @@ function GestionRutas() {
     if (!canPerformActions) return;
     navigate('/detalle-albaran', { state: { albaran } });
   };
+
+  const handleCompletarAlbaran = async (albaran) => {
+    try {
+      const response = await axios.post('/completar-albaran', {
+        codigoEmpresa: albaran.codigoEmpresa,
+        ejercicio: albaran.ejercicio,
+        serie: albaran.serie,
+        numeroAlbaran: albaran.numero
+      }, {
+        headers: getAuthHeader()
+      });
+
+      // Actualizar la lista de albaranes
+      setAlbaranes(prev => prev.filter(a => a.id !== albaran.id));
+      alert(`Albarán ${albaran.albaran} marcado como entregado`);
+    } catch (error) {
+      console.error('Error completando albarán:', error);
+      alert(`Error: ${error.response?.data?.mensaje || error.message}`);
+    }
+  };
+
+  const filteredAlbaranes = albaranes.filter(albaran => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      albaran.albaran.toLowerCase().includes(searchLower) ||
+      (albaran.obra && albaran.obra.toLowerCase().includes(searchLower)) ||
+      (albaran.direccion && albaran.direccion.toLowerCase().includes(searchLower)) ||
+      (albaran.cliente && albaran.cliente.toLowerCase().includes(searchLower)) ||
+      (albaran.contacto && albaran.contacto.toLowerCase().includes(searchLower)) ||
+      (albaran.telefonoContacto && albaran.telefonoContacto.includes(searchTerm)) ||
+      (albaran.vendedor && albaran.vendedor.toLowerCase().includes(searchLower))
+    );
+  });
+
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentAlbaranes = filteredAlbaranes.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredAlbaranes.length / itemsPerPage);
 
   return (
     <div className="gestion-rutas-screen">
@@ -72,7 +121,39 @@ function GestionRutas() {
           </div>
         </div>
 
-        <h3>Entregas Asignadas a Tu Ruta</h3>
+        <div className="subtitle-container">
+          <h3>Entregas Asignadas a Tu Ruta</h3>
+        </div>
+
+        <div className="search-and-pagination">
+          <div className="search-bar">
+            <input
+              type="text"
+              placeholder="Buscar por albarán, obra, dirección, cliente..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <span className="search-icon">🔍</span>
+          </div>
+          
+          {totalPages > 1 && (
+            <div className="pagination-controls">
+              <button 
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(currentPage - 1)}
+              >
+                &lt;
+              </button>
+              <span>Página {currentPage} de {totalPages}</span>
+              <button 
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(currentPage + 1)}
+              >
+                &gt;
+              </button>
+            </div>
+          )}
+        </div>
 
         {loading && (
           <div className="loading-container">
@@ -90,16 +171,16 @@ function GestionRutas() {
         )}
 
         <div className="albaranes-grid">
-          {albaranes.map((albaran) => (
+          {currentAlbaranes.map((albaran) => (
             <div 
               key={`${albaran.id}-${albaran.albaran}`} 
-              className={`ruta-card ${albaran.esParcial ? 'albaran-parcial' : ''} ${canPerformActions ? 'clickable' : ''}`}
+              className={`ruta-card ${albaran.esAntiguo ? 'albaran-antiguo' : ''} ${canPerformActions ? 'clickable' : ''}`}
               onClick={() => abrirDetalle(albaran)}
             >
               <div className="card-header">
                 <h4>Albarán: {albaran.albaran}</h4>
-                {albaran.esParcial && (
-                  <span className="parcial-badge">Parcial</span>
+                {albaran.esAntiguo && (
+                  <span className="antiguo-badge">Antiguo</span>
                 )}
                 <span className="fecha-albaran">
                   {new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}
@@ -107,14 +188,36 @@ function GestionRutas() {
               </div>
               
               <div className="card-body">
-                <p className="cliente-info">
+                <p className="vendedor-info">
                   <span className="icon">👤</span> 
-                  <strong>{albaran.cliente}</strong>
+                  <strong>Vendedor:</strong> {albaran.vendedor || 'No especificado'}
                 </p>
-                <p className="direccion-info">
-                  <span className="icon">📍</span> 
-                  {albaran.direccion}
+                <p className="obra-info">
+                  <span className="icon">🏗️</span> 
+                  <strong>Obra:</strong> {albaran.obra || 'No especificada'}
                 </p>
+                <p className="contacto-info">
+                  <span className="icon">📇</span> 
+                  <strong>Contacto:</strong> {albaran.contacto || 'No especificado'}
+                </p>
+                <p className="telefono-info">
+                  <span className="icon">📞</span> 
+                  <strong>Teléfono:</strong> {albaran.telefonoContacto || 'No especificado'}
+                </p>
+                
+                <div className="articulos-list">
+                  <strong>Artículos a entregar:</strong>
+                  <ul>
+                    {albaran.articulos.slice(0, 3).map((art, idx) => (
+                      <li key={idx}>
+                        {art.nombre} - {art.cantidad} uds
+                      </li>
+                    ))}
+                  </ul>
+                  {albaran.articulos.length > 3 && (
+                    <p className="more-items">+ {albaran.articulos.length - 3} artículos más...</p>
+                  )}
+                </div>
               </div>
               
               <div className="card-footer">
@@ -128,6 +231,18 @@ function GestionRutas() {
                     {albaran.articulos?.length || 0}
                   </span>
                 </div>
+                
+                {canPerformActions && (
+                  <button 
+                    className="completar-btn"
+                    onClick={(e) => {
+                      e.stopPropagation(); // Evitar que se abra el detalle
+                      handleCompletarAlbaran(albaran);
+                    }}
+                  >
+                    <span className="icon">✓</span> Marcar como entregado
+                  </button>
+                )}
               </div>
               
               {!canPerformActions && (

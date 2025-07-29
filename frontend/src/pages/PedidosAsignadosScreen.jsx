@@ -1,127 +1,83 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
-import Navbar from '../components/Navbar';
 import { usePermissions } from '../PermissionsManager';
-import '../styles/PedidosAsignadosScreen.css';
+import Navbar from '../components/Navbar';
 
-function PedidosAsignadosScreen() {
-  const navigate = useNavigate();
-  const [pedidosCompletados, setPedidosCompletados] = useState([]);
+const PedidosAsignadosScreen = () => {
+  const [pedidos, setPedidos] = useState([]);
   const [empleados, setEmpleados] = useState([]);
-  const [asignandoEmpleado, setAsignandoEmpleado] = useState(null);
-  const [empleadoSeleccionado, setEmpleadoSeleccionado] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  
-  // Obtener permisos del usuario
-  const { 
-    canViewAssignedOrders, 
-    canPerformActions 
-  } = usePermissions();
+  const [asignando, setAsignando] = useState({});
+  const [error, setError] = useState('');
+  const { canAssignOrders } = usePermissions();
 
   useEffect(() => {
+    if (!canAssignOrders) return;
+
     const cargarDatos = async () => {
       try {
         setLoading(true);
+        setError('');
+        
         const headers = getAuthHeader();
+        const [pedidosRes, empleadosRes] = await Promise.all([
+          axios.get('http://localhost:3000/pedidos-sin-asignar', { headers }),
+          axios.get('http://localhost:3000/empleados-preparadores', { headers })
+        ]);
         
-        // Obtener pedidos completados pero no asignados
-        const responsePedidos = await axios.get('http://localhost:3000/pedidosCompletados', { 
-          headers 
-        });
-        
-        // Obtener empleados
-        const responseEmpleados = await axios.get('http://localhost:3000/empleados', { 
-          headers 
-        });
-        
-        setPedidosCompletados(responsePedidos.data);
-        setEmpleados(responseEmpleados.data);
+        setPedidos(pedidosRes.data);
+        setEmpleados(empleadosRes.data);
       } catch (err) {
         console.error('Error cargando datos:', err);
-        setError(err.message || 'Error al cargar los datos');
+        setError('Error al cargar los datos. Por favor, inténtalo de nuevo.');
       } finally {
         setLoading(false);
       }
     };
     
-    if (canViewAssignedOrders) {
-      cargarDatos();
-    }
-  }, [canViewAssignedOrders]);
+    cargarDatos();
+  }, [canAssignOrders]);
 
-  const asignarEmpleadoAPedido = async (pedido, codigoEmpleado) => {
-    if (!canPerformActions) return;
-    
+  const handleAsignar = async (pedidoId, empleadoId) => {
     try {
-      const headers = getAuthHeader();
+      setAsignando(prev => ({ ...prev, [pedidoId]: true }));
+      setError('');
       
-      await axios.post('http://localhost:3000/asignarEmpleadoAPedido', {
-        codigoEmpresa: pedido.codigoEmpresa,
-        ejercicio: pedido.ejercicioPedido,
-        serie: pedido.seriePedido,
-        numeroPedido: pedido.numeroPedido,
-        codigoEmpleado
-      }, { headers });
-
-      // Actualizar el estado local para reflejar la asignación
-      setPedidosCompletados(prev => 
-        prev.map(p => 
-          p.numeroPedido === pedido.numeroPedido 
-            ? { ...p, CodigoEmpleadoAsignado: codigoEmpleado } 
-            : p
-        )
+      await axios.post(
+        'http://localhost:3000/asignar-pedido', 
+        { pedidoId, empleadoId },
+        { headers: getAuthHeader() }
       );
       
-      return true;
+      // Actualizar UI eliminando el pedido asignado
+      setPedidos(prev => prev.filter(p => p.NumeroPedido !== pedidoId));
     } catch (err) {
-      console.error('Error asignando empleado:', err);
-      alert('Error al asignar empleado: ' + (err.response?.data?.mensaje || err.message));
-      return false;
+      console.error('Error asignando pedido:', err);
+      setError('Error al asignar pedido: ' + (err.response?.data?.mensaje || err.message));
+    } finally {
+      setAsignando(prev => ({ ...prev, [pedidoId]: false }));
     }
   };
 
-  const generarAlbaranParaPedido = async (pedido) => {
-    if (!canPerformActions) return;
-    
-    try {
-      const headers = getAuthHeader();
-      
-      const response = await axios.post('http://localhost:3000/asignarPedidoYGenerarAlbaran', {
-        codigoEmpresa: pedido.codigoEmpresa,
-        ejercicio: pedido.ejercicioPedido,
-        serie: pedido.seriePedido,
-        numeroPedido: pedido.numeroPedido
-      }, { headers });
-
-      // Eliminar el pedido de la lista
-      setPedidosCompletados(prev => 
-        prev.filter(p => p.numeroPedido !== pedido.numeroPedido)
-      );
-      
-      alert(`Albarán ${response.data.serieAlbaran}${response.data.numeroAlbaran} generado correctamente`);
-    } catch (err) {
-      console.error('Error generando albarán:', err);
-      alert('Error al generar albarán: ' + (err.response?.data?.mensaje || err.message));
-    }
-  };
-
-  const verDetallePedido = (pedido) => {
-    navigate('/detalle-pedido', { state: { pedido } });
-  };
-
-  // Si no tiene permiso para ver esta pantalla
-  if (!canViewAssignedOrders) {
+  if (!canAssignOrders) {
     return (
-      <div className="pedidos-asignados-screen">
+      <div className="pedidos-asignados-container">
         <div className="no-permission">
           <h2>Acceso restringido</h2>
-          <p>No tienes permiso para ver esta sección.</p>
-          <button onClick={() => navigate('/')} className="btn-volver">
-            Volver al inicio
-          </button>
+          <p>No tienes permiso para acceder a esta sección.</p>
+        </div>
+        <Navbar />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="pedidos-asignados-container">
+        <div className="loading">
+          <div className="loader"></div>
+          <p>Cargando asignaciones...</p>
         </div>
         <Navbar />
       </div>
@@ -129,164 +85,78 @@ function PedidosAsignadosScreen() {
   }
 
   return (
-    <div className="pedidos-asignados-screen">
-      <div className="pedidos-asignados-container">
-        <h2>Pedidos Completados para Asignar</h2>
-        
-        {loading && (
-          <div className="loading-container">
-            <div className="loading-spinner"></div>
-            <p>Cargando pedidos...</p>
-          </div>
-        )}
-        
-        {error && <div className="error-message">{error}</div>}
-        
-        {!loading && pedidosCompletados.length === 0 && (
-          <div className="no-pedidos">
-            <p>No hay pedidos completados pendientes de asignación</p>
-          </div>
-        )}
-        
-        {!loading && pedidosCompletados.length > 0 && (
-          <div className="pedidos-table-container">
-            <table className="pedidos-table">
-              <thead>
-                <tr>
-                  <th>Nº Pedido</th>
-                  <th>Cliente</th>
-                  <th>Fecha Completado</th>
-                  <th>Dirección</th>
-                  <th>Artículos</th>
-                  <th>Empleado Asignado</th>
-                  <th>Acciones</th>
+    <div className="pedidos-asignados-container">
+      <h2>Asignación de Pedidos a Preparadores</h2>
+      
+      {error && <div className="error-message">{error}</div>}
+      
+      {pedidos.length === 0 ? (
+        <div className="no-pedidos">
+          <i className="fas fa-check-circle"></i>
+          <p>Todos los pedidos están asignados</p>
+        </div>
+      ) : (
+        <div className="asignacion-container">
+          <table className="asignacion-table">
+            <thead>
+              <tr>
+                <th>Pedido</th>
+                <th>Cliente</th>
+                <th>Fecha</th>
+                <th>Asignar a</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pedidos.map(pedido => (
+                <tr key={pedido.NumeroPedido}>
+                  <td>#{pedido.NumeroPedido}</td>
+                  <td>{pedido.RazonSocial}</td>
+                  <td>{new Date(pedido.FechaPedido).toLocaleDateString()}</td>
+                  <td>
+                    <select
+                      id={`select-${pedido.NumeroPedido}`}
+                      className="empleado-select"
+                      disabled={asignando[pedido.NumeroPedido]}
+                    >
+                      <option value="">Seleccionar preparador</option>
+                      {empleados.map(emp => (
+                        <option key={emp.CodigoCliente} value={emp.CodigoCliente}>
+                          {emp.Nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <button
+                      onClick={() => {
+                        const select = document.getElementById(`select-${pedido.NumeroPedido}`);
+                        const empleadoId = select.value;
+                        if (empleadoId) {
+                          handleAsignar(pedido.NumeroPedido, empleadoId);
+                        } else {
+                          setError('Selecciona un preparador primero');
+                        }
+                      }}
+                      disabled={asignando[pedido.NumeroPedido]}
+                      className={`btn-asignar ${asignando[pedido.NumeroPedido] ? 'disabled' : ''}`}
+                    >
+                      {asignando[pedido.NumeroPedido] ? (
+                        <><i className="fas fa-spinner fa-spin"></i> Asignando...</>
+                      ) : (
+                        <><i className="fas fa-user-check"></i> Asignar</>
+                      )}
+                    </button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {pedidosCompletados.map((pedido, index) => {
-                  // Crear una clave única robusta con valores por defecto
-                  const keyParts = [
-                    pedido.codigoEmpresa || 'emp-nd',
-                    pedido.ejercicioPedido || 'ej-nd',
-                    pedido.seriePedido || 'ser-nd',
-                    pedido.numeroPedido || `num-nd-${index}`
-                  ];
-                  
-                  const uniqueKey = keyParts.join('-');
-                  
-                  return (
-                    <tr key={uniqueKey}>
-                      <td>{pedido.numeroPedido || 'N/D'}</td>
-                      <td>{pedido.razonSocial || 'Cliente desconocido'}</td>
-                      <td>
-                        {pedido.fechaCompletado 
-                          ? new Date(pedido.fechaCompletado).toLocaleDateString() 
-                          : 'N/D'}
-                      </td>
-                      <td>
-                        {pedido.domicilio || 'N/D'}, {pedido.municipio || 'N/D'}
-                      </td>
-                      <td>{pedido.articulos?.length || 0}</td>
-                      <td>
-                        {pedido.CodigoEmpleadoAsignado 
-                          ? (empleados.find(e => e.CodigoCliente === pedido.CodigoEmpleadoAsignado)?.Nombre || 'Empleado desconocido')
-                          : 'Sin asignar'}
-                      </td>
-                      <td>
-                        <button 
-                          onClick={() => verDetallePedido(pedido)}
-                          className="btn-detalle"
-                        >
-                          Ver Detalle
-                        </button>
-                        {!pedido.CodigoEmpleadoAsignado ? (
-                          <button 
-                            onClick={() => setAsignandoEmpleado(pedido)}
-                            className="btn-asignar"
-                            disabled={!canPerformActions}
-                          >
-                            Asignar Empleado
-                          </button>
-                        ) : (
-                          <button 
-                            onClick={() => generarAlbaranParaPedido(pedido)}
-                            className="btn-generar"
-                            disabled={!canPerformActions}
-                          >
-                            Generar Albarán
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-        
-        {/* Modal para asignar empleado */}
-        {asignandoEmpleado && (
-          <div className="modal-asignacion">
-            <div className="modal-contenido">
-              <button 
-                className="cerrar-modal" 
-                onClick={() => {
-                  setAsignandoEmpleado(null);
-                  setEmpleadoSeleccionado('');
-                }}
-              >
-                &times;
-              </button>
-              <h3>Asignar Empleado al Pedido #{asignandoEmpleado.numeroPedido || 'N/D'}</h3>
-              
-              <div className="form-group">
-                <label>Seleccionar Empleado:</label>
-                <select
-                  value={empleadoSeleccionado}
-                  onChange={(e) => setEmpleadoSeleccionado(e.target.value)}
-                  className="empleado-select"
-                >
-                  <option value="">Seleccione un empleado</option>
-                  {empleados.map(emp => (
-                    <option key={emp.CodigoCliente} value={emp.CodigoCliente}>
-                      {emp.Nombre} ({emp.UsuarioLogicNet})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div className="modal-actions">
-                <button 
-                  onClick={async () => {
-                    if (await asignarEmpleadoAPedido(asignandoEmpleado, empleadoSeleccionado)) {
-                      setAsignandoEmpleado(null);
-                      setEmpleadoSeleccionado('');
-                    }
-                  }}
-                  disabled={!empleadoSeleccionado}
-                  className="btn-confirmar"
-                >
-                  Asignar
-                </button>
-                <button 
-                  onClick={() => {
-                    setAsignandoEmpleado(null);
-                    setEmpleadoSeleccionado('');
-                  }}
-                  className="btn-cancelar"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        
-        <Navbar />
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <Navbar />
     </div>
   );
-}
+};
 
 export default PedidosAsignadosScreen;
