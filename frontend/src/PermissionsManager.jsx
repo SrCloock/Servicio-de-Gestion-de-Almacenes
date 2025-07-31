@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useMemo } from 'react';
+import { Navigate } from 'react-router-dom';
 
 const PermissionsContext = createContext();
 
@@ -20,6 +21,10 @@ export const PermissionsProvider = ({ children, user }) => {
     const hasInventoryPermission = user.StatusVerInventarios === -1;
     const hasReceivingPermission = user.StatusVerRecepcionMercancia === -1;
 
+    // Definición de roles específicos
+    const isPreparer = hasOrdersPermission && !isAdmin && !isAdvancedUser;
+    const isDelivery = hasWaybillsPermission && !isAdmin && !isAdvancedUser;
+
     // Permisos agrupados
     const canViewWaybills = isAdmin || isAdvancedUser || isReadOnly || hasWaybillsPermission;
     const canViewAllOrders = isAdmin || isAdvancedUser || isReadOnly || hasOrdersPermission;
@@ -35,7 +40,10 @@ export const PermissionsProvider = ({ children, user }) => {
 
     // Permiso para asignar pedidos (solo admin y avanzado)
     const canAssignOrders = isAdmin || isAdvancedUser;
-    const isPreparer = hasOrdersPermission && !isAdmin && !isAdvancedUser;
+
+    // Nuevos permisos para gestión de albaranes
+    const canAssignWaybills = isAdmin || isAdvancedUser || hasRoutesPermission;
+    const canManageWaybills = isAdmin || isAdvancedUser || hasWaybillsPermission;
 
     return {
       // Roles
@@ -43,6 +51,7 @@ export const PermissionsProvider = ({ children, user }) => {
       isAdvancedUser,
       isReadOnly,
       isPreparer,
+      isDelivery,
 
       // Permisos generales
       canViewWaybills,
@@ -52,6 +61,8 @@ export const PermissionsProvider = ({ children, user }) => {
       canViewTransfers,
       canViewInventory,
       canViewReceiving,
+      canAssignWaybills,
+      canManageWaybills,
       canPerformActions: !isReadOnly && (isAdmin || isAdvancedUser || 
         hasWaybillsPermission ||
         hasOrdersPermission ||
@@ -64,7 +75,13 @@ export const PermissionsProvider = ({ children, user }) => {
       // Permisos específicos para Pedidos
       canViewPedidosScreen,
       canPerformActionsInPedidos,
-      canAssignOrders
+      canAssignOrders,
+
+      // Nuevos permisos específicos
+      canViewGestionRutas: canViewWaybills,
+      canPerformActionsInRutas: !isReadOnly && (isAdmin || isAdvancedUser || hasWaybillsPermission),
+      canViewPedidosAsignadosScreen: isAdmin || isAdvancedUser,
+      canViewAlbaranesAsignadosScreen: isAdmin || isAdvancedUser,
     };
   }, [user]);
 
@@ -81,6 +98,23 @@ export const usePermissions = () => {
     throw new Error('usePermissions debe usarse dentro de un PermissionsProvider');
   }
   return context;
+};
+
+export const ProtectedRoute = ({ children, requiredPermissions = [], anyPermission = false }) => {
+  const permissions = usePermissions();
+  
+  // Si no se especifican permisos, permitir acceso
+  if (requiredPermissions.length === 0) return children;
+  
+  // Verificar si se requiere cualquier permiso (OR)
+  if (anyPermission) {
+    const hasAny = requiredPermissions.some(perm => permissions[perm]);
+    return hasAny ? children : <Navigate to="/" replace />;
+  }
+  
+  // Verificar si se requieren todos los permisos (AND)
+  const hasAll = requiredPermissions.every(perm => permissions[perm]);
+  return hasAll ? children : <Navigate to="/" replace />;
 };
 
 export const ProtectedRouteWithPermission = ({ children, requiredPermission }) => {

@@ -6,7 +6,7 @@ import PedidosScreen from './pages/PedidosScreen';
 import ConfirmacionEntrega from './pages/ConfirmacionEntrega';
 import GestionRutas from './pages/GestionRutas';
 import DetalleAlbaran from './pages/DetalleAlbaran';
-import PedidosAsignadosScreen from './pages/PedidosAsignadosScreen';
+import AsignarPedidosScreen from './pages/AsignarPedidosScreen';
 import DesignarRutasScreen from './pages/DesignarRutasScreen';
 import AlbaranesAsignadosScreen from './pages/AlbaranesAsignadosScreen';
 import TraspasosPage from './pages/TraspasosPage';
@@ -89,7 +89,7 @@ function App() {
             <Route path="/pedidos-asignados" element={
               <ProtectedRoute>
                 <ProtectedRouteWithPermission requiredPermission="canViewAssignedOrders">
-                  <PedidosAsignadosScreen />
+                  <AsignarPedidosScreen />
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />

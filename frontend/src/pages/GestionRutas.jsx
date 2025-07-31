@@ -8,6 +8,7 @@ import '../styles/GestionRutas.css';
 
 function GestionRutas() {
   const navigate = useNavigate();
+  const user = JSON.parse(localStorage.getItem('user'));
   const [albaranes, setAlbaranes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -16,41 +17,38 @@ function GestionRutas() {
   const itemsPerPage = 10;
   
   const { 
-    canViewWaybills, 
-    canPerformActions,
-    isReadOnly
+    canViewGestionRutas,
+    canPerformActionsInRutas,
+    isDelivery
   } = usePermissions();
   
-  if (!canViewWaybills) {
-    return <Navigate to="/" replace />;
-  }
-
   useEffect(() => {
+    if (!canViewGestionRutas) {
+      navigate('/');
+      return;
+    }
+
     const fetchAlbaranes = async () => {
       try {
         setLoading(true);
         setError(null);
         
         const headers = getAuthHeader();
+        const params = {};
         
-        if (!headers.usuario || !headers.codigoempresa) {
-          throw new Error('Faltan cabeceras de autenticación. Vuelve a iniciar sesión.');
+        // Si es repartidor, agregar parámetro para filtrar por usuario
+        if (isDelivery) {
+          params.usuario = user.UsuarioLogicNet;
+        } else {
+          params.todos = true;
         }
 
         const response = await axios.get('http://localhost:3000/albaranesPendientes', { 
-          headers: headers 
+          headers,
+          params
         });
 
-        // Asegurar que cada artículo tenga cantidadEntregada
-        const albaranesConCantidad = response.data.map(albaran => ({
-          ...albaran,
-          articulos: albaran.articulos.map(articulo => ({
-            ...articulo,
-            cantidadEntregada: articulo.cantidadEntregada || articulo.cantidad
-          }))
-        }));
-
-        setAlbaranes(albaranesConCantidad);
+        setAlbaranes(response.data);
       } catch (err) {
         console.error("Error cargando albaranes:", err);
         setError(err.message || 'No se pudieron cargar los albaranes');
@@ -60,14 +58,29 @@ function GestionRutas() {
     };
 
     fetchAlbaranes();
-  }, []);
+  }, [canViewGestionRutas, isDelivery, navigate, user]);
 
-  const abrirDetalle = (albaran) => {
-    if (!canPerformActions) return;
-    navigate('/detalle-albaran', { state: { albaran } });
-  };
+  const pedidosFiltrados = albaranes.filter(albaran => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      albaran.albaran.toLowerCase().includes(searchLower) ||
+      (albaran.obra && albaran.obra.toLowerCase().includes(searchLower)) ||
+      (albaran.direccion && albaran.direccion.toLowerCase().includes(searchLower)) ||
+      (albaran.cliente && albaran.cliente.toLowerCase().includes(searchLower)) ||
+      (albaran.contacto && albaran.contacto.toLowerCase().includes(searchLower)) ||
+      (albaran.telefonoContacto && albaran.telefonoContacto.includes(searchTerm)) ||
+      (albaran.vendedor && albaran.vendedor.toLowerCase().includes(searchLower))
+    );
+  });
+
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentAlbaranes = pedidosFiltrados.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(pedidosFiltrados.length / itemsPerPage);
 
   const handleCompletarAlbaran = async (albaran) => {
+    if (!canPerformActionsInRutas) return;
+    
     try {
       const response = await axios.post('/completar-albaran', {
         codigoEmpresa: albaran.codigoEmpresa,
@@ -87,33 +100,13 @@ function GestionRutas() {
     }
   };
 
-  const filteredAlbaranes = albaranes.filter(albaran => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      albaran.albaran.toLowerCase().includes(searchLower) ||
-      (albaran.obra && albaran.obra.toLowerCase().includes(searchLower)) ||
-      (albaran.direccion && albaran.direccion.toLowerCase().includes(searchLower)) ||
-      (albaran.cliente && albaran.cliente.toLowerCase().includes(searchLower)) ||
-      (albaran.contacto && albaran.contacto.toLowerCase().includes(searchLower)) ||
-      (albaran.telefonoContacto && albaran.telefonoContacto.includes(searchTerm)) ||
-      (albaran.vendedor && albaran.vendedor.toLowerCase().includes(searchLower))
-    );
-  });
-
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentAlbaranes = filteredAlbaranes.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredAlbaranes.length / itemsPerPage);
-
   return (
     <div className="gestion-rutas-screen">
       <div className="rutas-content">
         <div className="rutas-header">
           <h2>Gestión de Rutas</h2>
           <div className="permiso-indicator">
-            {isReadOnly ? (
-              <span className="permiso-readonly">Solo lectura</span>
-            ) : canPerformActions ? (
+            {canPerformActionsInRutas ? (
               <span className="permiso-full">Acceso completo</span>
             ) : (
               <span className="permiso-limited">Acceso limitado</span>
@@ -174,8 +167,8 @@ function GestionRutas() {
           {currentAlbaranes.map((albaran) => (
             <div 
               key={`${albaran.id}-${albaran.albaran}`} 
-              className={`ruta-card ${albaran.esAntiguo ? 'albaran-antiguo' : ''} ${canPerformActions ? 'clickable' : ''}`}
-              onClick={() => abrirDetalle(albaran)}
+              className={`ruta-card ${albaran.esAntiguo ? 'albaran-antiguo' : ''} ${canPerformActionsInRutas ? 'clickable' : ''}`}
+              onClick={() => canPerformActionsInRutas && navigate('/detalle-albaran', { state: { albaran } })}
             >
               <div className="card-header">
                 <h4>Albarán: {albaran.albaran}</h4>
@@ -232,7 +225,7 @@ function GestionRutas() {
                   </span>
                 </div>
                 
-                {canPerformActions && (
+                {canPerformActionsInRutas && (
                   <button 
                     className="completar-btn"
                     onClick={(e) => {
@@ -245,7 +238,7 @@ function GestionRutas() {
                 )}
               </div>
               
-              {!canPerformActions && (
+              {!canPerformActionsInRutas && (
                 <div className="view-only-overlay">
                   Solo lectura
                 </div>

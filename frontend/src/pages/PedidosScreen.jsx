@@ -1,4 +1,5 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+﻿// src/screens/PedidosScreen.jsx
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
@@ -412,6 +413,7 @@ const PedidoCard = ({
         <div><strong>Contacto:</strong> {pedido.Contacto || 'No especificado'}</div>
         <div><strong>Teléfono:</strong> {pedido.TelefonoContacto || 'No especificado'}</div>
         <div><strong>Forma de entrega:</strong> {pedido.formaEntrega}</div>
+        <div><strong>Preparador:</strong> {pedido.Preparador || 'Sin asignar'}</div>
         <div><strong>Obra:</strong> {pedido.obra || 'Sin obra especificada'}</div>
         <div><strong>Dirección:</strong> {pedido.domicilio}</div>
         <div><strong>Municipio:</strong> {pedido.municipio}</div>
@@ -639,15 +641,121 @@ const PedidosScreen = () => {
   ];
 
   const handleExpedir = async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea) => {
-    // ... (código de expedición) ...
+    const key = `${numeroPedido}-${codigoArticulo}`;
+    const expedicion = expediciones[key] || { cantidad: '0', ubicacion: '' };
+    
+    if (!expedicion.cantidad || parseInt(expedicion.cantidad) <= 0) {
+      alert('Por favor, introduce una cantidad válida para expedir');
+      return;
+    }
+    
+    if (!expedicion.ubicacion) {
+      alert('Por favor, selecciona una ubicación');
+      return;
+    }
+    
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.post(
+        'http://localhost:3000/actualizarLineaPedido',
+        {
+          codigoEmpresa,
+          ejercicio,
+          serie,
+          numeroPedido,
+          codigoArticulo,
+          cantidadExpedida: expedicion.cantidad,
+          ubicacion: expedicion.ubicacion
+        },
+        { headers }
+      );
+      
+      if (response.data.success) {
+        // Actualizar estado local
+        setPedidos(prev => prev.map(pedido => {
+          if (pedido.numeroPedido !== numeroPedido) return pedido;
+          
+          return {
+            ...pedido,
+            articulos: pedido.articulos.map(articulo => {
+              if (articulo.codigoArticulo !== codigoArticulo) return articulo;
+              
+              const nuevasUnidadesPendientes = parseFloat(articulo.unidadesPendientes) - parseFloat(expedicion.cantidad);
+              
+              return {
+                ...articulo,
+                unidadesPendientes: nuevasUnidadesPendientes
+              };
+            })
+          };
+        }));
+        
+        // Resetear expedición
+        setExpediciones(prev => ({
+          ...prev,
+          [key]: {
+            ubicacion: expedicion.ubicacion,
+            cantidad: '0'
+          }
+        }));
+        
+        alert('Artículo expedido correctamente');
+      } else {
+        alert('Error al expedir artículo: ' + response.data.mensaje);
+      }
+    } catch (error) {
+      console.error('Error al expedir artículo:', error);
+      alert('Error al expedir artículo: ' + error.message);
+    }
   };
 
   const handleScanSuccess = (decodedText) => {
-    // ... (código de escaneo) ...
+    if (!currentScanningLine) return;
+    
+    const { linea, pedido } = currentScanningLine;
+    
+    // Validar que el código escaneado coincida con el artículo
+    if (decodedText !== linea.codigoArticulo && decodedText !== linea.codigoAlternativo) {
+      alert(`Código escaneado (${decodedText}) no coincide con el artículo (${linea.codigoArticulo})`);
+      return;
+    }
+    
+    // Obtener la expedición actual
+    const key = `${pedido.numeroPedido}-${linea.codigoArticulo}`;
+    const expedicion = expediciones[key] || { cantidad: '0' };
+    let cantidad = parseInt(expedicion.cantidad) || 0;
+    
+    // Incrementar cantidad expedida
+    cantidad += 1;
+    
+    // Actualizar estado local
+    setExpediciones(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        cantidad: cantidad.toString()
+      }
+    }));
+    
+    // Si es una variante, actualizar scannedItems
+    if (currentScanningLine.detalle) {
+      const detalle = currentScanningLine.detalle;
+      const itemKey = `${linea.codigoArticulo}-${detalle.color.codigo}-${detalle.grupoTalla.codigo}`;
+      
+      setScannedItems(prev => ({
+        ...prev,
+        [itemKey]: (prev[itemKey] || 0) + 1
+      }));
+    }
+    
+    alert(`Artículo ${linea.descripcionArticulo} escaneado correctamente. Cantidad: ${cantidad}`);
   };
 
   const handleManualVerification = () => {
-    // ... (código de verificación manual) ...
+    if (!manualCode || !currentScanningLine) return;
+    
+    handleScanSuccess(manualCode);
+    setManualCode('');
   };
 
   useEffect(() => {
@@ -671,8 +779,12 @@ const PedidosScreen = () => {
           formaEntrega: filtroFormaEntrega,
           estados: filtroEstados.join(','),
           soloAprobados: soloAprobados,
-          preparador: isPreparer ? user.UsuarioLogicNet : null
         };
+
+        // Filtro para preparadores
+        if (isPreparer) {
+          params.empleado = user.UsuarioLogicNet;
+        }
 
         const response = await axios.get(
           'http://localhost:3000/pedidosPendientes', 
@@ -681,19 +793,23 @@ const PedidosScreen = () => {
         
         setPedidos(response.data);
         
+        // Obtener ubicaciones de stock para todos los artículos
         const codigosArticulos = [...new Set(response.data.flatMap(p => p.articulos.map(a => a.codigoArticulo)))];
-        const responseUbicaciones = await axios.post(
-          'http://localhost:3000/ubicacionesMultiples',
-          { articulos: codigosArticulos },
-          { headers }
-        );
-        setUbicaciones(responseUbicaciones.data);
+        if (codigosArticulos.length > 0) {
+          const responseUbicaciones = await axios.post(
+            'http://localhost:3000/ubicacionesMultiples',
+            { articulos: codigosArticulos },
+            { headers }
+          );
+          setUbicaciones(responseUbicaciones.data);
+        }
         
+        // Inicializar expediciones
         const nuevasExpediciones = {};
         response.data.forEach(pedido => {
           pedido.articulos.forEach(linea => {
             const key = `${pedido.numeroPedido}-${linea.codigoArticulo}`;
-            let ubicacionesConStock = responseUbicaciones.data[linea.codigoArticulo]?.filter(ubi => ubi.unidadSaldo > 0) || [];
+            let ubicacionesConStock = ubicaciones[linea.codigoArticulo]?.filter(ubi => ubi.unidadSaldo > 0) || [];
             
             if (ubicacionesConStock.length === 0) {
               ubicacionesConStock.push({
@@ -713,6 +829,7 @@ const PedidosScreen = () => {
         });
         setExpediciones(nuevasExpediciones);
         
+        // Inicializar modos de visualización
         const initialModes = {};
         response.data.forEach(pedido => {
           initialModes[pedido.numeroPedido] = 'show';
@@ -751,6 +868,8 @@ const PedidosScreen = () => {
         if (devices && devices.length) {
           setCameras(devices);
           setSelectedCamera(devices[0].id);
+        } else {
+          setCameraError('No se encontraron cámaras disponibles');
         }
       }).catch(err => {
         console.error("Error al obtener cámaras:", err);
