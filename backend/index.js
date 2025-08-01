@@ -142,8 +142,7 @@ app.get('/dashboard', async (req, res) => {
 // ✅ 5. PEDIDOS SCREEN
 // ============================================
 
-// ✅ 5.1 PEDIDOS PENDIENTES
-
+// ✅ 5.1 PEDIDOS PENDIENTES (VERSIÓN COMPLETA)
 app.get('/pedidosPendientes', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ 
@@ -197,6 +196,7 @@ app.get('/pedidosPendientes', async (req, res) => {
     const formaEntrega = req.query.formaEntrega;
     const empleado = req.query.empleado;
     const estadosPedido = req.query.estados ? req.query.estados.split(',') : [];
+    const empleadoAsignado = req.query.empleadoAsignado;
     
     // 4. Calcular fechas según rango
     const hoy = new Date();
@@ -246,6 +246,7 @@ app.get('/pedidosPendientes', async (req, res) => {
           c.Status,
           c.StatusAprobado,
           c.EsVoluminoso,
+          c.EmpleadoAsignado,
           l.CodigoArticulo,
           l.DescripcionArticulo,
           l.Descripcion2Articulo,
@@ -257,7 +258,6 @@ app.get('/pedidosPendientes', async (req, res) => {
           l.UnidadMedida1_ AS UnidadBase,
           l.UnidadMedida2_ AS UnidadAlternativa,
           l.FactorConversion_ AS FactorConversion,
-          c.EmpleadoAsignado,
           emp.Nombre AS Vendedor,
           c.Contacto,
           c.Telefono AS TelefonoContacto
@@ -283,6 +283,7 @@ app.get('/pedidosPendientes', async (req, res) => {
           ${formaEntrega ? `AND c.FormaEntrega = ${formaEntrega}` : ''}
           ${empleado ? `AND c.EmpleadoAsignado = '${empleado}'` : ''}
           ${usuarioCondition}
+          ${empleadoAsignado ? `AND c.EmpleadoAsignado = '${empleadoAsignado}'` : ''}
         ORDER BY c.FechaEntrega ASC
       `);
 
@@ -400,6 +401,9 @@ app.get('/pedidosPendientes', async (req, res) => {
           Vendedor: row.Vendedor,
           Contacto: row.Contacto,
           TelefonoContacto: row.TelefonoContacto,
+          Status: row.Status,
+          StatusAprobado: row.StatusAprobado,
+          EsVoluminoso: row.EsVoluminoso,
           articulos: []
         };
       }
@@ -435,44 +439,48 @@ app.get('/pedidosPendientes', async (req, res) => {
   }
 });
 
-// ✅ 5.2 Asignar Preparador
-
+// ✅ 5.2 Asignar Preparador (VERSIÓN COMPLETA PARA REASIGNACIONES)
 app.post('/asignarEmpleado', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autenticado' });
   }
 
-  const { ejercicio, serie, numero, empleado } = req.body;
-  const codigoEmpresa = req.user.CodigoEmpresa;
+  const { asignaciones } = req.body;
 
-  if (!ejercicio || !serie || !numero || !empleado) {
+  if (!Array.isArray(asignaciones) || asignaciones.length === 0) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Faltan datos del pedido o del empleado' 
+      mensaje: 'Datos inválidos para asignación' 
     });
   }
 
+  const transaction = new sql.Transaction(poolGlobal);
+  
   try {
-    await poolGlobal.request()
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
-      .input('serie', sql.VarChar, serie)
-      .input('numero', sql.Int, numero)
-      .input('empleado', sql.VarChar, empleado)
-      .query(`
-        UPDATE CabeceraPedidoCliente
-        SET EmpleadoAsignado = @empleado
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioPedido = @ejercicio
-          AND SeriePedido = @serie
-          AND NumeroPedido = @numero
-      `);
-
-    res.json({ 
-      success: true, 
-      mensaje: 'Empleado asignado correctamente al pedido' 
-    });
+    await transaction.begin();
+    const request = new sql.Request(transaction);
+    
+    for (const asignacion of asignaciones) {
+      await request
+        .input('codigoEmpresa', sql.SmallInt, asignacion.codigoEmpresa)
+        .input('ejercicio', sql.SmallInt, asignacion.ejercicioPedido)
+        .input('serie', sql.VarChar, asignacion.seriePedido || '')
+        .input('numeroPedido', sql.Int, asignacion.numeroPedido)
+        .input('empleado', sql.VarChar, asignacion.empleado)
+        .query(`
+          UPDATE CabeceraPedidoCliente
+          SET EmpleadoAsignado = @empleado
+          WHERE CodigoEmpresa = @codigoEmpresa
+            AND EjercicioPedido = @ejercicio
+            AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+            AND NumeroPedido = @numeroPedido
+        `);
+    }
+    
+    await transaction.commit();
+    res.json({ success: true, mensaje: 'Asignaciones actualizadas correctamente' });
   } catch (err) {
+    await transaction.rollback();
     console.error('[ERROR ASIGNAR EMPLEADO]', err);
     res.status(500).json({ 
       success: false, 
@@ -1132,24 +1140,103 @@ app.get('/pedidos-sin-asignar', async (req, res) => {
   }
 });
 
+// ✅ 6.7 OBTENER EMPLEADOS PREPARADORES (VERSIÓN COMPLETA)
+app.get('/empleados/preparadores', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autenticado' });
+  }
+
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
+  try {
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT 
+          UsuarioLogicNet AS codigo, 
+          Nombre AS nombre
+        FROM Clientes
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND CodigoCategoriaCliente_ = 'emp'
+          AND StatusTodosLosPedidos = -1
+          AND UsuarioLogicNet IS NOT NULL
+      `);
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR OBTENER PREPARADORES]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener preparadores',
+      error: err.message 
+    });
+  }
+});
+
 // ============================================
-// ✅ 7. ALBARANES SCREEN
+// ✅ 7. ALBARANES SCREEN (COMPLETO Y CORREGIDO)
 // ============================================
 
-// ✅ 7.1 GENERAR ALBARÁN DESDE PEDIDO
+// ✅ 7.1 GENERAR ALBARÁN AL ASIGNAR REPARTIDOR (CORREGIDO)
+app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
+  const { codigoEmpresa, numeroPedido, codigoRepartidor } = req.body;
+  const usuario = req.user.UsuarioLogicNet;
 
-app.post('/generarAlbaranDesdePedido', async (req, res) => {
-  const { codigoEmpresa, ejercicio, serie, numeroPedido } = req.body;
-
-  if (!codigoEmpresa || !ejercicio || numeroPedido == null) {
-    return res.status(400).json({ success: false, mensaje: 'Faltan datos del pedido.' });
+  if (!codigoEmpresa || !numeroPedido || !codigoRepartidor) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Faltan datos requeridos: empresa, pedido y repartidor.' 
+    });
   }
 
   try {
+    // 1. Verificar permisos del usuario que asigna
+    const permisoResult = await poolGlobal.request()
+      .input('usuario', sql.VarChar, usuario)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT StatusDesignarRutas
+        FROM Clientes
+        WHERE UsuarioLogicNet = @usuario
+          AND CodigoEmpresa = @codigoEmpresa
+      `);
+    
+    if (permisoResult.recordset.length === 0 || permisoResult.recordset[0].StatusDesignarRutas !== -1) {
+      return res.status(403).json({ 
+        success: false, 
+        mensaje: 'No tienes permiso para asignar repartos' 
+      });
+    }
+
+    // 2. Obtener datos del pedido
+    const pedidoResult = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .query(`
+        SELECT EjercicioPedido, SeriePedido, CodigoCliente, RazonSocial, 
+               Domicilio, Municipio, NumeroLineas, ImporteLiquido, obra,
+               Contacto, Telefono AS TelefonoContacto
+        FROM CabeceraPedidoCliente
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND NumeroPedido = @numeroPedido
+          AND Estado = 1
+      `);
+
+    if (pedidoResult.recordset.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        mensaje: 'Pedido no encontrado o no está preparado' 
+      });
+    }
+
+    const pedido = pedidoResult.recordset[0];
+    const ejercicio = new Date().getFullYear();
+
+    // 3. Generar número de albarán
     const nextAlbaran = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
-      .input('serie', sql.VarChar, serie || '')
+      .input('serie', sql.VarChar, pedido.SeriePedido || '')
       .query(`
         SELECT ISNULL(MAX(NumeroAlbaran), 0) + 1 AS SiguienteNumero
         FROM CabeceraAlbaranCliente
@@ -1159,126 +1246,134 @@ app.post('/generarAlbaranDesdePedido', async (req, res) => {
       `);
 
     const numeroAlbaran = nextAlbaran.recordset[0].SiguienteNumero;
+    const fechaActual = new Date();
 
-    const cabeceraPedido = await poolGlobal.request()
+    // 4. Obtener el empleado asignado (repartidor)
+    const repartidorResult = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
-      .input('numeroPedido', sql.Int, numeroPedido)
-      .input('serie', sql.VarChar, serie || '')
+      .input('usuario', sql.VarChar, codigoRepartidor)
       .query(`
-        SELECT TOP 1 *
-        FROM CabeceraPedidoCliente
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioPedido = @ejercicio
-          AND NumeroPedido = @numeroPedido
-          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+        SELECT CodigoCliente
+        FROM Clientes
+        WHERE UsuarioLogicNet = @usuario
+          AND CodigoEmpresa = @codigoEmpresa
+          AND CodigoCategoriaCliente_ = 'emp'
+          AND StatusDesignarRutas = '-1'
       `);
 
-    if (cabeceraPedido.recordset.length === 0) {
-      return res.status(404).json({ success: false, mensaje: 'Pedido no encontrado.' });
+    if (repartidorResult.recordset.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        mensaje: 'Repartidor no encontrado' 
+      });
     }
 
-    const cab = cabeceraPedido.recordset[0];
+    const empleadoAsignado = repartidorResult.recordset[0].CodigoCliente;
 
-    const lineas = await poolGlobal.request()
+    // 5. Crear cabecera del albarán con empleado asignado
+    await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, pedido.SeriePedido || '')
+      .input('numeroAlbaran', sql.Int, numeroAlbaran)
+      .input('codigoCliente', sql.VarChar, pedido.CodigoCliente)
+      .input('razonSocial', sql.VarChar, pedido.RazonSocial)
+      .input('domicilio', sql.VarChar, pedido.Domicilio)
+      .input('municipio', sql.VarChar, pedido.Municipio)
+      .input('fecha', sql.DateTime, fechaActual)
+      .input('numeroLineas', sql.Int, pedido.NumeroLineas)
+      .input('importeLiquido', sql.Decimal(18,4), pedido.ImporteLiquido)
+      .input('empleadoAsignado', sql.VarChar, empleadoAsignado)
+      .input('obra', sql.VarChar, pedido.obra || '')
+      .input('contacto', sql.VarChar, pedido.Contacto || '')
+      .input('telefonoContacto', sql.VarChar, pedido.TelefonoContacto || '')
+      .query(`
+        INSERT INTO CabeceraAlbaranCliente (
+          CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+          CodigoCliente, RazonSocial, Domicilio, Municipio, FechaAlbaran,
+          NumeroLineas, ImporteLiquido, EmpleadoAsignado,
+          obra, Contacto, Telefono
+        ) VALUES (
+          @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
+          @codigoCliente, @razonSocial, @domicilio, @municipio, @fecha,
+          @numeroLineas, @importeLiquido, @empleadoAsignado,
+          @obra, @contacto, @telefonoContacto
+        )
+      `);
+
+    // 6. Copiar líneas del pedido
+    const lineas = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, pedido.EjercicioPedido)
+      .input('serie', sql.VarChar, pedido.SeriePedido || '')
       .input('numeroPedido', sql.Int, numeroPedido)
-      .input('serie', sql.VarChar, serie || '')
       .query(`
         SELECT *
         FROM LineasPedidoCliente
         WHERE CodigoEmpresa = @codigoEmpresa
           AND EjercicioPedido = @ejercicio
+          AND SeriePedido = @serie
           AND NumeroPedido = @numeroPedido
-          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
       `);
 
-    const totalLineas = lineas.recordset.length;
-    const importeLiquido = cab.ImporteLiquido || 0;
-
-    await poolGlobal.request()
-      .input('codigoEmpresa', sql.SmallInt, cab.CodigoEmpresa)
-      .input('ejercicio', sql.SmallInt, cab.EjercicioPedido)
-      .input('serie', sql.VarChar, cab.SeriePedido || '')
-      .input('numeroAlbaran', sql.Int, numeroAlbaran)
-      .input('codigoCliente', sql.VarChar, cab.CodigoCliente)
-      .input('razonSocial', sql.VarChar, cab.RazonSocial)
-      .input('domicilio', sql.VarChar, cab.Domicilio)
-      .input('municipio', sql.VarChar, cab.Municipio)
-      .input('fecha', sql.DateTime, new Date())
-      .input('numeroLineas', sql.Int, totalLineas)
-      .input('importeLiquido', sql.Decimal(18, 4), importeLiquido)
-      .query(`
-        INSERT INTO CabeceraAlbaranCliente (
-          CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
-          CodigoCliente, RazonSocial, Domicilio, Municipio, FechaAlbaran,
-          NumeroLineas, ImporteLiquido
-        ) VALUES (
-          @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
-          @codigoCliente, @razonSocial, @domicilio, @municipio, @fecha,
-          @numeroLineas, @importeLiquido
-        )
-      `);
-
-    const promises = lineas.recordset.map((linea, index) => {
-      return poolGlobal.request()
-        .input('codigoEmpresa', sql.SmallInt, linea.CodigoEmpresa)
+    for (const [index, linea] of lineas.recordset.entries()) {
+      await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('ejercicio', sql.SmallInt, ejercicio)
-        .input('serie', sql.VarChar, serie || '')
+        .input('serie', sql.VarChar, pedido.SeriePedido || '')
         .input('numeroAlbaran', sql.Int, numeroAlbaran)
         .input('orden', sql.SmallInt, index + 1)
         .input('codigoArticulo', sql.VarChar, linea.CodigoArticulo)
         .input('descripcionArticulo', sql.VarChar, linea.DescripcionArticulo)
-        .input('unidades', sql.Decimal(18, 4), linea.UnidadesPedidas)
-        .input('precio', sql.Decimal(18, 4), linea.Precio)
+        .input('unidades', sql.Decimal(18,4), linea.UnidadesPedidas)
+        .input('precio', sql.Decimal(18,4), linea.Precio)
         .input('codigoAlmacen', sql.VarChar, linea.CodigoAlmacen || '')
         .input('partida', sql.VarChar, linea.Partida || '')
-        .input('porcentajeDescuento', sql.Decimal(5, 2), linea['%Descuento'] || 0)
-        .input('importeDescuento', sql.Decimal(18, 4), linea.ImporteDescuento || 0)
-        .input('importeBruto', sql.Decimal(18, 4), linea.ImporteBruto || 0)
-        .input('importeNeto', sql.Decimal(18, 4), linea.ImporteNeto || 0)
-        .input('ImporteLiquido', sql.Decimal(18, 4), linea.ImporteLiquido || 0)
         .query(`
           INSERT INTO LineasAlbaranCliente (
             CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
             Orden, CodigoArticulo, DescripcionArticulo, Unidades, Precio,
-            CodigoAlmacen, Partida, [%Descuento], ImporteDescuento,
-            ImporteBruto, ImporteNeto, ImporteLiquido
+            CodigoAlmacen, Partida
           ) VALUES (
             @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
             @orden, @codigoArticulo, @descripcionArticulo, @unidades, @precio,
-            @codigoAlmacen, @partida, @porcentajeDescuento, @importeDescuento,
-            @importeBruto, @importeNeto, @ImporteLiquido
+            @codigoAlmacen, @partida
           )
         `);
-    });
+    }
 
-    await Promise.all(promises);
-
+    // 7. Actualizar estado del pedido
     await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
       .input('numeroPedido', sql.Int, numeroPedido)
-      .input('serie', sql.VarChar, serie || '')
       .query(`
         UPDATE CabeceraPedidoCliente
         SET Estado = 2
         WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioPedido = @ejercicio
           AND NumeroPedido = @numeroPedido
-          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
       `);
 
-    res.json({ success: true, mensaje: 'Albarán generado y pedido marcado como servido.' });
+    res.json({ 
+      success: true,
+      mensaje: 'Albarán generado y asignado correctamente',
+      albaran: {
+        ejercicio,
+        serie: pedido.SeriePedido || '',
+        numero: numeroAlbaran,
+        repartidor: empleadoAsignado
+      }
+    });
   } catch (err) {
-    console.error('[ERROR GENERAR ALBARÁN]', err);
-    res.status(500).json({ success: false, mensaje: 'Error al generar albarán.', error: err.message });
+    console.error('[ERROR ASIGNAR REPARTO]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al asignar reparto',
+      error: err.message 
+    });
   }
 });
 
-// ✅ 7.2 ALBARANES PENDIENTES
-
+// ✅ 7.2 ALBARANES PENDIENTES (CORREGIDO)
 app.get('/albaranesPendientes', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1286,11 +1381,9 @@ app.get('/albaranesPendientes', async (req, res) => {
   
   const codigoEmpresa = req.user.CodigoEmpresa;
   const usuario = req.user.UsuarioLogicNet;
-  const todos = req.query.todos === 'true';
-  const sinAsignar = req.query.sinAsignar === 'true';
 
   try {
-    // Obtener permisos del usuario
+    // Verificar permisos del usuario
     const userPermResult = await poolGlobal.request()
       .input('usuario', sql.VarChar, usuario)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -1310,12 +1403,7 @@ app.get('/albaranesPendientes', async (req, res) => {
     const esUsuarioAvanzado = userPerms.StatusUsuarioAvanzado === -1;
     const esRepartidor = userPerms.StatusVerAlbaranesAsignados === -1;
 
-    // Verificar si existe la columna UnidadesEntregadas
-    const columnaCheck = await poolGlobal.request().query(`
-      SELECT COL_LENGTH('LineasAlbaranCliente', 'UnidadesEntregadas') AS existe
-    `);
-    const tieneUnidadesEntregadas = columnaCheck.recordset[0].existe !== null;
-
+    // Construir consulta base
     let query = `
       SELECT 
         c.NumeroAlbaran, 
@@ -1328,180 +1416,143 @@ app.get('/albaranesPendientes', async (req, res) => {
         c.Domicilio, 
         c.Municipio, 
         c.ImporteLiquido,
-        c.StatusFacturado,
         c.obra,
         c.Contacto,
         c.Telefono AS TelefonoContacto,
-        c.CodigoRepartidor,
         rep.Nombre AS Vendedor,
         c.EmpleadoAsignado,
-        CASE 
-          WHEN c.EmpleadoAsignado IS NULL THEN 1 
-          ELSE 0 
-        END AS EsAntiguo
+        empAsignado.Nombre AS NombreRepartidor
       FROM CabeceraAlbaranCliente c
-      LEFT JOIN Clientes rep 
-        ON rep.CodigoCliente = c.CodigoRepartidor
+      LEFT JOIN Clientes rep ON rep.CodigoCliente = c.CodigoRepartidor
         AND rep.CodigoEmpresa = c.CodigoEmpresa
+      LEFT JOIN Clientes empAsignado ON empAsignado.CodigoCliente = c.EmpleadoAsignado
+        AND empAsignado.CodigoEmpresa = c.CodigoEmpresa
       WHERE c.CodigoEmpresa = @codigoEmpresa
-        AND c.StatusFacturado = 0
+        AND c.FechaEntrega IS NULL
     `;
 
-    // Aplicar filtros según rol
+    // Filtrar por repartidor si no es admin
     if (esRepartidor && !esAdmin && !esUsuarioAvanzado) {
-      query += ` AND c.EmpleadoAsignado = @usuario`;
-    } else if (sinAsignar) {
-      query += ` AND c.EmpleadoAsignado IS NULL`;
-    } else if (!todos && !esAdmin && !esUsuarioAvanzado) {
-      query += ` AND (c.EmpleadoAsignado = @usuario OR c.EmpleadoAsignado IS NULL)`;
+      query += ` AND c.EmpleadoAsignado IN (
+        SELECT CodigoCliente 
+        FROM Clientes 
+        WHERE UsuarioLogicNet = @usuario
+          AND CodigoEmpresa = @codigoEmpresa
+      )`;
     }
-    
+
     query += ' ORDER BY c.FechaAlbaran DESC';
-    
+
     const request = poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
 
-    if ((esRepartidor && !esAdmin && !esUsuarioAvanzado) || (!todos && !esAdmin && !esUsuarioAvanzado)) {
+    if (esRepartidor && !esAdmin && !esUsuarioAvanzado) {
       request.input('usuario', sql.VarChar, usuario);
     }
 
-    const cabeceras = await request.query(query);
+    const result = await request.query(query);
 
-    // Procesar resultados y obtener detalles de líneas
-    const albaranesConLineas = await Promise.all(cabeceras.recordset.map(async (cabecera) => {
-      let lineasQuery = `
-        SELECT 
-          CodigoArticulo AS codigo,
-          DescripcionArticulo AS nombre,
-          Unidades AS cantidad
-      `;
-
-      if (tieneUnidadesEntregadas) {
-        lineasQuery += `, UnidadesEntregadas AS cantidadEntregada`;
-      } else {
-        lineasQuery += `, Unidades AS cantidadEntregada`;
-      }
-      
-      lineasQuery += `
-        FROM LineasAlbaranCliente
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioAlbaran = @ejercicio
-          AND SerieAlbaran = @serie
-          AND NumeroAlbaran = @numeroAlbaran
-      `;
-
-      const lineas = await poolGlobal.request()
-        .input('codigoEmpresa', sql.SmallInt, cabecera.CodigoEmpresa)
-        .input('ejercicio', sql.SmallInt, cabecera.EjercicioAlbaran)
-        .input('serie', sql.VarChar, cabecera.SerieAlbaran || '')
-        .input('numeroAlbaran', sql.Int, cabecera.NumeroAlbaran)
-        .query(lineasQuery);
-
-      return {
-        id: `${cabecera.EjercicioAlbaran}-${cabecera.SerieAlbaran || ''}-${cabecera.NumeroAlbaran}`,
-        ejercicio: cabecera.EjercicioAlbaran,
-        serie: cabecera.SerieAlbaran || '',
-        numero: cabecera.NumeroAlbaran,
-        codigoEmpresa: cabecera.CodigoEmpresa,
-        albaran: `${cabecera.SerieAlbaran || ''}${cabecera.SerieAlbaran ? '-' : ''}${cabecera.NumeroAlbaran}`,
-        cliente: cabecera.RazonSocial,
-        direccion: `${cabecera.Domicilio}, ${cabecera.Municipio}`,
-        FechaAlbaran: cabecera.FechaAlbaran,
-        importeLiquido: cabecera.ImporteLiquido,
-        articulos: lineas.recordset,
-        obra: cabecera.obra,
-        contacto: cabecera.Contacto,
-        telefonoContacto: cabecera.TelefonoContacto,
-        vendedor: cabecera.Vendedor,
-        empleadoAsignado: cabecera.EmpleadoAsignado,
-        esAntiguo: cabecera.EsAntiguo === 1
-      };
+    // Procesar resultados
+    const albaranes = result.recordset.map(albaran => ({
+      id: `${albaran.EjercicioAlbaran}-${albaran.SerieAlbaran || ''}-${albaran.NumeroAlbaran}`,
+      ejercicio: albaran.EjercicioAlbaran,
+      serie: albaran.SerieAlbaran || '',
+      numero: albaran.NumeroAlbaran,
+      codigoEmpresa: albaran.CodigoEmpresa,
+      albaran: `${albaran.SerieAlbaran || ''}${albaran.SerieAlbaran ? '-' : ''}${albaran.NumeroAlbaran}`,
+      cliente: albaran.RazonSocial,
+      direccion: `${albaran.Domicilio}, ${albaran.Municipio}`,
+      FechaAlbaran: albaran.FechaAlbaran,
+      importeLiquido: albaran.ImporteLiquido,
+      obra: albaran.obra,
+      contacto: albaran.Contacto,
+      telefonoContacto: albaran.TelefonoContacto,
+      vendedor: albaran.Vendedor,
+      empleadoAsignado: albaran.EmpleadoAsignado,
+      nombreRepartidor: albaran.NombreRepartidor
     }));
 
-    res.json(albaranesConLineas);
+    res.json(albaranes);
   } catch (err) {
-    console.error('[ERROR OBTENER ALBARANES PENDIENTES]', err);
+    console.error('[ERROR ALBARANES PENDIENTES]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener albaranes pendientes',
+      mensaje: 'Error al obtener albaranes',
       error: err.message 
     });
   }
 });
 
+// ✅ 7.3 OBTENER PEDIDOS PREPARADOS (CORREGIDO)
+app.get('/pedidos-preparados', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
 
-// ✅ 7.3 ACTUALIZAR CANTIDADES DE ALBARÁN
-app.put('/actualizarCantidadesAlbaran', async (req, res) => {
-  const { lineas, codigoEmpresa, ejercicio, serie, numeroAlbaran } = req.body;
-  
-  if (!lineas || !codigoEmpresa || !ejercicio || !numeroAlbaran) {
-    return res.status(400).json({ success: false, mensaje: 'Datos incompletos' });
-  }
-
-  const transaction = new sql.Transaction(poolGlobal);
-  
   try {
-    await transaction.begin();
-    const request = new sql.Request(transaction);
-
-    // Actualizar cada línea
-    for (const linea of lineas) {
-      await request
-        .input('cantidadEntregada', sql.Decimal(18, 4), linea.cantidadEntregada)
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .input('ejercicio', sql.SmallInt, ejercicio)
-        .input('serie', sql.VarChar, serie || '')
-        .input('numeroAlbaran', sql.Int, numeroAlbaran)
-        .input('codigoArticulo', sql.VarChar, linea.codigo)
-        .input('orden', sql.SmallInt, linea.orden)
-        .query(`
-          UPDATE LineasAlbaranCliente
-          SET UnidadesEntregadas = @cantidadEntregada
-          WHERE CodigoEmpresa = @codigoEmpresa
-            AND EjercicioAlbaran = @ejercicio
-            AND SerieAlbaran = @serie
-            AND NumeroAlbaran = @numeroAlbaran
-            AND CodigoArticulo = @codigoArticulo
-            AND Orden = @orden
-        `);
-    }
-
-    // Recalcular total del albarán
-    await request
+    const result = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
-      .input('serie', sql.VarChar, serie || '')
-      .input('numeroAlbaran', sql.Int, numeroAlbaran)
       .query(`
-        UPDATE CabeceraAlbaranCliente
-        SET ImporteLiquido = (
-          SELECT SUM(UnidadesEntregadas * Precio)
-          FROM LineasAlbaranCliente
-          WHERE CodigoEmpresa = @codigoEmpresa
-            AND EjercicioAlbaran = @ejercicio
-            AND SerieAlbaran = @serie
-            AND NumeroAlbaran = @numeroAlbaran
-        )
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioAlbaran = @ejercicio
-          AND SerieAlbaran = @serie
-          AND NumeroAlbaran = @numeroAlbaran
+        SELECT 
+          p.NumeroPedido,
+          p.EjercicioPedido,
+          p.SeriePedido,
+          p.RazonSocial,
+          p.Domicilio,
+          p.Municipio,
+          p.obra,
+          p.FechaPedido,
+          p.Contacto,
+          p.Telefono AS TelefonoContacto,
+          emp.Nombre AS Vendedor,
+          p.CodigoEmpresa
+        FROM CabeceraPedidoCliente p
+        LEFT JOIN Clientes emp ON 
+          emp.CodigoCliente = p.CodigoEmpleadoAsignado 
+          AND emp.CodigoEmpresa = p.CodigoEmpresa
+        WHERE p.CodigoEmpresa = @codigoEmpresa
+          AND p.Estado = 1
+        ORDER BY p.FechaPedido DESC
       `);
-
-    await transaction.commit();
-    res.json({ success: true });
+      
+    res.json(result.recordset);
   } catch (err) {
-    await transaction.rollback();
-    console.error('[ERROR ACTUALIZAR CANTIDADES]', err);
+    console.error('[ERROR PEDIDOS PREPARADOS]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al actualizar cantidades',
+      mensaje: 'Error al obtener pedidos preparados',
       error: err.message 
     });
   }
 });
 
-// ✅ 7.4 MARCAR ALBARÁN COMO COMPLETADO/ENTREGADO
+// ✅ 7.4 OBTENER REPARTIDORES (CORREGIDO)
+app.get('/repartidores', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
+  try {
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT 
+          CodigoCliente AS id,
+          Nombre AS nombre
+        FROM Clientes
+        WHERE CodigoCategoriaCliente_ = 'emp' 
+          AND StatusDesignarRutas = '-1'
+          AND CodigoEmpresa = @codigoEmpresa
+      `);
+      
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR OBTENER REPARTIDORES]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener repartidores',
+      error: err.message 
+    });
+  }
+});
+
+// ✅ 7.5 MARCAR ALBARÁN COMO COMPLETADO (CORREGIDO)
 app.post('/completar-albaran', async (req, res) => {
   const { codigoEmpresa, ejercicio, serie, numeroAlbaran } = req.body;
   const usuario = req.user.UsuarioLogicNet;
@@ -1509,19 +1560,19 @@ app.post('/completar-albaran', async (req, res) => {
   if (!codigoEmpresa || !ejercicio || !numeroAlbaran) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Faltan datos requeridos: codigoEmpresa, ejercicio, numeroAlbaran.' 
+      mensaje: 'Faltan datos requeridos.' 
     });
   }
 
   try {
-    // 1. Verificar si el usuario tiene permiso para completar este albarán
+    // 1. Verificar si el usuario tiene permiso
     const permisoResult = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
       .input('serie', sql.VarChar, serie || '')
       .input('numeroAlbaran', sql.Int, numeroAlbaran)
       .query(`
-        SELECT UsuarioAsignado
+        SELECT EmpleadoAsignado
         FROM CabeceraAlbaranCliente
         WHERE CodigoEmpresa = @codigoEmpresa
           AND EjercicioAlbaran = @ejercicio
@@ -1540,55 +1591,126 @@ app.post('/completar-albaran', async (req, res) => {
     const esAdmin = req.user.StatusAdministrador === -1;
     const esUsuarioAvanzado = req.user.StatusUsuarioAvanzado === -1;
     
-    // Solo el usuario asignado o un admin/avanzado puede completar el albarán
-    if (!esAdmin && !esUsuarioAvanzado && albaran.UsuarioAsignado !== usuario) {
-      return res.status(403).json({ 
-        success: false, 
-        mensaje: 'No tienes permiso para completar este albarán' 
-      });
+    // 2. Verificar si el usuario actual es el repartidor asignado
+    if (!esAdmin && !esUsuarioAvanzado) {
+      const usuarioActualResult = await poolGlobal.request()
+        .input('usuario', sql.VarChar, usuario)
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .query(`
+          SELECT CodigoCliente
+          FROM Clientes
+          WHERE UsuarioLogicNet = @usuario
+            AND CodigoEmpresa = @codigoEmpresa
+        `);
+
+      if (usuarioActualResult.recordset.length === 0 || 
+          usuarioActualResult.recordset[0].CodigoCliente !== albaran.EmpleadoAsignado) {
+        return res.status(403).json({ 
+          success: false, 
+          mensaje: 'No tienes permiso para completar este albarán' 
+        });
+      }
     }
 
-    // 2. Actualizar el estado del albarán
-    const updateResult = await poolGlobal.request()
+    // 3. Actualizar el estado del albarán
+    await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
       .input('serie', sql.VarChar, serie || '')
       .input('numeroAlbaran', sql.Int, numeroAlbaran)
       .query(`
         UPDATE CabeceraAlbaranCliente
-        SET StatusFacturado = 1,
-            FechaEntrega = GETDATE()
+        SET FechaEntrega = GETDATE()
         WHERE CodigoEmpresa = @codigoEmpresa
           AND EjercicioAlbaran = @ejercicio
           AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
           AND NumeroAlbaran = @numeroAlbaran
       `);
 
-    if (updateResult.rowsAffected[0] === 0) {
-      return res.status(500).json({ 
-        success: false, 
-        mensaje: 'No se pudo actualizar el albarán' 
-      });
-    }
-
     res.json({ 
       success: true, 
-      mensaje: 'Albarán marcado como completado',
-      datos: {
-        albaran: `${serie || ''}${serie ? '-' : ''}${numeroAlbaran}`,
-        fechaEntrega: new Date().toISOString()
-      }
+      mensaje: 'Albarán marcado como entregado'
     });
   } catch (err) {
     console.error('[ERROR COMPLETAR ALBARÁN]', err);
     res.status(500).json({ 
       success: false, 
       mensaje: 'Error al completar albarán',
-      error: err.message,
-      stack: err.stack
+      error: err.message
     });
   }
 });
+
+// ✅ 7.6 OBTENER PEDIDOS PREPARADOS (CORREGIDO)
+app.get('/pedidos-preparados', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
+  try {
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT 
+          p.NumeroPedido,
+          p.EjercicioPedido,
+          p.SeriePedido,
+          p.RazonSocial,
+          p.Domicilio,
+          p.Municipio,
+          p.obra,
+          p.FechaPedido,
+          p.Contacto,
+          p.Telefono AS TelefonoContacto,
+          emp.Nombre AS Vendedor,
+          p.CodigoEmpresa
+        FROM CabeceraPedidoCliente p
+        LEFT JOIN Clientes emp ON 
+          emp.CodigoCliente = p.CodigoEmpleadoAsignado 
+          AND emp.CodigoEmpresa = p.CodigoEmpresa
+        WHERE p.CodigoEmpresa = @codigoEmpresa
+          AND p.Estado = 1
+        ORDER BY p.FechaPedido DESC
+      `);
+      
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR PEDIDOS PREPARADOS]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener pedidos preparados',
+      error: err.message 
+    });
+  }
+});
+
+// ✅ 7.7 OBTENER REPARTIDORES (CORREGIDO)
+app.get('/repartidores', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
+  try {
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT 
+          UsuarioLogicNet AS id,
+          Nombre AS nombre
+        FROM Clientes
+        WHERE CodigoCategoriaCliente_ = 'emp' 
+          AND StatusDesignarRutas = '-1'
+          AND CodigoEmpresa = @codigoEmpresa
+          AND UsuarioLogicNet IS NOT NULL
+      `);
+      
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR OBTENER REPARTIDORES]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener repartidores',
+      error: err.message 
+    });
+  }
+});
+
 
 // ============================================
 // ✅ 8. ASIGNAR ALBARANES SCREEN
@@ -2018,7 +2140,7 @@ app.post('/asignar-albaran', async (req, res) => {
 });
 
 // ✅ 8.6 OBTENER REPARTIDORES
-app.get('/empleados-preparadores', async (req, res) => {
+app.get('/repartidores', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
 
   try {
@@ -2026,21 +2148,20 @@ app.get('/empleados-preparadores', async (req, res) => {
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(`
         SELECT 
-          UsuarioLogicNet,
-          Nombre
+          UsuarioLogicNet AS id,
+          Nombre AS nombre
         FROM Clientes
-        WHERE StatusDesignarRutas = -1
+        WHERE StatusVerAlbaranesAsignados = -1
           AND CodigoEmpresa = @codigoEmpresa
           AND UsuarioLogicNet IS NOT NULL
-          AND UsuarioLogicNet <> ''
       `);
       
     res.json(result.recordset);
   } catch (err) {
-    console.error('[ERROR EMPLEADOS PREPARADORES]', err);
+    console.error('[ERROR OBTENER REPARTIDORES]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener empleados preparadores',
+      mensaje: 'Error al obtener repartidores',
       error: err.message 
     });
   }

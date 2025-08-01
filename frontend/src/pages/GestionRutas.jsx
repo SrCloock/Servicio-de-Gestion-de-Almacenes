@@ -34,55 +34,65 @@ function GestionRutas() {
         setError(null);
         
         const headers = getAuthHeader();
-        const params = {};
-        
-        // Si es repartidor, agregar parámetro para filtrar por usuario
-        if (isDelivery) {
-          params.usuario = user.UsuarioLogicNet;
-        } else {
-          params.todos = true;
-        }
-
         const response = await axios.get('http://localhost:3000/albaranesPendientes', { 
-          headers,
-          params
+          headers
         });
 
-        setAlbaranes(response.data);
+        // Procesar albaranes para usar empleadoAsignado
+        const processedAlbaranes = response.data.map(albaran => ({
+          ...albaran,
+          id: albaran.id,
+          repartidor: albaran.nombreRepartidor || 'Sin asignar',
+          usuarioAsignado: albaran.empleadoAsignado
+        }));
+
+        setAlbaranes(processedAlbaranes);
       } catch (err) {
         console.error("Error cargando albaranes:", err);
-        setError(err.message || 'No se pudieron cargar los albaranes');
+        setError('No se pudieron cargar los albaranes: ' + (err.response?.data?.mensaje || err.message));
       } finally {
         setLoading(false);
       }
     };
 
     fetchAlbaranes();
-  }, [canViewGestionRutas, isDelivery, navigate, user]);
+  }, [canViewGestionRutas, navigate]);
 
-  const pedidosFiltrados = albaranes.filter(albaran => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      albaran.albaran.toLowerCase().includes(searchLower) ||
-      (albaran.obra && albaran.obra.toLowerCase().includes(searchLower)) ||
-      (albaran.direccion && albaran.direccion.toLowerCase().includes(searchLower)) ||
-      (albaran.cliente && albaran.cliente.toLowerCase().includes(searchLower)) ||
-      (albaran.contacto && albaran.contacto.toLowerCase().includes(searchLower)) ||
-      (albaran.telefonoContacto && albaran.telefonoContacto.includes(searchTerm)) ||
-      (albaran.vendedor && albaran.vendedor.toLowerCase().includes(searchLower))
-    );
-  });
+  // Filtrar albaranes por búsqueda y por usuario
+  const albaranesFiltrados = albaranes
+    .filter(albaran => {
+      // Si es repartidor, solo mostrar sus albaranes
+      if (isDelivery) {
+        // Obtener el CodigoCliente del usuario actual
+        const usuarioActualCodigo = user.CodigoCliente;
+        return albaran.usuarioAsignado === usuarioActualCodigo;
+      }
+      return true;
+    })
+    .filter(albaran => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        albaran.albaran.toLowerCase().includes(searchLower) ||
+        (albaran.obra && albaran.obra.toLowerCase().includes(searchLower)) ||
+        (albaran.direccion && albaran.direccion.toLowerCase().includes(searchLower)) ||
+        (albaran.cliente && albaran.cliente.toLowerCase().includes(searchLower)) ||
+        (albaran.contacto && albaran.contacto.toLowerCase().includes(searchLower)) ||
+        (albaran.telefonoContacto && albaran.telefonoContacto.includes(searchTerm)) ||
+        (albaran.vendedor && albaran.vendedor.toLowerCase().includes(searchLower)) ||
+        (albaran.repartidor && albaran.repartidor.toLowerCase().includes(searchLower))
+      );
+    });
 
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentAlbaranes = pedidosFiltrados.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(pedidosFiltrados.length / itemsPerPage);
+  const currentAlbaranes = albaranesFiltrados.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(albaranesFiltrados.length / itemsPerPage);
 
   const handleCompletarAlbaran = async (albaran) => {
     if (!canPerformActionsInRutas) return;
     
     try {
-      const response = await axios.post('/completar-albaran', {
+      await axios.post('/completar-albaran', {
         codigoEmpresa: albaran.codigoEmpresa,
         ejercicio: albaran.ejercicio,
         serie: albaran.serie,
@@ -157,7 +167,7 @@ function GestionRutas() {
         
         {error && <div className="error-message">{error}</div>}
 
-        {!loading && albaranes.length === 0 && (
+        {!loading && albaranesFiltrados.length === 0 && (
           <div className="no-albaranes">
             <p>No hay albaranes pendientes de entrega</p>
           </div>
@@ -166,15 +176,12 @@ function GestionRutas() {
         <div className="albaranes-grid">
           {currentAlbaranes.map((albaran) => (
             <div 
-              key={`${albaran.id}-${albaran.albaran}`} 
-              className={`ruta-card ${albaran.esAntiguo ? 'albaran-antiguo' : ''} ${canPerformActionsInRutas ? 'clickable' : ''}`}
+              key={albaran.id} 
+              className={`ruta-card ${canPerformActionsInRutas ? 'clickable' : ''}`}
               onClick={() => canPerformActionsInRutas && navigate('/detalle-albaran', { state: { albaran } })}
             >
               <div className="card-header">
                 <h4>Albarán: {albaran.albaran}</h4>
-                {albaran.esAntiguo && (
-                  <span className="antiguo-badge">Antiguo</span>
-                )}
                 <span className="fecha-albaran">
                   {new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}
                 </span>
@@ -198,38 +205,19 @@ function GestionRutas() {
                   <strong>Teléfono:</strong> {albaran.telefonoContacto || 'No especificado'}
                 </p>
                 
-                <div className="articulos-list">
-                  <strong>Artículos a entregar:</strong>
-                  <ul>
-                    {albaran.articulos.slice(0, 3).map((art, idx) => (
-                      <li key={idx}>
-                        {art.nombre} - {art.cantidad} uds
-                      </li>
-                    ))}
-                  </ul>
-                  {albaran.articulos.length > 3 && (
-                    <p className="more-items">+ {albaran.articulos.length - 3} artículos más...</p>
-                  )}
+                <div className="asignado-info">
+                  <span className="icon">🚚</span>
+                  <strong>Repartidor asignado:</strong> 
+                  {albaran.repartidor || 'Sin asignar'}
                 </div>
               </div>
               
               <div className="card-footer">
-                <div className="importe-info">
-                  <span>Importe:</span>
-                  <span className="importe-valor">{albaran.importeLiquido?.toFixed(2)} €</span>
-                </div>
-                <div className="articulos-info">
-                  <span>Artículos:</span>
-                  <span className="articulos-count">
-                    {albaran.articulos?.length || 0}
-                  </span>
-                </div>
-                
                 {canPerformActionsInRutas && (
                   <button 
                     className="completar-btn"
                     onClick={(e) => {
-                      e.stopPropagation(); // Evitar que se abra el detalle
+                      e.stopPropagation();
                       handleCompletarAlbaran(albaran);
                     }}
                   >
@@ -237,12 +225,6 @@ function GestionRutas() {
                   </button>
                 )}
               </div>
-              
-              {!canPerformActionsInRutas && (
-                <div className="view-only-overlay">
-                  Solo lectura
-                </div>
-              )}
             </div>
           ))}
         </div>

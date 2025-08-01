@@ -7,12 +7,12 @@ export const PermissionsProvider = ({ children, user }) => {
   const permissions = useMemo(() => {
     if (!user) return {};
     
-    // Roles principales
+    // 1. ROLES PRINCIPALES
     const isAdmin = user.StatusAdministrador === -1;
     const isAdvancedUser = user.StatusUsuarioAvanzado === -1;
     const isReadOnly = user.StatusUsuarioConsulta === -1;
 
-    // Permisos individuales
+    // 2. PERMISOS INDIVIDUALES
     const hasWaybillsPermission = user.StatusVerAlbaranesAsignados === -1;
     const hasOrdersPermission = user.StatusTodosLosPedidos === -1;
     const hasAssignedOrdersPermission = user.StatusVerPedidosAsignados === -1;
@@ -21,11 +21,11 @@ export const PermissionsProvider = ({ children, user }) => {
     const hasInventoryPermission = user.StatusVerInventarios === -1;
     const hasReceivingPermission = user.StatusVerRecepcionMercancia === -1;
 
-    // Definición de roles específicos
+    // 3. ROLES ESPECÍFICOS
     const isPreparer = hasOrdersPermission && !isAdmin && !isAdvancedUser;
     const isDelivery = hasWaybillsPermission && !isAdmin && !isAdvancedUser;
 
-    // Permisos agrupados
+    // 4. PERMISOS AGRUPADOS
     const canViewWaybills = isAdmin || isAdvancedUser || isReadOnly || hasWaybillsPermission;
     const canViewAllOrders = isAdmin || isAdvancedUser || isReadOnly || hasOrdersPermission;
     const canViewAssignedOrders = isAdmin || isAdvancedUser || isReadOnly || hasAssignedOrdersPermission;
@@ -33,27 +33,40 @@ export const PermissionsProvider = ({ children, user }) => {
     const canViewTransfers = isAdmin || isAdvancedUser || isReadOnly || hasTransfersPermission;
     const canViewInventory = isAdmin || isAdvancedUser || isReadOnly || hasInventoryPermission;
     const canViewReceiving = isAdmin || isAdvancedUser || isReadOnly || hasReceivingPermission;
+    const canPerformActions = !isReadOnly && (isAdmin || isAdvancedUser || 
+      hasWaybillsPermission ||
+      hasOrdersPermission ||
+      hasAssignedOrdersPermission ||
+      hasRoutesPermission ||
+      hasTransfersPermission ||
+      hasInventoryPermission ||
+      hasReceivingPermission);
 
-    // Permisos específicos para pantalla de pedidos
+    // 5. PERMISOS PARA PANTALLAS ESPECÍFICAS
+    // Pantalla de Pedidos
     const canViewPedidosScreen = isAdmin || isAdvancedUser || isReadOnly || hasOrdersPermission;
     const canPerformActionsInPedidos = !isReadOnly && (isAdmin || isAdvancedUser || hasOrdersPermission);
-
-    // Permiso para asignar pedidos (solo admin y avanzado)
     const canAssignOrders = isAdmin || isAdvancedUser;
-
-    // Nuevos permisos para gestión de albaranes
+    
+    // Pantalla de Gestión de Rutas
+    const canViewGestionRutas = canViewWaybills;
+    const canPerformActionsInRutas = !isReadOnly && (isAdmin || isAdvancedUser || hasWaybillsPermission);
+    
+    // Pantalla de Albaranes Asignados
+    const canViewAlbaranesAsignadosScreen = canAssignRoutes;
+    
+    // Permisos para asignación
     const canAssignWaybills = isAdmin || isAdvancedUser || hasRoutesPermission;
-    const canManageWaybills = isAdmin || isAdvancedUser || hasWaybillsPermission;
 
     return {
-      // Roles
+      // ROLES
       isAdmin,
       isAdvancedUser,
       isReadOnly,
       isPreparer,
       isDelivery,
 
-      // Permisos generales
+      // PERMISOS GENERALES
       canViewWaybills,
       canViewAllOrders,
       canViewAssignedOrders,
@@ -61,27 +74,16 @@ export const PermissionsProvider = ({ children, user }) => {
       canViewTransfers,
       canViewInventory,
       canViewReceiving,
-      canAssignWaybills,
-      canManageWaybills,
-      canPerformActions: !isReadOnly && (isAdmin || isAdvancedUser || 
-        hasWaybillsPermission ||
-        hasOrdersPermission ||
-        hasAssignedOrdersPermission ||
-        hasRoutesPermission ||
-        hasTransfersPermission ||
-        hasInventoryPermission ||
-        hasReceivingPermission),
-
-      // Permisos específicos para Pedidos
+      canPerformActions,
+      
+      // PERMISOS PARA PANTALLAS
       canViewPedidosScreen,
       canPerformActionsInPedidos,
       canAssignOrders,
-
-      // Nuevos permisos específicos
-      canViewGestionRutas: canViewWaybills,
-      canPerformActionsInRutas: !isReadOnly && (isAdmin || isAdvancedUser || hasWaybillsPermission),
-      canViewPedidosAsignadosScreen: isAdmin || isAdvancedUser,
-      canViewAlbaranesAsignadosScreen: isAdmin || isAdvancedUser,
+      canViewGestionRutas,
+      canPerformActionsInRutas,
+      canViewAlbaranesAsignadosScreen,
+      canAssignWaybills
     };
   }, [user]);
 
