@@ -34,6 +34,13 @@
   font-size: 15px;
 }
 
+.AP-note {
+  font-style: italic;
+  color: #7f8c8d;
+  margin-top: 10px;
+  font-size: 0.9em;
+}
+
 .AP-pedidos-table-container {
   margin: 20px 0;
   overflow-x: auto;
@@ -49,7 +56,7 @@
 }
 
 .AP-pedidos-table th {
-  background-color: #3498db;
+  background-color: #2c3e50;
   color: white;
   padding: 16px 20px;
   text-align: left;
@@ -67,11 +74,11 @@
 }
 
 .AP-pedidos-table tr:nth-child(even) {
-  background-color: #f8fafc;
+  background-color: #f5f7fa;
 }
 
 .AP-pedidos-table tr:hover {
-  background-color: #f1f8ff;
+  background-color: #ebf5fb;
 }
 
 .AP-asignacion-select {
@@ -112,15 +119,19 @@
   font-weight: 600;
   transition: all 0.3s;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
 }
 
-.AP-btn-asignar:hover {
+.AP-btn-asignar:hover:not(:disabled) {
   background-color: #219653;
   transform: translateY(-2px);
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
 
-.AP-btn-asignar:active {
+.AP-btn-asignar:active:not(:disabled) {
   transform: translateY(0);
 }
 
@@ -157,6 +168,18 @@
   height: 40px;
   animation: AP-spin 1s linear infinite;
   margin: 0 auto 20px;
+}
+
+.AP-spinner-btn {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #fff;
+  animation: AP-spin 1s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
 }
 
 @keyframes AP-spin {
@@ -216,4 +239,17 @@
 .AP-badge-estado.RecibidoProveedor {
   background-color: #d6d8db;
   color: #383d41;
+}
+
+.AP-no-permission {
+  text-align: center;
+  padding: 40px;
+  background-color: #f8d7da;
+  border-radius: 8px;
+  color: #721c24;
+  margin: 20px 0;
+}
+
+.AP-no-permission h2 {
+  margin-bottom: 15px;
 }

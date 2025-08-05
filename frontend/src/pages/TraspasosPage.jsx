@@ -18,7 +18,7 @@ const TraspasosPage = () => {
   const [articulosFiltrados, setArticulosFiltrados] = useState([]);
   const [pagination, setPagination] = useState({ 
     page: 1, 
-    pageSize: 15,  // Changed to 15 items per page
+    pageSize: 15,
     total: 0, 
     totalPages: 1 
   });
@@ -40,7 +40,7 @@ const TraspasosPage = () => {
   const [articulosUbicacion, setArticulosUbicacion] = useState([]);
   const [paginationUbicacion, setPaginationUbicacion] = useState({ 
     page: 1, 
-    pageSize: 15,  // Changed to 15 items per page
+    pageSize: 15,
     total: 0 
   });
   const [articuloUbicacionSeleccionado, setArticuloUbicacionSeleccionado] = useState(null);
@@ -362,17 +362,12 @@ const TraspasosPage = () => {
       partida: stockItem?.Partida || ''
     };
     
-    setTraspasosPendientes([...traspasosPendientes, nuevoTraspaso]);
+    setTraspasosPendientes(prev => [...prev, nuevoTraspaso]);
     
+    // Solo reseteamos el artículo y la cantidad, mantenemos origen y destino
     setArticuloSeleccionado(null);
     setArticuloBusqueda('');
-    setAlmacenOrigen('');
-    setUbicacionOrigen('');
-    setAlmacenDestino('');
-    setUbicacionDestino('');
     setCantidad('');
-    setUnidadMedida(null);
-    setPartida('');
   };
 
   // Agregar traspaso desde modo ubicación
@@ -418,15 +413,14 @@ const TraspasosPage = () => {
       partida: articuloUbicacionSeleccionado.Partida || ''
     };
     
-    setTraspasosPendientes([...traspasosPendientes, nuevoTraspaso]);
+    setTraspasosPendientes(prev => [...prev, nuevoTraspaso]);
     
+    // Solo reseteamos el artículo y la cantidad, mantenemos origen y destino
     setArticuloUbicacionSeleccionado(null);
-    setAlmacenDestino('');
-    setUbicacionDestino('');
     setCantidad('');
   };
 
-  // Confirmar traspasos pendientes
+  // Confirmar traspasos pendientes (VERSIÓN CORREGIDA)
   const confirmarTraspasos = async () => {
     if (traspasosPendientes.length === 0) {
       alert('No hay traspasos para confirmar');
@@ -437,29 +431,50 @@ const TraspasosPage = () => {
     
     try {
       const headers = getAuthHeader();
-      const empresa = JSON.parse(localStorage.getItem('user')).CodigoEmpresa;
+      const user = JSON.parse(localStorage.getItem('user'));
+      const empresa = user?.CodigoEmpresa;
       
-      await Promise.all(traspasosPendientes.map(traspaso => 
-        axios.post('http://localhost:3000/traspaso', {
+      const traspasosValidados = traspasosPendientes.map(traspaso => {
+        // Convertir cantidad a entero
+        const cantidadEntera = Math.trunc(Number(traspaso.cantidad));
+        
+        return {
           articulo: traspaso.articulo.CodigoArticulo,
           origenAlmacen: traspaso.origen.almacen,
           origenUbicacion: traspaso.origen.ubicacion,
           destinoAlmacen: traspaso.destino.almacen,
           destinoUbicacion: traspaso.destino.ubicacion,
-          cantidad: traspaso.cantidad,
-          unidadMedida: traspaso.unidadMedida,
-          partida: traspaso.partida,
+          cantidad: cantidadEntera,
+          unidadMedida: traspaso.unidadMedida || '',
+          partida: traspaso.partida || '',
+          grupoTalla: 0,      // Valor por defecto
+          codigoTalla: '',     // Valor por defecto
           codigoEmpresa: empresa
-        }, { headers }))
-      );
+        };
+      });
+
+      await Promise.all(traspasosValidados.map(traspaso => 
+        axios.post('http://localhost:3000/traspaso', traspaso, { headers })
+      ));
 
       await cargarHistorial();
       setTraspasosPendientes([]);
       setActiveSection('historial');
     } catch (err) {
       console.error('Error confirmando traspasos:', err);
-      const errorMsg = err.response?.data?.mensaje || err.message;
-      alert(`Error al realizar traspasos: ${errorMsg}`);
+      
+      // Mostrar detalles del error
+      let errorMsg = 'Error al realizar traspasos';
+      if (err.response?.data) {
+        errorMsg += `: ${err.response.data.mensaje || 'Error desconocido'}`;
+        if (err.response.data.error) {
+          errorMsg += ` (${err.response.data.error})`;
+        }
+      } else if (err.message) {
+        errorMsg += `: ${err.message}`;
+      }
+      
+      alert(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -884,7 +899,13 @@ const TraspasosPage = () => {
                           <tbody>
                             {articulosUbicacion.map((articulo) => (
                               <tr 
-                                key={`${articulo.CodigoArticulo}-${ubicacionSeleccionada.almacen}-${ubicacionSeleccionada.ubicacion}`}
+                                key={`${articulo.CodigoArticulo}-${
+                                  ubicacionSeleccionada.almacen
+                                }-${ubicacionSeleccionada.ubicacion}-${
+                                  articulo.UnidadMedida || 'unidad'
+                                }-${articulo.Partida || 'sin-lote'}-${
+                                  articulo.Cantidad
+                                }`}
                                 className={articuloUbicacionSeleccionado?.CodigoArticulo === articulo.CodigoArticulo ? 'seleccionado' : ''}
                                 onClick={() => setArticuloUbicacionSeleccionado(articulo)}
                               >
@@ -1036,48 +1057,65 @@ const TraspasosPage = () => {
       
       {activeSection === 'verificacion' && (
         <div className="verificacion-section">
-          <h2>Verificación de Traspasos</h2>
+          <h2>Traspasos Pendientes de Confirmación</h2>
           
           {traspasosPendientes.length === 0 ? (
-            <div className="sin-traspasos">
-              No hay traspasos pendientes de verificación
-            </div>
+            <div className="sin-traspasos">No hay traspasos pendientes</div>
           ) : (
             <>
-              <div className="lista-traspasos">
-                {traspasosPendientes.map(traspaso => (
-                  <div key={traspaso.id} className="traspaso-item">
-                    <div className="traspaso-info">
-                      <div>
-                        <strong>Artículo:</strong> {traspaso.articulo.DescripcionArticulo} 
-                        ({traspaso.articulo.CodigoArticulo})
-                      </div>
-                      <div>
-                        <strong>Unidad:</strong> {formatUnidadMedida(traspaso.unidadMedida)}
-                        {traspaso.partida && <span>, <strong>Lote:</strong> {traspaso.partida}</span>}
-                      </div>
-                      <div>
-                        <strong>Origen:</strong> {getNombreAlmacen(traspaso.origen.almacen)} - 
-                        {traspaso.origen.ubicacion}
-                      </div>
-                      <div>
-                        <strong>Destino:</strong> {getNombreAlmacen(traspaso.destino.almacen)} - 
-                        {traspaso.destino.ubicacion}
-                      </div>
-                      <div>
-                        <strong>Cantidad:</strong> {formatCantidad(traspaso.cantidad)} {formatUnidadMedida(traspaso.unidadMedida)}
-                      </div>
-                    </div>
-                    <button 
-                      className="btn-eliminar"
-                      onClick={() => setTraspasosPendientes(
-                        traspasosPendientes.filter(item => item.id !== traspaso.id)
-                      )}
-                    >
-                      Eliminar
-                    </button>
-                  </div>
-                ))}
+              <div className="responsive-table-container">
+                <table className="tabla-verificacion">
+                  <thead>
+                    <tr>
+                      <th>Artículo</th>
+                      <th>Origen</th>
+                      <th>Destino</th>
+                      <th>Cantidad</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {traspasosPendientes.map(traspaso => (
+                      <tr key={traspaso.id}>
+                        <td>
+                          <div className="articulo-info">
+                            <strong>{traspaso.articulo.CodigoArticulo}</strong>
+                            <div>{traspaso.articulo.DescripcionArticulo}</div>
+                            <div className="unidad-lote">
+                              {formatUnidadMedida(traspaso.unidadMedida)}
+                              {traspaso.partida && ` | Lote: ${traspaso.partida}`}
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          {getNombreAlmacen(traspaso.origen.almacen)}
+                          <br />{traspaso.origen.ubicacion}
+                        </td>
+                        <td>
+                          {getNombreAlmacen(traspaso.destino.almacen)}
+                          <br />{traspaso.destino.ubicacion}
+                        </td>
+                        <td className="cantidad-td">
+                          {formatCantidad(traspaso.cantidad)}
+                          <br />
+                          <span className="unidad-medida">
+                            {formatUnidadMedida(traspaso.unidadMedida)}
+                          </span>
+                        </td>
+                        <td>
+                          <button 
+                            className="btn-eliminar"
+                            onClick={() => setTraspasosPendientes(
+                              traspasosPendientes.filter(item => item.id !== traspaso.id)
+                            )}
+                          >
+                            Eliminar
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
               
               <div className="acciones-verificacion">
@@ -1086,9 +1124,8 @@ const TraspasosPage = () => {
                   onClick={confirmarTraspasos}
                   disabled={loading}
                 >
-                  {loading ? 'Confirmando...' : 'Confirmar Traspasos'}
+                  {loading ? 'Confirmando...' : 'Confirmar Todos los Traspasos'}
                 </button>
-                
                 <button 
                   className="btn-cancelar" 
                   onClick={() => setActiveSection('traspasos')}
@@ -1106,51 +1143,51 @@ const TraspasosPage = () => {
           <h2>Historial de Traspasos</h2>
           
           {historial.length === 0 ? (
-            <div className="sin-historial">
-              No hay traspasos registrados
-            </div>
+            <div className="sin-historial">No hay traspasos registrados</div>
           ) : (
-            <div className="lista-historial">
-              {historial.map((item, index) => (
-                <div key={`${item.FechaRegistro}-${index}-${item.CodigoArticulo}`} className="historial-item">
-                  <div className="historial-header">
-                    <div className="historial-fecha">
-                      {item.FechaFormateada || formatFecha(item.FechaRegistro)}
-                    </div>
-                    <div className="historial-tipo">{item.TipoMovimiento}</div>
-                  </div>
-                  
-                  <div className="historial-articulo">
-                    <span>Artículo:</span> 
-                    {item.DescripcionArticulo} ({item.CodigoArticulo})
-                  </div>
-                  
-                  <div className="historial-detalle">
-                    <div>
-                      <span>Origen:</span> 
-                      {item.NombreOrigenAlmacen} - {item.OrigenUbicacion}
-                    </div>
-                    <div>
-                      <span>Destino:</span> 
-                      {item.NombreDestinoAlmacen || 'N/A'} - {item.DestinoUbicacion || 'N/A'}
-                    </div>
-                  </div>
-                  
-                  <div className="historial-info">
-                    <div className="historial-cantidad">
-                      <span>Cantidad:</span> {formatCantidad(item.Cantidad)} {formatUnidadMedida(item.UnidadMedida)}
-                    </div>
-                    <div className="historial-usuario">
-                      <span>Usuario:</span> 
-                      {item.Comentario?.split(': ')[1] || 'Desconocido'}
-                    </div>
-                    <div className="historial-lote">
-                      <span>Lote:</span> 
-                      {item.Partida || 'N/A'}
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="responsive-table-container">
+              <table className="tabla-historial">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Artículo</th>
+                    <th>Origen</th>
+                    <th>Destino</th>
+                    <th>Cantidad</th>
+                    <th>Usuario</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historial.map((item, index) => {
+                    const usuario = item.Comentario?.split(': ')[1] || 'Desconocido';
+                    return (
+                      <tr key={`${item.FechaRegistro}-${index}-${item.CodigoArticulo}`}>
+                        <td>{item.FechaFormateada || formatFecha(item.FechaRegistro)}</td>
+                        <td>
+                          <strong>{item.CodigoArticulo}</strong>
+                          <div>{item.DescripcionArticulo}</div>
+                        </td>
+                        <td>
+                          {item.OrigenAlmacen}<br />
+                          {item.OrigenUbicacion}
+                        </td>
+                        <td>
+                          {item.DestinoAlmacen}<br />
+                          {item.DestinoUbicacion}
+                        </td>
+                        <td>
+                          {formatCantidad(item.Cantidad)}
+                          <div className="unidad-lote">
+                            {formatUnidadMedida(item.UnidadMedida)}
+                            {item.Partida && ` | Lote: ${item.Partida}`}
+                          </div>
+                        </td>
+                        <td>{usuario}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

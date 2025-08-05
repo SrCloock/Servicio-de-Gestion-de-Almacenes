@@ -63,9 +63,11 @@ function DetalleAlbaran() {
     if (!albaran || !albaran.articulos) return;
     
     const updatedArticulos = [...albaran.articulos];
+    const cantidad = Math.min(parseFloat(newCantidad) || 0, updatedArticulos[index].cantidad);
+    
     updatedArticulos[index] = {
       ...updatedArticulos[index],
-      cantidadEntregada: parseFloat(newCantidad) || 0
+      cantidadEntregada: cantidad
     };
     
     // Calcular nuevo total
@@ -180,10 +182,20 @@ function DetalleAlbaran() {
     formData.append('to', to);
 
     try {
-      // Obtener headers de autenticación
+      // 1. Completar albarán
+      await axios.post(
+        'http://localhost:3000/completar-albaran',
+        {
+          codigoEmpresa: albaran.codigoEmpresa,
+          ejercicio: albaran.ejercicio,
+          serie: albaran.serie,
+          numeroAlbaran: albaran.numero
+        },
+        { headers: getAuthHeader() }
+      );
+
+      // 2. Enviar PDF por correo
       const authHeaders = getAuthHeader();
-      
-      // Añadir headers a la solicitud
       const res = await fetch('http://localhost:3000/enviar-pdf-albaran', {
         method: 'POST',
         body: formData,
@@ -196,13 +208,13 @@ function DetalleAlbaran() {
       const data = await res.json();
 
       if (data.success) {
-        alert('Correo enviado correctamente');
+        alert('Albarán completado y correo enviado correctamente');
         navigate('/rutas');
       } else {
         alert('Error al enviar correo');
       }
     } catch (err) {
-      console.error('Error al enviar PDF:', err);
+      console.error('Error al completar albarán o enviar PDF:', err);
       alert('Error al conectar con el servidor');
     }
   };

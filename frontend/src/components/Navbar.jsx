@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { 
-  FaRoute, FaClipboardList, FaTruckLoading, FaExchangeAlt, FaBoxes, 
-  FaUserFriends, FaFileInvoice, FaHome, FaWarehouse, FaTimes, 
-  FaBars, FaBuilding, FaChevronDown 
+import {
+  FaRoute, FaClipboardList, FaTruckLoading, FaExchangeAlt, FaBoxes,
+  FaUserFriends, FaFileInvoice, FaHome, FaWarehouse, FaTimes,
+  FaBars, FaBuilding, FaChevronDown
 } from 'react-icons/fa';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
@@ -131,6 +131,7 @@ const Navbar = () => {
     window.location.reload();
   };
 
+  // Lógica de visibilidad según permisos y roles
   const navItems = [
     {
       path: '/',
@@ -142,19 +143,28 @@ const Navbar = () => {
       path: '/PedidosScreen',
       label: 'Todos los pedidos',
       icon: <FaClipboardList />,
-      visible: permissions.canViewPedidosScreen
+      visible:
+        permissions.isAdmin ||
+        permissions.isAdvancedUser ||
+        permissions.canViewPedidosScreen // StatusTodosLosPedidos
     },
     {
       path: '/pedidos-asignados',
       label: 'Asignación de pedidos',
       icon: <FaTruckLoading />,
-      visible: permissions.canViewAssignedOrders
+      visible:
+        permissions.isAdmin ||
+        permissions.isAdvancedUser ||
+        permissions.canViewAssignedOrders // StatusVerPedidosAsignados
     },
     {
       path: '/rutas',
       label: 'Albaranes',
       icon: <FaRoute />,
-      visible: permissions.canViewWaybills
+      visible:
+        permissions.isAdmin ||
+        permissions.isAdvancedUser ||
+        permissions.canViewWaybills // StatusDesignarRutas
     },
     {
       path: '/albaranes-asignados',
@@ -163,20 +173,25 @@ const Navbar = () => {
       visible:
         permissions.isAdmin ||
         permissions.isAdvancedUser ||
-        permissions.isReadOnly ||
-        permissions.canAssignRoutes
+        permissions.canAssignWaybills // StatusVerAlbaranesAsignados
     },
     {
       path: '/traspasos',
       label: 'Traspaso',
       icon: <FaExchangeAlt />,
-      visible: permissions.canViewTransfers
+      visible:
+        permissions.isAdmin ||
+        permissions.isAdvancedUser ||
+        permissions.canViewTransfers // StatusVerTraspasosAlmacen
     },
     {
       path: '/inventario',
       label: 'Inventario',
       icon: <FaBoxes />,
-      visible: permissions.canViewInventory
+      visible:
+        permissions.isAdmin ||
+        permissions.isAdvancedUser ||
+        permissions.canViewInventory // StatusVerInventarios
     }
   ];
 

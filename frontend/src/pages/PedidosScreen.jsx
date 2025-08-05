@@ -1,5 +1,4 @@
-﻿// src/screens/PedidosScreen.jsx
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
@@ -62,11 +61,49 @@ const DetallesArticuloModal = ({
   scannedItems,
   setScannedItems,
   iniciarEscaneo,
-  canPerformActions
+  canPerformActions,
+  cantidadesPorTalla,
+  setCantidadesPorTalla,
+  onExpedirTalla
 }) => {
   const [selectedUbicacion, setSelectedUbicacion] = useState(
     ubicacionesStock.length > 0 ? ubicacionesStock[0].Ubicacion : ''
   );
+
+  const handleCambioCantidad = (detalle, tallaCodigo, cantidad) => {
+    const key = `${detalle.color.codigo}-${detalle.grupoTalla.codigo}-${tallaCodigo}`;
+    setCantidadesPorTalla(prev => ({
+      ...prev,
+      [key]: Math.min(cantidad, detalle.tallas[tallaCodigo].unidades)
+    }));
+  };
+
+  const expedirTalla = (detalle, tallaCodigo) => {
+    const key = `${detalle.color.codigo}-${detalle.grupoTalla.codigo}-${tallaCodigo}`;
+    const cantidad = cantidadesPorTalla[key] || 0;
+    
+    if (cantidad <= 0) {
+      alert('La cantidad debe ser mayor que cero');
+      return;
+    }
+    
+    // Validar ubicación seleccionada
+    const ubicacionObj = ubicacionesStock.find(ubi => ubi.Ubicacion === selectedUbicacion);
+    
+    if (!ubicacionObj) {
+      alert('Debe seleccionar una ubicación válida');
+      return;
+    }
+    
+    onExpedirTalla(
+      linea, 
+      detalle, 
+      tallaCodigo, 
+      cantidad,
+      ubicacionObj.Ubicacion,
+      ubicacionObj.Partida
+    );
+  };
 
   return (
     <div className="modal-detalles">
@@ -90,7 +127,7 @@ const DetallesArticuloModal = ({
               
               <div className="tallas-grid">
                 {Object.entries(detalle.tallas).map(([codigoTalla, talla], idx) => {
-                  const itemKey = `${linea.codigoArticulo}-${detalle.color.codigo}-${detalle.grupoTalla.codigo}`;
+                  const itemKey = `${detalle.color.codigo}-${detalle.grupoTalla.codigo}-${codigoTalla}`;
                   const escaneado = scannedItems[itemKey] || 0;
                   const completado = escaneado >= talla.unidades;
                   
@@ -103,22 +140,39 @@ const DetallesArticuloModal = ({
                         <div className="talla-codigo">Talla {codigoTalla}</div>
                         <div className="talla-desc">{talla.descripcion}</div>
                         <div className="talla-stock">
-                          {talla.unidades > 0 ? `${escaneado}/${formatearUnidad(talla.unidades, linea.unidadBase)}` : 'Agotado'}
+                          {talla.unidades > 0 ? 
+                            `${escaneado}/${formatearUnidad(talla.unidades, linea.unidadBase)}` : 
+                            'Agotado'}
                         </div>
                       </div>
                       
                       {talla.unidades > 0 && !completado && canPerformActions && (
-                        <button 
-                          className="btn-escanear"
-                          onClick={() => iniciarEscaneo(linea, pedido, detalle)}
-                        >
-                          <i className="fas fa-camera"></i> Escanear
-                        </button>
-                      )}
-                      
-                      {completado && (
-                        <div className="completado-badge">
-                          <i className="fas fa-check"></i> Completado
+                        <div className="cantidad-control">
+                          <input
+                            type="number"
+                            min="0"
+                            max={talla.unidades}
+                            value={cantidadesPorTalla[itemKey] || 0}
+                            onChange={(e) => handleCambioCantidad(
+                              detalle, 
+                              codigoTalla, 
+                              parseInt(e.target.value || 0)
+                            )}
+                            className="cantidad-input"
+                          />
+                          <button 
+                            className="btn-expedir-talla"
+                            onClick={() => expedirTalla(detalle, codigoTalla)}
+                            disabled={!cantidadesPorTalla[itemKey]}
+                          >
+                            Expedir
+                          </button>
+                          <button 
+                            className="btn-escanear"
+                            onClick={() => iniciarEscaneo(linea, pedido, detalle, codigoTalla)}
+                          >
+                            <i className="fas fa-camera"></i>
+                          </button>
                         </div>
                       )}
                     </div>
@@ -138,7 +192,8 @@ const DetallesArticuloModal = ({
           >
             {ubicacionesStock.map((ubi, idx) => (
               <option key={idx} value={ubi.Ubicacion}>
-                {ubi.Ubicacion} {ubi.DescripcionUbicacion ? `(${ubi.DescripcionUbicacion})` : ''}
+                {ubi.Ubicacion} {ubi.DescripcionUbicacion ? `(${ubi.DescripcionUbicacion})` : ''} - 
+                Stock: {ubi.Cantidad} {linea.unidadBase}
               </option>
             ))}
           </select>
@@ -166,29 +221,41 @@ const LineaPedido = ({
   iniciarEscaneo,
   abrirModalDetalles,
   canPerformActions,
-  setPedidos
+  setPedidos,
+  expedirArticulo
 }) => {
-  let ubicacionesConStock = ubicaciones[linea.codigoArticulo]?.filter(ubi => ubi.unidadSaldo > 0) || [];
+  // Asegurar unidad: usar unidadPedido o unidadBase como respaldo
+  const unidad = linea.unidadPedido || linea.unidadBase || 'ud';
+  
+  // Clave única con unidad
+  const key = `${pedido.numeroPedido}-${linea.codigoArticulo}-${unidad}`;
+
+  // Ubicaciones para esta combinación artículo-unidad
+  let ubicacionesConStock = ubicaciones[`${linea.codigoArticulo}-${unidad}`] || [];
+  
   if (ubicacionesConStock.length === 0) {
     ubicacionesConStock.push({
       ubicacion: "Zona descarga",
       partida: null,
-      unidadSaldo: Infinity,
-      unidadMedida: linea.unidadBase || 'ud'
+      Cantidad: Infinity,
+      UnidadMedida: unidad
     });
   }
 
-  const tieneStock = ubicacionesConStock.some(u => u.unidadSaldo > 0);
-  const stockNegativo = ubicacionesConStock.some(u => u.unidadSaldo < 0);
-  const key = `${pedido.numeroPedido}-${linea.codigoArticulo}`;
+  const tieneStock = ubicacionesConStock.some(u => u.Cantidad > 0);
+  const stockNegativo = ubicacionesConStock.some(u => u.Cantidad < 0);
+  
   const expedicion = expediciones[key] || {
-    ubicacion: ubicacionesConStock[0]?.ubicacion || '',
+    ubicacion: ubicacionesConStock[0]?.Ubicacion || '',
+    partida: ubicacionesConStock[0]?.partida || null,
     cantidad: '0'
   };
   
+  const unidadesExpedidas = linea.UnidadesExpedidas || 0;
+  const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
+  
   const formatearUnidades = () => {
-    const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
-    const unidadVenta = linea.unidadBase || 'ud';
+    const unidadVenta = unidad;
     const unidadStock = linea.unidadAlternativa || 'ud';
     const factor = parseFloat(linea.factorConversion) || 1;
     
@@ -209,7 +276,7 @@ const LineaPedido = ({
   return (
     <tr 
       key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${linea.movPosicionLinea}`}
-      className={`linea-pedido ${tieneStock ? 'clickable' : 'no-stock'} ${stockNegativo ? 'negative-stock' : ''} ${linea.unidadesPendientes === 0 ? 'linea-expedida' : ''}`}
+      className={`linea-pedido ${tieneStock ? 'clickable' : 'no-stock'} ${stockNegativo ? 'negative-stock' : ''} ${unidadesPendientes === 0 ? 'linea-expedida' : ''}`}
     >
       <td className="td-izquierda">
         <div className="codigo-articulo">{linea.codigoArticulo}</div>
@@ -220,9 +287,14 @@ const LineaPedido = ({
         <div className="detalles-articulo">{linea.descripcion2Articulo}</div>
       </td>
       <td className="td-centrado">
-        {linea.unidadesPendientes > 0 ? (
+        {unidadesPendientes > 0 ? (
           <div className="pendiente-container">
             <span>{formatted.pendiente}</span>
+            {unidadesExpedidas > 0 && (
+              <div className="expedido-info">
+                Expedido: {formatearUnidad(unidadesExpedidas, unidad)}
+              </div>
+            )}
             {formatted.equivalencia && (
               <div className="equivalencia-stock">
                 {formatted.equivalencia}
@@ -250,20 +322,22 @@ const LineaPedido = ({
             value={expedicion.ubicacion}
             onChange={e => handleExpedicionChange(
               pedido.numeroPedido, 
-              linea.codigoArticulo, 
+              linea.codigoArticulo,
+              unidad, 
               'ubicacion', 
               e.target.value
             )}
             className={`ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'zona-descarga' : ''}`}
-            disabled={!canPerformActions || linea.unidadesPendientes === 0}
+            disabled={!canPerformActions || unidadesPendientes === 0}
           >
             {ubicacionesConStock.map((ubicacion, locIndex) => (
               <option 
-                key={`${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
-                value={ubicacion.ubicacion}
-                className={ubicacion.ubicacion === "Zona descarga" ? 'zona-descarga-option' : ''}
+                key={`${ubicacion.Ubicacion}-${ubicacion.Partida || 'no-partida'}-${locIndex}`}
+                value={ubicacion.Ubicacion}
+                className={ubicacion.Ubicacion === "Zona descarga" ? 'zona-descarga-option' : ''}
               >
-                {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''}
+                {ubicacion.Ubicacion} {ubicacion.Partida ? `(${ubicacion.Partida})` : ''} - 
+                Stock: {ubicacion.Cantidad} {unidad}
               </option>
             ))}
           </select>
@@ -274,7 +348,7 @@ const LineaPedido = ({
           <input
             type="number"
             min="0"
-            max={linea.unidadesPendientes}
+            max={unidadesPendientes}
             step="1"
             value={expedicion.cantidad}
             onChange={e => {
@@ -284,20 +358,21 @@ const LineaPedido = ({
               let intValue = parseInt(value, 10);
               if (isNaN(intValue)) intValue = 0;
               
-              intValue = Math.min(intValue, linea.unidadesPendientes);
+              intValue = Math.min(intValue, unidadesPendientes);
               intValue = Math.max(intValue, 0);
               
               handleExpedicionChange(
                 pedido.numeroPedido, 
-                linea.codigoArticulo, 
+                linea.codigoArticulo,
+                unidad,
                 'cantidad', 
                 intValue.toString()
               );
             }}
             className={expedicion.ubicacion === "Zona descarga" ? 'zona-descarga-input' : ''}
-            disabled={!canPerformActions || linea.unidadesPendientes === 0}
+            disabled={!canPerformActions || unidadesPendientes === 0}
           />
-          <span className="unidad-info">{linea.unidadBase || 'ud'}</span>
+          <span className="unidad-info">{unidad}</span>
         </div>
       </td>
       <td className="td-centrado">
@@ -305,9 +380,9 @@ const LineaPedido = ({
           className="btn-expedir"
           onClick={(e) => {
             e.stopPropagation();
-            if (canPerformActions && linea.unidadesPendientes > 0) iniciarEscaneo(linea, pedido);
+            if (canPerformActions && unidadesPendientes > 0) iniciarEscaneo(linea, pedido);
           }}
-          disabled={!canPerformActions || linea.unidadesPendientes === 0}
+          disabled={!canPerformActions || unidadesPendientes === 0}
         >
           <i className="fas fa-camera"></i> Escanear
         </button>
@@ -328,12 +403,55 @@ const PedidoCard = ({
   iniciarEscaneo,
   abrirModalDetalles,
   canPerformActions,
-  setPedidos
+  setPedidos,
+  expedirArticulo
 }) => {
+  const [modoVisualizacion, setModoVisualizacion] = useState('todas');
+  const [menuAccionesAbierto, setMenuAccionesAbierto] = useState(false);
+
+  const toggleMenuAcciones = () => {
+    setMenuAccionesAbierto(!menuAccionesAbierto);
+  };
+
+  const actualizarVoluminoso = async (value) => {
+    const newValue = value;
+    setPedidos(prev => prev.map(p => 
+      p.numeroPedido === pedido.numeroPedido 
+        ? { ...p, EsVoluminoso: newValue } 
+        : p
+    ));
+    
+    try {
+      await axios.patch(
+        `http://localhost:3000/pedidos/${pedido.numeroPedido}/voluminoso`,
+        { esVoluminoso: newValue },
+        { headers: getAuthHeader() }
+      );
+    } catch (error) {
+      console.error('Error al actualizar voluminoso', error);
+      setPedidos(prev => prev.map(p => 
+        p.numeroPedido === pedido.numeroPedido 
+          ? { ...p, EsVoluminoso: !newValue } 
+          : p
+      ));
+    }
+  };
+
+  // Filtramos las líneas según el modo de visualización
+  const lineasFiltradas = pedido.articulos.filter(articulo => {
+    if (modoVisualizacion === 'pendientes') {
+      return parseFloat(articulo.unidadesPendientes) > 0;
+    } else if (modoVisualizacion === 'completadas') {
+      return parseFloat(articulo.unidadesPendientes) === 0;
+    }
+    return true;
+  });
+
   const tieneLineasParciales = () => {
     return pedido.articulos.some(articulo => {
-      const unidadesExpedidas = parseFloat(articulo.unidadesPedidas) - parseFloat(articulo.unidadesPendientes);
-      return unidadesExpedidas > 0 && unidadesExpedidas < parseFloat(articulo.unidadesPedidas);
+      const unidadesExpedidas = parseFloat(articulo.UnidadesExpedidas) || 0;
+      const unidadesPedidas = parseFloat(articulo.unidadesPedidas) || 0;
+      return unidadesExpedidas > 0 && unidadesExpedidas < unidadesPedidas;
     });
   };
 
@@ -347,9 +465,7 @@ const PedidoCard = ({
   const completo = estaCompletamenteExpedido();
   
   return (
-    <div 
-      className={`pedido-card ${parcial ? 'pedido-parcial' : ''} ${completo ? 'pedido-completo' : ''}`}
-    >
+    <div className={`pedido-card ${parcial ? 'pedido-parcial' : ''} ${completo ? 'pedido-completo' : ''}`}>
       <div className="pedido-header">
         <div className="pedido-header-left">
           <div className="pedido-info-top">
@@ -367,44 +483,45 @@ const PedidoCard = ({
             {pedido.StatusAprobado === -1 && (
               <span className="badge-aprobado">Aprobado</span>
             )}
+            {pedido.EsVoluminoso && (
+              <span className="voluminoso-badge">Voluminoso</span>
+            )}
           </div>
         </div>
         
         <div className="pedido-header-right">
-          <label className="voluminoso-checkbox">
-            <input
-              type="checkbox"
-              checked={pedido.EsVoluminoso || false}
-              onChange={async (e) => {
-                try {
-                  await axios.patch(
-                    `http://localhost:3000/pedidos/${pedido.numeroPedido}/voluminoso`,
-                    { esVoluminoso: e.target.checked },
-                    { headers: getAuthHeader() }
-                  );
-                  setPedidos(prev => prev.map(p => 
-                    p.numeroPedido === pedido.numeroPedido 
-                      ? { ...p, EsVoluminoso: e.target.checked } 
-                      : p
-                  ));
-                } catch (error) {
-                  console.error('Error al actualizar voluminoso', error);
-                }
-              }}
-              disabled={!canPerformActions}
-            />
-            Pedido voluminoso
-          </label>
-          
-          {parcial && !completo && (
-            <button 
-              onClick={() => generarAlbaranParcial(pedido)}
-              className="btn-albaran-parcial"
-              disabled={!canPerformActions || generandoAlbaran}
-            >
-              {generandoAlbaran ? 'Completando...' : 'Completar Pedido'}
+          <div className="acciones-container">
+            <button className="btn-acciones" onClick={toggleMenuAcciones}>
+              <i className="fas fa-ellipsis-v"></i>
             </button>
-          )}
+            
+            {menuAccionesAbierto && (
+              <div className="menu-acciones">
+                <div className="menu-item">
+                  <label className="voluminoso-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={pedido.EsVoluminoso || false}
+                      onChange={(e) => actualizarVoluminoso(e.target.checked)}
+                    />
+                    Pedido voluminoso
+                  </label>
+                </div>
+                
+                {parcial && !completo && (
+                  <div className="menu-item">
+                    <button 
+                      onClick={() => generarAlbaranParcial(pedido)}
+                      className="btn-albaran-parcial"
+                      disabled={!canPerformActions || generandoAlbaran}
+                    >
+                      <i className="fas fa-file-invoice"></i> Generar Albarán Parcial
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       
@@ -426,7 +543,28 @@ const PedidoCard = ({
         </div>
       </div>
       
-      <div className="toggle-button-container">
+      <div className="toggle-container">
+        <div className="toggle-options">
+          <button 
+            className={`toggle-option ${modoVisualizacion === 'todas' ? 'active' : ''}`}
+            onClick={() => setModoVisualizacion('todas')}
+          >
+            Todas las líneas
+          </button>
+          <button 
+            className={`toggle-option ${modoVisualizacion === 'pendientes' ? 'active' : ''}`}
+            onClick={() => setModoVisualizacion('pendientes')}
+          >
+            Pendientes
+          </button>
+          <button 
+            className={`toggle-option ${modoVisualizacion === 'completadas' ? 'active' : ''}`}
+            onClick={() => setModoVisualizacion('completadas')}
+          >
+            Completadas
+          </button>
+        </div>
+        
         <button 
           onClick={() => togglePedidoView(pedido.numeroPedido)}
           className="btn-toggle"
@@ -449,7 +587,7 @@ const PedidoCard = ({
               </tr>
             </thead>
             <tbody>
-              {pedido.articulos.map((linea) => (
+              {lineasFiltradas.map((linea) => (
                 <LineaPedido 
                   key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${linea.movPosicionLinea}`}
                   linea={linea} 
@@ -461,6 +599,7 @@ const PedidoCard = ({
                   abrirModalDetalles={abrirModalDetalles}
                   canPerformActions={canPerformActions}
                   setPedidos={setPedidos}
+                  expedirArticulo={expedirArticulo}
                 />
               ))}
             </tbody>
@@ -606,12 +745,10 @@ const PedidosScreen = () => {
   const [pedidoViewModes, setPedidoViewModes] = useState({});
   const [loading, setLoading] = useState(true);
   const [generandoAlbaran, setGenerandoAlbaran] = useState(false);
-  const [filtroPedido, setFiltroPedido] = useState('');
-  const [filtroDireccion, setFiltroDireccion] = useState('');
+  const [filtroBusqueda, setFiltroBusqueda] = useState('');
   const [rangoFechas, setRangoFechas] = useState('semana');
   const [filtroFormaEntrega, setFiltroFormaEntrega] = useState('');
-  const [filtroEstados, setFiltroEstados] = useState([]);
-  const [soloAprobados, setSoloAprobados] = useState(true);
+  const [filtroEstado, setFiltroEstado] = useState('todos');
   const [paginaActual, setPaginaActual] = useState(1);
   const [error, setError] = useState('');
   const [detallesModal, setDetallesModal] = useState(null);
@@ -624,6 +761,7 @@ const PedidosScreen = () => {
   const [cameras, setCameras] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState('');
   const scannerRef = useRef(null);
+  const [cantidadesPorTalla, setCantidadesPorTalla] = useState({});
 
   const formasEntrega = [
     { id: 1, nombre: 'Recogida Guadalhorce' },
@@ -634,126 +772,204 @@ const PedidosScreen = () => {
   ];
 
   const estadosPedido = [
+    { value: 'todos', label: 'Todos' },
     { value: 'FaltaStock', label: 'Falta Stock' },
     { value: 'Pendiente', label: 'Pendiente' },
     { value: 'RecibidoProveedor', label: 'Recibido Proveedor' },
     { value: 'Parcial', label: 'Parcial' }
   ];
 
-  const handleExpedir = async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea) => {
-    const key = `${numeroPedido}-${codigoArticulo}`;
-    const expedicion = expediciones[key] || { cantidad: '0', ubicacion: '' };
-    
-    if (!expedicion.cantidad || parseInt(expedicion.cantidad) <= 0) {
-      alert('Por favor, introduce una cantidad válida para expedir');
-      return;
+  const expedirArticulo = async (linea, pedido, cantidad, ubicacion, partida) => {
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.post(
+        'http://localhost:3000/actualizarLineaPedido',
+        {
+          codigoEmpresa: pedido.codigoEmpresa,
+          ejercicio: pedido.ejercicioPedido,
+          serie: pedido.seriePedido || '',
+          numeroPedido: pedido.numeroPedido,
+          codigoArticulo: linea.codigoArticulo,
+          cantidadExpedida: cantidad,
+          ubicacion: ubicacion,
+          partida: partida || null,
+          movPosicionLinea: linea.movPosicionLinea,
+          unidadMedida: linea.unidadPedido || linea.unidadBase
+        },
+        { headers }
+      );
+
+      if (response.data.success) {
+        // Actualizar estado de pedidos
+        setPedidos(prev => prev.map(p => {
+          if (p.numeroPedido !== pedido.numeroPedido) return p;
+          return {
+            ...p,
+            articulos: p.articulos.map(a => {
+              if (a.movPosicionLinea !== linea.movPosicionLinea) return a;
+              return {
+                ...a,
+                unidadesPendientes: a.unidadesPendientes - cantidad,
+                UnidadesExpedidas: (a.UnidadesExpedidas || 0) + cantidad
+              };
+            })
+          };
+        }));
+        
+        // Resetear cantidad
+        const unidad = linea.unidadPedido || linea.unidadBase || 'ud';
+        const key = `${pedido.numeroPedido}-${linea.codigoArticulo}-${unidad}`;
+        setExpediciones(prev => ({
+          ...prev,
+          [key]: {
+            ...prev[key],
+            cantidad: '0'
+          }
+        }));
+
+        alert(`Expedidas ${cantidad} unidades correctamente`);
+      }
+    } catch (error) {
+      console.error('Error al expedir artículo:', error);
+      alert('Error al expedir: ' + (error.response?.data?.mensaje || error.message));
     }
-    
-    if (!expedicion.ubicacion) {
-      alert('Por favor, selecciona una ubicación');
-      return;
-    }
+  };
+
+  const onExpedirTalla = async (linea, detalle, tallaCodigo, cantidad, ubicacion, partida) => {
+    if (!detallesModal) return;
+    const pedido = detallesModal.pedido;
     
     try {
       const headers = getAuthHeader();
       const response = await axios.post(
         'http://localhost:3000/actualizarLineaPedido',
         {
-          codigoEmpresa,
-          ejercicio,
-          serie,
-          numeroPedido,
-          codigoArticulo,
-          cantidadExpedida: expedicion.cantidad,
-          ubicacion: expedicion.ubicacion
+          codigoEmpresa: pedido.codigoEmpresa,
+          ejercicio: pedido.ejercicioPedido,
+          serie: pedido.seriePedido || '',
+          numeroPedido: pedido.numeroPedido,
+          codigoArticulo: linea.codigoArticulo,
+          cantidadExpedida: cantidad,
+          ubicacion: ubicacion,
+          partida: partida || null,
+          movPosicionLinea: linea.movPosicionLinea,
+          unidadMedida: linea.unidadPedido || linea.unidadBase,
+          color: detalle.color.codigo,
+          grupoTalla: detalle.grupoTalla.codigo,
+          talla: tallaCodigo
         },
         { headers }
       );
       
       if (response.data.success) {
-        // Actualizar estado local
-        setPedidos(prev => prev.map(pedido => {
-          if (pedido.numeroPedido !== numeroPedido) return pedido;
-          
+        // Actualizar estado de pedidos
+        setPedidos(prev => prev.map(p => {
+          if (p.numeroPedido !== pedido.numeroPedido) return p;
           return {
-            ...pedido,
-            articulos: pedido.articulos.map(articulo => {
-              if (articulo.codigoArticulo !== codigoArticulo) return articulo;
-              
-              const nuevasUnidadesPendientes = parseFloat(articulo.unidadesPendientes) - parseFloat(expedicion.cantidad);
-              
+            ...p,
+            articulos: p.articulos.map(a => {
+              if (a.movPosicionLinea !== linea.movPosicionLinea) return a;
               return {
-                ...articulo,
-                unidadesPendientes: nuevasUnidadesPendientes
+                ...a,
+                unidadesPendientes: a.unidadesPendientes - cantidad,
+                UnidadesExpedidas: (a.UnidadesExpedidas || 0) + cantidad
               };
             })
           };
         }));
         
-        // Resetear expedición
-        setExpediciones(prev => ({
+        // Actualizar estado de escaneos
+        const itemKey = `${detalle.color.codigo}-${detalle.grupoTalla.codigo}-${tallaCodigo}`;
+        setScannedItems(prev => ({
           ...prev,
-          [key]: {
-            ubicacion: expedicion.ubicacion,
-            cantidad: '0'
-          }
+          [itemKey]: (prev[itemKey] || 0) + cantidad
         }));
         
-        alert('Artículo expedido correctamente');
-      } else {
-        alert('Error al expedir artículo: ' + response.data.mensaje);
+        // Resetear cantidad
+        setCantidadesPorTalla(prev => ({
+          ...prev,
+          [itemKey]: 0
+        }));
+        
+        alert(`Expedidas ${cantidad} unidades correctamente`);
       }
     } catch (error) {
-      console.error('Error al expedir artículo:', error);
-      alert('Error al expedir artículo: ' + error.message);
+      console.error('Error al expedir artículo por talla:', error);
+      
+      let errorMessage = 'Error al procesar la expedición';
+      if (error.response) {
+        if (error.response.data && error.response.data.mensaje) {
+          errorMessage = error.response.data.mensaje;
+        } else {
+          errorMessage = `Error ${error.response.status}: ${error.response.statusText}`;
+        }
+      } else {
+        errorMessage = error.message;
+      }
+      
+      alert(`Error: ${errorMessage}`);
     }
   };
 
   const handleScanSuccess = (decodedText) => {
     if (!currentScanningLine) return;
     
-    const { linea, pedido } = currentScanningLine;
+    const { linea, pedido, detalle, tallaCodigo, cantidad } = currentScanningLine;
     
-    // Validar que el código escaneado coincida con el artículo
-    if (decodedText !== linea.codigoArticulo && decodedText !== linea.codigoAlternativo) {
+    // Verificar coincidencia
+    if (
+      decodedText !== linea.codigoArticulo && 
+      decodedText !== linea.codigoAlternativo
+    ) {
       alert(`Código escaneado (${decodedText}) no coincide con el artículo (${linea.codigoArticulo})`);
       return;
     }
-    
-    // Obtener la expedición actual
-    const key = `${pedido.numeroPedido}-${linea.codigoArticulo}`;
-    const expedicion = expediciones[key] || { cantidad: '0' };
-    let cantidad = parseInt(expedicion.cantidad) || 0;
-    
-    // Incrementar cantidad expedida
-    cantidad += 1;
-    
-    // Actualizar estado local
-    setExpediciones(prev => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        cantidad: cantidad.toString()
-      }
-    }));
-    
-    // Si es una variante, actualizar scannedItems
-    if (currentScanningLine.detalle) {
-      const detalle = currentScanningLine.detalle;
-      const itemKey = `${linea.codigoArticulo}-${detalle.color.codigo}-${detalle.grupoTalla.codigo}`;
+
+    // Expedición normal
+    if (!detalle) {
+      const unidad = linea.unidadPedido || linea.unidadBase || 'ud';
+      const key = `${pedido.numeroPedido}-${linea.codigoArticulo}-${unidad}`;
+      const expedicion = expediciones[key] || { cantidad: '0' };
+      const cantidadExpedir = parseInt(expedicion.cantidad) || 0;
       
-      setScannedItems(prev => ({
-        ...prev,
-        [itemKey]: (prev[itemKey] || 0) + 1
-      }));
+      if (cantidadExpedir <= 0) {
+        alert('La cantidad debe ser mayor que cero');
+        return;
+      }
+      
+      expedirArticulo(
+        linea, 
+        pedido, 
+        cantidadExpedir, 
+        expedicion.ubicacion,
+        expedicion.partida
+      );
     }
-    
-    alert(`Artículo ${linea.descripcionArticulo} escaneado correctamente. Cantidad: ${cantidad}`);
+    // Expedición desde modal de tallas
+    else {
+      const key = `${detalle.color.codigo}-${detalle.grupoTalla.codigo}-${tallaCodigo}`;
+      const cantidadActual = cantidadesPorTalla[key] || 0;
+      
+      if (cantidadActual <= 0) {
+        alert('La cantidad debe ser mayor que cero');
+        return;
+      }
+      
+      onExpedirTalla(
+        linea, 
+        detalle, 
+        tallaCodigo, 
+        cantidadActual,
+        ubicacionesModal[0]?.Ubicacion, // Usar ubicación seleccionada (o podríamos tener un estado para la selección en el modal)
+        ubicacionesModal[0]?.Partida
+      );
+    }
+
+    setShowCamera(false);
   };
 
   const handleManualVerification = () => {
-    if (!manualCode || !currentScanningLine) return;
-    
+    if (!manualCode) return;
     handleScanSuccess(manualCode);
     setManualCode('');
   };
@@ -777,11 +993,10 @@ const PedidosScreen = () => {
           codigoEmpresa,
           rango: rangoFechas,
           formaEntrega: filtroFormaEntrega,
-          estados: filtroEstados.join(','),
-          soloAprobados: soloAprobados,
+          estados: filtroEstado === 'todos' ? '' : filtroEstado,
+          soloAprobados: true
         };
 
-        // Filtro para preparadores
         if (isPreparer) {
           params.empleado = user.UsuarioLogicNet;
         }
@@ -793,43 +1008,80 @@ const PedidosScreen = () => {
         
         setPedidos(response.data);
         
-        // Obtener ubicaciones de stock para todos los artículos
-        const codigosArticulos = [...new Set(response.data.flatMap(p => p.articulos.map(a => a.codigoArticulo)))];
-        if (codigosArticulos.length > 0) {
-          const responseUbicaciones = await axios.post(
-            'http://localhost:3000/ubicacionesMultiples',
-            { articulos: codigosArticulos },
-            { headers }
-          );
-          setUbicaciones(responseUbicaciones.data);
-        }
+        // Cargar ubicaciones por artículo Y unidad
+        const ubicacionesPromises = response.data.flatMap(pedido => 
+          pedido.articulos.map(async articulo => {
+            // Asegurar unidad: usar unidadPedido o unidadBase como respaldo
+            const unidad = articulo.unidadPedido || articulo.unidadBase || 'ud';
+            
+            try {
+              const responseUbicaciones = await axios.get(
+                'http://localhost:3000/stock/por-articulo-unidad',
+                {
+                  headers,
+                  params: { 
+                    codigoArticulo: articulo.codigoArticulo,
+                    unidadMedida: unidad
+                  }
+                }
+              );
+              
+              return {
+                key: `${articulo.codigoArticulo}-${unidad}`,
+                data: responseUbicaciones.data
+              };
+            } catch (error) {
+              console.error(`Error cargando ubicaciones para: ${articulo.codigoArticulo} - ${unidad}`, error);
+              // Proporcionar ubicación por defecto en caso de error
+              return {
+                key: `${articulo.codigoArticulo}-${unidad}`,
+                data: [{
+                  Ubicacion: "Zona descarga",
+                  Partida: null,
+                  Cantidad: Infinity,
+                  UnidadMedida: unidad
+                }]
+              };
+            }
+          })
+        );
+
+        const ubicacionesResults = await Promise.all(ubicacionesPromises);
+        const nuevasUbicaciones = {};
+        
+        ubicacionesResults.forEach(result => {
+          nuevasUbicaciones[result.key] = result.data;
+        });
+        
+        setUbicaciones(nuevasUbicaciones);
         
         // Inicializar expediciones
         const nuevasExpediciones = {};
         response.data.forEach(pedido => {
-          pedido.articulos.forEach(linea => {
-            const key = `${pedido.numeroPedido}-${linea.codigoArticulo}`;
-            let ubicacionesConStock = ubicaciones[linea.codigoArticulo]?.filter(ubi => ubi.unidadSaldo > 0) || [];
+          pedido.articulos.forEach(articulo => {
+            const unidad = articulo.unidadPedido || articulo.unidadBase || 'ud';
+            const key = `${pedido.numeroPedido}-${articulo.codigoArticulo}-${unidad}`;
             
+            let ubicacionesConStock = nuevasUbicaciones[key] || [];
             if (ubicacionesConStock.length === 0) {
               ubicacionesConStock.push({
-                ubicacion: "Zona descarga",
-                partida: null,
-                unidadSaldo: Infinity,
-                unidadMedida: linea.unidadBase || 'ud'
+                Ubicacion: "Zona descarga",
+                Partida: null,
+                Cantidad: Infinity,
+                UnidadMedida: unidad
               });
             }
             
             nuevasExpediciones[key] = {
-              ubicacion: ubicacionesConStock[0].ubicacion,
-              partida: ubicacionesConStock[0].partida || null,
+              ubicacion: ubicacionesConStock[0].Ubicacion,
+              partida: ubicacionesConStock[0].Partida || null,
               cantidad: '0'
             };
           });
         });
         setExpediciones(nuevasExpediciones);
         
-        // Inicializar modos de visualización
+        // Inicializar modos de vista
         const initialModes = {};
         response.data.forEach(pedido => {
           initialModes[pedido.numeroPedido] = 'show';
@@ -854,7 +1106,7 @@ const PedidosScreen = () => {
     };
     
     cargarPedidos();
-  }, [rangoFechas, filtroFormaEntrega, filtroEstados, soloAprobados, isPreparer]);
+  }, [rangoFechas, filtroFormaEntrega, filtroEstado, isPreparer]);
 
   useEffect(() => {
     if (!canViewPedidosScreen) {
@@ -869,7 +1121,7 @@ const PedidosScreen = () => {
           setCameras(devices);
           setSelectedCamera(devices[0].id);
         } else {
-          setCameraError('No se encontraron cámaras disponibles');
+          setCameraError('No se encontraron cámaras disponibles. Por favor, usa la entrada manual.');
         }
       }).catch(err => {
         console.error("Error al obtener cámaras:", err);
@@ -911,13 +1163,19 @@ const PedidosScreen = () => {
   const abrirModalDetalles = async (detalles, linea, pedido) => {
     try {
       const headers = getAuthHeader();
-      const response = await axios.get('http://localhost:3000/stock/por-articulo', {
-        headers,
-        params: { 
-          codigoArticulo: linea.codigoArticulo,
-          codigoEmpresa: user.CodigoEmpresa 
+      // Asegurar unidad para la consulta
+      const unidad = linea.unidadPedido || linea.unidadBase || 'ud';
+      
+      const response = await axios.get(
+        'http://localhost:3000/stock/por-articulo-unidad', 
+        {
+          headers,
+          params: { 
+            codigoArticulo: linea.codigoArticulo,
+            unidadMedida: unidad
+          }
         }
-      });
+      );
       
       setUbicacionesModal(response.data);
       setDetallesModal({
@@ -925,41 +1183,45 @@ const PedidosScreen = () => {
         linea,
         pedido
       });
+      
+      // Resetear cantidades al abrir el modal
+      const nuevasCantidades = {};
+      detalles.forEach(detalle => {
+        Object.keys(detalle.tallas).forEach(tallaCodigo => {
+          const key = `${detalle.color.codigo}-${detalle.grupoTalla.codigo}-${tallaCodigo}`;
+          nuevasCantidades[key] = 0;
+        });
+      });
+      setCantidadesPorTalla(nuevasCantidades);
     } catch (error) {
       console.error('Error al obtener ubicaciones:', error);
       alert('Error al obtener ubicaciones para este artículo');
     }
   };
 
-  const cerrarModalDetalles = (totalExpedido = 0) => {
-    if (totalExpedido > 0 && detallesModal) {
-      const { pedido, linea } = detallesModal;
-      
-      setPedidos(prev => prev.map(p => {
-        if (p.numeroPedido !== pedido.numeroPedido) return p;
-        
-        return {
-          ...p,
-          articulos: p.articulos.map(a => {
-            if (a.codigoArticulo !== linea.codigoArticulo) return a;
-            
-            return {
-              ...a,
-              unidadesPendientes: a.unidadesPendientes - totalExpedido
-            };
-          })
-        };
-      }));
-    }
-    
+  const cerrarModalDetalles = () => {
     setDetallesModal(null);
     setScannedItems({});
+    setCantidadesPorTalla({});
   };
 
-  const iniciarEscaneo = (linea, pedido, detalle = null) => {
+  const iniciarEscaneo = (linea, pedido, detalle = null, tallaCodigo = null) => {
     if (!canPerformActionsInPedidos) return;
     
-    setCurrentScanningLine({ linea, pedido, detalle });
+    // Si estamos en el modal de tallas, capturamos la cantidad actual para esa talla
+    let cantidad = 0;
+    if (detalle && tallaCodigo) {
+      const key = `${detalle.color.codigo}-${detalle.grupoTalla.codigo}-${tallaCodigo}`;
+      cantidad = cantidadesPorTalla[key] || 0;
+    }
+    
+    setCurrentScanningLine({
+      linea, 
+      pedido,
+      detalle,
+      tallaCodigo,
+      cantidad
+    });
     setShowCamera(true);
     setManualCode('');
   };
@@ -971,10 +1233,10 @@ const PedidosScreen = () => {
     }));
   };
 
-  const handleExpedicionChange = (numeroPedido, codigoArticulo, field, value) => {
+  const handleExpedicionChange = (numeroPedido, codigoArticulo, unidadMedida, field, value) => {
     if (!canPerformActionsInPedidos) return;
     
-    const key = `${numeroPedido}-${codigoArticulo}`;
+    const key = `${numeroPedido}-${codigoArticulo}-${unidadMedida}`;
     setExpediciones(prev => ({
       ...prev,
       [key]: { ...(prev[key] || {}), [field]: value }
@@ -993,13 +1255,43 @@ const PedidosScreen = () => {
       setGenerandoAlbaran(true);
       const headers = getAuthHeader();
       
+      const lineasExpedidas = pedido.articulos
+        .map(articulo => {
+          // Usar unidad de la línea
+          const unidad = articulo.unidadPedido || articulo.unidadBase || 'ud';
+          const key = `${pedido.numeroPedido}-${articulo.codigoArticulo}-${unidad}`;
+          const expedicion = expediciones[key] || { cantidad: '0' };
+          const cantidad = parseInt(expedicion.cantidad) || 0;
+          
+          if (cantidad > 0) {
+            return {
+              codigoArticulo: articulo.codigoArticulo,
+              descripcionArticulo: articulo.descripcionArticulo,
+              cantidad: cantidad,
+              precio: articulo.precio || 0,
+              codigoAlmacen: articulo.codigoAlmacen || '',
+              partida: expedicion.partida || '',
+              movPosicionLinea: articulo.movPosicionLinea,
+              unidadMedida: unidad // Incluir unidad
+            };
+          }
+          return null;
+        })
+        .filter(item => item !== null);
+      
+      if (lineasExpedidas.length === 0) {
+        alert('No hay líneas con cantidades para expedir');
+        return;
+      }
+      
       await axios.post(
-        'http://localhost:3000/marcarPedidoCompletado',
+        'http://localhost:3000/generarAlbaranParcial',
         {
           codigoEmpresa: pedido.codigoEmpresa,
           ejercicio: pedido.ejercicioPedido,
-          serie: pedido.seriePedido,
-          numeroPedido: pedido.numeroPedido
+          serie: pedido.seriePedido || '',
+          numeroPedido: pedido.numeroPedido,
+          lineasExpedidas
         },
         { headers }
       );
@@ -1008,26 +1300,32 @@ const PedidosScreen = () => {
         prev.filter(p => p.numeroPedido !== pedido.numeroPedido)
       );
       
-      alert('Pedido marcado como completado. Ahora debe ser asignado a un empleado para generar el albarán.');
+      alert('Albarán parcial generado correctamente');
     } catch (error) {
       console.error('Error al completar pedido:', error);
-      alert('Error al completar pedido: ' + (error.response?.data?.mensaje || error.message));
+      
+      let errorMessage = 'Error al generar albarán parcial';
+      if (error.response?.data?.mensaje) {
+        errorMessage = error.response.data.mensaje;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      alert(errorMessage);
     } finally {
       setGenerandoAlbaran(false);
     }
   };
 
   const pedidosFiltrados = pedidos.filter(pedido => {
-    const matchPedido = filtroPedido 
-      ? pedido.numeroPedido.toString().includes(filtroPedido) || 
-        pedido.razonSocial.toLowerCase().includes(filtroPedido.toLowerCase())
-      : true;
-
-    const matchDireccion = filtroDireccion
-      ? `${pedido.domicilio} ${pedido.municipio} ${pedido.obra || ''}`.toLowerCase().includes(filtroDireccion.toLowerCase())
-      : true;
-
-    return matchPedido && matchDireccion;
+    const textoBusqueda = filtroBusqueda.toLowerCase();
+    return (
+      pedido.numeroPedido.toString().includes(textoBusqueda) ||
+      (pedido.razonSocial && pedido.razonSocial.toLowerCase().includes(textoBusqueda)) ||
+      (pedido.domicilio && pedido.domicilio.toLowerCase().includes(textoBusqueda)) ||
+      (pedido.obra && pedido.obra.toLowerCase().includes(textoBusqueda)) ||
+      (pedido.municipio && pedido.municipio.toLowerCase().includes(textoBusqueda))
+    );
   });
 
   const pedidosOrdenados = [...pedidosFiltrados];
@@ -1058,23 +1356,12 @@ const PedidosScreen = () => {
         <div className="pedidos-controls">
           <div className="filtros-container">
             <div className="filtro-group">
-              <label>Buscar pedido o cliente:</label>
+              <label>Buscar pedido, cliente o dirección:</label>
               <input
                 type="text"
-                placeholder="Nº pedido, cliente..."
-                value={filtroPedido}
-                onChange={e => setFiltroPedido(e.target.value)}
-                className="search-input"
-              />
-            </div>
-            
-            <div className="filtro-group">
-              <label>Buscar dirección/obra:</label>
-              <input
-                type="text"
-                placeholder="Dirección u obra..."
-                value={filtroDireccion}
-                onChange={e => setFiltroDireccion(e.target.value)}
+                placeholder="Nº pedido, cliente, dirección..."
+                value={filtroBusqueda}
+                onChange={e => setFiltroBusqueda(e.target.value)}
                 className="search-input"
               />
             </div>
@@ -1110,12 +1397,9 @@ const PedidosScreen = () => {
             <div className="filtro-group">
               <label>Estado del pedido:</label>
               <select
-                multiple
-                value={filtroEstados}
-                onChange={e => setFiltroEstados(
-                  Array.from(e.target.selectedOptions, option => option.value)
-                )}
-                className="multi-select"
+                value={filtroEstado}
+                onChange={(e) => setFiltroEstado(e.target.value)}
+                className="sort-select"
               >
                 {estadosPedido.map(estado => (
                   <option key={estado.value} value={estado.value}>
@@ -1123,17 +1407,6 @@ const PedidosScreen = () => {
                   </option>
                 ))}
               </select>
-            </div>
-            
-            <div className="filtro-group">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={soloAprobados}
-                  onChange={() => setSoloAprobados(!soloAprobados)}
-                />
-                Solo pedidos aprobados
-              </label>
             </div>
           </div>
         </div>
@@ -1170,6 +1443,7 @@ const PedidosScreen = () => {
                   abrirModalDetalles={abrirModalDetalles}
                   canPerformActions={canPerformActionsInPedidos}
                   setPedidos={setPedidos}
+                  expedirArticulo={expedirArticulo}
                 />
               ))}
               
@@ -1193,6 +1467,9 @@ const PedidosScreen = () => {
             setScannedItems={setScannedItems}
             iniciarEscaneo={iniciarEscaneo}
             canPerformActions={canPerformActionsInPedidos}
+            cantidadesPorTalla={cantidadesPorTalla}
+            setCantidadesPorTalla={setCantidadesPorTalla}
+            onExpedirTalla={onExpedirTalla}
           />
         )}
         

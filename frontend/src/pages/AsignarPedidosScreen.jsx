@@ -13,6 +13,7 @@ const AsignarPedidosScreen = () => {
   const { canAssignOrders } = usePermissions();
   const [asignaciones, setAsignaciones] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
+  const [cambiandoAsignaciones, setCambiandoAsignaciones] = useState(false);
 
   useEffect(() => {
     if (!canAssignOrders) return;
@@ -22,11 +23,12 @@ const AsignarPedidosScreen = () => {
         setLoading(true);
         const headers = getAuthHeader();
 
-        // Obtener TODOS los pedidos pendientes (asignados o no)
+        // Obtener TODOS los pedidos pendientes
         const pedidosResponse = await axios.get('http://localhost:3000/pedidosPendientes', { 
           headers,
           params: { 
-            soloAprobados: false
+            soloAprobados: false,
+            rango: 'todo'
           }
         });
         setPedidos(pedidosResponse.data);
@@ -35,7 +37,7 @@ const AsignarPedidosScreen = () => {
         const prepResponse = await axios.get('http://localhost:3000/empleados/preparadores', { headers });
         setPreparadores(prepResponse.data);
 
-        // Inicializar asignaciones con los valores actuales
+        // Inicializar asignaciones con valores actuales
         const inicialAsignaciones = {};
         pedidosResponse.data.forEach(pedido => {
           inicialAsignaciones[pedido.numeroPedido] = pedido.EmpleadoAsignado || '';
@@ -61,54 +63,78 @@ const AsignarPedidosScreen = () => {
 
   const asignarPedidos = async () => {
     try {
+      setCambiandoAsignaciones(true);
+      setError('');
       const headers = getAuthHeader();
       
-      // Preparar datos para enviar: solo los que han cambiado
-      const asignacionesParaEnviar = [];
+      // Preparar cambios: solo los que han sido modificados
+      const cambios = [];
       for (const numeroPedido in asignaciones) {
-        const empleado = asignaciones[numeroPedido];
-        const pedido = pedidos.find(p => p.numeroPedido == numeroPedido);
+        const nuevoEmpleado = asignaciones[numeroPedido];
+        const pedidoOriginal = pedidos.find(p => p.numeroPedido == numeroPedido);
         
-        // Solo enviar si la asignación es diferente al valor original
-        if (empleado !== pedido.EmpleadoAsignado) {
-          asignacionesParaEnviar.push({
-            codigoEmpresa: pedido.codigoEmpresa,
-            ejercicioPedido: pedido.ejercicioPedido,
-            seriePedido: pedido.seriePedido || '',
+        // Solo enviar si hay cambio real
+        if (nuevoEmpleado !== (pedidoOriginal?.EmpleadoAsignado || '')) {
+          cambios.push({
             numeroPedido: parseInt(numeroPedido),
-            empleado: empleado
+            pedido: pedidoOriginal,
+            nuevoEmpleado: nuevoEmpleado
           });
         }
       }
 
-      if (asignacionesParaEnviar.length === 0) {
+      if (cambios.length === 0) {
         setError('No hay cambios para guardar');
+        setCambiandoAsignaciones(false);
         return;
       }
 
-      // Enviar asignaciones
-      await axios.post('http://localhost:3000/asignarEmpleado', {
-        asignaciones: asignacionesParaEnviar
-      }, { headers });
-
-      // Actualizar el estado de los pedidos con las nuevas asignaciones
-      setPedidos(prev => prev.map(pedido => {
-        const nuevaAsignacion = asignaciones[pedido.numeroPedido];
-        if (nuevaAsignacion !== undefined) {
-          return { ...pedido, EmpleadoAsignado: nuevaAsignacion };
+      // Agrupar cambios por empleado
+      const asignacionesPorEmpleado = {};
+      cambios.forEach(cambio => {
+        const empleadoId = cambio.nuevoEmpleado;
+        if (!asignacionesPorEmpleado[empleadoId]) {
+          asignacionesPorEmpleado[empleadoId] = [];
         }
-        return pedido;
-      }));
+        asignacionesPorEmpleado[empleadoId].push(cambio.pedido);
+      });
 
-      // Mostrar mensaje de éxito
-      setSuccessMessage(`Se actualizaron ${asignacionesParaEnviar.length} asignaciones correctamente`);
-      setError('');
-      
-      // Limpiar mensaje después de 3 segundos
-      setTimeout(() => setSuccessMessage(''), 3000);
+      // Enviar cada grupo de asignaciones
+      for (const [empleadoId, pedidosAsignar] of Object.entries(asignacionesPorEmpleado)) {
+        const payload = {
+          pedidos: pedidosAsignar.map(p => ({
+            codigoEmpresa: p.codigoEmpresa,
+            ejercicioPedido: p.ejercicioPedido,
+            seriePedido: p.seriePedido || '',
+            numeroPedido: p.numeroPedido
+          })),
+          codigoEmpleado: empleadoId === '' ? null : empleadoId
+        };
+
+        await axios.post('http://localhost:3000/asignarPedidosAEmpleado', payload, { headers });
+      }
+
+      // Actualizar estado local
+      setPedidos(prev => 
+        prev.map(p => ({
+          ...p, 
+          EmpleadoAsignado: asignaciones[p.numeroPedido] !== undefined ? 
+            (asignaciones[p.numeroPedido] || null) : 
+            p.EmpleadoAsignado
+        }))
+      );
+
+      // Mostrar éxito
+      setSuccessMessage(`✅ ${cambios.length} asignaciones guardadas correctamente`);
     } catch (err) {
-      console.error('Error al asignar pedidos:', err);
-      setError('Error al asignar pedidos: ' + (err.response?.data?.mensaje || err.message));
+      const errorMessage = err.response?.data?.detalles || 
+                          err.response?.data?.mensaje || 
+                          err.response?.data?.error || 
+                          err.message || 
+                          'Error desconocido';
+      setError(`Error al guardar: ${errorMessage}`);
+    } finally {
+      setCambiandoAsignaciones(false);
     }
   };
 
@@ -145,8 +171,9 @@ const AsignarPedidosScreen = () => {
 
       <div className="AP-controls">
         <div className="AP-info-box">
-          <p>Se muestran todos los pedidos pendientes del rango actual (última semana y próxima semana).</p>
-          <p>Puedes asignar o reasignar pedidos seleccionando un preparador en la lista.</p>
+          <p>Se muestran todos los pedidos pendientes de preparación</p>
+          <p>Selecciona un preparador para cada pedido y guarda los cambios</p>
+          <p className="AP-note">Nota: Selecciona "Quitar asignación" para remover al preparador asignado</p>
         </div>
       </div>
 
@@ -158,8 +185,8 @@ const AsignarPedidosScreen = () => {
               <th>Cliente</th>
               <th>Fecha Entrega</th>
               <th>Estado</th>
-              <th>Asignado a</th>
-              <th>Cambiar asignación</th>
+              <th>Asignado actualmente</th>
+              <th>Reasignar a</th>
             </tr>
           </thead>
           <tbody>
@@ -187,13 +214,15 @@ const AsignarPedidosScreen = () => {
                     value={asignaciones[pedido.numeroPedido] || ''}
                     onChange={(e) => handleAsignacionChange(pedido.numeroPedido, e.target.value)}
                     className="AP-asignacion-select"
+                    disabled={cambiandoAsignaciones}
                   >
-                    <option value="">Seleccionar preparador...</option>
+                    <option value="">-- Seleccionar --</option>
                     {preparadores.map(prep => (
                       <option key={prep.codigo} value={prep.codigo}>
                         {prep.nombre}
                       </option>
                     ))}
+                    <option value="">Quitar asignación</option>
                   </select>
                 </td>
               </tr>
@@ -204,7 +233,7 @@ const AsignarPedidosScreen = () => {
 
       {pedidos.length === 0 && (
         <div className="AP-no-pedidos">
-          <p>No hay pedidos pendientes en este rango</p>
+          <p>No hay pedidos pendientes en este momento</p>
         </div>
       )}
 
@@ -212,9 +241,15 @@ const AsignarPedidosScreen = () => {
         <button 
           onClick={asignarPedidos} 
           className="AP-btn-asignar"
-          disabled={pedidos.length === 0}
+          disabled={pedidos.length === 0 || cambiandoAsignaciones}
         >
-          Guardar Cambios
+          {cambiandoAsignaciones ? (
+            <>
+              <span className="AP-spinner-btn"></span> Guardando...
+            </>
+          ) : (
+            'Guardar Cambios'
+          )}
         </button>
       </div>
       <Navbar />

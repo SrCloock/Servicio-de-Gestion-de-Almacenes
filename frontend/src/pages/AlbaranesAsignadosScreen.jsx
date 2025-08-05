@@ -6,57 +6,53 @@ import { usePermissions } from '../PermissionsManager';
 import '../styles/AlbaranesAsignadosScreen.css';
 
 function AlbaranesAsignadosScreen() {
-  const [pedidos, setPedidos] = useState([]);
+  const [albaranes, setAlbaranes] = useState([]);
   const [repartidores, setRepartidores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [asignaciones, setAsignaciones] = useState({});
-  
-  const { canAssignWaybills } = usePermissions();
+
+  const permissions = usePermissions();
+  const { canAssignWaybills } = permissions;
 
   useEffect(() => {
-    if (!canAssignWaybills) return;
-
     const fetchData = async () => {
       try {
         setLoading(true);
+        setError(null);
+        
         const headers = getAuthHeader();
         
-        // Obtener pedidos preparados
-        const pedidosResponse = await axios.get(
-          'http://localhost:3000/pedidos-preparados', 
-          { headers }
-        );
+        const [albaranesResponse, repartidoresResponse] = await Promise.all([
+          axios.get('http://localhost:3000/albaranes-asignacion', { headers }),
+          axios.get('http://localhost:3000/repartidores', { headers })
+        ]);
         
-        // Obtener repartidores
-        const repartidoresResponse = await axios.get(
-          'http://localhost:3000/repartidores', 
-          { headers }
-        );
-        
-        setPedidos(pedidosResponse.data);
+        setAlbaranes(albaranesResponse.data);
         setRepartidores(repartidoresResponse.data);
         
         // Inicializar asignaciones
         const initialAsignaciones = {};
-        pedidosResponse.data.forEach(pedido => {
-          initialAsignaciones[pedido.NumeroPedido] = '';
+        albaranesResponse.data.forEach(albaran => {
+          const key = `albaran-${albaran.EjercicioAlbaran}-${albaran.SerieAlbaran || ''}-${albaran.NumeroAlbaran}`;
+          initialAsignaciones[key] = albaran.repartidorAsignado || '';
         });
+        
         setAsignaciones(initialAsignaciones);
         
       } catch (err) {
-        console.error("Error cargando datos:", err);
-        setError('Error al cargar datos: ' + (err.response?.data?.mensaje || err.message));
+        setError('Error: ' + (err.response?.data?.mensaje || err.message));
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-  }, [canAssignWaybills]);
+  }, []);
 
-  const handleAsignarReparto = async (numeroPedido) => {
-    const repartidorId = asignaciones[numeroPedido];
+  const handleAsignarAlbaran = async (albaran) => {
+    const key = `albaran-${albaran.EjercicioAlbaran}-${albaran.SerieAlbaran || ''}-${albaran.NumeroAlbaran}`;
+    const repartidorId = asignaciones[key];
     
     if (!repartidorId) {
       alert('Selecciona un repartidor');
@@ -65,31 +61,44 @@ function AlbaranesAsignadosScreen() {
 
     try {
       const headers = getAuthHeader();
-      const pedido = pedidos.find(p => p.NumeroPedido === numeroPedido);
-      
-      await axios.post(
-        'http://localhost:3000/asignarRepartoYGenerarAlbaran',
+      const response = await axios.post(
+        'http://localhost:3000/asignarAlbaranExistente',
         {
-          codigoEmpresa: pedido.CodigoEmpresa,
-          numeroPedido: numeroPedido,
+          codigoEmpresa: albaran.CodigoEmpresa,
+          ejercicio: albaran.EjercicioAlbaran,
+          serie: albaran.SerieAlbaran,
+          numeroAlbaran: albaran.NumeroAlbaran,
           codigoRepartidor: repartidorId
         },
         { headers }
       );
 
-      // Actualizar lista
-      setPedidos(prev => prev.filter(p => p.NumeroPedido !== numeroPedido));
-      alert('Reparto asignado y albarán generado correctamente');
+      if (response.data.success) {
+        // Actualizar el albarán en el estado (solo el repartidor)
+        setAlbaranes(prev => prev.map(a => 
+          a.EjercicioAlbaran === albaran.EjercicioAlbaran &&
+          (a.SerieAlbaran || '') === (albaran.SerieAlbaran || '') &&
+          a.NumeroAlbaran === albaran.NumeroAlbaran
+            ? { ...a, repartidorAsignado: repartidorId }
+            : a
+        ));
+        alert('Albarán asignado correctamente');
+      }
       
     } catch (error) {
-      console.error('Error asignando reparto:', error);
-      alert(`Error: ${error.response?.data?.mensaje || error.message}`);
+      console.error('Error asignando albarán:', error);
+      setError(`Error: ${error.response?.data?.mensaje || error.message}`);
     }
+  };
+
+  const formatFecha = (fechaString) => {
+    const fecha = new Date(fechaString);
+    return fecha.toLocaleDateString('es-ES');
   };
 
   if (!canAssignWaybills) {
     return (
-      <div className="no-permission">
+      <div className="AA-no-permission">
         <h2>Acceso restringido</h2>
         <p>No tienes permiso para acceder a esta sección.</p>
       </div>
@@ -97,85 +106,78 @@ function AlbaranesAsignadosScreen() {
   }
 
   return (
-    <div className="albaranes-asignados-screen">
-      <div className="asignaciones-content">
-        <h2>Asignación de Repartos</h2>
-        <p className="subtitle">Pedidos preparados para asignar a repartidores</p>
-
+    <div className="AA-container">
+      <div className="AA-content">
+        <h2 className="AA-header">Asignación de Repartos</h2>
+        
         {loading && (
-          <div className="loading-container">
-            <div className="loading-spinner"></div>
-            <p>Cargando pedidos...</p>
+          <div className="AA-loading">
+            <div className="AA-spinner"></div>
+            <p>Cargando datos...</p>
           </div>
         )}
         
-        {error && <div className="error-message">{error}</div>}
+        {error && <div className="AA-error">{error}</div>}
 
-        {!loading && pedidos.length === 0 && (
-          <div className="no-pedidos">
-            <p>No hay pedidos preparados para asignar</p>
-          </div>
-        )}
-
-        <div className="pedidos-grid">
-          {pedidos.map(pedido => (
-            <div key={pedido.NumeroPedido} className="pedido-card">
-              <div className="card-header">
-                <h4>Pedido #{pedido.NumeroPedido}</h4>
-                <span className="fecha-pedido">
-                  {new Date(pedido.FechaPedido).toLocaleDateString('es-ES')}
-                </span>
-              </div>
-              
-              <div className="card-body">
-                <p className="cliente-info">
-                  <span className="icon">👤</span> 
-                  <strong>Cliente:</strong> {pedido.RazonSocial}
-                </p>
-                <p className="direccion-info">
-                  <span className="icon">📍</span> 
-                  <strong>Dirección:</strong> {pedido.Domicilio}, {pedido.Municipio}
-                </p>
-                {pedido.obra && (
-                  <p className="obra-info">
-                    <span className="icon">🏗️</span> 
-                    <strong>Obra:</strong> {pedido.obra}
-                  </p>
-                )}
-                <p className="vendedor-info">
-                  <span className="icon">👔</span> 
-                  <strong>Vendedor:</strong> {pedido.Vendedor || 'No especificado'}
-                </p>
-              </div>
-              
-              <div className="card-footer">
-                <div className="asignacion-control">
-                  <select
-                    value={asignaciones[pedido.NumeroPedido] || ''}
-                    onChange={(e) => setAsignaciones({
-                      ...asignaciones,
-                      [pedido.NumeroPedido]: e.target.value
-                    })}
-                  >
-                    <option value="">Seleccionar repartidor</option>
-                    {repartidores.map(rep => (
-                      <option key={rep.id} value={rep.id}>
-                        {rep.nombre}
-                      </option>
-                    ))}
-                  </select>
-                  
-                  <button
-                    className="asignar-btn"
-                    onClick={() => handleAsignarReparto(pedido.NumeroPedido)}
-                    disabled={!asignaciones[pedido.NumeroPedido]}
-                  >
-                    Asignar Reparto
-                  </button>
-                </div>
-              </div>
+        <div>
+          <h3>Albaranes Pendientes ({albaranes.length})</h3>
+          {albaranes.length === 0 ? (
+            <div className="AA-no-items">No hay albaranes pendientes</div>
+          ) : (
+            <div className="AA-table-container">
+              <table className="AA-pedidos-table">
+                <thead>
+                  <tr>
+                    <th>Albarán</th>
+                    <th>Fecha</th>
+                    <th>Cliente</th>
+                    <th>Dirección</th>
+                    <th>Repartidor</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {albaranes.map(albaran => {
+                    const key = `albaran-${albaran.EjercicioAlbaran}-${albaran.SerieAlbaran || ''}-${albaran.NumeroAlbaran}`;
+                    return (
+                      <tr key={key}>
+                        <td>{albaran.albaran}</td>
+                        <td>{formatFecha(albaran.FechaAlbaran)}</td>
+                        <td>{albaran.RazonSocial}</td>
+                        <td>{albaran.Domicilio}, {albaran.Municipio}</td>
+                        <td>
+                          <select
+                            value={asignaciones[key] || ''}
+                            onChange={(e) => setAsignaciones({
+                              ...asignaciones,
+                              [key]: e.target.value
+                            })}
+                            className="AA-select"
+                          >
+                            <option value="">Sin asignar</option>
+                            {repartidores.map(rep => (
+                              <option key={rep.id} value={rep.id}>
+                                {rep.nombre}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <button
+                            className="AA-btn-asignar"
+                            onClick={() => handleAsignarAlbaran(albaran)}
+                            disabled={!asignaciones[key] || asignaciones[key] === albaran.repartidorAsignado}
+                          >
+                            {albaran.repartidorAsignado ? 'Reasignar' : 'Asignar'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          ))}
+          )}
         </div>
       </div>
       <Navbar />

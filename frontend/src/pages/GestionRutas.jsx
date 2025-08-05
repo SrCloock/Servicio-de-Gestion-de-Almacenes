@@ -38,18 +38,15 @@ function GestionRutas() {
           headers
         });
 
-        // Procesar albaranes para usar empleadoAsignado
         const processedAlbaranes = response.data.map(albaran => ({
           ...albaran,
-          id: albaran.id,
-          repartidor: albaran.nombreRepartidor || 'Sin asignar',
-          usuarioAsignado: albaran.empleadoAsignado
+          repartidor: albaran.empleadoAsignado || 'Sin asignar'
         }));
 
         setAlbaranes(processedAlbaranes);
       } catch (err) {
         console.error("Error cargando albaranes:", err);
-        setError('No se pudieron cargar los albaranes: ' + (err.response?.data?.mensaje || err.message));
+        setError('Error al cargar albaranes: ' + (err.response?.data?.mensaje || err.message));
       } finally {
         setLoading(false);
       }
@@ -58,27 +55,18 @@ function GestionRutas() {
     fetchAlbaranes();
   }, [canViewGestionRutas, navigate]);
 
-  // Filtrar albaranes por búsqueda y por usuario
+  // Filtrar albaranes por búsqueda y por usuario (si es repartidor)
   const albaranesFiltrados = albaranes
-    .filter(albaran => {
-      // Si es repartidor, solo mostrar sus albaranes
-      if (isDelivery) {
-        // Obtener el CodigoCliente del usuario actual
-        const usuarioActualCodigo = user.CodigoCliente;
-        return albaran.usuarioAsignado === usuarioActualCodigo;
-      }
-      return true;
-    })
+    .filter(albaran => isDelivery ? albaran.empleadoAsignado === user.UsuarioLogicNet : true)
     .filter(albaran => {
       const searchLower = searchTerm.toLowerCase();
       return (
-        albaran.albaran.toLowerCase().includes(searchLower) ||
+        albaran.albaran?.toLowerCase().includes(searchLower) ||
         (albaran.obra && albaran.obra.toLowerCase().includes(searchLower)) ||
         (albaran.direccion && albaran.direccion.toLowerCase().includes(searchLower)) ||
         (albaran.cliente && albaran.cliente.toLowerCase().includes(searchLower)) ||
         (albaran.contacto && albaran.contacto.toLowerCase().includes(searchLower)) ||
         (albaran.telefonoContacto && albaran.telefonoContacto.includes(searchTerm)) ||
-        (albaran.vendedor && albaran.vendedor.toLowerCase().includes(searchLower)) ||
         (albaran.repartidor && albaran.repartidor.toLowerCase().includes(searchLower))
       );
     });
@@ -92,22 +80,37 @@ function GestionRutas() {
     if (!canPerformActionsInRutas) return;
     
     try {
-      await axios.post('/completar-albaran', {
-        codigoEmpresa: albaran.codigoEmpresa,
-        ejercicio: albaran.ejercicio,
-        serie: albaran.serie,
-        numeroAlbaran: albaran.numero
-      }, {
-        headers: getAuthHeader()
-      });
+      await axios.post(
+        'http://localhost:3000/completar-albaran',
+        {
+          codigoEmpresa: albaran.codigoEmpresa,
+          ejercicio: albaran.ejercicio,
+          serie: albaran.serie,
+          numeroAlbaran: albaran.numero
+        },
+        { headers: getAuthHeader() }
+      );
 
-      // Actualizar la lista de albaranes
-      setAlbaranes(prev => prev.filter(a => a.id !== albaran.id));
-      alert(`Albarán ${albaran.albaran} marcado como entregado`);
+      // Actualizar la lista
+      setAlbaranes(prev => prev.filter(a => 
+        !(a.numero === albaran.numero && a.serie === albaran.serie && a.ejercicio === albaran.ejercicio)
+      ));
     } catch (error) {
       console.error('Error completando albarán:', error);
       alert(`Error: ${error.response?.data?.mensaje || error.message}`);
     }
+  };
+
+  // Formatear fecha
+  const formatFecha = (fechaString) => {
+    const fecha = new Date(fechaString);
+    return fecha.toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   return (
@@ -116,11 +119,7 @@ function GestionRutas() {
         <div className="rutas-header">
           <h2>Gestión de Rutas</h2>
           <div className="permiso-indicator">
-            {canPerformActionsInRutas ? (
-              <span className="permiso-full">Acceso completo</span>
-            ) : (
-              <span className="permiso-limited">Acceso limitado</span>
-            )}
+            {canPerformActionsInRutas ? 'Acceso completo' : 'Acceso limitado'}
           </div>
         </div>
 
@@ -176,25 +175,31 @@ function GestionRutas() {
         <div className="albaranes-grid">
           {currentAlbaranes.map((albaran) => (
             <div 
-              key={albaran.id} 
-              className={`ruta-card ${canPerformActionsInRutas ? 'clickable' : ''}`}
+              key={`${albaran.ejercicio}-${albaran.serie}-${albaran.numero}`} 
+              className="ruta-card"
               onClick={() => canPerformActionsInRutas && navigate('/detalle-albaran', { state: { albaran } })}
             >
               <div className="card-header">
                 <h4>Albarán: {albaran.albaran}</h4>
                 <span className="fecha-albaran">
-                  {new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}
+                  {formatFecha(albaran.FechaAlbaran)}
                 </span>
               </div>
               
               <div className="card-body">
-                <p className="vendedor-info">
+                <p className="cliente-info">
                   <span className="icon">👤</span> 
-                  <strong>Vendedor:</strong> {albaran.vendedor || 'No especificado'}
+                  <strong>Cliente:</strong> {albaran.cliente}
                 </p>
-                <p className="obra-info">
-                  <span className="icon">🏗️</span> 
-                  <strong>Obra:</strong> {albaran.obra || 'No especificada'}
+                {albaran.obra && (
+                  <p className="obra-info">
+                    <span className="icon">🏗️</span> 
+                    <strong>Obra:</strong> {albaran.obra}
+                  </p>
+                )}
+                <p className="direccion-info">
+                  <span className="icon">📍</span> 
+                  <strong>Dirección:</strong> {albaran.direccion}
                 </p>
                 <p className="contacto-info">
                   <span className="icon">📇</span> 

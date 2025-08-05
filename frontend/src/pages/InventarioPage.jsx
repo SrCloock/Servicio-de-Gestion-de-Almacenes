@@ -105,15 +105,12 @@ const InventarioPage = () => {
     }
   };
 
-  // Función corregida para mostrar fecha en hora de Madrid
   const formatearFecha = (fechaStr) => {
     if (!fechaStr) return 'Fecha inválida';
     
     try {
-      // Convertir a objeto Date
       const fecha = new Date(fechaStr);
       
-      // Formatear en hora de Madrid
       return fecha.toLocaleString('es-ES', {
         timeZone: 'Europe/Madrid',
         weekday: 'long',
@@ -413,7 +410,7 @@ const InventarioPage = () => {
       codigoAlmacen,
       ubicacionStr,
       partida,
-      unidadStock  // Asegurarnos de pasar la unidad
+      unidadStock
     });
     setNuevaCantidad(cantidadActual.toString());
   };
@@ -432,7 +429,7 @@ const InventarioPage = () => {
       codigoAlmacen: editandoCantidad.codigoAlmacen,
       ubicacionStr: editandoCantidad.ubicacionStr,
       partida: editandoCantidad.partida || '',
-      unidadStock: editandoCantidad.unidadStock || 'unidades', // ENVIAR UNIDAD AL BACKEND
+      unidadStock: editandoCantidad.unidadStock || 'unidades',
       nuevaCantidad: cantidad
     };
     
@@ -792,86 +789,127 @@ const InventarioPage = () => {
                       {articulosExpandidos[articulo.CodigoArticulo] && (
                         <div className="inventario-ubicaciones-list">
                           <div className="inventario-ubicaciones-header">
-                            <span onClick={() => requestSort('NombreAlmacen')}>
-                              Almacén {sortConfig.key === 'NombreAlmacen' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                            </span>
-                            <span onClick={() => requestSort('Ubicacion')}>
-                              Ubicación {sortConfig.key === 'Ubicacion' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                            </span>
-                            <span>Descripción</span>
-                            <span>Partida</span>
-                            <span>Unidad</span>
-                            <span onClick={() => requestSort('Cantidad')}>
-                              Cantidad {sortConfig.key === 'Cantidad' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                            </span>
-                            <span>Acciones</span>
+                            <div className="header-cell">Almacén</div>
+                            <div className="header-cell">Ubicación</div>
+                            <div className="header-cell">Descripción</div>
+                            <div className="header-cell">Partida</div>
+                            <div className="header-cell">Unidad</div>
+                            <div className="header-cell">Cantidad</div>
+                            <div className="header-cell">Acciones</div>
                           </div>
                           
-                          {articulo.ubicaciones
-                            .sort((a, b) => {
-                              if (!sortConfig.key) return 0;
-                              if (a[sortConfig.key] < b[sortConfig.key]) {
-                                return sortConfig.direction === 'asc' ? -1 : 1;
-                              }
-                              if (a[sortConfig.key] > b[sortConfig.key]) {
-                                return sortConfig.direction === 'asc' ? 1 : -1;
-                              }
-                              return 0;
-                            })
-                            .map(ubicacion => (
-                            <div 
-                              key={ubicacion.clave} 
-                              className="inventario-ubicacion-item"
-                            >
-                              <span className="inventario-ubicacion-almacen">
-                                {ubicacion.NombreAlmacen}
-                              </span>
-                              <span className="inventario-ubicacion-codigo">{ubicacion.Ubicacion}</span>
-                              <span className="inventario-ubicacion-desc">{ubicacion.DescripcionUbicacion || 'Sin descripción'}</span>
-                              <span className="inventario-ubicacion-partida">{ubicacion.Partida || 'N/A'}</span>
-                              <span className="inventario-ubicacion-unidad">
-                                {ubicacion.UnidadStock || 'unidades'}
-                              </span>
-                              <span 
-                                className="inventario-ubicacion-cantidad" 
-                                style={getStockStyle(ubicacion.Cantidad)}
-                              >
-                                {formatearUnidad(ubicacion.Cantidad, ubicacion.UnidadStock)}
-                                
-                                {articulo.UnidadAlternativa && 
-                                 ubicacion.UnidadStock === articulo.UnidadAlternativa && (
-                                  <span className="inventario-conversion-info">
-                                    ({formatearUnidad(ubicacion.CantidadBase, articulo.UnidadBase)})
+                          {articulo.ubicaciones.map(ubicacion => (
+                            <div key={ubicacion.clave} className="inventario-ubicacion-item">
+                              <div className="mobile-ubicacion-fields">
+                                <div className="mobile-field">
+                                  <span className="mobile-field-label">Almacén:</span>
+                                  <span className="mobile-field-value">{ubicacion.NombreAlmacen}</span>
+                                </div>
+                                <div className="mobile-field">
+                                  <span className="mobile-field-label">Ubicación:</span>
+                                  <span className="mobile-field-value">{ubicacion.Ubicacion}</span>
+                                </div>
+                                <div className="mobile-field">
+                                  <span className="mobile-field-label">Descripción:</span>
+                                  <span className="mobile-field-value">{ubicacion.DescripcionUbicacion || 'Sin descripción'}</span>
+                                </div>
+                                <div className="mobile-field">
+                                  <span className="mobile-field-label">Partida:</span>
+                                  <span className="mobile-field-value">{ubicacion.Partida || 'N/A'}</span>
+                                </div>
+                                <div className="mobile-field">
+                                  <span className="mobile-field-label">Unidad:</span>
+                                  <span className="mobile-field-value">{ubicacion.UnidadStock || 'unidades'}</span>
+                                </div>
+                                <div className="mobile-field">
+                                  <span className="mobile-field-label">Cantidad:</span>
+                                  <span className="mobile-field-value" style={getStockStyle(ubicacion.Cantidad)}>
+                                    {formatearUnidad(ubicacion.Cantidad, ubicacion.UnidadStock)}
+                                    {articulo.UnidadAlternativa && 
+                                    ubicacion.UnidadStock === articulo.UnidadAlternativa && (
+                                      <span className="inventario-conversion-info">
+                                        ({formatearUnidad(ubicacion.CantidadBase, articulo.UnidadBase)})
+                                      </span>
+                                    )}
                                   </span>
-                                )}
-                              </span>
-                              <div className="inventario-acciones-ubicacion">
-                                <button 
-                                  className="inventario-btn-editar"
-                                  onClick={() => iniciarEdicionCantidad(
-                                    articulo.CodigoArticulo,
-                                    ubicacion.NombreAlmacen,
-                                    ubicacion.Cantidad,
-                                    ubicacion.clave,
-                                    ubicacion.CodigoAlmacen,
-                                    ubicacion.Ubicacion,
-                                    ubicacion.Partida,
-                                    ubicacion.UnidadStock
-                                  )}
-                                  aria-label={`Editar cantidad de ${articulo.CodigoArticulo} en ${ubicacion.NombreAlmacen}`}
-                                >
-                                  <FiEdit /> Editar
-                                </button>
-                                
-                                {ubicacion.detalles && (
+                                </div>
+                                <div className="mobile-field inventario-acciones-ubicacion">
                                   <button 
-                                    className="inventario-btn-detalles"
-                                    onClick={() => verDetalles(ubicacion.MovPosicionLinea)}
-                                    aria-label={`Ver detalles de ${articulo.CodigoArticulo} en ${ubicacion.Ubicacion}`}
+                                    className="inventario-btn-editar"
+                                    onClick={() => iniciarEdicionCantidad(
+                                      articulo.CodigoArticulo,
+                                      ubicacion.NombreAlmacen,
+                                      ubicacion.Cantidad,
+                                      ubicacion.clave,
+                                      ubicacion.CodigoAlmacen,
+                                      ubicacion.Ubicacion,
+                                      ubicacion.Partida,
+                                      ubicacion.UnidadStock
+                                    )}
                                   >
-                                    Detalles
+                                    <FiEdit /> Editar
                                   </button>
-                                )}
+                                  {ubicacion.detalles && (
+                                    <button 
+                                      className="inventario-btn-detalles"
+                                      onClick={() => verDetalles(ubicacion.MovPosicionLinea)}
+                                    >
+                                      Detalles
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              <div className="desktop-ubicacion-fields">
+                                <div className="data-cell inventario-ubicacion-almacen">
+                                  {ubicacion.NombreAlmacen}
+                                </div>
+                                <div className="data-cell inventario-ubicacion-codigo">
+                                  {ubicacion.Ubicacion}
+                                </div>
+                                <div className="data-cell inventario-ubicacion-desc">
+                                  {ubicacion.DescripcionUbicacion || 'Sin descripción'}
+                                </div>
+                                <div className="data-cell inventario-ubicacion-partida">
+                                  {ubicacion.Partida || 'N/A'}
+                                </div>
+                                <div className="data-cell inventario-ubicacion-unidad">
+                                  {ubicacion.UnidadStock || 'unidades'}
+                                </div>
+                                <div className="data-cell inventario-ubicacion-cantidad" style={getStockStyle(ubicacion.Cantidad)}>
+                                  {formatearUnidad(ubicacion.Cantidad, ubicacion.UnidadStock)}
+                                  {articulo.UnidadAlternativa && 
+                                  ubicacion.UnidadStock === articulo.UnidadAlternativa && (
+                                    <span className="inventario-conversion-info">
+                                      ({formatearUnidad(ubicacion.CantidadBase, articulo.UnidadBase)})
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="data-cell inventario-acciones-ubicacion">
+                                  <button 
+                                    className="inventario-btn-editar"
+                                    onClick={() => iniciarEdicionCantidad(
+                                      articulo.CodigoArticulo,
+                                      ubicacion.NombreAlmacen,
+                                      ubicacion.Cantidad,
+                                      ubicacion.clave,
+                                      ubicacion.CodigoAlmacen,
+                                      ubicacion.Ubicacion,
+                                      ubicacion.Partida,
+                                      ubicacion.UnidadStock
+                                    )}
+                                  >
+                                    <FiEdit /> Editar
+                                  </button>
+                                  {ubicacion.detalles && (
+                                    <button 
+                                      className="inventario-btn-detalles"
+                                      onClick={() => verDetalles(ubicacion.MovPosicionLinea)}
+                                    >
+                                      Detalles
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -1047,7 +1085,6 @@ const InventarioPage = () => {
                 <span>Partida:</span>
                 <span>{editandoCantidad.partida || 'N/A'}</span>
               </div>
-              {/* MOSTRAR UNIDAD EN EL MODAL */}
               <div className="inventario-detail-item">
                 <span>Unidad:</span>
                 <span>{editandoCantidad.unidadStock || 'unidades'}</span>

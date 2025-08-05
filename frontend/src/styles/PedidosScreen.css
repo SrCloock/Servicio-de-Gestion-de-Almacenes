@@ -1,4 +1,3 @@
-/* src/styles/PedidosScreen.css */
 .pedidos-screen {
   min-height: 100vh;
   background-color: #f0f4f8;
@@ -24,7 +23,7 @@
 
 .pedidos-screen .filtros-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
 }
 
@@ -126,7 +125,6 @@
   font-size: 16px;
 }
 
-/* Pedido Card */
 .pedidos-screen .pedido-card {
   background-color: white;
   border-radius: 10px;
@@ -142,13 +140,16 @@
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
 }
 
-.pedidos-screen .pedido-voluminoso {
-  border: 2px solid #e53e3e;
-  background-color: #fff5f5;
+.pedidos-screen .pedido-parcial {
+  border-left: 4px solid #FF9800;
 }
 
-.pedidos-screen .pedido-voluminoso .pedido-header {
-  background: linear-gradient(135deg, #c53030, #e53e3e);
+.pedidos-screen .pedido-parcial .pedido-header {
+  background: linear-gradient(135deg, #FF9800, #F57C00);
+}
+
+.pedidos-screen .pedido-completo {
+  border-left: 4px solid #38a169;
 }
 
 .pedidos-screen .pedido-header {
@@ -259,6 +260,16 @@
   font-weight: 500;
 }
 
+.pedidos-screen .voluminoso-badge {
+  background-color: #FF5722;
+  color: white;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: 10px;
+}
+
 .pedidos-screen .pedido-header-right {
   display: flex;
   gap: 10px;
@@ -341,10 +352,34 @@
   line-height: 1.5;
 }
 
-.pedidos-screen .toggle-button-container {
+.pedidos-screen .toggle-container {
   padding: 15px 20px;
-  text-align: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   background-color: #f7fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.pedidos-screen .toggle-options {
+  display: flex;
+  gap: 10px;
+}
+
+.pedidos-screen .toggle-option {
+  padding: 8px 16px;
+  border: 1px solid #cbd5e0;
+  background-color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.pedidos-screen .toggle-option.active {
+  background: linear-gradient(to right, #1a365d, #2c5282);
+  color: white;
+  border-color: #1a365d;
 }
 
 .pedidos-screen .btn-toggle {
@@ -367,7 +402,6 @@
   transform: translateY(-2px);
 }
 
-/* Tabla de líneas */
 .pedidos-screen .lineas-table-container {
   padding: 0 20px 20px;
   overflow-x: auto;
@@ -416,15 +450,9 @@
   background-color: #f7fafc;
 }
 
-.pedidos-screen .linea-completada {
+.pedidos-screen .linea-expedida {
   opacity: 0.6;
-  text-decoration: line-through;
   background-color: #f0fff4;
-}
-
-.pedidos-screen .linea-completada td {
-  padding: 8px 12px !important;
-  font-size: 13px !important;
 }
 
 .pedidos-screen .td-izquierda { 
@@ -474,6 +502,15 @@
   gap: 5px;
 }
 
+.pedidos-screen .expedido-info {
+  font-size: 12px;
+  color: #38a169;
+  background-color: #f0fff4;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-top: 5px;
+}
+
 .pedidos-screen .equivalencia-stock {
   font-size: 12px;
   color: #718096;
@@ -503,7 +540,7 @@
 
 .pedidos-screen .ubicacion-select {
   width: 100%;
-  max-width: 150px;
+  max-width: 180px;
   padding: 10px;
   border: 1px solid #cbd5e0;
   border-radius: 6px;
@@ -580,7 +617,6 @@
   background-color: #fff5f5;
 }
 
-/* Paginación */
 .pedidos-screen .pagination {
   display: flex;
   justify-content: center;
@@ -616,7 +652,6 @@
   border-color: #1a365d;
 }
 
-/* Modales */
 .pedidos-screen .modal-detalles,
 .pedidos-screen .camera-overlay {
   position: fixed;
@@ -744,17 +779,17 @@
 
 .pedidos-screen .talla-item.con-stock {
   background-color: #f0fff4;
-  border-color: #c6f6d5;
+  border: 1px solid #c6f6d5;
 }
 
 .pedidos-screen .talla-item.sin-stock {
   background-color: #fff5f5;
-  border-color: #fed7d7;
+  border: 1px solid #fed7d7;
 }
 
 .pedidos-screen .talla-item.completado {
   background-color: #ebf8ff;
-  border-color: #bee3f8;
+  border: 1px solid #bee3f8;
   position: relative;
   overflow: hidden;
 }
@@ -804,54 +839,72 @@
   color: #c53030;
 }
 
-.pedidos-screen .btn-escanear {
+.controles-talla {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ubicacion-talla {
   width: 100%;
-  padding: 10px;
+}
+
+.ubicacion-talla select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  background: white;
+  font-size: 13px;
+}
+
+.cantidad-control {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.cantidad-control input {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.btn-expedir-talla {
   background: linear-gradient(to right, #3182ce, #2b6cb0);
   color: white;
   border: none;
   border-radius: 6px;
-  font-size: 14px;
+  padding: 8px 12px;
   cursor: pointer;
+  font-size: 13px;
   transition: all 0.2s ease;
+  flex: 2;
+}
+
+.btn-expedir-talla:hover {
+  opacity: 0.9;
+}
+
+.btn-expedir-talla:disabled {
+  background: #a0aec0;
+  cursor: not-allowed;
+}
+
+.btn-escanear {
+  background: #4a5568;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-}
-
-.pedidos-screen .btn-escanear:hover {
-  opacity: 0.9;
-  transform: translateY(-2px);
-}
-
-.pedidos-screen .ubicacion-selector {
-  margin: 25px 0 15px;
-}
-
-.pedidos-screen .ubicacion-selector label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 500;
-  color: #2d3748;
-  font-size: 16px;
-}
-
-.pedidos-screen .ubicacion-selector select {
-  width: 100%;
-  padding: 12px 15px;
-  border: 1px solid #cbd5e0;
-  border-radius: 8px;
-  background: white;
-  color: #4a5568;
-  font-size: 15px;
-  transition: all 0.2s ease;
-}
-
-.pedidos-screen .ubicacion-selector select:focus {
-  border-color: #4299e1;
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.2);
+  cursor: pointer;
 }
 
 .pedidos-screen .modal-actions {
@@ -877,7 +930,6 @@
   transform: translateY(-2px);
 }
 
-/* Cámara */
 .pedidos-screen .camera-container {
   width: 100%;
   max-width: 600px;
@@ -995,7 +1047,6 @@
   background: #c53030;
 }
 
-/* Responsive */
 @media (max-width: 1200px) {
   .pedidos-screen .numero-pedido {
     font-size: 17px;
