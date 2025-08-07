@@ -63,7 +63,6 @@ function GestionRutas() {
       return (
         albaran.albaran?.toLowerCase().includes(searchLower) ||
         (albaran.obra && albaran.obra.toLowerCase().includes(searchLower)) ||
-        (albaran.direccion && albaran.direccion.toLowerCase().includes(searchLower)) ||
         (albaran.cliente && albaran.cliente.toLowerCase().includes(searchLower)) ||
         (albaran.contacto && albaran.contacto.toLowerCase().includes(searchLower)) ||
         (albaran.telefonoContacto && albaran.telefonoContacto.includes(searchTerm)) ||
@@ -131,7 +130,7 @@ function GestionRutas() {
           <div className="search-bar">
             <input
               type="text"
-              placeholder="Buscar por albarán, obra, dirección, cliente..."
+              placeholder="Buscar por albarán, obra, cliente..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -197,10 +196,6 @@ function GestionRutas() {
                     <strong>Obra:</strong> {albaran.obra}
                   </p>
                 )}
-                <p className="direccion-info">
-                  <span className="icon">📍</span> 
-                  <strong>Dirección:</strong> {albaran.direccion}
-                </p>
                 <p className="contacto-info">
                   <span className="icon">📇</span> 
                   <strong>Contacto:</strong> {albaran.contacto || 'No especificado'}

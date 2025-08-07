@@ -130,8 +130,10 @@ function AlbaranesAsignadosScreen() {
                   <tr>
                     <th>Albarán</th>
                     <th>Fecha</th>
+                    <th>Pedido</th>
                     <th>Cliente</th>
-                    <th>Dirección</th>
+                    <th>Obra</th>
+                    <th>Municipio</th>
                     <th>Repartidor</th>
                     <th>Acciones</th>
                   </tr>
@@ -143,8 +145,10 @@ function AlbaranesAsignadosScreen() {
                       <tr key={key}>
                         <td>{albaran.albaran}</td>
                         <td>{formatFecha(albaran.FechaAlbaran)}</td>
+                        <td>{albaran.NumeroPedido}</td>
                         <td>{albaran.RazonSocial}</td>
-                        <td>{albaran.Domicilio}, {albaran.Municipio}</td>
+                        <td>{albaran.obra || 'No especificada'}</td>
+                        <td>{albaran.Municipio || ''}</td>
                         <td>
                           <select
                             value={asignaciones[key] || ''}

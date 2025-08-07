@@ -402,8 +402,11 @@ const InventarioPage = () => {
   };
 
   const iniciarEdicionCantidad = (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida, unidadStock) => {
+    const articuloCompleto = inventario.find(art => art.CodigoArticulo === articulo);
+    
     setEditandoCantidad({
       articulo,
+      descripcionArticulo: articuloCompleto?.DescripcionArticulo || '',
       nombreAlmacen,
       cantidadActual,
       clave,
@@ -426,6 +429,7 @@ const InventarioPage = () => {
     
     const nuevoAjuste = {
       articulo: editandoCantidad.articulo,
+      descripcionArticulo: editandoCantidad.descripcionArticulo,
       codigoAlmacen: editandoCantidad.codigoAlmacen,
       ubicacionStr: editandoCantidad.ubicacionStr,
       partida: editandoCantidad.partida || '',
@@ -640,7 +644,10 @@ const InventarioPage = () => {
                   <div className="inventario-ajuste-info">
                     <div className="inventario-articulo">
                       <span className="inventario-label">Artículo:</span> 
-                      <span className="inventario-value">{ajuste.articulo}</span>
+                      <div className="inventario-value">
+                        <div className="inventario-articulo-codigo">{ajuste.articulo}</div>
+                        <div className="inventario-articulo-descripcion">{ajuste.descripcionArticulo}</div>
+                      </div>
                     </div>
                     <div className="inventario-ubicacion">
                       <span className="inventario-label">Ubicación:</span> 
@@ -1071,7 +1078,9 @@ const InventarioPage = () => {
             <div className="inventario-modal-details">
               <div className="inventario-detail-item">
                 <span>Artículo:</span>
-                <span>{editandoCantidad.articulo}</span>
+                <span>
+                  <strong>{editandoCantidad.articulo}</strong> - {editandoCantidad.descripcionArticulo}
+                </span>
               </div>
               <div className="inventario-detail-item">
                 <span>Almacén:</span>

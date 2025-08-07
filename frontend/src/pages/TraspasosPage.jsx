@@ -35,6 +35,7 @@ const TraspasosPage = () => {
   const [showListaArticulos, setShowListaArticulos] = useState(false);
   const [allArticulosLoaded, setAllArticulosLoaded] = useState(false);
   const [ubicacionesAgrupadas, setUbicacionesAgrupadas] = useState([]);
+  const [ubicacionesFiltradas, setUbicacionesFiltradas] = useState([]);
   const [almacenExpandido, setAlmacenExpandido] = useState(null);
   const [ubicacionSeleccionada, setUbicacionSeleccionada] = useState(null);
   const [articulosUbicacion, setArticulosUbicacion] = useState([]);
@@ -46,6 +47,7 @@ const TraspasosPage = () => {
   const [articuloUbicacionSeleccionado, setArticuloUbicacionSeleccionado] = useState(null);
   const [vistaUbicacion, setVistaUbicacion] = useState('seleccion');
   const [grupoUnicoOrigen, setGrupoUnicoOrigen] = useState('');
+  const [busquedaUbicacion, setBusquedaUbicacion] = useState('');
   
   // Referencias para manejar clics fuera del área de búsqueda
   const searchTimer = useRef(null);
@@ -65,6 +67,7 @@ const TraspasosPage = () => {
           { headers }
         );
         setUbicacionesAgrupadas(resUbicaciones.data);
+        setUbicacionesFiltradas(resUbicaciones.data);
       } catch (error) {
         console.error('Error cargando datos iniciales:', error);
       }
@@ -82,6 +85,24 @@ const TraspasosPage = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // CORRECCIÓN: Filtrar ubicaciones cuando cambia la búsqueda (sintaxis corregida)
+// useEffect corregido para el filtrado de ubicaciones
+useEffect(() => {
+  if (busquedaUbicacion.trim() === '') {
+    setUbicacionesFiltradas(ubicacionesAgrupadas);
+    return;
+  }
+  
+  const termino = busquedaUbicacion.toLowerCase();
+  const filtradas = ubicacionesAgrupadas.map(almacen => ({
+    ...almacen,
+    ubicaciones: almacen.ubicaciones.filter(ubicacion => 
+      ubicacion.codigo.toLowerCase().includes(termino)) // Se quitó el paréntesis extra aquí
+  })).filter(almacen => almacen.ubicaciones.length > 0);
+  
+  setUbicacionesFiltradas(filtradas);
+}, [busquedaUbicacion, ubicacionesAgrupadas]);
 
   // Cargar artículos con stock
   const cargarArticulosConStock = async (page = 1, search = '', append = false) => {
@@ -254,7 +275,7 @@ const TraspasosPage = () => {
   // Seleccionar artículo de la lista
   const seleccionarArticulo = (articulo) => {
     setArticuloSeleccionado(articulo);
-    setArticuloBusqueda(''); // Clear search input
+    setArticuloBusqueda('');
     setShowListaArticulos(false);
     setAllArticulosLoaded(false);
   };
@@ -364,7 +385,6 @@ const TraspasosPage = () => {
     
     setTraspasosPendientes(prev => [...prev, nuevoTraspaso]);
     
-    // Solo reseteamos el artículo y la cantidad, mantenemos origen y destino
     setArticuloSeleccionado(null);
     setArticuloBusqueda('');
     setCantidad('');
@@ -415,12 +435,11 @@ const TraspasosPage = () => {
     
     setTraspasosPendientes(prev => [...prev, nuevoTraspaso]);
     
-    // Solo reseteamos el artículo y la cantidad, mantenemos origen y destino
     setArticuloUbicacionSeleccionado(null);
     setCantidad('');
   };
 
-  // Confirmar traspasos pendientes (VERSIÓN CORREGIDA)
+  // Confirmar traspasos pendientes
   const confirmarTraspasos = async () => {
     if (traspasosPendientes.length === 0) {
       alert('No hay traspasos para confirmar');
@@ -435,7 +454,6 @@ const TraspasosPage = () => {
       const empresa = user?.CodigoEmpresa;
       
       const traspasosValidados = traspasosPendientes.map(traspaso => {
-        // Convertir cantidad a entero
         const cantidadEntera = Math.trunc(Number(traspaso.cantidad));
         
         return {
@@ -447,8 +465,8 @@ const TraspasosPage = () => {
           cantidad: cantidadEntera,
           unidadMedida: traspaso.unidadMedida || '',
           partida: traspaso.partida || '',
-          grupoTalla: 0,      // Valor por defecto
-          codigoTalla: '',     // Valor por defecto
+          grupoTalla: 0,
+          codigoTalla: '',
           codigoEmpresa: empresa
         };
       });
@@ -463,7 +481,6 @@ const TraspasosPage = () => {
     } catch (err) {
       console.error('Error confirmando traspasos:', err);
       
-      // Mostrar detalles del error
       let errorMsg = 'Error al realizar traspasos';
       if (err.response?.data) {
         errorMsg += `: ${err.response.data.mensaje || 'Error desconocido'}`;
@@ -491,12 +508,10 @@ const TraspasosPage = () => {
     if (!fechaStr) return 'Fecha no disponible';
     
     try {
-      // Si ya viene formateada desde el backend
       if (typeof fechaStr === 'string' && fechaStr.includes('/')) {
         return fechaStr;
       }
       
-      // Si es un objeto Date
       if (fechaStr instanceof Date) {
         return fechaStr.toLocaleString('es-ES', {
           day: '2-digit',
@@ -508,7 +523,6 @@ const TraspasosPage = () => {
         });
       }
       
-      // Si es una cadena ISO
       const fecha = new Date(fechaStr);
       if (!isNaN(fecha.getTime())) {
         return fecha.toLocaleString('es-ES', {
@@ -521,7 +535,7 @@ const TraspasosPage = () => {
         });
       }
       
-      return fechaStr; // Devolver original si no se puede parsear
+      return fechaStr;
     } catch (e) {
       console.error('Error formateando fecha:', e);
       return fechaStr;
@@ -823,8 +837,21 @@ const TraspasosPage = () => {
               {vistaUbicacion === 'seleccion' ? (
                 <div className="form-section">
                   <h2>Seleccionar Ubicación de Origen</h2>
+                  
+                  {/* Nuevo buscador de ubicaciones */}
+                  <div className="form-control-group">
+                    <label>Buscar ubicación:</label>
+                    <input
+                      type="text"
+                      value={busquedaUbicacion}
+                      onChange={(e) => setBusquedaUbicacion(e.target.value)}
+                      placeholder="Escriba el código de ubicación..."
+                      className="search-input"
+                    />
+                  </div>
+                  
                   <div className="ubicaciones-agrupadas">
-                    {ubicacionesAgrupadas.map(almacen => (
+                    {ubicacionesFiltradas.map(almacen => (
                       <div key={almacen.codigo} className="almacen-item">
                         <div 
                           className="almacen-header"
@@ -859,6 +886,10 @@ const TraspasosPage = () => {
                         )}
                       </div>
                     ))}
+                    
+                    {ubicacionesFiltradas.length === 0 && (
+                      <div className="no-results">No se encontraron ubicaciones</div>
+                    )}
                   </div>
                 </div>
               ) : (

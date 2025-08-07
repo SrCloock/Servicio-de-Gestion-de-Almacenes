@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   FaRoute, FaClipboardList, FaTruckLoading, FaExchangeAlt, FaBoxes,
   FaUserFriends, FaFileInvoice, FaHome, FaWarehouse, FaTimes,
-  FaBars, FaBuilding, FaChevronDown
+  FaBars, FaBuilding, FaChevronDown, FaFileContract
 } from 'react-icons/fa';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
@@ -146,7 +146,7 @@ const Navbar = () => {
       visible:
         permissions.isAdmin ||
         permissions.isAdvancedUser ||
-        permissions.canViewPedidosScreen // StatusTodosLosPedidos
+        permissions.canViewPedidosScreen
     },
     {
       path: '/pedidos-asignados',
@@ -155,7 +155,7 @@ const Navbar = () => {
       visible:
         permissions.isAdmin ||
         permissions.isAdvancedUser ||
-        permissions.canViewAssignedOrders // StatusVerPedidosAsignados
+        permissions.canViewAssignedOrders
     },
     {
       path: '/rutas',
@@ -164,7 +164,7 @@ const Navbar = () => {
       visible:
         permissions.isAdmin ||
         permissions.isAdvancedUser ||
-        permissions.canViewWaybills // StatusDesignarRutas
+        permissions.canViewWaybills
     },
     {
       path: '/albaranes-asignados',
@@ -173,7 +173,7 @@ const Navbar = () => {
       visible:
         permissions.isAdmin ||
         permissions.isAdvancedUser ||
-        permissions.canAssignWaybills // StatusVerAlbaranesAsignados
+        permissions.canAssignWaybills
     },
     {
       path: '/traspasos',
@@ -182,7 +182,7 @@ const Navbar = () => {
       visible:
         permissions.isAdmin ||
         permissions.isAdvancedUser ||
-        permissions.canViewTransfers // StatusVerTraspasosAlmacen
+        permissions.canViewTransfers
     },
     {
       path: '/inventario',
@@ -191,7 +191,14 @@ const Navbar = () => {
       visible:
         permissions.isAdmin ||
         permissions.isAdvancedUser ||
-        permissions.canViewInventory // StatusVerInventarios
+        permissions.canViewInventory
+    },
+    // Nueva opción para Gestión Documental
+    {
+      path: '/gestion-documental',
+      label: 'Gestión Documental',
+      icon: <FaFileContract />,
+      visible: permissions.isAdmin || permissions.isAdvancedUser
     }
   ];
 

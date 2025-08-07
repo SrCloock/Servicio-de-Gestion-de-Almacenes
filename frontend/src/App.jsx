@@ -11,7 +11,8 @@ import DesignarRutasScreen from './pages/DesignarRutasScreen';
 import AlbaranesAsignadosScreen from './pages/AlbaranesAsignadosScreen';
 import TraspasosPage from './pages/TraspasosPage';
 import InventarioPage from './pages/InventarioPage';
-import { PermissionsProvider, ProtectedRouteWithPermission, usePermissions } from './PermissionsManager';
+import GestionDocumentalScreen from './pages/GestionDocumentalScreen';
+import { PermissionsProvider, ProtectedRouteWithPermission } from './PermissionsManager';
 
 const ProtectedRoute = ({ children }) => {
   const location = useLocation();
@@ -117,6 +118,15 @@ function App() {
               <ProtectedRoute>
                 <ProtectedRouteWithPermission requiredPermission="canViewInventory">
                   <InventarioPage />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+
+            {/* Gestión Documental - Nueva ruta */}
+            <Route path="/gestion-documental" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewDocumentManagement">
+                  <GestionDocumentalScreen />
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
