@@ -58,6 +58,9 @@ export const PermissionsProvider = ({ children, user }) => {
     // Permisos para asignación
     const canAssignWaybills = isAdmin || isAdvancedUser || hasRoutesPermission;
 
+    // 6. NUEVO PERMISO: Gestión Documental (solo para admin y usuario avanzado)
+    const canViewDocumentManagement = isAdmin || isAdvancedUser;
+
     return {
       // ROLES
       isAdmin,
@@ -83,7 +86,10 @@ export const PermissionsProvider = ({ children, user }) => {
       canViewGestionRutas,
       canPerformActionsInRutas,
       canViewAlbaranesAsignadosScreen,
-      canAssignWaybills
+      canAssignWaybills,
+
+      // NUEVO PERMISO PARA GESTIÓN DOCUMENTAL
+      canViewDocumentManagement
     };
   }, [user]);
 

@@ -143,62 +143,43 @@ const Navbar = () => {
       path: '/PedidosScreen',
       label: 'Todos los pedidos',
       icon: <FaClipboardList />,
-      visible:
-        permissions.isAdmin ||
-        permissions.isAdvancedUser ||
-        permissions.canViewPedidosScreen
+      visible: permissions.canViewPedidosScreen
     },
     {
       path: '/pedidos-asignados',
       label: 'Asignación de pedidos',
       icon: <FaTruckLoading />,
-      visible:
-        permissions.isAdmin ||
-        permissions.isAdvancedUser ||
-        permissions.canViewAssignedOrders
+      visible: permissions.canViewAssignedOrders
     },
     {
       path: '/rutas',
       label: 'Albaranes',
       icon: <FaRoute />,
-      visible:
-        permissions.isAdmin ||
-        permissions.isAdvancedUser ||
-        permissions.canViewWaybills
+      visible: permissions.canViewGestionRutas
     },
     {
       path: '/albaranes-asignados',
       label: 'Asignación de albaranes',
       icon: <FaFileInvoice />,
-      visible:
-        permissions.isAdmin ||
-        permissions.isAdvancedUser ||
-        permissions.canAssignWaybills
+      visible: permissions.canAssignWaybills
     },
     {
       path: '/traspasos',
       label: 'Traspaso',
       icon: <FaExchangeAlt />,
-      visible:
-        permissions.isAdmin ||
-        permissions.isAdvancedUser ||
-        permissions.canViewTransfers
+      visible: permissions.canViewTransfers
     },
     {
       path: '/inventario',
       label: 'Inventario',
       icon: <FaBoxes />,
-      visible:
-        permissions.isAdmin ||
-        permissions.isAdvancedUser ||
-        permissions.canViewInventory
+      visible: permissions.canViewInventory
     },
-    // Nueva opción para Gestión Documental
     {
       path: '/gestion-documental',
       label: 'Gestión Documental',
       icon: <FaFileContract />,
-      visible: permissions.isAdmin || permissions.isAdvancedUser
+      visible: permissions.canViewDocumentManagement
     }
   ];
 
