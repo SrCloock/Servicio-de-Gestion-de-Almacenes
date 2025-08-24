@@ -1,3 +1,4 @@
+/* InventarioPage.css */
 :root {
   --inventario-primary-color: #2c3e50;
   --inventario-primary-light: #3d5568;
@@ -284,6 +285,9 @@ body {
   font-weight: 500;
 }
 
+/* ======================================== */
+/* PANEL DE AJUSTES PENDIENTES */
+/* ======================================== */
 .inventario-panel-ajustes {
   background: linear-gradient(to right, #fff8e6, #fff);
   border-left: 5px solid var(--inventario-warning-color);
@@ -291,6 +295,7 @@ body {
   padding: 25px;
   box-shadow: var(--inventario-shadow);
   border: 1px solid rgba(243, 156, 18, 0.2);
+  margin-bottom: 25px;
 }
 
 .inventario-panel-header {
@@ -374,6 +379,13 @@ body {
   flex: 1;
 }
 
+.inventario-articulo, 
+.inventario-ubicacion, 
+.inventario-cantidad {
+  display: flex;
+  flex-direction: column;
+}
+
 .inventario-label {
   font-weight: 700;
   color: var(--inventario-primary-color);
@@ -394,6 +406,23 @@ body {
   font-weight: 500;
 }
 
+.inventario-articulo .inventario-value {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.inventario-articulo-codigo {
+  font-weight: 700;
+  color: var(--inventario-primary-color);
+}
+
+.inventario-articulo-descripcion {
+  font-size: 0.95rem;
+  color: var(--inventario-text-secondary);
+  line-height: 1.4;
+}
+
 .inventario-btn-eliminar {
   background: none;
   border: none;
@@ -402,6 +431,8 @@ body {
   cursor: pointer;
   transition: transform 0.2s;
   padding: 5px;
+  margin-left: 10px;
+  flex-shrink: 0;
 }
 
 .inventario-btn-eliminar:hover {
@@ -1298,6 +1329,34 @@ body {
   .inventario-stat-card {
     flex-direction: column;
     text-align: center;
+  }
+
+  /* AJUSTES PENDIENTES RESPONSIVE */
+  .inventario-ajuste-info {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .inventario-articulo, 
+  .inventario-ubicacion, 
+  .inventario-cantidad {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .inventario-label {
+    margin-bottom: 0;
+    margin-right: 8px;
+  }
+  
+  .inventario-value {
+    text-align: right;
+  }
+  
+  .inventario-articulo .inventario-value {
+    flex-direction: column;
+    align-items: flex-end;
   }
 }
 

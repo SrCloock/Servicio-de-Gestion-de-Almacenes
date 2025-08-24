@@ -5,7 +5,6 @@ import { v4 as uuidv4 } from 'uuid';
 import '../styles/TraspasosPage.css';
 
 const TraspasosPage = () => {
-  // Estados de la aplicación
   const [activeSection, setActiveSection] = useState('traspasos');
   const [activeTab, setActiveTab] = useState('articulo');
   const [loading, setLoading] = useState(false);
@@ -30,7 +29,7 @@ const TraspasosPage = () => {
   const [almacenDestino, setAlmacenDestino] = useState('');
   const [ubicacionDestino, setUbicacionDestino] = useState('');
   const [cantidad, setCantidad] = useState('');
-  const [unidadMedida, setUnidadMedida] = useState(null);
+  const [unidadMedida, setUnidadMedida] = useState('');
   const [partida, setPartida] = useState('');
   const [showListaArticulos, setShowListaArticulos] = useState(false);
   const [allArticulosLoaded, setAllArticulosLoaded] = useState(false);
@@ -48,13 +47,29 @@ const TraspasosPage = () => {
   const [vistaUbicacion, setVistaUbicacion] = useState('seleccion');
   const [grupoUnicoOrigen, setGrupoUnicoOrigen] = useState('');
   const [busquedaUbicacion, setBusquedaUbicacion] = useState('');
+  const [tallaOrigen, setTallaOrigen] = useState('');
+  const [colorOrigen, setColorOrigen] = useState('');
   
-  // Referencias para manejar clics fuera del área de búsqueda
   const searchTimer = useRef(null);
   const searchRef = useRef(null);
   const listaRef = useRef(null);
 
-  // Cargar datos iniciales al montar el componente
+  // Función temporal para depuración
+  const verificarDatosTraspaso = (traspaso) => {
+    console.log('Datos del traspaso:', {
+      articulo: traspaso.articulo.CodigoArticulo,
+      origenAlmacen: traspaso.origen.almacen,
+      origenUbicacion: traspaso.origen.ubicacion,
+      destinoAlmacen: traspaso.destino.almacen,
+      destinoUbicacion: traspaso.destino.ubicacion,
+      cantidad: traspaso.cantidad,
+      unidadMedida: traspaso.unidadMedida,
+      partida: traspaso.partida || '(vacío)',
+      talla: traspaso.talla || '(vacío)',
+      color: traspaso.color || '(vacío)'
+    });
+  };
+
   useEffect(() => {
     const cargarDatosIniciales = async () => {
       try {
@@ -62,20 +77,17 @@ const TraspasosPage = () => {
         const resAlmacenes = await axios.get('http://localhost:3000/almacenes', { headers });
         setAlmacenes(resAlmacenes.data);
         
-        const resUbicaciones = await axios.get(
-          'http://localhost:3000/ubicaciones-agrupadas', 
-          { headers }
-        );
+        const resUbicaciones = await axios.get('http://localhost:3000/ubicaciones-agrupadas', { headers });
         setUbicacionesAgrupadas(resUbicaciones.data);
         setUbicacionesFiltradas(resUbicaciones.data);
       } catch (error) {
         console.error('Error cargando datos iniciales:', error);
+        alert(`Error cargando datos iniciales: ${error.response?.data?.mensaje || error.message}`);
       }
     };
     
     cargarDatosIniciales();
     
-    // Manejador para cerrar la lista de artículos al hacer clic fuera
     const handleClickOutside = (e) => {
       if (searchRef.current && !searchRef.current.contains(e.target)) {
         setShowListaArticulos(false);
@@ -86,40 +98,35 @@ const TraspasosPage = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // CORRECCIÓN: Filtrar ubicaciones cuando cambia la búsqueda (sintaxis corregida)
-// useEffect corregido para el filtrado de ubicaciones
-useEffect(() => {
-  if (busquedaUbicacion.trim() === '') {
-    setUbicacionesFiltradas(ubicacionesAgrupadas);
-    return;
-  }
-  
-  const termino = busquedaUbicacion.toLowerCase();
-  const filtradas = ubicacionesAgrupadas.map(almacen => ({
-    ...almacen,
-    ubicaciones: almacen.ubicaciones.filter(ubicacion => 
-      ubicacion.codigo.toLowerCase().includes(termino)) // Se quitó el paréntesis extra aquí
-  })).filter(almacen => almacen.ubicaciones.length > 0);
-  
-  setUbicacionesFiltradas(filtradas);
-}, [busquedaUbicacion, ubicacionesAgrupadas]);
+  useEffect(() => {
+    if (busquedaUbicacion.trim() === '') {
+      setUbicacionesFiltradas(ubicacionesAgrupadas);
+      return;
+    }
+    
+    const termino = busquedaUbicacion.toLowerCase();
+    const filtradas = ubicacionesAgrupadas.map(almacen => ({
+      ...almacen,
+      ubicaciones: almacen.ubicaciones.filter(ubicacion => 
+        ubicacion.codigo.toLowerCase().includes(termino)
+      )
+    })).filter(almacen => almacen.ubicaciones.length > 0);
+    
+    setUbicacionesFiltradas(filtradas);
+  }, [busquedaUbicacion, ubicacionesAgrupadas]);
 
-  // Cargar artículos con stock
   const cargarArticulosConStock = async (page = 1, search = '', append = false) => {
     setLoadingArticulos(true);
     try {
       const headers = getAuthHeader();
-      const response = await axios.get(
-        'http://localhost:3000/stock/articulos-con-stock', 
-        {
-          headers,
-          params: {
-            page,
-            pageSize: pagination.pageSize,
-            searchTerm: search
-          }
+      const response = await axios.get('http://localhost:3000/stock/articulos-con-stock', {
+        headers,
+        params: {
+          page,
+          pageSize: pagination.pageSize,
+          searchTerm: search
         }
-      );
+      });
       
       if (append) {
         setArticulosConStock(prev => [...prev, ...response.data.articulos]);
@@ -134,12 +141,12 @@ useEffect(() => {
       console.error('Error cargando artículos con stock:', error);
       setArticulosConStock([]);
       setArticulosFiltrados([]);
+      alert(`Error cargando artículos: ${error.response?.data?.mensaje || error.message}`);
     } finally {
       setLoadingArticulos(false);
     }
   };
 
-  // Filtrar artículos según término de búsqueda
   useEffect(() => {
     if (articuloBusqueda.trim() === '') {
       setArticulosFiltrados(articulosConStock);
@@ -155,7 +162,6 @@ useEffect(() => {
     setArticulosFiltrados(filtrados);
   }, [articuloBusqueda, articulosConStock]);
 
-  // Manejar scroll infinito en la lista de artículos
   const handleScrollLista = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.target;
     const isNearBottom = scrollHeight - scrollTop <= clientHeight * 1.2;
@@ -165,7 +171,6 @@ useEffect(() => {
     }
   };
 
-  // Cargar stock cuando se selecciona un artículo
   useEffect(() => {
     const cargarStock = async () => {
       if (!articuloSeleccionado) return;
@@ -177,28 +182,36 @@ useEffect(() => {
           { headers }
         );
         
-        setStockDisponible(response.data);
+        // Normalizar datos para asegurar que siempre hay unidad de medida
+        const stockNormalizado = response.data.map(item => ({
+          ...item,
+          UnidadMedida: item.UnidadMedida || 'unidades'
+        }));
         
-        if (response.data.length > 0) {
-          const almacenConMasStock = response.data.reduce((max, item) => 
+        setStockDisponible(stockNormalizado);
+        
+        if (stockNormalizado.length > 0) {
+          const almacenConMasStock = stockNormalizado.reduce((max, item) => 
             item.Cantidad > max.Cantidad ? item : max
           );
           
           setAlmacenOrigen(almacenConMasStock.CodigoAlmacen);
           setUbicacionOrigen(almacenConMasStock.Ubicacion);
-          setUnidadMedida(almacenConMasStock.UnidadMedida || null);
+          setUnidadMedida(almacenConMasStock.UnidadMedida);
           setPartida(almacenConMasStock.Partida || '');
+          setTallaOrigen(almacenConMasStock.Talla || '');
+          setColorOrigen(almacenConMasStock.CodigoColor_ || '');
         }
       } catch (error) {
         console.error('Error cargando stock:', error);
         setStockDisponible([]);
+        alert(`Error cargando stock: ${error.response?.data?.mensaje || error.message}`);
       }
     };
     
     cargarStock();
   }, [articuloSeleccionado]);
 
-  // Cargar artículos por ubicación
   const cargarArticulosUbicacion = useCallback(async (almacen, ubicacion, page = 1) => {
     try {
       const headers = getAuthHeader();
@@ -227,10 +240,10 @@ useEffect(() => {
     } catch (error) {
       console.error('Error cargando artículos:', error);
       setArticulosUbicacion([]);
+      alert(`Error cargando artículos: ${error.response?.data?.mensaje || error.message}`);
     }
   }, [paginationUbicacion.pageSize]);
 
-  // Cargar ubicaciones de destino
   const cargarUbicacionesDestino = useCallback(async (excluirUbicacion = '') => {
     if (!almacenDestino) return;
     
@@ -251,6 +264,7 @@ useEffect(() => {
     } catch (error) {
       console.error('Error cargando ubicaciones destino:', error);
       setUbicacionesDestino([]);
+      alert(`Error cargando ubicaciones: ${error.response?.data?.mensaje || error.message}`);
     }
   }, [almacenDestino]);
 
@@ -258,21 +272,17 @@ useEffect(() => {
     cargarUbicacionesDestino();
   }, [almacenDestino, cargarUbicacionesDestino]);
 
-  // Cargar historial de traspasos
   const cargarHistorial = useCallback(async () => {
     try {
       const headers = getAuthHeader();
-      const response = await axios.get(
-        'http://localhost:3000/historial-traspasos',
-        { headers }
-      );
+      const response = await axios.get('http://localhost:3000/historial-traspasos', { headers });
       setHistorial(response.data);
     } catch (error) {
       console.error('Error cargando historial:', error);
+      alert(`Error cargando historial: ${error.response?.data?.mensaje || error.message}`);
     }
   }, []);
 
-  // Seleccionar artículo de la lista
   const seleccionarArticulo = (articulo) => {
     setArticuloSeleccionado(articulo);
     setArticuloBusqueda('');
@@ -280,12 +290,13 @@ useEffect(() => {
     setAllArticulosLoaded(false);
   };
 
-  // Cambiar almacén de origen
   const cambiarAlmacenOrigen = (codigoAlmacen) => {
     setAlmacenOrigen(codigoAlmacen);
     setUbicacionOrigen('');
-    setUnidadMedida(null);
+    setUnidadMedida('');
     setPartida('');
+    setTallaOrigen('');
+    setColorOrigen('');
     
     const ubicacionesEnAlmacen = stockDisponible.filter(
       item => item.CodigoAlmacen === codigoAlmacen
@@ -297,21 +308,23 @@ useEffect(() => {
       );
       
       setUbicacionOrigen(ubicacionConMasStock.Ubicacion);
-      setUnidadMedida(ubicacionConMasStock.UnidadMedida || null);
+      setUnidadMedida(ubicacionConMasStock.UnidadMedida);
       setPartida(ubicacionConMasStock.Partida || '');
+      setTallaOrigen(ubicacionConMasStock.Talla || '');
+      setColorOrigen(ubicacionConMasStock.CodigoColor_ || '');
     }
   };
 
-  // Cambiar ubicación de origen
-  const cambiarUbicacionOrigen = (ubicacion, unidad, grupoUnico, partida) => {
+  const cambiarUbicacionOrigen = (ubicacion, unidad, grupoUnico, partida, talla, color) => {
     setUbicacionOrigen(ubicacion);
-    setUnidadMedida(unidad || null);
+    setUnidadMedida(unidad || 'unidades');
     setGrupoUnicoOrigen(grupoUnico);
     setPartida(partida || '');
+    setTallaOrigen(talla || '');
+    setColorOrigen(color || '');
     cargarUbicacionesDestino(ubicacion);
   };
 
-  // Manejar cambio de cantidad
   const handleCantidadChange = (e) => {
     const value = e.target.value;
     if (/^\d*$/.test(value)) {
@@ -322,7 +335,9 @@ useEffect(() => {
           item => item.CodigoAlmacen === almacenOrigen && 
                   item.Ubicacion === ubicacionOrigen &&
                   item.UnidadMedida === unidadMedida &&
-                  item.Partida === partida
+                  item.Partida === partida &&
+                  item.Talla === tallaOrigen &&
+                  item.CodigoColor_ === colorOrigen
         );
         
         if (stockItem && parseInt(value) > stockItem.Cantidad) {
@@ -332,7 +347,6 @@ useEffect(() => {
     }
   };
 
-  // Agregar traspaso desde modo artículo
   const agregarTraspasoArticulo = () => {
     const cantidadNum = parseInt(cantidad);
     if (isNaN(cantidadNum)) {
@@ -345,7 +359,12 @@ useEffect(() => {
       return;
     }
 
-    if (!articuloSeleccionado || !almacenOrigen || !ubicacionOrigen || !almacenDestino || !ubicacionDestino || !cantidad || !unidadMedida) {
+    if (!unidadMedida) {
+      alert('Debe seleccionar una unidad de medida');
+      return;
+    }
+
+    if (!articuloSeleccionado || !almacenOrigen || !ubicacionOrigen || !almacenDestino || !ubicacionDestino || !cantidad) {
       alert('Complete todos los campos');
       return;
     }
@@ -354,7 +373,9 @@ useEffect(() => {
       item => item.CodigoAlmacen === almacenOrigen && 
               item.Ubicacion === ubicacionOrigen &&
               item.UnidadMedida === unidadMedida &&
-              (item.Partida || '') === partida
+              (item.Partida || '') === partida &&
+              item.Talla === tallaOrigen &&
+              item.CodigoColor_ === colorOrigen
     );
     
     if (!stockItem || cantidadNum > stockItem.Cantidad) {
@@ -366,8 +387,11 @@ useEffect(() => {
       id: uuidv4(),
       articulo: {
         ...articuloSeleccionado,
-        unidadMedida: stockItem?.UnidadMedida || null,
-        partida: stockItem?.Partida || ''
+        unidadMedida: unidadMedida,
+        partida: partida,
+        talla: tallaOrigen,
+        color: colorOrigen,
+        nombreColor: stockItem?.NombreColor || ''
       },
       origen: {
         almacen: almacenOrigen,
@@ -379,9 +403,14 @@ useEffect(() => {
         ubicacion: ubicacionDestino
       },
       cantidad: cantidadNum,
-      unidadMedida: stockItem?.UnidadMedida || null,
-      partida: stockItem?.Partida || ''
+      unidadMedida: unidadMedida,
+      partida: partida,
+      talla: tallaOrigen,
+      color: colorOrigen
     };
+    
+    // Verificar datos para depuración
+    verificarDatosTraspaso(nuevoTraspaso);
     
     setTraspasosPendientes(prev => [...prev, nuevoTraspaso]);
     
@@ -390,7 +419,6 @@ useEffect(() => {
     setCantidad('');
   };
 
-  // Agregar traspaso desde modo ubicación
   const agregarTraspasoUbicacion = () => {
     const cantidadNum = parseInt(cantidad);
     if (isNaN(cantidadNum)) {
@@ -417,8 +445,11 @@ useEffect(() => {
       id: uuidv4(),
       articulo: {
         ...articuloUbicacionSeleccionado,
-        unidadMedida: articuloUbicacionSeleccionado.UnidadMedida || null,
-        partida: articuloUbicacionSeleccionado.Partida || ''
+        unidadMedida: articuloUbicacionSeleccionado.UnidadMedida || 'unidades',
+        partida: articuloUbicacionSeleccionado.Partida || '',
+        talla: articuloUbicacionSeleccionado.Talla || '',
+        color: articuloUbicacionSeleccionado.CodigoColor_ || '',
+        nombreColor: articuloUbicacionSeleccionado.NombreColor || ''
       },
       origen: {
         almacen: ubicacionSeleccionada.almacen,
@@ -429,9 +460,14 @@ useEffect(() => {
         ubicacion: ubicacionDestino
       },
       cantidad: cantidadNum,
-      unidadMedida: articuloUbicacionSeleccionado.UnidadMedida || null,
-      partida: articuloUbicacionSeleccionado.Partida || ''
+      unidadMedida: articuloUbicacionSeleccionado.UnidadMedida || 'unidades',
+      partida: articuloUbicacionSeleccionado.Partida || '',
+      talla: articuloUbicacionSeleccionado.Talla || '',
+      color: articuloUbicacionSeleccionado.CodigoColor_ || ''
     };
+    
+    // Verificar datos para depuración
+    verificarDatosTraspaso(nuevoTraspaso);
     
     setTraspasosPendientes(prev => [...prev, nuevoTraspaso]);
     
@@ -439,7 +475,6 @@ useEffect(() => {
     setCantidad('');
   };
 
-  // Confirmar traspasos pendientes
   const confirmarTraspasos = async () => {
     if (traspasosPendientes.length === 0) {
       alert('No hay traspasos para confirmar');
@@ -456,6 +491,11 @@ useEffect(() => {
       const traspasosValidados = traspasosPendientes.map(traspaso => {
         const cantidadEntera = Math.trunc(Number(traspaso.cantidad));
         
+        // Asegurarse de que los campos de variantes se envíen correctamente
+        const partida = traspaso.partida || '';
+        const talla = traspaso.talla || '';
+        const color = traspaso.color || '';
+        
         return {
           articulo: traspaso.articulo.CodigoArticulo,
           origenAlmacen: traspaso.origen.almacen,
@@ -463,17 +503,19 @@ useEffect(() => {
           destinoAlmacen: traspaso.destino.almacen,
           destinoUbicacion: traspaso.destino.ubicacion,
           cantidad: cantidadEntera,
-          unidadMedida: traspaso.unidadMedida || '',
-          partida: traspaso.partida || '',
+          unidadMedida: traspaso.unidadMedida || 'unidades',
+          partida: partida,
           grupoTalla: 0,
-          codigoTalla: '',
+          codigoTalla: talla,
+          codigoColor: color,
           codigoEmpresa: empresa
         };
       });
 
-      await Promise.all(traspasosValidados.map(traspaso => 
-        axios.post('http://localhost:3000/traspaso', traspaso, { headers })
-      ));
+      // Enviar los traspasos uno por uno para mejor control de errores
+      for (const traspaso of traspasosValidados) {
+        await axios.post('http://localhost:3000/traspaso', traspaso, { headers });
+      }
 
       await cargarHistorial();
       setTraspasosPendientes([]);
@@ -497,13 +539,11 @@ useEffect(() => {
     }
   };
 
-  // Obtener nombre del almacén
   const getNombreAlmacen = (codigo) => {
     const almacen = almacenes.find(a => a.CodigoAlmacen === codigo);
     return almacen ? `${almacen.Almacen} (${codigo})` : codigo;
   };
 
-  // Formatear fecha para mostrar
   const formatFecha = (fechaStr) => {
     if (!fechaStr) return 'Fecha no disponible';
     
@@ -542,7 +582,6 @@ useEffect(() => {
     }
   };
 
-  // Formatear cantidad para mostrar
   const formatCantidad = (valor) => {
     const num = parseFloat(valor);
     return isNaN(num) ? '0' : num.toLocaleString('es-ES', {
@@ -551,12 +590,29 @@ useEffect(() => {
     });
   };
 
-  // Formatear unidad de medida
   const formatUnidadMedida = (unidad) => {
     return unidad || 'unidades';
   };
 
-  // Renderizado completo del componente
+  const getColorStyle = (colorCode) => {
+    const colorMap = {
+      'A': { color: '#1E88E5', fontWeight: 'bold' },
+      'V': { color: '#43A047', fontWeight: 'bold' },
+      'R': { color: '#E53935', fontWeight: 'bold' },
+      'N': { color: '#000000', fontWeight: 'bold' },
+      'B': { color: '#FFFFFF', backgroundColor: '#333', padding: '2px 5px', borderRadius: '3px' },
+    };
+    return colorMap[colorCode] || {};
+  };
+
+  const formatTallaColor = (talla, colorCode) => {
+    if (!talla && !colorCode) return null;
+    let display = '';
+    if (talla) display += talla;
+    if (colorCode) display += colorCode;
+    return display;
+  };
+
   return (
     <div className="traspasos-container">
       <h1>Traspaso entre Ubicaciones</h1>
@@ -713,7 +769,9 @@ useEffect(() => {
                           const unidad = selectedOption.getAttribute('data-unidad');
                           const grupoUnico = selectedOption.getAttribute('data-grupounico');
                           const partida = selectedOption.getAttribute('data-partida');
-                          cambiarUbicacionOrigen(e.target.value, unidad, grupoUnico, partida);
+                          const talla = selectedOption.getAttribute('data-talla');
+                          const color = selectedOption.getAttribute('data-color');
+                          cambiarUbicacionOrigen(e.target.value, unidad, grupoUnico, partida, talla, color);
                         }}
                         required
                         disabled={!almacenOrigen}
@@ -721,19 +779,28 @@ useEffect(() => {
                         <option value="">Seleccionar ubicación</option>
                         {stockDisponible
                           .filter(item => item.CodigoAlmacen === almacenOrigen)
-                          .map((item) => (
-                            <option 
-                              key={`${item.Ubicacion}-${item.UnidadMedida}-${item.Partida || ''}`} 
-                              value={item.Ubicacion}
-                              data-unidad={item.UnidadMedida}
-                              data-grupounico={`${item.CodigoAlmacen}-${item.Ubicacion}-${item.UnidadMedida}-${item.Partida || ''}`}
-                              data-partida={item.Partida || ''}
-                            >
-                              {item.Ubicacion} - 
-                              {formatCantidad(item.Cantidad)} {item.UnidadMedida || 'unidades'}
-                              {item.Partida && ` (Lote: ${item.Partida})`}
-                            </option>
-                          ))}
+                          .map((item) => {
+                            const tallaColor = item.Talla && item.CodigoColor_ 
+                              ? `${item.Talla}${item.CodigoColor_}` 
+                              : '';
+                            
+                            return (
+                              <option 
+                                key={`${item.Ubicacion}-${item.UnidadMedida}-${item.Partida || ''}-${tallaColor}`} 
+                                value={item.Ubicacion}
+                                data-unidad={item.UnidadMedida}
+                                data-grupounico={item.GrupoUnico}
+                                data-partida={item.Partida || ''}
+                                data-talla={item.Talla || ''}
+                                data-color={item.CodigoColor_ || ''}
+                              >
+                                {item.Ubicacion} - 
+                                {tallaColor && ` ${tallaColor} -`}
+                                {formatCantidad(item.Cantidad)} {item.UnidadMedida}
+                                {item.Partida && ` (Lote: ${item.Partida})`}
+                              </option>
+                            );
+                          })}
                       </select>
                     </div>
                     
@@ -741,6 +808,16 @@ useEffect(() => {
                       <div className="unidad-info">
                         <strong>Unidad seleccionada:</strong> {formatUnidadMedida(unidadMedida)}
                         {partida && <span>, <strong>Lote:</strong> {partida}</span>}
+                        {(tallaOrigen || colorOrigen) && (
+                          <span>, <strong>Talla/Color:</strong> 
+                            <span 
+                              className="talla-color-display"
+                              style={getColorStyle(colorOrigen)}
+                            >
+                              {tallaOrigen}{colorOrigen}
+                            </span>
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -810,7 +887,9 @@ useEffect(() => {
                               item => item.CodigoAlmacen === almacenOrigen && 
                                       item.Ubicacion === ubicacionOrigen &&
                                       item.UnidadMedida === unidadMedida &&
-                                      (item.Partida || '') === partida
+                                      (item.Partida || '') === partida &&
+                                      item.Talla === tallaOrigen &&
+                                      item.CodigoColor_ === colorOrigen
                             )?.Cantidad || 0
                           )} {formatUnidadMedida(unidadMedida)}
                         </div>
@@ -838,7 +917,6 @@ useEffect(() => {
                 <div className="form-section">
                   <h2>Seleccionar Ubicación de Origen</h2>
                   
-                  {/* Nuevo buscador de ubicaciones */}
                   <div className="form-control-group">
                     <label>Buscar ubicación:</label>
                     <input
@@ -923,42 +1001,69 @@ useEffect(() => {
                               <th>Descripción</th>
                               <th>Stock</th>
                               <th>Unidad</th>
-                              <th>Lote</th>
+                              <th>Talla y Color</th>
                               <th>Acciones</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {articulosUbicacion.map((articulo) => (
-                              <tr 
-                                key={`${articulo.CodigoArticulo}-${
-                                  ubicacionSeleccionada.almacen
-                                }-${ubicacionSeleccionada.ubicacion}-${
-                                  articulo.UnidadMedida || 'unidad'
-                                }-${articulo.Partida || 'sin-lote'}-${
-                                  articulo.Cantidad
-                                }`}
-                                className={articuloUbicacionSeleccionado?.CodigoArticulo === articulo.CodigoArticulo ? 'seleccionado' : ''}
-                                onClick={() => setArticuloUbicacionSeleccionado(articulo)}
-                              >
-                                <td>{articulo.CodigoArticulo}</td>
-                                <td>{articulo.DescripcionArticulo}</td>
-                                <td>
-                                  {formatCantidad(articulo.Cantidad)} 
-                                  {articulo.UnidadMedida !== articulo.UnidadBase && articulo.FactorConversion && (
-                                    <span className="unidad-base">
-                                      ({formatCantidad(articulo.Cantidad * articulo.FactorConversion)} {articulo.UnidadBase})
-                                    </span>
-                                  )}
-                                </td>
-                                <td>{articulo.UnidadMedida || 'unidades'}</td>
-                                <td>{articulo.Partida || '-'}</td>
-                                <td>
-                                  <button className="btn-seleccionar">
-                                    Seleccionar
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
+                            {articulosUbicacion.map((articulo) => {
+                              const uniqueKey = [
+                                articulo.CodigoArticulo,
+                                ubicacionSeleccionada.ubicacion,
+                                articulo.UnidadMedida,
+                                articulo.Partida || '',
+                                articulo.Talla || '',
+                                articulo.CodigoColor_ || ''
+                              ].join('|');
+                              
+                              const tallaColor = formatTallaColor(articulo.Talla, articulo.CodigoColor_);
+                              
+                              return (
+                                <tr 
+                                  key={uniqueKey}
+                                  className={
+                                    articuloUbicacionSeleccionado?.uniqueKey === uniqueKey 
+                                      ? 'seleccionado' 
+                                      : ''
+                                  }
+                                  onClick={() => setArticuloUbicacionSeleccionado({
+                                    ...articulo,
+                                    uniqueKey,
+                                    tallaColorDisplay: tallaColor
+                                  })}
+                                >
+                                  <td>{articulo.CodigoArticulo}</td>
+                                  <td>{articulo.DescripcionArticulo}</td>
+                                  <td>
+                                    {formatCantidad(articulo.Cantidad)} 
+                                    {articulo.UnidadMedida !== articulo.UnidadBase && articulo.FactorConversion && (
+                                      <span className="unidad-base">
+                                        ({formatCantidad(articulo.Cantidad * articulo.FactorConversion)} {articulo.UnidadBase})
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td>{articulo.UnidadMedida || 'unidades'}</td>
+                                  <td>
+                                    {tallaColor && (
+                                      <span 
+                                        className="talla-color-display"
+                                        style={getColorStyle(articulo.CodigoColor_)}
+                                      >
+                                        {tallaColor}
+                                      </span>
+                                    )}
+                                    {articulo.NombreColor && (
+                                      <div className="nombre-color">
+                                        {articulo.NombreColor}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td>
+                                    <button className="btn-seleccionar">Seleccionar</button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -1006,6 +1111,27 @@ useEffect(() => {
                       <div className="unidad-info">
                         <strong>Unidad:</strong> {formatUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida)}
                         {articuloUbicacionSeleccionado.Partida && <span>, <strong>Lote:</strong> {articuloUbicacionSeleccionado.Partida}</span>}
+                      </div>
+                      
+                      <div className="variantes-detalle">
+                        {articuloUbicacionSeleccionado.tallaColorDisplay && (
+                          <div>
+                            <strong>Talla/Color:</strong> 
+                            <span 
+                              style={getColorStyle(articuloUbicacionSeleccionado.CodigoColor_)}
+                              className="talla-color-display"
+                            >
+                              {articuloUbicacionSeleccionado.tallaColorDisplay}
+                            </span>
+                          </div>
+                        )}
+                        
+                        {articuloUbicacionSeleccionado.NombreColor && (
+                          <div>
+                            <strong>Nombre Color:</strong> 
+                            {articuloUbicacionSeleccionado.NombreColor}
+                          </div>
+                        )}
                       </div>
                     </div>
                     
@@ -1115,6 +1241,16 @@ useEffect(() => {
                             <div className="unidad-lote">
                               {formatUnidadMedida(traspaso.unidadMedida)}
                               {traspaso.partida && ` | Lote: ${traspaso.partida}`}
+                              {(traspaso.talla || traspaso.color) && (
+                                <span> | Talla/Color: 
+                                  <span 
+                                    className="talla-color-display"
+                                    style={getColorStyle(traspaso.color)}
+                                  >
+                                    {traspaso.talla}{traspaso.color}
+                                  </span>
+                                </span>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -1191,12 +1327,26 @@ useEffect(() => {
                 <tbody>
                   {historial.map((item, index) => {
                     const usuario = item.Comentario?.split(': ')[1] || 'Desconocido';
+                    const tallaColor = item.CodigoTalla01_ && item.CodigoColor_ 
+                      ? `${item.CodigoTalla01_}${item.CodigoColor_}` 
+                      : '';
+                    
                     return (
                       <tr key={`${item.FechaRegistro}-${index}-${item.CodigoArticulo}`}>
                         <td>{item.FechaFormateada || formatFecha(item.FechaRegistro)}</td>
                         <td>
                           <strong>{item.CodigoArticulo}</strong>
                           <div>{item.DescripcionArticulo}</div>
+                          {tallaColor && (
+                            <div className="talla-color-historial">
+                              <span 
+                                className="talla-color-display"
+                                style={getColorStyle(item.CodigoColor_)}
+                              >
+                                {tallaColor}
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <td>
                           {item.OrigenAlmacen}<br />
@@ -1209,7 +1359,7 @@ useEffect(() => {
                         <td>
                           {formatCantidad(item.Cantidad)}
                           <div className="unidad-lote">
-                            {formatUnidadMedida(item.UnidadMedida)}
+                            {formatUnidadMedida(item.UnidadMedida1_)}
                             {item.Partida && ` | Lote: ${item.Partida}`}
                           </div>
                         </td>

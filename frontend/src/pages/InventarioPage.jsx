@@ -130,7 +130,15 @@ const InventarioPage = () => {
     const agrupado = {};
     
     data.forEach(item => {
-      const clave = `${item.CodigoAlmacen}-${item.Ubicacion}-${item.UnidadStock}-${item.Partida || ''}`;
+      const clave = [
+        item.CodigoArticulo,
+        item.CodigoAlmacen,
+        item.Ubicacion,
+        item.TipoUnidadMedida_ || 'unidades',
+        item.Partida || '',
+        item.CodigoColor_ || '',
+        item.CodigoTalla01_ || ''
+      ].join('_');
       
       if (!agrupado[item.CodigoArticulo]) {
         agrupado[item.CodigoArticulo] = {
@@ -156,12 +164,14 @@ const InventarioPage = () => {
         Partida: item.Partida,
         UnidadStock: item.UnidadStock,
         Cantidad: item.Cantidad,
-        CantidadBase: item.Cantidad * (item.FactorConversion || 1),
+        CantidadBase: item.CantidadBase,
+        CodigoColor: item.CodigoColor_,
+        CodigoTalla01: item.CodigoTalla01_,
         GrupoUnico: clave
       };
       
       agrupado[item.CodigoArticulo].ubicaciones.push(ubicacion);
-      agrupado[item.CodigoArticulo].totalStockBase += ubicacion.CantidadBase;
+      agrupado[item.CodigoArticulo].totalStockBase += item.CantidadBase;
     });
     
     Object.values(agrupado).forEach(articulo => {
@@ -401,7 +411,7 @@ const InventarioPage = () => {
     }
   };
 
-  const iniciarEdicionCantidad = (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida, unidadStock) => {
+  const iniciarEdicionCantidad = (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida, unidadStock, codigoColor, codigoTalla01) => {
     const articuloCompleto = inventario.find(art => art.CodigoArticulo === articulo);
     
     setEditandoCantidad({
@@ -413,7 +423,9 @@ const InventarioPage = () => {
       codigoAlmacen,
       ubicacionStr,
       partida,
-      unidadStock
+      unidadStock,
+      codigoColor,
+      codigoTalla01
     });
     setNuevaCantidad(cantidadActual.toString());
   };
@@ -434,7 +446,9 @@ const InventarioPage = () => {
       ubicacionStr: editandoCantidad.ubicacionStr,
       partida: editandoCantidad.partida || '',
       unidadStock: editandoCantidad.unidadStock || 'unidades',
-      nuevaCantidad: cantidad
+      nuevaCantidad: cantidad,
+      codigoColor: editandoCantidad.codigoColor || '',
+      codigoTalla01: editandoCantidad.codigoTalla01 || ''
     };
     
     setAjustesPendientes(prev => [...prev, nuevoAjuste]);
@@ -467,6 +481,11 @@ const InventarioPage = () => {
   };
 
   const confirmarAjustes = async () => {
+    if (ajustesPendientes.length === 0) {
+      alert('No hay ajustes para confirmar');
+      return;
+    }
+    
     try {
       const headers = getAuthHeader();
       const response = await axios.post(
@@ -851,7 +870,9 @@ const InventarioPage = () => {
                                       ubicacion.CodigoAlmacen,
                                       ubicacion.Ubicacion,
                                       ubicacion.Partida,
-                                      ubicacion.UnidadStock
+                                      ubicacion.UnidadStock,
+                                      ubicacion.CodigoColor,
+                                      ubicacion.CodigoTalla01
                                     )}
                                   >
                                     <FiEdit /> Editar
@@ -903,7 +924,9 @@ const InventarioPage = () => {
                                       ubicacion.CodigoAlmacen,
                                       ubicacion.Ubicacion,
                                       ubicacion.Partida,
-                                      ubicacion.UnidadStock
+                                      ubicacion.UnidadStock,
+                                      ubicacion.CodigoColor,
+                                      ubicacion.CodigoTalla01
                                     )}
                                   >
                                     <FiEdit /> Editar

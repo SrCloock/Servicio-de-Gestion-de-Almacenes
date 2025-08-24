@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import jsPDF from 'jspdf';
@@ -14,7 +14,6 @@ function DetalleAlbaran() {
   const navigate = useNavigate();
   const { albaran: initialAlbaran } = location.state || {};
   
-  // Obtener permisos del usuario
   const { 
     canViewWaybills, 
     canPerformActions 
@@ -24,19 +23,37 @@ function DetalleAlbaran() {
   const [firmaGuardadaRepartidor, setFirmaGuardadaRepartidor] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [albaran, setAlbaran] = useState(initialAlbaran);
-  const [totalAlbaran, setTotalAlbaran] = useState(initialAlbaran?.importeLiquido || 0);
+  const [totalAlbaran, setTotalAlbaran] = useState(0);
   
   const clienteRef = useRef(null);
   const repartidorRef = useRef(null);
 
-  // Si no tiene permiso para ver albaranes
+  useEffect(() => {
+    if (initialAlbaran) {
+      // Inicializar con cantidades persistentes
+      const articulosConEntregada = initialAlbaran.articulos.map(art => ({
+        ...art,
+        cantidadEntregada: art.cantidadEntregada || art.cantidad,
+        cantidadOriginal: art.cantidadOriginal || art.cantidad
+      }));
+      
+      // Calcular total inicial
+      const nuevoTotal = articulosConEntregada.reduce((total, art) => {
+        return total + (art.cantidadEntregada * (art.precioUnitario || 0));
+      }, 0);
+      
+      setAlbaran({...initialAlbaran, articulos: articulosConEntregada});
+      setTotalAlbaran(nuevoTotal);
+    }
+  }, [initialAlbaran]);
+
   if (!canViewWaybills) {
     return (
-      <div className="detalle-albaran">
-        <div className="no-permission">
+      <div className="DA-container">
+        <div className="DA-no-permission">
           <h2>Acceso restringido</h2>
           <p>No tienes permiso para ver esta sección.</p>
-          <button onClick={() => navigate('/')} className="btn-volver">
+          <button onClick={() => navigate('/')} className="DA-btn-volver">
             Volver al inicio
           </button>
         </div>
@@ -63,14 +80,14 @@ function DetalleAlbaran() {
     if (!albaran || !albaran.articulos) return;
     
     const updatedArticulos = [...albaran.articulos];
-    const cantidad = Math.min(parseFloat(newCantidad) || 0, updatedArticulos[index].cantidad);
+    // Limitar a la cantidad original
+    const cantidad = Math.min(parseFloat(newCantidad) || 0, updatedArticulos[index].cantidadOriginal);
     
     updatedArticulos[index] = {
       ...updatedArticulos[index],
       cantidadEntregada: cantidad
     };
     
-    // Calcular nuevo total
     const nuevoTotal = updatedArticulos.reduce((total, art) => {
       return total + (art.cantidadEntregada * (art.precioUnitario || 0));
     }, 0);
@@ -83,9 +100,8 @@ function DetalleAlbaran() {
     try {
       const headers = getAuthHeader();
       const lineas = albaran.articulos.map(art => ({
-        codigo: art.codigo,
         orden: art.orden,
-        cantidadEntregada: art.cantidadEntregada
+        unidades: art.cantidadEntregada
       }));
       
       await axios.put('http://localhost:3000/actualizarCantidadesAlbaran', {
@@ -113,7 +129,6 @@ function DetalleAlbaran() {
       return;
     }
 
-    // Verificar si ambas firmas están completas
     if (!firmaGuardadaCliente || !firmaGuardadaRepartidor) {
       alert('Por favor, complete ambas firmas antes de enviar');
       return;
@@ -138,8 +153,7 @@ function DetalleAlbaran() {
     doc.text(`Teléfono: ${albaran.telefonoContacto || 'No especificado'}`, 20, 62);
     doc.text(`Fecha: ${new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}`, 20, 70);
 
-    // Artículos entregados
-    if (albaran.articulos && albaran.articulos.length > 0) {
+    if (albaran.articulos?.length > 0) {
       doc.text('Artículos entregados:', 20, 80);
       autoTable(doc, {
         startY: 85,
@@ -158,13 +172,11 @@ function DetalleAlbaran() {
 
     let finalY = doc.lastAutoTable?.finalY || 95;
     
-    // Total del albarán
     doc.setFontSize(12);
     doc.setFont(undefined, 'bold');
     doc.text(`Total del albarán: ${totalAlbaran.toFixed(2)} €`, 20, finalY + 10);
     doc.setFont(undefined, 'normal');
     
-    // Firmas
     doc.setFontSize(12);
     if (firmaClienteURL) {
       doc.text('Firma Cliente:', 20, finalY + 30);
@@ -182,7 +194,6 @@ function DetalleAlbaran() {
     formData.append('to', to);
 
     try {
-      // 1. Completar albarán
       await axios.post(
         'http://localhost:3000/completar-albaran',
         {
@@ -194,7 +205,6 @@ function DetalleAlbaran() {
         { headers: getAuthHeader() }
       );
 
-      // 2. Enviar PDF por correo
       const authHeaders = getAuthHeader();
       const res = await fetch('http://localhost:3000/enviar-pdf-albaran', {
         method: 'POST',
@@ -220,48 +230,84 @@ function DetalleAlbaran() {
   };
 
   if (!albaran) {
-    return <div className="detalle-content">No se ha seleccionado ningún albarán.</div>;
+    return (
+      <div className="DA-container">
+        <div className="DA-no-albaran">
+          <p>No se ha seleccionado ningún albarán.</p>
+          <button className="DA-btn-volver" onClick={() => navigate('/rutas')}>
+            Volver a Rutas
+          </button>
+        </div>
+        <Navbar />
+      </div>
+    );
   }
 
   return (
-    <div className="detalle-albaran">
-      <div className="detalle-header">
-        <h2>Detalle del Albarán {albaran.albaran}</h2>
-        <div className="bubble bubble1"></div>
-        <div className="bubble bubble2"></div>
-        <button className="btn-volver" onClick={() => navigate('/rutas')}>
-          ← Volver
+    <div className="DA-container">
+      <div className="DA-header">
+        <button className="DA-btn-volver" onClick={() => navigate('/rutas')}>
+          ← Volver a Rutas
         </button>
+        <h2 className="DA-title">Detalle del Albarán {albaran.albaran}</h2>
       </div>
 
-      <div className="detalle-content">
-        <div className="detalle-info">
-          <div className="info-section">
-            <h3>Datos del Cliente</h3>
-            <p><strong>Cliente:</strong> {albaran.cliente}</p>
-            <p><strong>Dirección:</strong> {albaran.direccion}</p>
-            <p><strong>Obra:</strong> {albaran.obra || 'No especificada'}</p>
-            <p><strong>Contacto:</strong> {albaran.contacto || 'No especificado'}</p>
-            <p><strong>Teléfono:</strong> {albaran.telefonoContacto || 'No especificado'}</p>
-            <p><strong>Fecha:</strong> {new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}</p>
-            <p><strong>Total:</strong> {totalAlbaran.toFixed(2)} €</p>
+      <div className="DA-content">
+        <div className="DA-panel">
+          <div className="DA-panel-header">
+            <h3 className="DA-panel-title">Datos del Cliente</h3>
           </div>
-
-          <div className="articulos-section">
-            <div className="section-header">
-              <h3>Líneas del Albarán</h3>
-              {canPerformActions && (
-                <button 
-                  className={`btn-edit ${editMode ? 'editing' : ''}`}
-                  onClick={() => editMode ? guardarCambios() : setEditMode(true)}
-                >
-                  {editMode ? 'Guardar Cambios' : 'Editar Cantidades'}
-                </button>
-              )}
+          <div className="DA-panel-body">
+            <div className="DA-info-grid">
+              <div className="DA-info-item">
+                <span className="DA-info-label">Cliente</span>
+                <span className="DA-info-value">{albaran.cliente}</span>
+              </div>
+              <div className="DA-info-item">
+                <span className="DA-info-label">Dirección</span>
+                <span className="DA-info-value">{albaran.direccion}</span>
+              </div>
+              <div className="DA-info-item">
+                <span className="DA-info-label">Obra</span>
+                <span className="DA-info-value">{albaran.obra || 'No especificada'}</span>
+              </div>
+              <div className="DA-info-item">
+                <span className="DA-info-label">Contacto</span>
+                <span className="DA-info-value">{albaran.contacto || 'No especificado'}</span>
+              </div>
+              <div className="DA-info-item">
+                <span className="DA-info-label">Teléfono</span>
+                <span className="DA-info-value">{albaran.telefonoContacto || 'No especificado'}</span>
+              </div>
+              <div className="DA-info-item">
+                <span className="DA-info-label">Fecha</span>
+                <span className="DA-info-value">
+                  {new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}
+                </span>
+              </div>
+              <div className="DA-info-item">
+                <span className="DA-info-label">Total</span>
+                <span className="DA-info-value">{totalAlbaran.toFixed(2)} €</span>
+              </div>
             </div>
-            
+          </div>
+        </div>
+
+        <div className="DA-panel">
+          <div className="DA-panel-header">
+            <h3 className="DA-panel-title">Líneas del Albarán</h3>
+            {canPerformActions && (
+              <button 
+                className={`DA-edit-button ${editMode ? 'editing' : ''}`}
+                onClick={() => editMode ? guardarCambios() : setEditMode(true)}
+              >
+                {editMode ? 'Guardar Cambios' : 'Editar Cantidades'}
+              </button>
+            )}
+          </div>
+          <div className="DA-panel-body">
             {albaran.articulos?.length > 0 ? (
-              <table>
+              <table className="DA-items-table">
                 <thead>
                   <tr>
                     <th>Artículo</th>
@@ -276,23 +322,24 @@ function DetalleAlbaran() {
                       <td>{art.nombre}</td>
                       <td>
                         {editMode ? (
-                          <div className="cantidad-edit">
-                            <span className="original">{art.cantidad}</span>
+                          <div className="DA-quantity-edit">
+                            <span className="DA-original-quantity">{art.cantidadOriginal}</span>
                             <input
                               type="number"
                               min="0"
-                              max={art.cantidad}
+                              max={art.cantidadOriginal}
                               value={art.cantidadEntregada}
                               onChange={(e) => handleCantidadChange(idx, e.target.value)}
+                              className="DA-quantity-input"
                             />
                           </div>
-                        ) : art.cantidadEntregada !== undefined && art.cantidadEntregada !== art.cantidad ? (
-                          <div className="cantidad-modified">
-                            <del>{art.cantidad}</del>
-                            <span>{art.cantidadEntregada}</span>
+                        ) : art.cantidadEntregada !== art.cantidadOriginal ? (
+                          <div className="DA-modified-quantity">
+                            <del>{art.cantidadOriginal}</del>
+                            <span className="DA-delivered-quantity">{art.cantidadEntregada}</span>
                           </div>
                         ) : (
-                          art.cantidad
+                          art.cantidadOriginal
                         )}
                       </td>
                       <td>{art.precioUnitario?.toFixed(2) || '0.00'} €</td>
@@ -307,76 +354,71 @@ function DetalleAlbaran() {
           </div>
         </div>
 
-        <div className="firmas-container">
-          <div className="firma-section">
-            <h4>Firma del Cliente:</h4>
-            <SignatureCanvas
-              penColor="black"
-              minWidth={2}
-              maxWidth={4}
-              velocityFilterWeight={0.7}
-              canvasProps={{
-                width: 400,
-                height: 200,
-                className: 'sigCanvas',
-                style: { 
-                  border: '1px solid #ccc', 
-                  borderRadius: '6px', 
-                  backgroundColor: '#fff',
-                  marginBottom: '10px'
-                }
-              }}
-              ref={clienteRef}
-              onEnd={() => setFirmaGuardadaCliente(true)}
-            />
-            <div className="firma-controls">
-              <button 
-                className="btn-borrar" 
-                onClick={limpiarFirmaCliente}
-                disabled={!canPerformActions}
-              >
-                Borrar Firma
-              </button>
-              {firmaGuardadaCliente && <span className="firma-status">✓ Firma guardada</span>}
-            </div>
+        <div className="DA-panel DA-signatures-panel">
+          <div className="DA-panel-header">
+            <h3 className="DA-panel-title">Firmas</h3>
           </div>
+          <div className="DA-panel-body">
+            <div className="DA-signatures-container">
+              <div className="DA-signature-box">
+                <h4 className="DA-signature-title">Firma del Cliente:</h4>
+                <SignatureCanvas
+                  penColor="black"
+                  minWidth={2}
+                  maxWidth={4}
+                  velocityFilterWeight={0.7}
+                  canvasProps={{
+                    width: 400,
+                    height: 200,
+                    className: 'DA-signature-canvas',
+                  }}
+                  ref={clienteRef}
+                  onEnd={() => setFirmaGuardadaCliente(true)}
+                />
+                <div className="DA-signature-controls">
+                  <button 
+                    className="DA-clear-button" 
+                    onClick={limpiarFirmaCliente}
+                    disabled={!canPerformActions}
+                  >
+                    Borrar Firma
+                  </button>
+                  {firmaGuardadaCliente && <span className="DA-signature-status">✓ Firma guardada</span>}
+                </div>
+              </div>
 
-          <div className="firma-section">
-            <h4>Firma del Repartidor:</h4>
-            <SignatureCanvas
-              penColor="black"
-              minWidth={2}
-              maxWidth={4}
-              velocityFilterWeight={0.7}
-              canvasProps={{
-                width: 400,
-                height: 200,
-                className: 'sigCanvas',
-                style: { 
-                  border: '1px solid #ccc', 
-                  borderRadius: '6px', 
-                  backgroundColor: '#fff',
-                  marginBottom: '10px'
-                }
-              }}
-              ref={repartidorRef}
-              onEnd={() => setFirmaGuardadaRepartidor(true)}
-            />
-            <div className="firma-controls">
-              <button 
-                className="btn-borrar" 
-                onClick={limpiarFirmaRepartidor}
-                disabled={!canPerformActions}
-              >
-                Borrar Firma
-              </button>
-              {firmaGuardadaRepartidor && <span className="firma-status">✓ Firma guardada</span>}
+              <div className="DA-signature-box">
+                <h4 className="DA-signature-title">Firma del Repartidor:</h4>
+                <SignatureCanvas
+                  penColor="black"
+                  minWidth={2}
+                  maxWidth={4}
+                  velocityFilterWeight={0.7}
+                  canvasProps={{
+                    width: 400,
+                    height: 200,
+                    className: 'DA-signature-canvas',
+                  }}
+                  ref={repartidorRef}
+                  onEnd={() => setFirmaGuardadaRepartidor(true)}
+                />
+                <div className="DA-signature-controls">
+                  <button 
+                    className="DA-clear-button" 
+                    onClick={limpiarFirmaRepartidor}
+                    disabled={!canPerformActions}
+                  >
+                    Borrar Firma
+                  </button>
+                  {firmaGuardadaRepartidor && <span className="DA-signature-status">✓ Firma guardada</span>}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
         <button 
-          className="btn-guardar" 
+          className="DA-action-button" 
           onClick={guardarFirma}
           disabled={!canPerformActions || (!firmaGuardadaCliente || !firmaGuardadaRepartidor)}
         >

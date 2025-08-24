@@ -789,3 +789,77 @@ tr.seleccionado {
     padding: 18px 30px;
   }
 }
+/* VARIANTES */
+.variantes {
+  font-size: 0.85rem;
+  color: #555;
+  margin-top: 4px;
+}
+
+.variantes-detalle {
+  margin-top: 8px;
+  padding: 8px;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+  border-left: 3px solid #4a90e2;
+}
+
+.variantes-detalle div {
+  margin-bottom: 4px;
+}
+
+.variantes-detalle strong {
+  color: #333;
+}
+
+.unidad-base {
+  display: block;
+  font-size: 0.85rem;
+  color: #888;
+}
+
+/* TABLA */
+.responsive-table-container {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+}
+
+table th, table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+table th {
+  background-color: #f5f7fa;
+  font-weight: 600;
+  color: #333;
+}
+
+table tbody tr:hover {
+  background-color: #f9f9f9;
+}
+
+table .seleccionado {
+  background-color: #e6f7ff;
+}
+
+/* BOTONES */
+.btn-seleccionar {
+  background-color: #4a90e2;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn-seleccionar:hover {
+  background-color: #357ae8;
+}

@@ -6,6 +6,7 @@ import Navbar from '../components/Navbar';
 import { Html5Qrcode } from 'html5-qrcode';
 import { usePermissions } from '../PermissionsManager';
 import '../styles/PedidosScreen.css';
+import { FaEllipsisV, FaCamera, FaQrcode, FaBarcode, FaCheck, FaTimes, FaExclamationTriangle, FaChevronDown, FaSearch, FaCalendarAlt, FaTruck, FaInfoCircle } from 'react-icons/fa';
 
 const formatearUnidad = (cantidad, unidad) => {
   if (!cantidad && cantidad !== 0) return '0 ud';
@@ -89,94 +90,165 @@ const DetallesArticuloModal = ({
   linea, 
   pedido, 
   onExpedir, 
-  ubicacionesStock,
   scannedItems,
   setScannedItems,
   iniciarEscaneo,
   canPerformActions
 }) => {
-  const [selectedUbicacion, setSelectedUbicacion] = useState(
-    ubicacionesStock.length > 0 ? ubicacionesStock[0].Ubicacion : ''
-  );
+  const [stockPorVariante, setStockPorVariante] = useState({});
+  const [loadingStock, setLoadingStock] = useState(false);
+
+  const obtenerCombinaciones = () => {
+    const combinaciones = [];
+    
+    detalles.forEach(variante => {
+      const { color, grupoTalla } = variante;
+      
+      Object.entries(variante.tallas).forEach(([codigoTalla, talla]) => {
+        if (talla.unidades > 0) {
+          combinaciones.push({
+            codigoTalla,
+            descripcionTalla: talla.descripcion,
+            color: color.nombre,
+            codigoColor: color.codigo,
+            grupoTalla: grupoTalla.nombre,
+            codigoGrupoTalla: grupoTalla.codigo,
+            unidades: talla.unidades
+          });
+        }
+      });
+    });
+    
+    return combinaciones;
+  };
+
+  useEffect(() => {
+    const fetchStockForVariantes = async () => {
+      setLoadingStock(true);
+      const stockData = {};
+
+      for (const variante of detalles) {
+        const { color, grupoTalla } = variante;
+        
+        for (const [codigoTalla, talla] of Object.entries(variante.tallas)) {
+          if (talla.unidades > 0) {
+            try {
+              const response = await axios.get('http://localhost:3000/stock/por-variante', {
+                headers: getAuthHeader(),
+                params: {
+                  codigoArticulo: linea.codigoArticulo,
+                  codigoColor: color.codigo,
+                  grupoTalla: grupoTalla.codigo,
+                  codigoTalla: codigoTalla
+                }
+              });
+
+              stockData[`${color.codigo}-${grupoTalla.codigo}-${codigoTalla}`] = response.data;
+            } catch (error) {
+              console.error('Error fetching stock for variant:', error);
+              stockData[`${color.codigo}-${grupoTalla.codigo}-${codigoTalla}`] = [];
+            }
+          }
+        }
+      }
+
+      setStockPorVariante(stockData);
+      setLoadingStock(false);
+    };
+
+    fetchStockForVariantes();
+  }, [detalles, linea.codigoArticulo]);
+
+  const combinaciones = obtenerCombinaciones();
 
   return (
-    <div className="modal-detalles">
-      <div className="modal-contenido modal-detalles-contenido">
-        <button className="cerrar-modal" onClick={() => onExpedir(0)}>&times;</button>
+    <div className="modal-detalles" onClick={(e) => {
+      if (e.target.classList.contains('modal-detalles')) {
+        onExpedir(0);
+      }
+    }}>
+      <div className="modal-contenido modal-detalles-contenido" onClick={e => e.stopPropagation()}>
+        <button className="cerrar-modal" onClick={() => onExpedir(0)}><FaTimes /></button>
         <h3 className="modal-titulo">Artículo: {linea.descripcionArticulo}</h3>
         
-        <div className="modal-subtitulo">Variantes</div>
-        
-        <div className="variantes-container">
-          {detalles.map((detalle, index) => (
-            <div key={`${index}-${detalle.color.codigo}-${detalle.grupoTalla.codigo}`} className="variante-item">
-              <div className="variante-header">
-                <div className="variante-color">
-                  <strong>Color:</strong> {detalle.color.nombre}
-                </div>
-                <div className="variante-talla">
-                  <strong>Grupo Talla:</strong> {detalle.grupoTalla.nombre}
-                </div>
-              </div>
-              
-              <div className="tallas-grid">
-                {Object.entries(detalle.tallas).map(([codigoTalla, talla], idx) => {
-                  const itemKey = `${linea.codigoArticulo}-${detalle.color.codigo}-${detalle.grupoTalla.codigo}`;
+        {loadingStock ? (
+          <div className="loading-stock">
+            <div className="loader"></div>
+            <p>Cargando información de stock...</p>
+          </div>
+        ) : (
+          <div className="tabla-detalles-container">
+            <table className="tabla-detalles">
+              <thead>
+                <tr>
+                  <th>Talla</th>
+                  <th>Color</th>
+                  <th>Grupo Talla</th>
+                  <th>Pendiente</th>
+                  <th>Ubicación</th>
+                  <th>Cantidad</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {combinaciones.map((combinacion, index) => {
+                  const stockKey = `${combinacion.codigoColor}-${combinacion.codigoGrupoTalla}-${combinacion.codigoTalla}`;
+                  const ubicacionesStock = stockPorVariante[stockKey] || [];
+                  
+                  const itemKey = `${linea.codigoArticulo}-${combinacion.codigoTalla}-${combinacion.codigoColor}`;
                   const escaneado = scannedItems[itemKey] || 0;
-                  const completado = escaneado >= talla.unidades;
+                  const completado = escaneado >= combinacion.unidades;
                   
                   return (
-                    <div 
-                      key={`${index}-${codigoTalla}`} 
-                      className={`talla-item ${talla.unidades > 0 ? 'con-stock' : 'sin-stock'} ${completado ? 'completado' : ''}`}
-                    >
-                      <div className="talla-info">
-                        <div className="talla-codigo">Talla {codigoTalla}</div>
-                        <div className="talla-desc">{talla.descripcion}</div>
-                        <div className="talla-stock">
-                          {talla.unidades > 0 ? `${escaneado}/${formatearUnidad(talla.unidades, linea.unidadBase)}` : 'Agotado'}
-                        </div>
-                      </div>
-                      
-                      {talla.unidades > 0 && !completado && canPerformActions && (
-                        <button 
-                          className="btn-escanear"
-                          onClick={() => iniciarEscaneo(linea, pedido, detalle)}
-                        >
-                          <i className="fas fa-camera"></i> Escanear
-                        </button>
-                      )}
-                      
-                      {completado && (
-                        <div className="completado-badge">
-                          <i className="fas fa-check"></i> Completado
-                        </div>
-                      )}
-                    </div>
+                    <tr key={index} className={combinacion.unidades > 0 ? (completado ? 'completado' : 'pendiente') : 'agotado'}>
+                      <td>{combinacion.descripcionTalla}</td>
+                      <td>{combinacion.color}</td>
+                      <td>{combinacion.grupoTalla}</td>
+                      <td>{formatearUnidad(combinacion.unidades, linea.unidadBase)}</td>
+                      <td>
+                        {ubicacionesStock.length > 0 ? (
+                          <select disabled={!canPerformActions}>
+                            {ubicacionesStock.map((ubi, idx) => (
+                              <option key={idx} value={ubi.Ubicacion}>
+                                {ubi.Ubicacion} - Stock: {ubi.Cantidad === Infinity 
+                                  ? 'Ilimitado' 
+                                  : formatearUnidad(ubi.Cantidad, ubi.UnidadMedida)}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="sin-stock">Sin stock disponible</span>
+                        )}
+                      </td>
+                      <td>
+                        <input 
+                          type="text" 
+                          value={escaneado}
+                          disabled={!canPerformActions || completado}
+                        />
+                      </td>
+                      <td>
+                        {combinacion.unidades > 0 && !completado && canPerformActions && (
+                          <button 
+                            className="btn-escanear"
+                            onClick={() => iniciarEscaneo(linea, pedido, {
+                              color: combinacion.codigoColor,
+                              grupoTalla: combinacion.codigoGrupoTalla,
+                              talla: combinacion.codigoTalla
+                            })}
+                          >
+                            <FaCamera /> Escanear
+                          </button>
+                        )}
+                        {completado && <span className="completado-badge"><FaCheck /> Completado</span>}
+                      </td>
+                    </tr>
                   );
                 })}
-              </div>
-            </div>
-          ))}
-        </div>
-        
-        <div className="ubicacion-selector">
-          <label>Ubicación:</label>
-          <select
-            value={selectedUbicacion}
-            onChange={(e) => setSelectedUbicacion(e.target.value)}
-            disabled={!canPerformActions}
-          >
-            {ubicacionesStock.map((ubi, idx) => (
-              <option key={idx} value={ubi.Ubicacion}>
-                {ubi.Ubicacion} {ubi.DescripcionUbicacion ? `(${ubi.DescripcionUbicacion})` : ''} - 
-                Stock: {ubi.unidadSaldo === Infinity 
-                  ? 'Ilimitado' 
-                  : formatearUnidad(ubi.unidadSaldo, ubi.unidadMedida)}
-              </option>
-            ))}
-          </select>
-        </div>
+              </tbody>
+            </table>
+          </div>
+        )}
         
         <div className="modal-actions">
           <button 
@@ -215,10 +287,6 @@ const LineaPedido = ({
     });
   }
 
-  const tieneStock = ubicacionesConStock.some(u => u.unidadSaldo > 0);
-  const stockNegativo = ubicacionesConStock.some(u => u.unidadSaldo < 0);
-  
-  // Usar el ID único de la línea como clave
   const key = linea.movPosicionLinea;
   const expedicion = expediciones[key] || {
     ubicacion: ubicacionesConStock[0]?.ubicacion || '',
@@ -245,31 +313,23 @@ const LineaPedido = ({
   
   const formatted = formatearUnidades();
   
-  // Función para validar la cantidad ingresada
   const validarCantidad = (value) => {
     if (value === '') return '0';
     
-    // Solo permitir números enteros
     let newValue = value.replace(/\D/g, '');
     
-    // Convertir a número
     const cantidad = parseInt(newValue, 10) || 0;
     
-    // Obtener la ubicación seleccionada
     const ubicacionSeleccionada = ubicacionesConStock.find(
       ubi => ubi.ubicacion === expedicion.ubicacion
     );
     
-    // Calcular máximo permitido
     let maxPermitido = parseFloat(linea.unidadesPendientes);
     
     if (ubicacionSeleccionada && ubicacionSeleccionada.unidadSaldo !== Infinity) {
-      const factor = parseFloat(linea.factorConversion) || 1;
-      const stockDisponible = ubicacionSeleccionada.unidadSaldo / factor;
-      maxPermitido = Math.min(maxPermitido, stockDisponible);
+      maxPermitido = Math.min(maxPermitido, ubicacionSeleccionada.unidadSaldo);
     }
     
-    // Limitar al máximo permitido
     if (cantidad > maxPermitido) {
       return maxPermitido.toString();
     }
@@ -294,7 +354,6 @@ const LineaPedido = ({
       nuevaUbicacion
     );
     
-    // Al cambiar la ubicación, ajustar la cantidad al máximo disponible si es necesario
     const ubicacionSeleccionada = ubicacionesConStock.find(
       ubi => ubi.ubicacion === nuevaUbicacion
     );
@@ -304,9 +363,7 @@ const LineaPedido = ({
       let maxPermitido = parseFloat(linea.unidadesPendientes);
       
       if (ubicacionSeleccionada.unidadSaldo !== Infinity) {
-        const factor = parseFloat(linea.factorConversion) || 1;
-        const stockDisponible = ubicacionSeleccionada.unidadSaldo / factor;
-        maxPermitido = Math.min(maxPermitido, stockDisponible);
+        maxPermitido = Math.min(maxPermitido, ubicacionSeleccionada.unidadSaldo);
       }
       
       if (cantidadActual > maxPermitido) {
@@ -320,93 +377,182 @@ const LineaPedido = ({
   };
   
   return (
-    <tr 
-      key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${linea.movPosicionLinea}`}
-      className={`linea-pedido ${tieneStock ? 'clickable' : 'no-stock'} ${stockNegativo ? 'negative-stock' : ''}`}
-    >
-      <td className="td-izquierda">
-        <div className="codigo-articulo">{linea.codigoArticulo}</div>
-        <div className="codigo-alternativo">{linea.codigoAlternativo}</div>
-      </td>
-      <td className="td-izquierda">
-        <div className="descripcion-articulo">{linea.descripcionArticulo}</div>
-        <div className="detalles-articulo">{linea.descripcion2Articulo}</div>
-      </td>
-      <td className="td-centrado">
-        {linea.unidadesPendientes > 0 ? (
+    <>
+      <tr className="desktop-view">
+        <td className="td-izquierda">
+          <div className="codigo-articulo">{linea.codigoArticulo}</div>
+          <div className="codigo-alternativo">{linea.codigoAlternativo}</div>
+        </td>
+        <td className="td-izquierda">
+          <div className="descripcion-articulo">{linea.descripcionArticulo}</div>
+          <div className="detalles-articulo">{linea.descripcion2Articulo}</div>
+        </td>
+        <td className="td-centrado">
           <div className="pendiente-container">
-            <span>{formatted.pendiente}</span>
-            {formatted.equivalencia && (
-              <div className="equivalencia-stock">
-                {formatted.equivalencia}
-              </div>
-            )}
-            {linea.detalles && linea.movPosicionLinea && (
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  abrirModalDetalles(linea.detalles, linea, pedido);
-                }}
-                className="btn-detalles"
-              >
-                ...
-              </button>
+            {linea.unidadesPendientes > 0 ? (
+              <>
+                <span className="pendiente-valor">{formatted.pendiente}</span>
+                {formatted.equivalencia && (
+                  <div className="equivalencia-stock">
+                    {formatted.equivalencia}
+                  </div>
+                )}
+                {linea.detalles && linea.movPosicionLinea && (
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      abrirModalDetalles(linea.detalles, linea, pedido);
+                    }}
+                    className="btn-detalles"
+                  >
+                    <FaInfoCircle />
+                  </button>
+                )}
+              </>
+            ) : (
+              <span className="completada-badge">COMPLETADA</span>
             )}
           </div>
-        ) : (
-          <span className="completada-badge">COMPLETADA</span>
-        )}
-      </td>
-      <td>
-        <div className="ubicacion-select-container">
-          <select
-            value={expedicion.ubicacion}
-            onChange={handleCambioUbicacion}
-            className={`ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'zona-descarga' : ''}`}
-            disabled={!canPerformActions}
+        </td>
+        <td>
+          <div className="ubicacion-select-container">
+            <select
+              value={expedicion.ubicacion}
+              onChange={handleCambioUbicacion}
+              className={`ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'zona-descarga' : ''}`}
+              disabled={!canPerformActions}
+            >
+              {ubicacionesConStock.map((ubicacion, locIndex) => {
+                const mostrarUnidad = ubicacion.unidadMedida !== linea.unidadBase;
+                
+                return (
+                  <option 
+                    key={`${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
+                    value={ubicacion.ubicacion}
+                    className={ubicacion.ubicacion === "Zona descarga" ? 'zona-descarga-option' : ''}
+                  >
+                    {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''} - 
+                    Stock: {ubicacion.unidadSaldo === Infinity 
+                      ? 'Ilimitado' 
+                      : `${ubicacion.unidadSaldo}${mostrarUnidad ? ` ${ubicacion.unidadMedida}` : ''}`}
+                  </option>
+                );
+              })}
+            </select>
+            <div className="select-arrow"><FaChevronDown /></div>
+          </div>
+        </td>
+        <td>
+          <div className="cantidad-container">
+            <input
+              type="text"
+              value={expedicion.cantidad}
+              onChange={handleCambioCantidad}
+              className={expedicion.ubicacion === "Zona descarga" ? 'zona-descarga-input' : ''}
+              disabled={!canPerformActions}
+            />
+            <div className="unidad-info">{linea.unidadBase || 'ud'}</div>
+          </div>
+        </td>
+        <td className="td-centrado">
+          <button
+            className="btn-expedir"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (canPerformActions) iniciarEscaneo(linea, pedido);
+            }}
+            disabled={!canPerformActions || parseInt(expedicion.cantidad, 10) <= 0}
           >
-            {ubicacionesConStock.map((ubicacion, locIndex) => {
-              const mostrarUnidad = ubicacion.unidadMedida !== linea.unidadBase;
+            <FaCamera /> Escanear
+          </button>
+        </td>
+      </tr>
+      
+      <tr className="mobile-view">
+        <td colSpan="6">
+          <div className="linea-mobile">
+            <div className="mobile-header">
+              <div className="mobile-articulo">
+                <div className="codigo-articulo">{linea.codigoArticulo}</div>
+                <div className="codigo-alternativo">{linea.codigoAlternativo}</div>
+              </div>
+              <div className="mobile-descripcion">
+                <div className="descripcion-articulo">{linea.descripcionArticulo}</div>
+              </div>
+            </div>
+            
+            <div className="mobile-details">
+              <div className="detail-item">
+                <span className="detail-label">Pendiente:</span>
+                <div className="detail-value">
+                  <span>{formatted.pendiente}</span>
+                  {linea.detalles && linea.movPosicionLinea && (
+                    <button 
+                      className="btn-detalles"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        abrirModalDetalles(linea.detalles, linea, pedido);
+                      }}
+                    >
+                      <FaInfoCircle />
+                    </button>
+                  )}
+                </div>
+              </div>
               
-              return (
-                <option 
-                  key={`${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
-                  value={ubicacion.ubicacion}
-                  className={ubicacion.ubicacion === "Zona descarga" ? 'zona-descarga-option' : ''}
+              <div className="detail-item">
+                <span className="detail-label">Ubicación:</span>
+                <div className="ubicacion-select-container">
+                  <select
+                    value={expedicion.ubicacion}
+                    onChange={handleCambioUbicacion}
+                    className={`ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'zona-descarga' : ''}`}
+                    disabled={!canPerformActions}
+                  >
+                    {ubicacionesConStock.map((ubicacion, locIndex) => (
+                      <option 
+                        key={`${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
+                        value={ubicacion.ubicacion}
+                      >
+                        {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="select-arrow"><FaChevronDown /></div>
+                </div>
+              </div>
+              
+              <div className="detail-item">
+                <span className="detail-label">Cantidad:</span>
+                <div className="cantidad-container">
+                  <input
+                    type="text"
+                    value={expedicion.cantidad}
+                    onChange={handleCambioCantidad}
+                    className={expedicion.ubicacion === "Zona descarga" ? 'zona-descarga-input' : ''}
+                    disabled={!canPerformActions}
+                  />
+                  <div className="unidad-info">{linea.unidadBase || 'ud'}</div>
+                </div>
+              </div>
+              
+              <div className="detail-item acciones">
+                <button
+                  className="btn-expedir"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (canPerformActions) iniciarEscaneo(linea, pedido);
+                  }}
+                  disabled={!canPerformActions || parseInt(expedicion.cantidad, 10) <= 0}
                 >
-                  {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''} - 
-                  Stock: {ubicacion.unidadSaldo === Infinity 
-                    ? 'Ilimitado' 
-                    : `${ubicacion.unidadSaldo}${mostrarUnidad ? ` ${ubicacion.unidadMedida}` : ''}`}
-                </option>
-              );
-            })}
-          </select>
-        </div>
-      </td>
-      <td>
-        <input
-          type="text"
-          value={expedicion.cantidad}
-          onChange={handleCambioCantidad}
-          className={expedicion.ubicacion === "Zona descarga" ? 'zona-descarga-input' : ''}
-          disabled={!canPerformActions}
-        />
-        <div className="unidad-info">en {linea.unidadBase || 'ud'}</div>
-      </td>
-      <td className="td-centrado">
-        <button
-          className="btn-expedir"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (canPerformActions) iniciarEscaneo(linea, pedido);
-          }}
-          disabled={!canPerformActions || parseInt(expedicion.cantidad, 10) <= 0}
-        >
-          <i className="fas fa-camera"></i> Escanear
-        </button>
-      </td>
-    </tr>
+                  <FaCamera /> Escanear
+                </button>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    </>
   );
 };
 
@@ -463,7 +609,7 @@ const PedidoCard = ({
               className="btn-menu"
               onClick={() => setShowMenu(!showMenu)}
             >
-              <i className="fas fa-ellipsis-v"></i>
+              <FaEllipsisV />
             </button>
             
             {showMenu && (
@@ -476,7 +622,7 @@ const PedidoCard = ({
                     }}
                     className="menu-item"
                   >
-                    <i className="fas fa-check-circle"></i> Completar Pedido
+                    <FaCheck /> Completar Pedido
                   </button>
                 )}
                 <button 
@@ -486,14 +632,14 @@ const PedidoCard = ({
                     setShowMenu(false);
                   }}
                 >
-                  <i className="fas fa-list"></i> 
+                  <FaEllipsisV /> 
                   {pedidoViewModes[pedido.numeroPedido] === 'show' ? ' Ocultar líneas' : ' Mostrar líneas'}
                 </button>
                 <button className="menu-item">
-                  <i className="fas fa-file-pdf"></i> Exportar PDF
+                  <FaBarcode /> Exportar PDF
                 </button>
                 <button className="menu-item">
-                  <i className="fas fa-print"></i> Imprimir
+                  <FaBarcode /> Imprimir
                 </button>
               </div>
             )}
@@ -502,10 +648,18 @@ const PedidoCard = ({
       </div>
       
       <div className="pedido-details">
-        <div><strong>Forma de entrega:</strong> {pedido.formaEntrega}</div>
-        <div><strong>Obra:</strong> {pedido.obra || 'Sin obra especificada'}</div>
-        <div><strong>Dirección:</strong> {pedido.domicilio}</div>
-        <div><strong>Municipio:</strong> {pedido.municipio}</div>
+        <div className="pedido-detail-item">
+          <strong>Forma de entrega:</strong> {pedido.formaEntrega}
+        </div>
+        <div className="pedido-detail-item">
+          <strong>Obra:</strong> {pedido.obra || 'Sin obra especificada'}
+        </div>
+        <div className="pedido-detail-item">
+          <strong>Dirección:</strong> {pedido.domicilio}
+        </div>
+        <div className="pedido-detail-item">
+          <strong>Municipio:</strong> {pedido.municipio}
+        </div>
         
         <div className="observaciones-container">
           <strong>Observaciones:</strong>
@@ -516,34 +670,36 @@ const PedidoCard = ({
       </div>
       
       {pedidoViewModes[pedido.numeroPedido] === 'show' && (
-        <div className="lineas-table-container">
-          <table className="lineas-table">
-            <thead>
-              <tr>
-                <th>Artículo</th>
-                <th>Descripción</th>
-                <th>Pendiente</th>
-                <th>Ubicación</th>
-                <th>Cantidad a Expedir</th>
-                <th>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pedido.articulos.map((linea) => (
-                <LineaPedido 
-                  key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${linea.movPosicionLinea}`}
-                  linea={linea} 
-                  pedido={pedido} 
-                  expediciones={expediciones}
-                  handleExpedicionChange={handleExpedicionChange}
-                  ubicaciones={ubicaciones}
-                  iniciarEscaneo={iniciarEscaneo}
-                  abrirModalDetalles={abrirModalDetalles}
-                  canPerformActions={canPerformActions}
-                />
-              ))}
-            </tbody>
-          </table>
+        <div className="lineas-container">
+          <div className="table-responsive">
+            <table className="lineas-table">
+              <thead>
+                <tr>
+                  <th>Artículo</th>
+                  <th>Descripcion</th>
+                  <th>Pendiente</th>
+                  <th>Ubicación</th>
+                  <th>Cantidad</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pedido.articulos.map((linea) => (
+                  <LineaPedido 
+                    key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${linea.movPosicionLinea}`}
+                    linea={linea} 
+                    pedido={pedido} 
+                    expediciones={expediciones}
+                    handleExpedicionChange={handleExpedicionChange}
+                    ubicaciones={ubicaciones}
+                    iniciarEscaneo={iniciarEscaneo}
+                    abrirModalDetalles={abrirModalDetalles}
+                    canPerformActions={canPerformActions}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -600,23 +756,23 @@ const CameraModal = ({
     <div className="camera-overlay">
       <div className="camera-container">
         <button className="cerrar-modal" onClick={() => setShowCamera(false)}>
-          <i className="fas fa-times"></i>
+          <FaTimes />
         </button>
         <div className="camera-header">
-          <i className="fas fa-qrcode"></i>
+          <FaQrcode />
           <h3>Escanear Artículo</h3>
         </div>
         
         {cameraError ? (
           <div className="camera-error">
             <div className="error-icon">
-              <i className="fas fa-exclamation-triangle"></i>
+              <FaExclamationTriangle />
             </div>
             <p>{cameraError}</p>
             <p>Por favor, introduce el código manualmente:</p>
             <div className="manual-verification">
               <div className="input-group">
-                <i className="fas fa-barcode"></i>
+                <FaBarcode />
                 <input
                   type="text"
                   value={manualCode}
@@ -630,14 +786,14 @@ const CameraModal = ({
                 onClick={handleManualVerification}
                 disabled={!manualCode}
               >
-                <i className="fas fa-check"></i> Verificar
+                <FaCheck /> Verificar
               </button>
             </div>
           </div>
         ) : (
           <>
             <div className="camera-selector">
-              <label><i className="fas fa-camera"></i> Seleccionar cámara:</label>
+              <label><FaCamera /> Seleccionar cámara:</label>
               <select 
                 value={selectedCamera} 
                 onChange={(e) => setSelectedCamera(e.target.value)}
@@ -663,7 +819,7 @@ const CameraModal = ({
             <div className="manual-verification">
               <p>O introduce el código manualmente:</p>
               <div className="input-group">
-                <i className="fas fa-barcode"></i>
+                <FaBarcode />
                 <input
                   type="text"
                   value={manualCode}
@@ -676,14 +832,14 @@ const CameraModal = ({
                 onClick={handleManualVerification}
                 disabled={!manualCode}
               >
-                <i className="fas fa-check"></i> Verificar
+                <FaCheck /> Verificar
               </button>
             </div>
           </>
         )}
         
         <button className="btn-cerrar-camara" onClick={() => setShowCamera(false)}>
-          <i className="fas fa-times"></i> Cancelar
+          <FaTimes /> Cancelar
         </button>
       </div>
     </div>
@@ -706,14 +862,12 @@ const PedidosScreen = () => {
   const [pedidoViewModes, setPedidoViewModes] = useState({});
   const [loading, setLoading] = useState(true);
   const [generandoAlbaran, setGenerandoAlbaran] = useState(false);
-  const [filtroPedido, setFiltroPedido] = useState('');
-  const [filtroDireccion, setFiltroDireccion] = useState('');
+  const [filtroBusqueda, setFiltroBusqueda] = useState('');
   const [rangoFechas, setRangoFechas] = useState('semana');
   const [filtroFormaEntrega, setFiltroFormaEntrega] = useState('');
   const [paginaActual, setPaginaActual] = useState(1);
   const [error, setError] = useState('');
   const [detallesModal, setDetallesModal] = useState(null);
-  const [ubicacionesModal, setUbicacionesModal] = useState([]);
   const [showCamera, setShowCamera] = useState(false);
   const [currentScanningLine, setCurrentScanningLine] = useState(null);
   const [scannedItems, setScannedItems] = useState({});
@@ -773,7 +927,6 @@ const PedidosScreen = () => {
         const nuevasExpediciones = {};
         response.data.forEach(pedido => {
           pedido.articulos.forEach(linea => {
-            // Usar el ID único de la línea como clave
             const key = linea.movPosicionLinea;
             
             let ubicacionesConStock = responseUbicaciones.data[linea.codigoArticulo]?.filter(ubi => 
@@ -782,11 +935,10 @@ const PedidosScreen = () => {
             ) || [];
             
             const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
-            const factor = parseFloat(linea.factorConversion) || 1;
             let cantidadInicial = unidadesPendientes;
             
             if (ubicacionesConStock.length > 0 && ubicacionesConStock[0].unidadSaldo !== Infinity) {
-              const stockDisponible = ubicacionesConStock[0].unidadSaldo / factor;
+              const stockDisponible = ubicacionesConStock[0].unidadSaldo;
               cantidadInicial = Math.min(cantidadInicial, stockDisponible);
             }
             
@@ -884,16 +1036,6 @@ const PedidosScreen = () => {
 
   const abrirModalDetalles = async (detalles, linea, pedido) => {
     try {
-      const headers = getAuthHeader();
-      const response = await axios.get('http://localhost:3000/stock/por-articulo', {
-        headers,
-        params: { 
-          codigoArticulo: linea.codigoArticulo,
-          codigoEmpresa: user.CodigoEmpresa 
-        }
-      });
-      
-      setUbicacionesModal(response.data);
       setDetallesModal({
         detalles,
         linea,
@@ -933,21 +1075,23 @@ const PedidosScreen = () => {
   const handleExpedir = async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea) => {
     if (!canPerformActions) return;
     
-    // Usar el ID único de la línea para obtener la expedición
     const key = linea.movPosicionLinea;
     const expedicion = expediciones[key];
     if (!expedicion) return;
 
     let cantidadExpedida = parseInt(expedicion.cantidad, 10);
-    const factor = parseFloat(linea.factorConversion) || 1;
-    const cantidadEnStock = cantidadExpedida * factor;
-
     if (isNaN(cantidadExpedida) || cantidadExpedida <= 0) return;
 
     try {
       const headers = getAuthHeader();
       
-      await axios.post(
+      // Validación básica en frontend
+      if (cantidadExpedida > unidadesPendientes) {
+        alert(`No puedes expedir más de ${unidadesPendientes} unidades (pendientes)`);
+        return;
+      }
+
+      const response = await axios.post(
         'http://localhost:3000/actualizarLineaPedido',
         {
           codigoEmpresa,
@@ -955,7 +1099,7 @@ const PedidosScreen = () => {
           serie,
           numeroPedido,
           codigoArticulo,
-          cantidadExpedida: cantidadEnStock,
+          cantidadExpedida, // En unidades de venta
           ubicacion: expedicion.ubicacion,
           partida: expedicion.partida,
           unidadMedida: linea.unidadPedido
@@ -963,21 +1107,48 @@ const PedidosScreen = () => {
         { headers }
       );
 
-      setPedidos(prev => prev.map(p => 
-        p.numeroPedido === numeroPedido 
-          ? { 
-              ...p, 
-              articulos: p.articulos.map(a => 
-                a.movPosicionLinea === linea.movPosicionLinea 
-                  ? { ...a, unidadesPendientes: a.unidadesPendientes - cantidadExpedida }
-                  : a
-              )
-            } 
-          : p
-      ));
+      // Actualizar estado local con la respuesta del backend
+      if (response.data.success) {
+        setPedidos(prev => prev.map(p => 
+          p.numeroPedido === numeroPedido 
+            ? { 
+                ...p, 
+                articulos: p.articulos.map(a => 
+                  a.movPosicionLinea === linea.movPosicionLinea 
+                    ? { 
+                        ...a, 
+                        unidadesPendientes: response.data.detalles.unidadesPendientesRestantes 
+                      }
+                    : a
+                )
+              } 
+            : p
+        ));
+
+        // Actualizar ubicaciones (refrescar datos de stock)
+        const articulosConUnidad = pedidos.flatMap(pedido => 
+          pedido.articulos.map(articulo => ({
+            codigo: articulo.codigoArticulo,
+            unidad: articulo.unidadPedido
+          }))
+        );
+
+        const responseUbicaciones = await axios.post(
+          'http://localhost:3000/ubicacionesMultiples',
+          { articulos: articulosConUnidad },
+          { headers }
+        );
+        setUbicaciones(responseUbicaciones.data);
+
+        alert(`Se expedieron ${cantidadExpedida} unidades correctamente. Stock restante: ${response.data.detalles.stockRestante}`);
+      }
     } catch (error) {
       console.error('Error al expedir artículo:', error);
-      alert('Error al expedir artículo: ' + error.message);
+      if (error.response?.data?.mensaje) {
+        alert('Error al expedir artículo: ' + error.response.data.mensaje);
+      } else {
+        alert('Error al expedir artículo: ' + error.message);
+      }
     }
   };
 
@@ -995,7 +1166,6 @@ const PedidosScreen = () => {
     const { linea, pedido, detalle } = currentScanningLine;
     
     if (decodedText === linea.codigoArticulo || decodedText === linea.codigoAlternativo) {
-      // Usar el ID único de la línea para la expedición
       const key = linea.movPosicionLinea;
       const expedicionActual = expediciones[key] || { cantidad: '0' };
       const nuevaCantidad = (parseInt(expedicionActual.cantidad, 10) || 0) + 1;
@@ -1006,6 +1176,7 @@ const PedidosScreen = () => {
         nuevaCantidad.toString()
       );
       
+      // Expedir inmediatamente después de escanear
       setTimeout(() => {
         handleExpedir(
           pedido.codigoEmpresa,
@@ -1019,7 +1190,7 @@ const PedidosScreen = () => {
       }, 300);
       
       if (detalle) {
-        const itemKey = `${linea.codigoArticulo}-${detalle.color.codigo}-${detalle.grupoTalla.codigo}`;
+        const itemKey = `${linea.codigoArticulo}-${detalle.talla}-${detalle.color}`;
         setScannedItems(prev => ({
           ...prev,
           [itemKey]: (prev[itemKey] || 0) + 1
@@ -1038,7 +1209,6 @@ const PedidosScreen = () => {
     const { linea, pedido, detalle } = currentScanningLine;
     
     if (manualCode === linea.codigoArticulo || manualCode === linea.codigoAlternativo) {
-      // Usar el ID único de la línea para la expedición
       const key = linea.movPosicionLinea;
       const expedicionActual = expediciones[key] || { cantidad: '0' };
       const nuevaCantidad = (parseInt(expedicionActual.cantidad, 10) || 0) + 1;
@@ -1049,6 +1219,7 @@ const PedidosScreen = () => {
         nuevaCantidad.toString()
       );
       
+      // Expedir inmediatamente después de verificación manual
       setTimeout(() => {
         handleExpedir(
           pedido.codigoEmpresa,
@@ -1062,7 +1233,7 @@ const PedidosScreen = () => {
       }, 300);
       
       if (detalle) {
-        const itemKey = `${linea.codigoArticulo}-${detalle.color.codigo}-${detalle.grupoTalla.codigo}`;
+        const itemKey = `${linea.codigoArticulo}-${detalle.talla}-${detalle.color}`;
         setScannedItems(prev => ({
           ...prev,
           [itemKey]: (prev[itemKey] || 0) + 1
@@ -1129,16 +1300,14 @@ const PedidosScreen = () => {
   };
 
   const pedidosFiltrados = pedidos.filter(pedido => {
-    const matchPedido = filtroPedido 
-      ? pedido.numeroPedido.toString().includes(filtroPedido) || 
-        pedido.razonSocial.toLowerCase().includes(filtroPedido.toLowerCase())
-      : true;
-
-    const matchDireccion = filtroDireccion
-      ? `${pedido.domicilio} ${pedido.municipio} ${pedido.obra || ''}`.toLowerCase().includes(filtroDireccion.toLowerCase())
-      : true;
-
-    return matchPedido && matchDireccion;
+    const searchText = filtroBusqueda.toLowerCase();
+    
+    return (
+      pedido.numeroPedido.toString().includes(searchText) ||
+      pedido.razonSocial.toLowerCase().includes(searchText) ||
+      pedido.domicilio.toLowerCase().includes(searchText) ||
+      (pedido.obra && pedido.obra.toLowerCase().includes(searchText))
+    );
   });
 
   const pedidosOrdenados = [...pedidosFiltrados];
@@ -1166,62 +1335,65 @@ const PedidosScreen = () => {
   return (
     <div className="pedidos-screen">
       <div className="pedidos-container">
-        <div className="pedidos-header">
-          <h2>Preparación de Pedidos</h2>
-        </div>
         
         <div className="pedidos-controls">
           <div className="filtros-container">
-            <div className="filtro-group">
-              <label>Buscar pedido o cliente:</label>
-              <input
-                type="text"
-                placeholder="Nº pedido, cliente..."
-                value={filtroPedido}
-                onChange={e => setFiltroPedido(e.target.value)}
-                className="search-input"
-              />
+            <div className="filtro-group search-group">
+              <label>Buscar:</label>
+              <div className="search-input-container">
+                <FaSearch className="search-icon" />
+                <input
+                  type="text"
+                  placeholder="Nº pedido, cliente, dirección, obra..."
+                  value={filtroBusqueda}
+                  onChange={e => setFiltroBusqueda(e.target.value)}
+                  className="search-input"
+                />
+              </div>
             </div>
             
-            <div className="filtro-group">
-              <label>Buscar dirección/obra:</label>
-              <input
-                type="text"
-                placeholder="Dirección u obra..."
-                value={filtroDireccion}
-                onChange={e => setFiltroDireccion(e.target.value)}
-                className="search-input"
-              />
-            </div>
-            
-            <div className="filtro-group">
+            <div className="filtro-group date-group">
               <label>Rango de fechas:</label>
-              <select
-                value={rangoFechas}
-                onChange={e => setRangoFechas(e.target.value)}
-                className="sort-select"
-              >
-                <option value="semana">Una semana</option>
-                <option value="dia">Un día</option>
-              </select>
+              <div className="select-container">
+                <FaCalendarAlt className="select-icon" />
+                <select
+                  value={rangoFechas}
+                  onChange={e => setRangoFechas(e.target.value)}
+                  className="sort-select"
+                >
+                  <option value="semana">Una semana</option>
+                  <option value="dia">Un día</option>
+                </select>
+              </div>
             </div>
             
-            <div className="filtro-group">
+            <div className="filtro-group delivery-group">
               <label>Forma de entrega:</label>
-              <select
-                value={filtroFormaEntrega}
-                onChange={e => setFiltroFormaEntrega(e.target.value)}
-                className="sort-select"
-              >
-                <option value="">Todas</option>
-                {formasEntrega.map(forma => (
-                  <option key={forma.id} value={forma.id}>
-                    {forma.nombre}
-                  </option>
-                ))}
-              </select>
+              <div className="select-container">
+                <FaTruck className="select-icon" />
+                <select
+                  value={filtroFormaEntrega}
+                  onChange={e => setFiltroFormaEntrega(e.target.value)}
+                  className="sort-select"
+                >
+                  <option value="">Todas</option>
+                  {formasEntrega.map(forma => (
+                    <option key={forma.id} value={forma.id}>
+                      {forma.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
+        </div>
+        
+        <div className="pagination-container">
+          <Paginacion 
+            totalPaginas={totalPaginas} 
+            paginaActual={paginaActual} 
+            cambiarPagina={cambiarPagina} 
+          />
         </div>
         
         <div className="pedidos-content">
@@ -1257,14 +1429,16 @@ const PedidosScreen = () => {
                   canPerformActions={canPerformActions}
                 />
               ))}
-              
-              <Paginacion 
-                totalPaginas={totalPaginas} 
-                paginaActual={paginaActual} 
-                cambiarPagina={cambiarPagina} 
-              />
             </>
           )}
+        </div>
+        
+        <div className="pagination-container">
+          <Paginacion 
+            totalPaginas={totalPaginas} 
+            paginaActual={paginaActual} 
+            cambiarPagina={cambiarPagina} 
+          />
         </div>
         
         {detallesModal && (
@@ -1273,7 +1447,6 @@ const PedidosScreen = () => {
             linea={detallesModal.linea}
             pedido={detallesModal.pedido}
             onExpedir={cerrarModalDetalles}
-            ubicacionesStock={ubicacionesModal}
             scannedItems={scannedItems}
             setScannedItems={setScannedItems}
             iniciarEscaneo={iniciarEscaneo}
