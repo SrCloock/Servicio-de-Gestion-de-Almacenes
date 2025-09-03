@@ -130,15 +130,14 @@ const InventarioPage = () => {
     const agrupado = {};
     
     data.forEach(item => {
-      const clave = [
-        item.CodigoArticulo,
-        item.CodigoAlmacen,
-        item.Ubicacion,
-        item.TipoUnidadMedida_ || 'unidades',
-        item.Partida || '',
-        item.CodigoColor_ || '',
-        item.CodigoTalla01_ || ''
-      ].join('_');
+      // Filtrar solo los almacenes permitidos
+      const almacenesPermitidos = ['CEN', 'BCN', 'N5', 'N1', 'PK', '5'];
+      if (!almacenesPermitidos.includes(item.CodigoAlmacen)) {
+        return; // Saltar este registro si no está en los almacenes permitidos
+      }
+      
+      // Usamos la clave única generada por el backend
+      const clave = item.ClaveUnica;
       
       if (!agrupado[item.CodigoArticulo]) {
         agrupado[item.CodigoArticulo] = {
@@ -162,12 +161,15 @@ const InventarioPage = () => {
         Ubicacion: item.Ubicacion,
         DescripcionUbicacion: item.DescripcionUbicacion,
         Partida: item.Partida,
+        Periodo: item.Periodo,
         UnidadStock: item.UnidadStock,
         Cantidad: item.Cantidad,
         CantidadBase: item.CantidadBase,
         CodigoColor: item.CodigoColor_,
         CodigoTalla01: item.CodigoTalla01_,
-        GrupoUnico: clave
+        GrupoUnico: clave,
+        MovPosicionLinea: item.MovPosicionLinea,
+        detalles: item.detalles
       };
       
       agrupado[item.CodigoArticulo].ubicaciones.push(ubicacion);
@@ -422,10 +424,10 @@ const InventarioPage = () => {
       clave,
       codigoAlmacen,
       ubicacionStr,
-      partida,
-      unidadStock,
-      codigoColor,
-      codigoTalla01
+      partida: partida || '',
+      unidadStock: unidadStock || 'unidades',
+      codigoColor: codigoColor || '',
+      codigoTalla01: codigoTalla01 || ''
     });
     setNuevaCantidad(cantidadActual.toString());
   };
@@ -552,8 +554,6 @@ const InventarioPage = () => {
             <button 
               className="inventario-filters-toggle"
               onClick={() => setFiltrosAbiertos(!filtrosAbiertos)}
-              aria-expanded={filtrosAbiertos}
-              aria-label={filtrosAbiertos ? 'Ocultar filtros' : 'Mostrar filtros'}
             >
               <FiFilter /> {filtrosAbiertos ? 'Ocultar Filtros' : 'Mostrar Filtros'}
             </button>
@@ -561,71 +561,52 @@ const InventarioPage = () => {
             {filtrosAbiertos && (
               <div className="inventario-filters-panel">
                 <div className="inventario-filter-group">
-                  <label htmlFor="almacen-filter">
-                    Almacén:
-                  </label>
+                  <label>Almacén:</label>
                   <input
                     type="text"
-                    id="almacen-filter"
                     name="almacen"
                     placeholder="Filtrar por almacén"
                     value={filters.almacen}
                     onChange={handleFilterChange}
-                    aria-label="Filtrar por almacén"
                   />
                 </div>
                 
                 <div className="inventario-filter-group">
-                  <label htmlFor="ubicacion-filter">
-                    Ubicación:
-                  </label>
+                  <label>Ubicación:</label>
                   <input
                     type="text"
-                    id="ubicacion-filter"
                     name="ubicacion"
                     placeholder="Filtrar por ubicación"
                     value={filters.ubicacion}
                     onChange={handleFilterChange}
-                    aria-label="Filtrar por ubicación"
                   />
                 </div>
                 
                 <div className="inventario-filter-group">
-                  <label htmlFor="familia-filter">
-                    Familia:
-                  </label>
+                  <label>Familia:</label>
                   <input
                     type="text"
-                    id="familia-filter"
                     name="familia"
                     placeholder="Buscar por familia"
                     value={filters.familia}
                     onChange={handleFilterChange}
-                    aria-label="Buscar por familia"
                   />
                 </div>
                 
                 <div className="inventario-filter-group">
-                  <label htmlFor="subfamilia-filter">
-                    Subfamilia:
-                  </label>
+                  <label>Subfamilia:</label>
                   <input
                     type="text"
-                    id="subfamilia-filter"
                     name="subfamilia"
                     placeholder="Buscar por subfamilia"
                     value={filters.subfamilia}
                     onChange={handleFilterChange}
-                    aria-label="Buscar por subfamilia"
                   />
                 </div>
                 
                 <button 
                   className="inventario-btn-toggle-all"
                   onClick={toggleTodosArticulos}
-                  aria-label={Object.keys(articulosExpandidos).length > 0 
-                    ? 'Contraer todos los artículos' 
-                    : 'Expandir todos los artículos'}
                 >
                   {Object.keys(articulosExpandidos).length > 0 ? (
                     <>
@@ -650,7 +631,6 @@ const InventarioPage = () => {
                 <button 
                   className="inventario-btn-confirmar"
                   onClick={confirmarAjustes}
-                  aria-label="Confirmar todos los ajustes pendientes"
                 >
                   <FiCheck /> Confirmar Ajustes
                 </button>
@@ -682,7 +662,6 @@ const InventarioPage = () => {
                   <button 
                     className="inventario-btn-eliminar"
                     onClick={() => eliminarAjustePendiente(index)}
-                    aria-label="Eliminar ajuste pendiente"
                   >
                     <FiX />
                   </button>
@@ -744,7 +723,6 @@ const InventarioPage = () => {
                   <button 
                     className="inventario-btn-reload"
                     onClick={() => window.location.reload()}
-                    aria-label="Recargar página"
                   >
                     <FiRefreshCw /> Recargar Inventario
                   </button>
@@ -769,7 +747,6 @@ const InventarioPage = () => {
                         subfamilia: ''
                       });
                     }}
-                    aria-label="Limpiar todos los filtros"
                   >
                     Limpiar Filtros
                   </button>
@@ -785,7 +762,6 @@ const InventarioPage = () => {
                       <div 
                         className="inventario-articulo-header"
                         onClick={() => toggleExpandirArticulo(articulo.CodigoArticulo)}
-                        aria-expanded={!!articulosExpandidos[articulo.CodigoArticulo]}
                       >
                         <div className="inventario-articulo-info">
                           <span className="inventario-articulo-codigo">{articulo.CodigoArticulo}</span>
@@ -956,7 +932,6 @@ const InventarioPage = () => {
                       onClick={() => goToPage(currentPage - 1)} 
                       disabled={currentPage === 1}
                       className="inventario-pagination-btn"
-                      aria-label="Página anterior"
                     >
                       Anterior
                     </button>
@@ -967,7 +942,6 @@ const InventarioPage = () => {
                       onClick={() => goToPage(currentPage + 1)} 
                       disabled={currentPage === totalPages}
                       className="inventario-pagination-btn"
-                      aria-label="Página siguiente"
                     >
                       Siguiente
                     </button>
@@ -982,7 +956,6 @@ const InventarioPage = () => {
                         setCurrentPage(1);
                       }}
                       className="inventario-page-size-select"
-                      aria-label="Cambiar número de artículos por página"
                     >
                       <option value={25}>25</option>
                       <option value={50}>50</option>
@@ -1003,7 +976,6 @@ const InventarioPage = () => {
                   <button 
                     className="inventario-btn-reload"
                     onClick={cargarHistorialAjustes}
-                    aria-label="Recargar historial"
                   >
                     <FiRefreshCw /> Recargar Historial
                   </button>
@@ -1029,7 +1001,6 @@ const InventarioPage = () => {
                           className="inventario-fecha-header"
                           onClick={() => toggleExpandirFecha(item.fecha)}
                           style={{ background: expandido ? '#f0f7ff' : '#f5f7fa' }}
-                          aria-expanded={expandido}
                         >
                           <div className="inventario-fecha-info">
                             <span className="inventario-fecha">{formatearFecha(item.fecha)}</span>
@@ -1045,7 +1016,7 @@ const InventarioPage = () => {
                         {expandido && (
                           <div className="inventario-detalles-ajustes">
                             {item.detalles.map((detalle, idx) => (
-                              <div key={`${detalle.CodigoArticulo}-${detalle.FechaRegistro}`} 
+                              <div key={`${detalle.CodigoArticulo}-${detalle.FechaRegistro}-${idx}`} 
                                    className={`inventario-ajuste-detalle ${detalle.Diferencia > 0 ? 'ajuste-positivo' : 'ajuste-negativo'}`}>
                                 <div className="inventario-ajuste-detalle-header">
                                   <span className="inventario-ajuste-articulo">
@@ -1149,14 +1120,12 @@ const InventarioPage = () => {
               <button 
                 className="inventario-btn-cancelar"
                 onClick={() => setEditandoCantidad(null)}
-                aria-label="Cancelar edición"
               >
                 Cancelar
               </button>
               <button 
                 className="inventario-btn-guardar"
                 onClick={guardarAjustePendiente}
-                aria-label="Guardar ajuste"
               >
                 Guardar Ajuste
               </button>
@@ -1168,7 +1137,7 @@ const InventarioPage = () => {
       {detallesModal && (
         <div className="inventario-modal-detalles">
           <div className="inventario-modal-contenido">
-            <button className="inventario-cerrar-modal" onClick={() => setDetallesModal(null)} aria-label="Cerrar modal">
+            <button className="inventario-cerrar-modal" onClick={() => setDetallesModal(null)}>
               &times;
             </button>
             
@@ -1193,7 +1162,7 @@ const InventarioPage = () => {
                       <thead>
                         <tr>
                           <th>Talla</th>
-                          <th>Descripción</th>
+                          <th>Descripcion</th>
                           <th>Unidades</th>
                         </tr>
                       </thead>

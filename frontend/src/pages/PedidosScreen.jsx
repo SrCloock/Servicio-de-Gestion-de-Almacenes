@@ -97,6 +97,7 @@ const DetallesArticuloModal = ({
 }) => {
   const [stockPorVariante, setStockPorVariante] = useState({});
   const [loadingStock, setLoadingStock] = useState(false);
+  const [ubicacionesSeleccionadas, setUbicacionesSeleccionadas] = useState({});
 
   const obtenerCombinaciones = () => {
     const combinaciones = [];
@@ -109,10 +110,14 @@ const DetallesArticuloModal = ({
           combinaciones.push({
             codigoTalla,
             descripcionTalla: talla.descripcion,
-            color: color.nombre,
-            codigoColor: color.codigo,
-            grupoTalla: grupoTalla.nombre,
-            codigoGrupoTalla: grupoTalla.codigo,
+            color: {
+              codigo: color.codigo,
+              nombre: color.nombre
+            },
+            grupoTalla: {
+              codigo: grupoTalla.codigo,
+              nombre: grupoTalla.nombre
+            },
             unidades: talla.unidades
           });
         }
@@ -126,6 +131,7 @@ const DetallesArticuloModal = ({
     const fetchStockForVariantes = async () => {
       setLoadingStock(true);
       const stockData = {};
+      const nuevasUbicacionesSeleccionadas = {};
 
       for (const variante of detalles) {
         const { color, grupoTalla } = variante;
@@ -138,26 +144,51 @@ const DetallesArticuloModal = ({
                 params: {
                   codigoArticulo: linea.codigoArticulo,
                   codigoColor: color.codigo,
-                  grupoTalla: grupoTalla.codigo,
                   codigoTalla: codigoTalla
                 }
               });
 
-              stockData[`${color.codigo}-${grupoTalla.codigo}-${codigoTalla}`] = response.data;
+              const key = `${color.codigo}-${codigoTalla}`;
+              stockData[key] = response.data;
+              
+              // Establecer la primera ubicación como seleccionada por defecto
+              if (response.data.length > 0) {
+                nuevasUbicacionesSeleccionadas[key] = response.data[0].Ubicacion;
+              }
             } catch (error) {
               console.error('Error fetching stock for variant:', error);
-              stockData[`${color.codigo}-${grupoTalla.codigo}-${codigoTalla}`] = [];
+              const key = `${color.codigo}-${codigoTalla}`;
+              stockData[key] = [];
             }
           }
         }
       }
 
       setStockPorVariante(stockData);
+      setUbicacionesSeleccionadas(nuevasUbicacionesSeleccionadas);
       setLoadingStock(false);
     };
 
     fetchStockForVariantes();
   }, [detalles, linea.codigoArticulo]);
+
+  const handleCambioUbicacion = (key, ubicacion) => {
+    setUbicacionesSeleccionadas(prev => ({
+      ...prev,
+      [key]: ubicacion
+    }));
+  };
+
+  const obtenerUbicacionSeleccionada = (key) => {
+    return ubicacionesSeleccionadas[key] || '';
+  };
+
+  const obtenerStockDisponible = (key, ubicacion) => {
+    if (!stockPorVariante[key]) return 0;
+    
+    const ubicacionData = stockPorVariante[key].find(ubi => ubi.Ubicacion === ubicacion);
+    return ubicacionData ? ubicacionData.Cantidad : 0;
+  };
 
   const combinaciones = obtenerCombinaciones();
 
@@ -170,6 +201,10 @@ const DetallesArticuloModal = ({
       <div className="modal-contenido modal-detalles-contenido" onClick={e => e.stopPropagation()}>
         <button className="cerrar-modal" onClick={() => onExpedir(0)}><FaTimes /></button>
         <h3 className="modal-titulo">Artículo: {linea.descripcionArticulo}</h3>
+        <div className="modal-subtitulo">
+          <span>Código: {linea.codigoArticulo}</span>
+          <span>Unidad: {linea.unidadBase || 'ud'}</span>
+        </div>
         
         {loadingStock ? (
           <div className="loading-stock">
@@ -183,7 +218,6 @@ const DetallesArticuloModal = ({
                 <tr>
                   <th>Talla</th>
                   <th>Color</th>
-                  <th>Grupo Talla</th>
                   <th>Pendiente</th>
                   <th>Ubicación</th>
                   <th>Cantidad</th>
@@ -192,50 +226,70 @@ const DetallesArticuloModal = ({
               </thead>
               <tbody>
                 {combinaciones.map((combinacion, index) => {
-                  const stockKey = `${combinacion.codigoColor}-${combinacion.codigoGrupoTalla}-${combinacion.codigoTalla}`;
-                  const ubicacionesStock = stockPorVariante[stockKey] || [];
+                  const key = `${combinacion.color.codigo}-${combinacion.codigoTalla}`;
+                  const ubicacionesStock = stockPorVariante[key] || [];
+                  const ubicacionSeleccionada = obtenerUbicacionSeleccionada(key);
+                  const stockDisponible = obtenerStockDisponible(key, ubicacionSeleccionada);
                   
-                  const itemKey = `${linea.codigoArticulo}-${combinacion.codigoTalla}-${combinacion.codigoColor}`;
+                  const itemKey = `${linea.codigoArticulo}-${combinacion.codigoTalla}-${combinacion.color.codigo}`;
                   const escaneado = scannedItems[itemKey] || 0;
                   const completado = escaneado >= combinacion.unidades;
                   
                   return (
                     <tr key={index} className={combinacion.unidades > 0 ? (completado ? 'completado' : 'pendiente') : 'agotado'}>
                       <td>{combinacion.descripcionTalla}</td>
-                      <td>{combinacion.color}</td>
-                      <td>{combinacion.grupoTalla}</td>
+                      <td>{combinacion.color.nombre}</td>
                       <td>{formatearUnidad(combinacion.unidades, linea.unidadBase)}</td>
                       <td>
                         {ubicacionesStock.length > 0 ? (
-                          <select disabled={!canPerformActions}>
-                            {ubicacionesStock.map((ubi, idx) => (
-                              <option key={idx} value={ubi.Ubicacion}>
-                                {ubi.Ubicacion} - Stock: {ubi.Cantidad === Infinity 
-                                  ? 'Ilimitado' 
-                                  : formatearUnidad(ubi.Cantidad, ubi.UnidadMedida)}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="ubicacion-select-container">
+                            <select
+                              value={ubicacionSeleccionada}
+                              onChange={(e) => handleCambioUbicacion(key, e.target.value)}
+                              disabled={!canPerformActions || completado}
+                            >
+                              {ubicacionesStock.map((ubi, idx) => (
+                                <option key={idx} value={ubi.Ubicacion}>
+                                  {ubi.CodigoAlmacen} - {ubi.Ubicacion} {ubi.Partida ? `(${ubi.Partida})` : ''} - 
+                                  Stock: {formatearUnidad(ubi.Cantidad, ubi.UnidadMedida)}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="select-arrow"><FaChevronDown /></div>
+                          </div>
                         ) : (
-                          <span className="sin-stock">Sin stock disponible</span>
+                          <span className="sin-stock">Sin Nada</span>
                         )}
                       </td>
                       <td>
                         <input 
                           type="text" 
                           value={escaneado}
-                          disabled={!canPerformActions || completado}
+                          onChange={(e) => {
+                            const nuevoValor = Math.max(0, Math.min(combinacion.unidades, parseInt(e.target.value) || 0));
+                            setScannedItems(prev => ({
+                              ...prev,
+                              [itemKey]: nuevoValor
+                            }));
+                          }}
+                          disabled={!canPerformActions || completado || ubicacionesStock.length === 0}
                         />
+                        <span className="unidad-info">{linea.unidadBase || 'ud'}</span>
                       </td>
                       <td>
-                        {combinacion.unidades > 0 && !completado && canPerformActions && (
+                        {combinacion.unidades > 0 && !completado && canPerformActions && ubicacionesStock.length > 0 && (
                           <button 
                             className="btn-escanear"
-                            onClick={() => iniciarEscaneo(linea, pedido, {
-                              color: combinacion.codigoColor,
-                              grupoTalla: combinacion.codigoGrupoTalla,
-                              talla: combinacion.codigoTalla
-                            })}
+                            onClick={() => {
+                              const ubicacionData = ubicacionesStock.find(ubi => ubi.Ubicacion === ubicacionSeleccionada);
+                              iniciarEscaneo(linea, pedido, {
+                                color: combinacion.color.codigo,
+                                talla: combinacion.codigoTalla,
+                                ubicacion: ubicacionSeleccionada,
+                                almacen: ubicacionData?.CodigoAlmacen,
+                                partida: ubicacionData?.Partida
+                              });
+                            }}
                           >
                             <FaCamera /> Escanear
                           </button>
@@ -271,7 +325,8 @@ const LineaPedido = ({
   ubicaciones,
   iniciarEscaneo,
   abrirModalDetalles,
-  canPerformActions
+  canPerformActions,
+  isScanning
 }) => {
   let ubicacionesConStock = ubicaciones[linea.codigoArticulo]?.filter(ubi => 
     ubi.unidadSaldo > 0 && 
@@ -280,6 +335,7 @@ const LineaPedido = ({
   
   if (ubicacionesConStock.length === 0) {
     ubicacionesConStock.push({
+      codigoAlmacen: "N/A",
       ubicacion: "Zona descarga",
       partida: null,
       unidadSaldo: Infinity,
@@ -289,7 +345,9 @@ const LineaPedido = ({
 
   const key = linea.movPosicionLinea;
   const expedicion = expediciones[key] || {
+    almacen: ubicacionesConStock[0]?.codigoAlmacen || '',
     ubicacion: ubicacionesConStock[0]?.ubicacion || '',
+    partida: ubicacionesConStock[0]?.partida || null,
     cantidad: '0'
   };
   
@@ -316,9 +374,16 @@ const LineaPedido = ({
   const validarCantidad = (value) => {
     if (value === '') return '0';
     
-    let newValue = value.replace(/\D/g, '');
+    // Permitir decimales
+    let newValue = value.replace(/[^\d.]/g, '');
     
-    const cantidad = parseInt(newValue, 10) || 0;
+    // Limitar a un punto decimal
+    const parts = newValue.split('.');
+    if (parts.length > 2) {
+      newValue = parts[0] + '.' + parts.slice(1).join('');
+    }
+    
+    const cantidad = parseFloat(newValue) || 0;
     
     const ubicacionSeleccionada = ubicacionesConStock.find(
       ubi => ubi.ubicacion === expedicion.ubicacion
@@ -334,7 +399,7 @@ const LineaPedido = ({
       return maxPermitido.toString();
     }
     
-    return cantidad.toString();
+    return newValue;
   };
   
   const handleCambioCantidad = (e) => {
@@ -348,18 +413,24 @@ const LineaPedido = ({
   
   const handleCambioUbicacion = (e) => {
     const nuevaUbicacion = e.target.value;
+    const ubicacionSeleccionada = ubicacionesConStock.find(
+      ubi => ubi.ubicacion === nuevaUbicacion
+    );
+    
     handleExpedicionChange(
       key, 
       'ubicacion', 
       nuevaUbicacion
     );
     
-    const ubicacionSeleccionada = ubicacionesConStock.find(
-      ubi => ubi.ubicacion === nuevaUbicacion
-    );
-    
     if (ubicacionSeleccionada) {
-      const cantidadActual = parseInt(expedicion.cantidad, 10) || 0;
+      handleExpedicionChange(
+        key, 
+        'almacen', 
+        ubicacionSeleccionada.codigoAlmacen
+      );
+      
+      const cantidadActual = parseFloat(expedicion.cantidad) || 0;
       let maxPermitido = parseFloat(linea.unidadesPendientes);
       
       if (ubicacionSeleccionada.unidadSaldo !== Infinity) {
@@ -431,7 +502,7 @@ const LineaPedido = ({
                     value={ubicacion.ubicacion}
                     className={ubicacion.ubicacion === "Zona descarga" ? 'zona-descarga-option' : ''}
                   >
-                    {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''} - 
+                    {ubicacion.codigoAlmacen} - {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''} - 
                     Stock: {ubicacion.unidadSaldo === Infinity 
                       ? 'Ilimitado' 
                       : `${ubicacion.unidadSaldo}${mostrarUnidad ? ` ${ubicacion.unidadMedida}` : ''}`}
@@ -461,9 +532,9 @@ const LineaPedido = ({
               e.stopPropagation();
               if (canPerformActions) iniciarEscaneo(linea, pedido);
             }}
-            disabled={!canPerformActions || parseInt(expedicion.cantidad, 10) <= 0}
+            disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning}
           >
-            <FaCamera /> Escanear
+            <FaCamera /> {isScanning ? 'Procesando...' : 'Escanear'}
           </button>
         </td>
       </tr>
@@ -514,7 +585,7 @@ const LineaPedido = ({
                         key={`${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
                         value={ubicacion.ubicacion}
                       >
-                        {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''}
+                        {ubicacion.codigoAlmacen} - {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''}
                       </option>
                     ))}
                   </select>
@@ -543,9 +614,9 @@ const LineaPedido = ({
                     e.stopPropagation();
                     if (canPerformActions) iniciarEscaneo(linea, pedido);
                   }}
-                  disabled={!canPerformActions || parseInt(expedicion.cantidad, 10) <= 0}
+                  disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning}
                 >
-                  <FaCamera /> Escanear
+                  <FaCamera /> {isScanning ? 'Procesando...' : 'Escanear'}
                 </button>
               </div>
             </div>
@@ -567,7 +638,8 @@ const PedidoCard = ({
   handleExpedicionChange,
   iniciarEscaneo,
   abrirModalDetalles,
-  canPerformActions
+  canPerformActions,
+  isScanning
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   
@@ -695,6 +767,7 @@ const PedidoCard = ({
                     iniciarEscaneo={iniciarEscaneo}
                     abrirModalDetalles={abrirModalDetalles}
                     canPerformActions={canPerformActions}
+                    isScanning={isScanning}
                   />
                 ))}
               </tbody>
@@ -875,6 +948,7 @@ const PedidosScreen = () => {
   const [manualCode, setManualCode] = useState('');
   const [cameras, setCameras] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef(null);
 
   const formasEntrega = [
@@ -934,20 +1008,20 @@ const PedidosScreen = () => {
               ubi.unidadMedida === linea.unidadPedido
             ) || [];
             
-            const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
-            let cantidadInicial = unidadesPendientes;
-            
-            if (ubicacionesConStock.length > 0 && ubicacionesConStock[0].unidadSaldo !== Infinity) {
-              const stockDisponible = ubicacionesConStock[0].unidadSaldo;
-              cantidadInicial = Math.min(cantidadInicial, stockDisponible);
-            }
-            
-            if (!Number.isInteger(cantidadInicial)) {
-              cantidadInicial = Math.ceil(cantidadInicial);
-            }
+            // Calcular la cantidad inicial como el mínimo entre unidades pendientes y stock disponible
+            let cantidadInicial = Math.min(
+              parseFloat(linea.unidadesPendientes) || 0,
+              ubicacionesConStock[0]?.unidadSaldo !== Infinity ? 
+                parseFloat(ubicacionesConStock[0]?.unidadSaldo) || 0 : 
+                parseFloat(linea.unidadesPendientes) || 0
+            );
+
+            // Asegurar que es un número válido
+            if (isNaN(cantidadInicial)) cantidadInicial = 0;
             
             if (ubicacionesConStock.length === 0) {
               ubicacionesConStock.push({
+                codigoAlmacen: "N/A",
                 ubicacion: "Zona descarga",
                 partida: null,
                 unidadSaldo: Infinity,
@@ -956,8 +1030,9 @@ const PedidosScreen = () => {
             }
             
             nuevasExpediciones[key] = {
-              ubicacion: ubicacionesConStock[0].ubicacion,
-              partida: ubicacionesConStock[0].partida || null,
+              almacen: ubicacionesConStock[0]?.codigoAlmacen || '',
+              ubicacion: ubicacionesConStock[0]?.ubicacion || "Zona descarga",
+              partida: ubicacionesConStock[0]?.partida || null,
               cantidad: cantidadInicial.toString()
             };
           });
@@ -1073,14 +1148,22 @@ const PedidosScreen = () => {
   };
 
   const handleExpedir = async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea) => {
-    if (!canPerformActions) return;
+    if (!canPerformActions || isScanning) return;
     
+    setIsScanning(true);
     const key = linea.movPosicionLinea;
     const expedicion = expediciones[key];
-    if (!expedicion) return;
+    
+    if (!expedicion) {
+      setIsScanning(false);
+      return;
+    }
 
-    let cantidadExpedida = parseInt(expedicion.cantidad, 10);
-    if (isNaN(cantidadExpedida) || cantidadExpedida <= 0) return;
+    let cantidadExpedida = parseFloat(expedicion.cantidad);
+    if (isNaN(cantidadExpedida) || cantidadExpedida <= 0) {
+      setIsScanning(false);
+      return;
+    }
 
     try {
       const headers = getAuthHeader();
@@ -1088,6 +1171,7 @@ const PedidosScreen = () => {
       // Validación básica en frontend
       if (cantidadExpedida > unidadesPendientes) {
         alert(`No puedes expedir más de ${unidadesPendientes} unidades (pendientes)`);
+        setIsScanning(false);
         return;
       }
 
@@ -1099,7 +1183,8 @@ const PedidosScreen = () => {
           serie,
           numeroPedido,
           codigoArticulo,
-          cantidadExpedida, // En unidades de venta
+          cantidadExpedida,
+          almacen: expedicion.almacen,
           ubicacion: expedicion.ubicacion,
           partida: expedicion.partida,
           unidadMedida: linea.unidadPedido
@@ -1149,6 +1234,8 @@ const PedidosScreen = () => {
       } else {
         alert('Error al expedir artículo: ' + error.message);
       }
+    } finally {
+      setIsScanning(false);
     }
   };
 
@@ -1166,28 +1253,15 @@ const PedidosScreen = () => {
     const { linea, pedido, detalle } = currentScanningLine;
     
     if (decodedText === linea.codigoArticulo || decodedText === linea.codigoAlternativo) {
-      const key = linea.movPosicionLinea;
-      const expedicionActual = expediciones[key] || { cantidad: '0' };
-      const nuevaCantidad = (parseInt(expedicionActual.cantidad, 10) || 0) + 1;
-      
-      handleExpedicionChange(
-        key, 
-        'cantidad', 
-        nuevaCantidad.toString()
+      handleExpedir(
+        pedido.codigoEmpresa,
+        pedido.ejercicioPedido,
+        pedido.seriePedido,
+        pedido.numeroPedido,
+        linea.codigoArticulo,
+        linea.unidadesPendientes,
+        linea
       );
-      
-      // Expedir inmediatamente después de escanear
-      setTimeout(() => {
-        handleExpedir(
-          pedido.codigoEmpresa,
-          pedido.ejercicioPedido,
-          pedido.seriePedido,
-          pedido.numeroPedido,
-          linea.codigoArticulo,
-          linea.unidadesPendientes,
-          linea
-        );
-      }, 300);
       
       if (detalle) {
         const itemKey = `${linea.codigoArticulo}-${detalle.talla}-${detalle.color}`;
@@ -1209,28 +1283,15 @@ const PedidosScreen = () => {
     const { linea, pedido, detalle } = currentScanningLine;
     
     if (manualCode === linea.codigoArticulo || manualCode === linea.codigoAlternativo) {
-      const key = linea.movPosicionLinea;
-      const expedicionActual = expediciones[key] || { cantidad: '0' };
-      const nuevaCantidad = (parseInt(expedicionActual.cantidad, 10) || 0) + 1;
-      
-      handleExpedicionChange(
-        key, 
-        'cantidad', 
-        nuevaCantidad.toString()
+      handleExpedir(
+        pedido.codigoEmpresa,
+        pedido.ejercicioPedido,
+        pedido.seriePedido,
+        pedido.numeroPedido,
+        linea.codigoArticulo,
+        linea.unidadesPendientes,
+        linea
       );
-      
-      // Expedir inmediatamente después de verificación manual
-      setTimeout(() => {
-        handleExpedir(
-          pedido.codigoEmpresa,
-          pedido.ejercicioPedido,
-          pedido.seriePedido,
-          pedido.numeroPedido,
-          linea.codigoArticulo,
-          linea.unidadesPendientes,
-          linea
-        );
-      }, 300);
       
       if (detalle) {
         const itemKey = `${linea.codigoArticulo}-${detalle.talla}-${detalle.color}`;
@@ -1341,7 +1402,6 @@ const PedidosScreen = () => {
             <div className="filtro-group search-group">
               <label>Buscar:</label>
               <div className="search-input-container">
-                <FaSearch className="search-icon" />
                 <input
                   type="text"
                   placeholder="Nº pedido, cliente, dirección, obra..."
@@ -1427,6 +1487,7 @@ const PedidosScreen = () => {
                   iniciarEscaneo={iniciarEscaneo}
                   abrirModalDetalles={abrirModalDetalles}
                   canPerformActions={canPerformActions}
+                  isScanning={isScanning}
                 />
               ))}
             </>
