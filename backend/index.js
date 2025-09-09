@@ -1599,7 +1599,7 @@ app.get('/stock/por-ubicacion', async (req, res) => {
     
     const total = countResult.recordset[0].TotalCount;
     
-    // Consulta para obtener los artículos
+    // Consulta corregida - Eliminadas columnas CodigoTalla02_, CodigoTalla03_, CodigoTalla04_
     const result = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
@@ -1617,10 +1617,7 @@ app.get('/stock/por-ubicacion', async (req, res) => {
           s.Partida,
           s.CodigoColor_,
           c.Color_ AS NombreColor,
-          s.CodigoTalla01_ AS Talla,
-          s.CodigoTalla02_ AS Talla2,
-          s.CodigoTalla03_ AS Talla3,
-          s.CodigoTalla04_ AS Talla4
+          s.CodigoTalla01_ AS Talla
         FROM AcumuladoStockUbicacion s
         INNER JOIN Articulos a 
           ON a.CodigoEmpresa = s.CodigoEmpresa 
@@ -1655,7 +1652,7 @@ app.get('/stock/por-ubicacion', async (req, res) => {
 
 // ✅ 9.4 OBTENER STOCK POR MÚLTIPLES ARTÍCULOS (VERSIÓN MEJORADA)
 app.post('/ubicacionesMultiples', async (req, res) => {
-  const { articulos } = req.body; // Se espera un array de objetos { codigo, unidad }
+  const { articulos } = req.body;
   const codigoEmpresa = req.user.CodigoEmpresa;
 
   if (!articulos || !Array.isArray(articulos)) {
@@ -1671,51 +1668,48 @@ app.post('/ubicacionesMultiples', async (req, res) => {
 
   try {
     const codigosArticulos = articulos.map(art => art.codigo);
-    const unidadesRequeridas = articulos.map(art => art.unidad);
-
+    
+    // Crear placeholders para la consulta
     const articuloPlaceholders = codigosArticulos.map((_, i) => `@articulo${i}`).join(',');
-    const unidadPlaceholders = unidadesRequeridas.map((_, i) => `@unidad${i}`).join(',');
-
+    
     const query = `
       SELECT 
         s.CodigoArticulo,
         s.CodigoAlmacen,
-        a.Almacen AS NombreAlmacen,
+        alm.Almacen AS NombreAlmacen,
         s.Ubicacion,
         u.DescripcionUbicacion,
-        s.UnidadSaldo AS Cantidad,
-        s.TipoUnidadMedida_ AS UnidadMedida,
-        s.Partida
+        CAST(s.UnidadSaldo AS DECIMAL(18, 2)) AS Cantidad,
+        COALESCE(NULLIF(s.TipoUnidadMedida_, ''), 'unidades') AS UnidadMedida,
+        s.Partida,
+        s.CodigoColor_,
+        s.CodigoTalla01_
       FROM AcumuladoStockUbicacion s
-      INNER JOIN Almacenes a 
-        ON a.CodigoEmpresa = s.CodigoEmpresa 
-        AND a.CodigoAlmacen = s.CodigoAlmacen
+      INNER JOIN Almacenes alm 
+        ON alm.CodigoEmpresa = s.CodigoEmpresa 
+        AND alm.CodigoAlmacen = s.CodigoAlmacen
       LEFT JOIN Ubicaciones u 
         ON u.CodigoEmpresa = s.CodigoEmpresa 
         AND u.CodigoAlmacen = s.CodigoAlmacen 
         AND u.Ubicacion = s.Ubicacion
       WHERE s.CodigoEmpresa = @codigoEmpresa
-        AND s.Periodo IN (0, 99)  -- Incluir ambos periodos
+        AND s.Periodo IN (0, 99)
         AND s.UnidadSaldo > 0
-        AND (
-          s.CodigoArticulo IN (${articuloPlaceholders})
-          AND s.TipoUnidadMedida_ IN (${unidadPlaceholders})
-        )
+        AND s.CodigoArticulo IN (${articuloPlaceholders})
+      ORDER BY s.CodigoArticulo, s.CodigoAlmacen, s.Ubicacion
     `;
 
     const request = poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
 
+    // Añadir parámetros para cada artículo
     codigosArticulos.forEach((codigo, index) => {
       request.input(`articulo${index}`, sql.VarChar, codigo);
     });
 
-    unidadesRequeridas.forEach((unidad, index) => {
-      request.input(`unidad${index}`, sql.VarChar, unidad);
-    });
-
     const result = await request.query(query);
 
+    // Agrupar por artículo
     const grouped = {};
     result.recordset.forEach(row => {
       const articulo = row.CodigoArticulo;
@@ -1724,13 +1718,15 @@ app.post('/ubicacionesMultiples', async (req, res) => {
       }
 
       grouped[articulo].push({
+        codigoAlmacen: row.CodigoAlmacen,
+        nombreAlmacen: row.NombreAlmacen,
         ubicacion: row.Ubicacion,
         descripcionUbicacion: row.DescripcionUbicacion,
         unidadSaldo: row.Cantidad,
-        codigoAlmacen: row.CodigoAlmacen,
-        nombreAlmacen: row.NombreAlmacen,
         unidadMedida: row.UnidadMedida,
-        partida: row.Partida
+        partida: row.Partida,
+        codigoColor: row.CodigoColor_,
+        codigoTalla: row.CodigoTalla01_
       });
     });
 
@@ -2442,7 +2438,7 @@ app.get('/stock/por-variante', async (req, res) => {
         alm.Almacen AS NombreAlmacen,
         s.Ubicacion,
         u.DescripcionUbicacion,
-        CAST(s.UnidadSaldo AS DECIMAL(18, 0)) AS Cantidad,
+        CAST(s.UnidadSaldo AS DECIMAL(18, 2)) AS Cantidad,
         COALESCE(NULLIF(s.TipoUnidadMedida_, ''), 'unidades') AS UnidadMedida,
         s.Partida
       FROM AcumuladoStockUbicacion s
@@ -2455,7 +2451,7 @@ app.get('/stock/por-variante', async (req, res) => {
         AND u.Ubicacion = s.Ubicacion
       WHERE s.CodigoEmpresa = @codigoEmpresa
         AND s.CodigoArticulo = @codigoArticulo
-        AND s.Periodo IN (0, 99)
+        AND s.Periodo = 99  -- Solo periodo 99
         AND s.UnidadSaldo > 0
     `;
 
@@ -3574,7 +3570,7 @@ app.post('/asignarEmpleado', async (req, res) => {
   }
 });
 
-// ✅ 5.3 ACTUALIZAR LÍNEA DE PEDIDO (VERSIÓN CORREGIDA)
+// ✅ 5.3 ACTUALIZAR LÍNEA DE PEDIDO (VERSIÓN COMPLETAMENTE CORREGIDA)
 app.post('/actualizarLineaPedido', async (req, res) => {
   const datosLinea = req.body;
 
@@ -3596,35 +3592,31 @@ app.post('/actualizarLineaPedido', async (req, res) => {
     await transaction.begin();
     const request = new sql.Request(transaction);
 
-    request.input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa);
-    request.input('ejercicio', sql.SmallInt, datosLinea.ejercicio);
-    request.input('numeroPedido', sql.Int, datosLinea.numeroPedido);
-    request.input('codigoArticulo', sql.VarChar, datosLinea.codigoArticulo);
-    request.input('cantidadExpedida', sql.Decimal(18, 4), datosLinea.cantidadExpedida);
-    request.input('ubicacion', sql.VarChar, datosLinea.ubicacion);
-    request.input('almacen', sql.VarChar, datosLinea.almacen);
-    request.input('serie', sql.VarChar, datosLinea.serie || '');
-    request.input('partida', sql.VarChar, datosLinea.partida || '');
-
     // 1. Obtener detalles de la línea del pedido
-    const resultLinea = await request.query(`
-      SELECT 
-        l.CodigoAlmacen, 
-        l.UnidadMedida1_ AS UnidadMedida, 
-        l.Precio, 
-        l.UnidadesPendientes,
-        a.UnidadMedida2_ AS UnidadBase,
-        a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
-        a.FactorConversion_ AS FactorConversion
-      FROM LineasPedidoCliente l
-      INNER JOIN Articulos a ON a.CodigoArticulo = l.CodigoArticulo AND a.CodigoEmpresa = l.CodigoEmpresa
-      WHERE 
-        l.CodigoEmpresa = @codigoEmpresa
-        AND l.EjercicioPedido = @ejercicio
-        AND l.NumeroPedido = @numeroPedido
-        AND l.CodigoArticulo = @codigoArticulo
-        AND l.SeriePedido = ISNULL(@serie, '')
-    `);
+    const resultLinea = await request
+      .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, datosLinea.ejercicio)
+      .input('numeroPedido', sql.Int, datosLinea.numeroPedido)
+      .input('codigoArticulo', sql.VarChar, datosLinea.codigoArticulo)
+      .input('serie', sql.VarChar, datosLinea.serie || '')
+      .query(`
+        SELECT 
+          l.CodigoAlmacen, 
+          l.UnidadMedida1_ AS UnidadMedida, 
+          l.Precio, 
+          l.UnidadesPendientes,
+          a.UnidadMedida2_ AS UnidadBase,
+          a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
+          a.FactorConversion_ AS FactorConversion
+        FROM LineasPedidoCliente l
+        INNER JOIN Articulos a ON a.CodigoArticulo = l.CodigoArticulo AND a.CodigoEmpresa = l.CodigoEmpresa
+        WHERE 
+          l.CodigoEmpresa = @codigoEmpresa
+          AND l.EjercicioPedido = @ejercicio
+          AND l.NumeroPedido = @numeroPedido
+          AND l.CodigoArticulo = @codigoArticulo
+          AND (l.SeriePedido = @serie OR (@serie = '' AND l.SeriePedido IS NULL))
+      `);
 
     if (resultLinea.recordset.length === 0) {
       await transaction.rollback();
@@ -3655,24 +3647,28 @@ app.post('/actualizarLineaPedido', async (req, res) => {
       });
     }
 
-    request.input('codigoAlmacen', sql.VarChar, codigoAlmacen);
-    request.input('unidadMedida', sql.VarChar, unidadMedida);
-    request.input('precio', sql.Decimal(18, 4), precio);
-    request.input('cantidadExpedidaStock', sql.Decimal(18, 4), cantidadExpedidaStock);
-
     // 2. Verificar stock disponible en la ubicación específica
-    const stockResult = await request.query(`
-      SELECT UnidadSaldo
-      FROM AcumuladoStockUbicacion
-      WHERE 
-        CodigoEmpresa = @codigoEmpresa
-        AND CodigoAlmacen = @almacen
-        AND CodigoArticulo = @codigoArticulo
-        AND Ubicacion = @ubicacion
-        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-        AND TipoUnidadMedida_ = @unidadMedida
-        AND Periodo = 99
-    `);
+    const stockResult = await request
+      .input('almacen', sql.VarChar, datosLinea.almacen)
+      .input('ubicacion', sql.VarChar, datosLinea.ubicacion)
+      .input('partida', sql.VarChar, datosLinea.partida || '')
+      .input('unidadMedida', sql.VarChar, unidadMedida)
+      .input('codigoColor', sql.VarChar, datosLinea.codigoColor || '')
+      .input('codigoTalla', sql.VarChar, datosLinea.codigoTalla || '')
+      .query(`
+        SELECT UnidadSaldo
+        FROM AcumuladoStockUbicacion
+        WHERE 
+          CodigoEmpresa = @codigoEmpresa
+          AND CodigoAlmacen = @almacen
+          AND CodigoArticulo = @codigoArticulo
+          AND Ubicacion = @ubicacion
+          AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+          AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
+          AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+          AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+          AND Periodo = 99
+      `);
 
     let stockDisponible = 0;
     if (stockResult.recordset.length > 0) {
@@ -3689,62 +3685,71 @@ app.post('/actualizarLineaPedido', async (req, res) => {
     }
 
     // 3. Actualizar línea de pedido (reducir unidades pendientes)
-    await request.query(`
-      UPDATE LineasPedidoCliente
-      SET UnidadesPendientes = UnidadesPendientes - @cantidadExpedida
-      WHERE 
-        CodigoEmpresa = @codigoEmpresa
-        AND EjercicioPedido = @ejercicio
-        AND NumeroPedido = @numeroPedido
-        AND CodigoArticulo = @codigoArticulo
-        AND SeriePedido = ISNULL(@serie, '')
-        AND UnidadMedida1_ = @unidadMedida
-    `);
+    await request
+      .input('cantidadExpedida', sql.Decimal(18, 4), datosLinea.cantidadExpedida)
+      .query(`
+        UPDATE LineasPedidoCliente
+        SET UnidadesPendientes = UnidadesPendientes - @cantidadExpedida
+        WHERE 
+          CodigoEmpresa = @codigoEmpresa
+          AND EjercicioPedido = @ejercicio
+          AND NumeroPedido = @numeroPedido
+          AND CodigoArticulo = @codigoArticulo
+          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+          AND UnidadMedida1_ = @unidadMedida
+      `);
 
-    // 4. Registrar movimiento de stock (esto activará el trigger)
+    // 4. Registrar movimiento de stock
     const fechaActual = new Date();
     const periodo = fechaActual.getMonth() + 1;
     const importe = precio * datosLinea.cantidadExpedida;
 
-    request.input('fecha', sql.DateTime, fechaActual);
-    request.input('periodo', sql.Int, periodo);
-    request.input('importe', sql.Decimal(18, 4), importe);
-
-    await request.query(`
-      INSERT INTO MovimientoStock (
-        CodigoEmpresa,
-        Ejercicio,
-        Periodo,
-        Fecha,
-        TipoMovimiento,
-        CodigoArticulo,
-        CodigoAlmacen,
-        UnidadMedida1_,
-        PrecioMedio,
-        Importe,
-        Ubicacion,
-        Partida,
-        Unidades
-      ) VALUES (
-        @codigoEmpresa,
-        @ejercicio,
-        @periodo,
-        @fecha,
-        2,  -- 2 = Salida
-        @codigoArticulo,
-        @almacen,  -- Usar el almacén específico
-        @unidadMedida,
-        @precio,
-        @importe,
-        @ubicacion,
-        @partida,
-        @cantidadExpedidaStock  -- Registrar en unidad de stock
-      )
-    `);
+    // Asegurarse de que todos los parámetros necesarios estén declarados
+    await request
+      .input('fecha', sql.DateTime, fechaActual)
+      .input('periodo', sql.Int, periodo)
+      .input('importe', sql.Decimal(18, 4), importe)
+      .input('cantidadExpedidaStock', sql.Decimal(18, 4), cantidadExpedidaStock)
+      .input('precio', sql.Decimal(18, 4), precio) // ¡ESTA LÍNEA FALTABA!
+      .query(`
+        INSERT INTO MovimientoStock (
+          CodigoEmpresa,
+          Ejercicio,
+          Periodo,
+          Fecha,
+          TipoMovimiento,
+          CodigoArticulo,
+          CodigoAlmacen,
+          UnidadMedida1_,
+          PrecioMedio,
+          Importe,
+          Ubicacion,
+          Partida,
+          Unidades,
+          CodigoColor_,
+          CodigoTalla01_
+        ) VALUES (
+          @codigoEmpresa,
+          @ejercicio,
+          @periodo,
+          @fecha,
+          2,  -- 2 = Salida
+          @codigoArticulo,
+          @almacen,
+          @unidadMedida,
+          @precio,
+          @importe,
+          @ubicacion,
+          @partida,
+          @cantidadExpedidaStock,
+          @codigoColor,
+          @codigoTalla
+        )
+      `);
 
     await transaction.commit();
 
-    // 5. Consultar el stock actual después del commit (después de que el trigger haya actuado)
+    // 5. Consultar el stock actual después del commit
     const stockActualResult = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
       .input('codigoAlmacen', sql.VarChar, datosLinea.almacen)
@@ -3752,6 +3757,8 @@ app.post('/actualizarLineaPedido', async (req, res) => {
       .input('ubicacion', sql.VarChar, datosLinea.ubicacion)
       .input('partida', sql.VarChar, datosLinea.partida || '')
       .input('unidadMedida', sql.VarChar, unidadMedida)
+      .input('codigoColor', sql.VarChar, datosLinea.codigoColor || '')
+      .input('codigoTalla', sql.VarChar, datosLinea.codigoTalla || '')
       .query(`
         SELECT UnidadSaldo
         FROM AcumuladoStockUbicacion
@@ -3761,7 +3768,9 @@ app.post('/actualizarLineaPedido', async (req, res) => {
           AND CodigoArticulo = @codigoArticulo
           AND Ubicacion = @ubicacion
           AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-          AND TipoUnidadMedida_ = @unidadMedida
+          AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
+          AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+          AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
           AND Periodo = 99
       `);
 

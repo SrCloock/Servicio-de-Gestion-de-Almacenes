@@ -19,6 +19,7 @@ const InventarioPage = () => {
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
+    codigo: '',
     almacen: '',
     ubicacion: '',
     familia: '',
@@ -143,6 +144,7 @@ const InventarioPage = () => {
         agrupado[item.CodigoArticulo] = {
           CodigoArticulo: item.CodigoArticulo,
           DescripcionArticulo: item.DescripcionArticulo,
+          Descripcion2Articulo: item.Descripcion2Articulo,
           CodigoFamilia: item.CodigoFamilia,
           CodigoSubfamilia: item.CodigoSubfamilia,
           UnidadBase: item.UnidadBase,
@@ -303,28 +305,45 @@ const InventarioPage = () => {
   const filteredInventario = useMemo(() => {
     let result = [...inventario];
     
+    // Filtro por código de artículo, descripción y descripción2
+    if (filters.codigo) {
+      const term = filters.codigo.toLowerCase();
+      result = result.filter(articulo => 
+        articulo.CodigoArticulo.toLowerCase().includes(term) ||
+        articulo.DescripcionArticulo.toLowerCase().includes(term) ||
+        (articulo.Descripcion2Articulo && articulo.Descripcion2Articulo.toLowerCase().includes(term))
+      );
+    }
+    
+    // Filtro por término de búsqueda general
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter(articulo => 
         articulo.CodigoArticulo.toLowerCase().includes(term) ||
-        articulo.DescripcionArticulo.toLowerCase().includes(term)
+        articulo.DescripcionArticulo.toLowerCase().includes(term) ||
+        (articulo.Descripcion2Articulo && articulo.Descripcion2Articulo.toLowerCase().includes(term))
       );
     }
     
+    // Filtro por código o nombre de almacén
     if (filters.almacen) {
+      const term = filters.almacen.toLowerCase();
       result = result.filter(articulo => 
         articulo.ubicaciones.some(ubic => 
-          ubic.NombreAlmacen.toLowerCase().includes(filters.almacen.toLowerCase())
+          ubic.CodigoAlmacen.toLowerCase().includes(term) ||
+          ubic.NombreAlmacen.toLowerCase().includes(term)
         )
       );
     }
     
+    // Filtro por código o descripción de ubicación
     if (filters.ubicacion) {
+      const term = filters.ubicacion.toLowerCase();
       result = result.filter(articulo => 
         articulo.ubicaciones.some(ubic => 
-          ubic.Ubicacion.toLowerCase().includes(filters.ubicacion.toLowerCase()) ||
+          ubic.Ubicacion.toLowerCase().includes(term) ||
           (ubic.DescripcionUbicacion && 
-          ubic.DescripcionUbicacion.toLowerCase().includes(filters.ubicacion.toLowerCase()))
+          ubic.DescripcionUbicacion.toLowerCase().includes(term))
         )
       );
     }
@@ -561,11 +580,22 @@ const InventarioPage = () => {
             {filtrosAbiertos && (
               <div className="inventario-filters-panel">
                 <div className="inventario-filter-group">
+                  <label>Artículo:</label>
+                  <input
+                    type="text"
+                    name="codigo"
+                    placeholder="Código, descripción o descripción2"
+                    value={filters.codigo}
+                    onChange={handleFilterChange}
+                  />
+                </div>
+                
+                <div className="inventario-filter-group">
                   <label>Almacén:</label>
                   <input
                     type="text"
                     name="almacen"
-                    placeholder="Filtrar por almacén"
+                    placeholder="Código o nombre de almacén"
                     value={filters.almacen}
                     onChange={handleFilterChange}
                   />
@@ -576,7 +606,7 @@ const InventarioPage = () => {
                   <input
                     type="text"
                     name="ubicacion"
-                    placeholder="Filtrar por ubicación"
+                    placeholder="Código o descripción de ubicación"
                     value={filters.ubicacion}
                     onChange={handleFilterChange}
                   />
@@ -741,6 +771,7 @@ const InventarioPage = () => {
                     onClick={() => {
                       setSearchTerm('');
                       setFilters({
+                        codigo: '',
                         almacen: '',
                         ubicacion: '',
                         familia: '',
@@ -766,6 +797,9 @@ const InventarioPage = () => {
                         <div className="inventario-articulo-info">
                           <span className="inventario-articulo-codigo">{articulo.CodigoArticulo}</span>
                           <span className="inventario-articulo-descripcion">{articulo.DescripcionArticulo}</span>
+                          {articulo.Descripcion2Articulo && (
+                            <span className="inventario-articulo-descripcion2">{articulo.Descripcion2Articulo}</span>
+                          )}
                           <div className="inventario-articulo-categorias">
                             {articulo.CodigoFamilia && (
                               <span className="inventario-familia-tag">Familia: {articulo.CodigoFamilia}</span>
@@ -794,7 +828,6 @@ const InventarioPage = () => {
                             <div className="header-cell">Almacén</div>
                             <div className="header-cell">Ubicación</div>
                             <div className="header-cell">Descripción</div>
-                            <div className="header-cell">Partida</div>
                             <div className="header-cell">Unidad</div>
                             <div className="header-cell">Cantidad</div>
                             <div className="header-cell">Acciones</div>
@@ -802,68 +835,6 @@ const InventarioPage = () => {
                           
                           {articulo.ubicaciones.map(ubicacion => (
                             <div key={ubicacion.clave} className="inventario-ubicacion-item">
-                              <div className="mobile-ubicacion-fields">
-                                <div className="mobile-field">
-                                  <span className="mobile-field-label">Almacén:</span>
-                                  <span className="mobile-field-value">{ubicacion.NombreAlmacen}</span>
-                                </div>
-                                <div className="mobile-field">
-                                  <span className="mobile-field-label">Ubicación:</span>
-                                  <span className="mobile-field-value">{ubicacion.Ubicacion}</span>
-                                </div>
-                                <div className="mobile-field">
-                                  <span className="mobile-field-label">Descripción:</span>
-                                  <span className="mobile-field-value">{ubicacion.DescripcionUbicacion || 'Sin descripción'}</span>
-                                </div>
-                                <div className="mobile-field">
-                                  <span className="mobile-field-label">Partida:</span>
-                                  <span className="mobile-field-value">{ubicacion.Partida || 'N/A'}</span>
-                                </div>
-                                <div className="mobile-field">
-                                  <span className="mobile-field-label">Unidad:</span>
-                                  <span className="mobile-field-value">{ubicacion.UnidadStock || 'unidades'}</span>
-                                </div>
-                                <div className="mobile-field">
-                                  <span className="mobile-field-label">Cantidad:</span>
-                                  <span className="mobile-field-value" style={getStockStyle(ubicacion.Cantidad)}>
-                                    {formatearUnidad(ubicacion.Cantidad, ubicacion.UnidadStock)}
-                                    {articulo.UnidadAlternativa && 
-                                    ubicacion.UnidadStock === articulo.UnidadAlternativa && (
-                                      <span className="inventario-conversion-info">
-                                        ({formatearUnidad(ubicacion.CantidadBase, articulo.UnidadBase)})
-                                      </span>
-                                    )}
-                                  </span>
-                                </div>
-                                <div className="mobile-field inventario-acciones-ubicacion">
-                                  <button 
-                                    className="inventario-btn-editar"
-                                    onClick={() => iniciarEdicionCantidad(
-                                      articulo.CodigoArticulo,
-                                      ubicacion.NombreAlmacen,
-                                      ubicacion.Cantidad,
-                                      ubicacion.clave,
-                                      ubicacion.CodigoAlmacen,
-                                      ubicacion.Ubicacion,
-                                      ubicacion.Partida,
-                                      ubicacion.UnidadStock,
-                                      ubicacion.CodigoColor,
-                                      ubicacion.CodigoTalla01
-                                    )}
-                                  >
-                                    <FiEdit /> Editar
-                                  </button>
-                                  {ubicacion.detalles && (
-                                    <button 
-                                      className="inventario-btn-detalles"
-                                      onClick={() => verDetalles(ubicacion.MovPosicionLinea)}
-                                    >
-                                      Detalles
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              
                               <div className="desktop-ubicacion-fields">
                                 <div className="data-cell inventario-ubicacion-almacen">
                                   {ubicacion.NombreAlmacen}
@@ -873,9 +844,6 @@ const InventarioPage = () => {
                                 </div>
                                 <div className="data-cell inventario-ubicacion-desc">
                                   {ubicacion.DescripcionUbicacion || 'Sin descripción'}
-                                </div>
-                                <div className="data-cell inventario-ubicacion-partida">
-                                  {ubicacion.Partida || 'N/A'}
                                 </div>
                                 <div className="data-cell inventario-ubicacion-unidad">
                                   {ubicacion.UnidadStock || 'unidades'}
@@ -1037,10 +1005,6 @@ const InventarioPage = () => {
                                     <span>{detalle.Ubicacion} - {detalle.DescripcionUbicacion || 'N/A'}</span>
                                   </div>
                                   <div>
-                                    <span className="inventario-ajuste-label">Partida:</span>
-                                    <span>{detalle.Partida || '-'}</span>
-                                  </div>
-                                  <div>
                                     <span className="inventario-ajuste-label">Comentario:</span>
                                     <span>{detalle.Comentario || 'Sin comentario'}</span>
                                   </div>
@@ -1083,10 +1047,6 @@ const InventarioPage = () => {
               <div className="inventario-detail-item">
                 <span>Ubicación:</span>
                 <span>{editandoCantidad.ubicacionStr}</span>
-              </div>
-              <div className="inventario-detail-item">
-                <span>Partida:</span>
-                <span>{editandoCantidad.partida || 'N/A'}</span>
               </div>
               <div className="inventario-detail-item">
                 <span>Unidad:</span>
