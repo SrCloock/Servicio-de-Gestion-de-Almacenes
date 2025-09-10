@@ -834,7 +834,7 @@ const PedidoCard = React.memo(({
               <thead>
                 <tr>
                   <th>Artículo</th>
-                  <th>Descripcion</th>
+                  <th>Descripción</th>
                   <th>Pendiente</th>
                   <th>Ubicación</th>
                   <th>Cantidad</th>
