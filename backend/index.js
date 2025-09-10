@@ -2451,7 +2451,7 @@ app.get('/stock/por-variante', async (req, res) => {
         AND u.Ubicacion = s.Ubicacion
       WHERE s.CodigoEmpresa = @codigoEmpresa
         AND s.CodigoArticulo = @codigoArticulo
-        AND s.Periodo = 99  -- Solo periodo 99
+        AND s.Periodo IN (0, 99)
         AND s.UnidadSaldo > 0
     `;
 
@@ -3570,20 +3570,23 @@ app.post('/asignarEmpleado', async (req, res) => {
   }
 });
 
-// ✅ 5.3 ACTUALIZAR LÍNEA DE PEDIDO (VERSIÓN COMPLETAMENTE CORREGIDA)
+// ✅ 5.3 ACTUALIZAR LÍNEA DE PEDIDO (VERSIÓN MEJORADA)
 app.post('/actualizarLineaPedido', async (req, res) => {
   const datosLinea = req.body;
 
-  if (
-    !datosLinea.codigoEmpresa ||
-    !datosLinea.ejercicio ||
-    !datosLinea.numeroPedido ||
-    !datosLinea.codigoArticulo ||
-    !datosLinea.cantidadExpedida ||
-    !datosLinea.ubicacion ||
-    !datosLinea.almacen
-  ) {
-    return res.status(400).json({ success: false, mensaje: 'Datos incompletos.' });
+  // Campos obligatorios
+  const camposRequeridos = [
+    'codigoEmpresa', 'ejercicio', 'numeroPedido', 
+    'codigoArticulo', 'cantidadExpedida', 'ubicacion', 'almacen'
+  ];
+  
+  for (const campo of camposRequeridos) {
+    if (!datosLinea[campo]) {
+      return res.status(400).json({ 
+        success: false, 
+        mensaje: `Campo requerido: ${campo}` 
+      });
+    }
   }
 
   const transaction = new sql.Transaction(poolGlobal);
@@ -3704,13 +3707,12 @@ app.post('/actualizarLineaPedido', async (req, res) => {
     const periodo = fechaActual.getMonth() + 1;
     const importe = precio * datosLinea.cantidadExpedida;
 
-    // Asegurarse de que todos los parámetros necesarios estén declarados
     await request
       .input('fecha', sql.DateTime, fechaActual)
       .input('periodo', sql.Int, periodo)
       .input('importe', sql.Decimal(18, 4), importe)
       .input('cantidadExpedidaStock', sql.Decimal(18, 4), cantidadExpedidaStock)
-      .input('precio', sql.Decimal(18, 4), precio) // ¡ESTA LÍNEA FALTABA!
+      .input('precio', sql.Decimal(18, 4), precio)
       .query(`
         INSERT INTO MovimientoStock (
           CodigoEmpresa,

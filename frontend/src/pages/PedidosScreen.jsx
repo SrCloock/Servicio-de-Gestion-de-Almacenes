@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
@@ -6,88 +6,128 @@ import Navbar from '../components/Navbar';
 import { Html5Qrcode } from 'html5-qrcode';
 import { usePermissions } from '../PermissionsManager';
 import '../styles/PedidosScreen.css';
-import { FaEllipsisV, FaCamera, FaQrcode, FaBarcode, FaCheck, FaTimes, FaExclamationTriangle, FaChevronDown, FaSearch, FaCalendarAlt, FaTruck, FaInfoCircle } from 'react-icons/fa';
+import { FaEllipsisV, FaCamera, FaQrcode, FaBarcode, FaCheck, FaTimes, FaExclamationTriangle, FaChevronDown, FaSearch, FaCalendarAlt, FaTruck, FaInfoCircle, FaSync, FaFilter } from 'react-icons/fa';
 
-// Función para formatear unidades
-const formatearUnidad = (cantidad, unidad) => {
-  if (!cantidad && cantidad !== 0) return '0 ud';
-  if (!unidad || unidad.trim() === '') unidad = 'ud';
+// Custom hook para debounce
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
   
-  let cantidadNum = typeof cantidad === 'string' ? parseFloat(cantidad) : cantidad;
-  
-  if (isNaN(cantidadNum)) return `${cantidad} ${unidad}`;
-  
-  const unidadesDecimales = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
-  const esUnidadDecimal = unidadesDecimales.includes(unidad.toLowerCase());
-  
-  if (!esUnidadDecimal) {
-    cantidadNum = Math.round(cantidadNum);
-  } else {
-    cantidadNum = parseFloat(cantidadNum.toFixed(2));
-  }
-  
-  const unidadesInvariables = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
-  const unidadLower = unidad.toLowerCase();
-  
-  if (unidadesInvariables.includes(unidadLower)) {
-    return `${cantidadNum} ${unidad}`;
-  }
-  
-  const pluralesIrregulares = {
-    'ud': 'uds',
-    'par': 'pares',
-    'metro': 'metros',
-    'pack': 'packs',
-    'saco': 'sacos',
-    'barra': 'barras',
-    'caja': 'cajas',
-    'rollo': 'rollos',
-    'lata': 'latas',
-    'bote': 'botes',
-    'tubo': 'tubos',
-    'unidad': 'unidades',
-    'juego': 'juegos',
-    'kit': 'kits',
-    'paquete': 'paquetes',
-    'cajetin': 'cajetines',
-    'bidon': 'bidones',
-    'palet': 'palets',
-    'bobina': 'bobinas',
-    'fardo': 'fardos',
-    'cubeta': 'cubetas',
-    'garrafa': 'garrafas',
-    'tambor': 'tambores',
-    'cubos': 'cubos',
-    'pares': 'pares'
-  };
-
-  if (cantidadNum === 1) {
-    if (unidadLower === 'unidad' || unidadLower === 'unidades') {
-      return '1 unidad';
-    }
-    return `1 ${unidad}`;
-  } else {
-    if (unidadLower === 'unidad' || unidadLower === 'unidades') {
-      return `${cantidadNum} unidades`;
-    }
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
     
-    if (pluralesIrregulares[unidadLower]) {
-      return `${cantidadNum} ${pluralesIrregulares[unidadLower]}`;
-    }
-    
-    const ultimaLetra = unidad.charAt(unidad.length - 1);
-    const penultimaLetra = unidad.charAt(unidad.length - 2);
-    
-    if (['a', 'e', 'i', 'o', 'u'].includes(ultimaLetra)) {
-      return `${cantidadNum} ${unidad}s`;
-    } else {
-      return `${cantidadNum} ${unidad}es`;
-    }
-  }
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+  
+  return debouncedValue;
 };
 
-// Componente Modal de Detalles de Artículo con Variantes (Versión Mejorada)
-const DetallesArticuloModal = ({ 
+// Función para formatear unidades (optimizada con useMemo)
+const useFormatearUnidad = () => {
+  return useMemo(() => (cantidad, unidad) => {
+    if (!cantidad && cantidad !== 0) return '0 ud';
+    if (!unidad || unidad.trim() === '') unidad = 'ud';
+    
+    let cantidadNum = typeof cantidad === 'string' ? parseFloat(cantidad) : cantidad;
+    
+    if (isNaN(cantidadNum)) return `${cantidad} ${unidad}`;
+    
+    const unidadesDecimales = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
+    const esUnidadDecimal = unidadesDecimales.includes(unidad.toLowerCase());
+    
+    if (!esUnidadDecimal) {
+      cantidadNum = Math.round(cantidadNum);
+    } else {
+      cantidadNum = parseFloat(cantidadNum.toFixed(2));
+    }
+    
+    const unidadesInvariables = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
+    const unidadLower = unidad.toLowerCase();
+    
+    if (unidadesInvariables.includes(unidadLower)) {
+      return `${cantidadNum} ${unidad}`;
+    }
+    
+    const pluralesIrregulares = {
+      'ud': 'uds',
+      'par': 'pares',
+      'metro': 'metros',
+      'pack': 'packs',
+      'saco': 'sacos',
+      'barra': 'barras',
+      'caja': 'cajas',
+      'rollo': 'rollos',
+      'lata': 'latas',
+      'bote': 'botes',
+      'tubo': 'tubos',
+      'unidad': 'unidades',
+      'juego': 'juegos',
+      'kit': 'kits',
+      'paquete': 'paquetes',
+      'cajetin': 'cajetines',
+      'bidon': 'bidones',
+      'palet': 'palets',
+      'bobina': 'bobinas',
+      'fardo': 'fardos',
+      'cubeta': 'cubetas',
+      'garrafa': 'garrafas',
+      'tambor': 'tambores',
+      'cubos': 'cubos',
+      'pares': 'pares'
+    };
+
+    if (cantidadNum === 1) {
+      if (unidadLower === 'unidad' || unidadLower === 'unidades') {
+        return '1 unidad';
+      }
+      return `1 ${unidad}`;
+    } else {
+      if (unidadLower === 'unidad' || unidadLower === 'unidades') {
+        return `${cantidadNum} unidades`;
+      }
+      
+      if (pluralesIrregulares[unidadLower]) {
+        return `${cantidadNum} ${pluralesIrregulares[unidadLower]}`;
+      }
+      
+      const ultimaLetra = unidad.charAt(unidad.length - 1);
+      const penultimaLetra = unidad.charAt(unidad.length - 2);
+      
+      if (['a', 'e', 'i', 'o', 'u'].includes(ultimaLetra)) {
+        return `${cantidadNum} ${unidad}s`;
+      } else {
+        return `${cantidadNum} ${unidad}es`;
+      }
+    }
+  }, []);
+};
+
+// Componente de carga mejorado
+const LoadingSpinner = React.memo(({ message = "Cargando..." }) => (
+  <div className="loading-container">
+    <div className="spinner"></div>
+    <p>{message}</p>
+  </div>
+));
+
+// Componente de error mejorado
+const ErrorMessage = React.memo(({ message, onRetry }) => (
+  <div className="error-message">
+    <FaExclamationTriangle className="error-icon" />
+    <p>{message}</p>
+    {onRetry && (
+      <button onClick={onRetry} className="btn-retry">
+        <FaSync /> Reintentar
+      </button>
+    )}
+  </div>
+));
+
+// Componente Modal de Detalles de Artículo (Optimizado)
+const DetallesArticuloModal = React.memo(({ 
   detalles, 
   linea, 
   pedido, 
@@ -95,180 +135,143 @@ const DetallesArticuloModal = ({
   onExpedirVariante,
   canPerformActions
 }) => {
-  const [stockPorVariante, setStockPorVariante] = useState({});
-  const [loadingStock, setLoadingStock] = useState(true);
-  const [ubicacionesSeleccionadas, setUbicacionesSeleccionadas] = useState({});
-  const [cantidades, setCantidades] = useState({});
-  const [expedicionEnProceso, setExpedicionEnProceso] = useState({});
+  const formatearUnidad = useFormatearUnidad();
+  const [ubicacionesPorDetalle, setUbicacionesPorDetalle] = useState({});
+  const [selecciones, setSelecciones] = useState({});
+  const [procesando, setProcesando] = useState(false);
+  const [cargandoUbicaciones, setCargandoUbicaciones] = useState(true);
+  const [erroresCarga, setErroresCarga] = useState({});
+  const abortControllers = useRef({});
 
-  // Obtener todas las combinaciones únicas de talla y color
-  const combinaciones = useMemo(() => {
-    const comb = [];
-    if (!detalles || !Array.isArray(detalles)) return comb;
-    
-    detalles.forEach(variante => {
-      if (!variante.tallas) return;
-      
-      Object.entries(variante.tallas).forEach(([codigoTalla, talla]) => {
-        if (talla.unidades > 0) {
-          comb.push({
-            codigoTalla,
-            descripcionTalla: talla.descripcion || `Talla ${codigoTalla}`,
-            color: variante.color || { codigo: '', nombre: 'Sin color' },
-            grupoTalla: variante.grupoTalla || { codigo: '', nombre: '' },
-            unidades: talla.unidades
-          });
-        }
+  // Cancelar todas las peticiones al desmontar
+  useEffect(() => {
+    return () => {
+      Object.values(abortControllers.current).forEach(controller => {
+        if (controller) controller.abort();
       });
-    });
-    return comb;
+    };
+  }, []);
+
+  // Cargar stock cuando abrimos el modal
+  useEffect(() => {
+    if (!detalles || detalles.length === 0) {
+      setCargandoUbicaciones(false);
+      return;
+    }
+
+    const cargarUbicaciones = async () => {
+      setCargandoUbicaciones(true);
+      setErroresCarga({});
+      const resultados = {};
+      const nuevosErrores = {};
+
+      for (const detalle of detalles) {
+        const key = `${detalle.codigoArticulo}-${detalle.codigoColor}-${detalle.codigoTalla}`;
+        
+        // Cancelar petición anterior si existe
+        if (abortControllers.current[key]) {
+          abortControllers.current[key].abort();
+        }
+        
+        // Crear nuevo abort controller para esta petición
+        abortControllers.current[key] = new AbortController();
+        
+        try {
+          const response = await axios.get(
+            'http://localhost:3000/stock/por-variante',
+            {
+              headers: getAuthHeader(),
+              params: {
+                codigoArticulo: detalle.codigoArticulo,
+                codigoColor: detalle.codigoColor,
+                codigoTalla: detalle.codigoTalla
+              },
+              signal: abortControllers.current[key].signal
+            }
+          );
+
+          resultados[key] = Array.isArray(response.data) ? response.data : [];
+        } catch (error) {
+          if (axios.isCancel(error)) {
+            console.log('Petición cancelada:', key);
+          } else {
+            console.error('Error al consultar stock:', error);
+            nuevosErrores[key] = error.message;
+            resultados[key] = [];
+          }
+        }
+      }
+
+      setUbicacionesPorDetalle(resultados);
+      setErroresCarga(nuevosErrores);
+      setCargandoUbicaciones(false);
+    };
+
+    cargarUbicaciones();
   }, [detalles]);
 
-  // Efecto para cargar el stock de cada variante
-  useEffect(() => {
-    const fetchStockForVariantes = async () => {
-      setLoadingStock(true);
-      const stockData = {};
-      const nuevasUbicacionesSeleccionadas = {};
-      const nuevasCantidades = {};
+  // Guardar selección de ubicación y cantidad
+  const handleCambioSeleccion = useCallback((detalleKey, field, value) => {
+    setSelecciones((prev) => ({
+      ...prev,
+      [detalleKey]: {
+        ...prev[detalleKey],
+        [field]: value,
+      },
+    }));
+  }, []);
 
-      // Si no hay combinaciones, salir
-      if (combinaciones.length === 0) {
-        setLoadingStock(false);
+  // Confirmar expedición de una sublínea
+  const handleExpedir = useCallback(async (detalle) => {
+    const detalleKey = `${detalle.codigoArticulo}-${detalle.codigoColor}-${detalle.codigoTalla}`;
+    const seleccion = selecciones[detalleKey];
+
+    if (!seleccion || !seleccion.ubicacion || !seleccion.cantidad) {
+      alert("Debes seleccionar ubicación y cantidad.");
+      return;
+    }
+
+    if (parseFloat(seleccion.cantidad) <= 0) {
+      alert("La cantidad debe ser mayor a cero.");
+      return;
+    }
+
+    setProcesando(true);
+    
+    try {
+      // Buscar la ubicación seleccionada para obtener todos los datos necesarios
+      const ubicaciones = ubicacionesPorDetalle[detalleKey] || [];
+      const ubicacionSeleccionada = ubicaciones.find(ubic => ubic.Ubicacion === seleccion.ubicacion);
+      
+      if (!ubicacionSeleccionada) {
+        alert("Error: No se encontró la ubicación seleccionada.");
+        setProcesando(false);
         return;
       }
 
-      for (const combinacion of combinaciones) {
-        try {
-          const response = await axios.get('http://localhost:3000/stock/por-variante', {
-            headers: getAuthHeader(),
-            params: {
-              codigoArticulo: linea.codigoArticulo,
-              codigoColor: combinacion.color.codigo || '',
-              codigoTalla: combinacion.codigoTalla
-            }
-          });
-
-          const key = `${combinacion.color.codigo}-${combinacion.codigoTalla}`;
-          stockData[key] = response.data;
-
-          // Establecer la primera ubicación como seleccionada por defecto
-          if (response.data && response.data.length > 0) {
-            // Buscar la ubicación con más stock
-            const mejorUbicacion = response.data.reduce((prev, current) => 
-              (prev.Cantidad > current.Cantidad) ? prev : current
-            );
-            nuevasUbicacionesSeleccionadas[key] = mejorUbicacion.Ubicacion;
-            
-            // Inicializar la cantidad con el mínimo entre unidades pendientes y stock disponible
-            const stockDisponible = mejorUbicacion.Cantidad;
-            nuevasCantidades[key] = Math.min(combinacion.unidades, stockDisponible).toString();
-          } else {
-            nuevasCantidades[key] = '0';
-          }
-        } catch (error) {
-          console.error('Error fetching stock for variant:', error);
-          const key = `${combinacion.color.codigo}-${combinacion.codigoTalla}`;
-          stockData[key] = [];
-          nuevasCantidades[key] = '0';
-        }
-      }
-
-      setStockPorVariante(stockData);
-      setUbicacionesSeleccionadas(nuevasUbicacionesSeleccionadas);
-      setCantidades(nuevasCantidades);
-      setLoadingStock(false);
-    };
-
-    fetchStockForVariantes();
-  }, [combinaciones, linea.codigoArticulo]);
-
-  const handleCambioUbicacion = (key, ubicacion) => {
-    setUbicacionesSeleccionadas(prev => ({
-      ...prev,
-      [key]: ubicacion
-    }));
-  };
-
-  const handleCambioCantidad = (key, value) => {
-    // Validar que la cantidad sea un número positivo
-    const nuevaCantidad = value.replace(/[^\d]/g, '');
-    const cantidadNum = parseInt(nuevaCantidad) || 0;
-    
-    // Obtener la combinación para conocer el máximo permitido
-    const combinacion = combinaciones.find(comb => 
-      `${comb.color.codigo}-${comb.codigoTalla}` === key
-    );
-    
-    if (combinacion) {
-      const maxPermitido = combinacion.unidades;
-      
-      // También verificar el stock disponible en la ubicación seleccionada
-      const ubicacionSeleccionada = ubicacionesSeleccionadas[key];
-      const ubicacionData = stockPorVariante[key]?.find(ubi => ubi.Ubicacion === ubicacionSeleccionada);
-      const stockDisponible = ubicacionData ? ubicacionData.Cantidad : 0;
-      
-      const maximo = Math.min(maxPermitido, stockDisponible);
-      
-      if (cantidadNum > maximo) {
-        setCantidades(prev => ({ ...prev, [key]: maximo.toString() }));
-      } else {
-        setCantidades(prev => ({ ...prev, [key]: nuevaCantidad }));
-      }
-    }
-  };
-
-  const handleExpedirVariante = async (combinacion) => {
-    const key = `${combinacion.color.codigo}-${combinacion.codigoTalla}`;
-    const ubicacion = ubicacionesSeleccionadas[key];
-    const cantidad = parseInt(cantidades[key]) || 0;
-
-    if (cantidad <= 0) {
-      alert('La cantidad debe ser mayor a cero');
-      return;
-    }
-
-    if (!ubicacion) {
-      alert('Debe seleccionar una ubicación');
-      return;
-    }
-
-    // Obtener los datos de la ubicación seleccionada
-    const ubicacionData = stockPorVariante[key]?.find(ubi => ubi.Ubicacion === ubicacion);
-    
-    if (!ubicacionData) {
-      alert('No se encontró información de la ubicación seleccionada');
-      return;
-    }
-
-    // Marcar esta variante como en proceso de expedición
-    setExpedicionEnProceso(prev => ({ ...prev, [key]: true }));
-
-    try {
+      // Llamar a la función de expedición con todos los datos necesarios
       await onExpedirVariante({
-        articulo: linea.codigoArticulo,
-        color: combinacion.color.codigo,
-        talla: combinacion.codigoTalla,
-        cantidad,
-        ubicacion,
-        almacen: ubicacionData.CodigoAlmacen,
-        partida: ubicacionData.Partida || '',
-        unidadMedida: ubicacionData.UnidadMedida || linea.unidadBase
+        articulo: detalle.codigoArticulo,
+        color: detalle.codigoColor,
+        talla: detalle.codigoTalla,
+        cantidad: parseFloat(seleccion.cantidad),
+        ubicacion: seleccion.ubicacion,
+        almacen: ubicacionSeleccionada.CodigoAlmacen,
+        partida: ubicacionSeleccionada.Partida || '',
+        unidadMedida: ubicacionSeleccionada.UnidadMedida || linea.unidadBase
       });
 
-      // Actualizar la cantidad pendiente después de la expedición
-      const nuevasCantidades = { ...cantidades };
-      nuevasCantidades[key] = '0';
-      setCantidades(nuevasCantidades);
-
+      alert("Expedición confirmada ✅");
+      
+      // Limpiar la selección después de expedir
+      handleCambioSeleccion(detalleKey, "cantidad", "");
     } catch (error) {
-      console.error('Error en expedición:', error);
-      alert('Error al expedir: ' + (error.response?.data?.mensaje || error.message));
+      console.error('Error al expedir:', error);
+      alert("Error al expedir: " + (error.response?.data?.mensaje || error.message));
     } finally {
-      // Quitar el estado de expedición en proceso
-      setExpedicionEnProceso(prev => ({ ...prev, [key]: false }));
+      setProcesando(false);
     }
-  };
+  }, [selecciones, ubicacionesPorDetalle, onExpedirVariante, linea, handleCambioSeleccion]);
 
   if (!detalles || detalles.length === 0) {
     return (
@@ -296,19 +299,16 @@ const DetallesArticuloModal = ({
           <span>Código: {linea.codigoArticulo}</span>
           <span>Unidad: {linea.unidadBase || 'ud'}</span>
         </div>
-        
-        {loadingStock ? (
-          <div className="loading-stock">
-            <div className="loader"></div>
-            <p>Cargando información de stock...</p>
-          </div>
+
+        {cargandoUbicaciones ? (
+          <LoadingSpinner message="Cargando información de stock..." />
         ) : (
           <div className="tabla-detalles-container">
             <table className="tabla-detalles">
               <thead>
                 <tr>
-                  <th>Talla</th>
                   <th>Color</th>
+                  <th>Talla</th>
                   <th>Pendiente</th>
                   <th>Ubicación</th>
                   <th>Cantidad</th>
@@ -316,30 +316,32 @@ const DetallesArticuloModal = ({
                 </tr>
               </thead>
               <tbody>
-                {combinaciones.map((combinacion, index) => {
-                  const key = `${combinacion.color.codigo}-${combinacion.codigoTalla}`;
-                  const ubicacionesStock = stockPorVariante[key] || [];
-                  const ubicacionSeleccionada = ubicacionesSeleccionadas[key] || '';
-                  const cantidad = cantidades[key] || '0';
-                  const expediendo = expedicionEnProceso[key] || false;
-                  
+                {detalles.map((detalle, index) => {
+                  const key = `${detalle.codigoArticulo}-${detalle.codigoColor}-${detalle.codigoTalla}`;
+                  const ubicaciones = ubicacionesPorDetalle[key] || [];
+                  const seleccion = selecciones[key] || {};
+                  const error = erroresCarga[key];
+
                   return (
-                    <tr key={index} className={ubicacionesStock.length === 0 ? 'sin-stock-row' : ''}>
-                      <td>{combinacion.descripcionTalla}</td>
-                      <td>{combinacion.color.nombre}</td>
-                      <td>{formatearUnidad(combinacion.unidades, linea.unidadBase)}</td>
+                    <tr key={index} className={ubicaciones.length === 0 ? 'sin-stock-row' : ''}>
+                      <td>{detalle.colorNombre || detalle.codigoColor}</td>
+                      <td>{detalle.descripcionTalla || detalle.codigoTalla}</td>
+                      <td>{formatearUnidad(detalle.cantidadPendiente, linea.unidadBase)}</td>
                       <td>
-                        {ubicacionesStock.length > 0 ? (
+                        {error ? (
+                          <ErrorMessage message="Error al cargar ubicaciones" />
+                        ) : ubicaciones.length > 0 ? (
                           <div className="ubicacion-select-container">
                             <select
-                              value={ubicacionSeleccionada}
-                              onChange={(e) => handleCambioUbicacion(key, e.target.value)}
-                              disabled={!canPerformActions || expediendo}
+                              value={seleccion.ubicacion || ""}
+                              onChange={(e) => handleCambioSeleccion(key, "ubicacion", e.target.value)}
+                              disabled={!canPerformActions}
                             >
-                              {ubicacionesStock.map((ubi, idx) => (
-                                <option key={idx} value={ubi.Ubicacion}>
-                                  {ubi.CodigoAlmacen} - {ubi.Ubicacion} {ubi.Partida ? `(${ubi.Partida})` : ''} - 
-                                  Stock: {formatearUnidad(ubi.Cantidad, ubi.UnidadMedida)}
+                              <option value="">Selecciona ubicación</option>
+                              {ubicaciones.map((ubic, idx) => (
+                                <option key={idx} value={ubic.Ubicacion}>
+                                  {ubic.CodigoAlmacen} - {ubic.Ubicacion} {ubic.Partida ? `(${ubic.Partida})` : ''} - 
+                                  Stock: {formatearUnidad(ubic.Cantidad, ubic.UnidadMedida)}
                                 </option>
                               ))}
                             </select>
@@ -351,31 +353,25 @@ const DetallesArticuloModal = ({
                       </td>
                       <td>
                         <div className="cantidad-input-container">
-                          <input 
-                            type="text"
-                            value={cantidad}
-                            onChange={(e) => handleCambioCantidad(key, e.target.value)}
-                            disabled={!canPerformActions || ubicacionesStock.length === 0 || expediendo}
-                            className={ubicacionesStock.length === 0 ? 'disabled' : ''}
+                          <input
+                            type="number"
+                            value={seleccion.cantidad || ""}
+                            min={0}
+                            max={detalle.cantidadPendiente}
+                            onChange={(e) => handleCambioSeleccion(key, "cantidad", e.target.value)}
+                            disabled={!canPerformActions || ubicaciones.length === 0 || !!error}
+                            placeholder="0"
                           />
                           <span className="unidad-info">{linea.unidadBase || 'ud'}</span>
                         </div>
                       </td>
                       <td>
                         <button
-                          className={`btn-expedir-variante ${expediendo ? 'expediendo' : ''}`}
-                          onClick={() => handleExpedirVariante(combinacion)}
-                          disabled={!canPerformActions || parseInt(cantidad) <= 0 || !ubicacionSeleccionada || expediendo}
+                          className="btn-expedir-variante"
+                          onClick={() => handleExpedir(detalle)}
+                          disabled={!canPerformActions || !seleccion.ubicacion || !seleccion.cantidad || parseFloat(seleccion.cantidad) <= 0 || procesando || !!error}
                         >
-                          {expediendo ? (
-                            <>
-                              <div className="mini-loader"></div> Procesando...
-                            </>
-                          ) : (
-                            <>
-                              <FaCheck /> Expedir
-                            </>
-                          )}
+                          {procesando ? "Procesando..." : "Expedir"}
                         </button>
                       </td>
                     </tr>
@@ -385,7 +381,7 @@ const DetallesArticuloModal = ({
             </table>
           </div>
         )}
-        
+
         <div className="modal-actions">
           <button 
             className="btn-cerrar-modal"
@@ -397,10 +393,10 @@ const DetallesArticuloModal = ({
       </div>
     </div>
   );
-};
+});
 
-// Componente Línea de Pedido
-const LineaPedido = ({ 
+// Componente Línea de Pedido (Optimizado)
+const LineaPedido = React.memo(({ 
   linea, 
   pedido, 
   expediciones, 
@@ -411,20 +407,26 @@ const LineaPedido = ({
   canPerformActions,
   isScanning
 }) => {
-  let ubicacionesConStock = ubicaciones[linea.codigoArticulo]?.filter(ubi => 
-    ubi.unidadSaldo > 0 && 
-    ubi.unidadMedida === linea.unidadPedido
-  ) || [];
+  const formatearUnidad = useFormatearUnidad();
   
-  if (ubicacionesConStock.length === 0) {
-    ubicacionesConStock.push({
-      codigoAlmacen: "N/A",
-      ubicacion: "Zona descarga",
-      partida: null,
-      unidadSaldo: Infinity,
-      unidadMedida: linea.unidadBase || 'ud'
-    });
-  }
+  const ubicacionesConStock = useMemo(() => {
+    let ubicacionesStock = ubicaciones[linea.codigoArticulo]?.filter(ubi => 
+      ubi.unidadSaldo > 0 && 
+      ubi.unidadMedida === linea.unidadPedido
+    ) || [];
+    
+    if (ubicacionesStock.length === 0) {
+      ubicacionesStock.push({
+        codigoAlmacen: "N/A",
+        ubicacion: "Zona descarga",
+        partida: null,
+        unidadSaldo: Infinity,
+        unidadMedida: linea.unidadBase || 'ud'
+      });
+    }
+    
+    return ubicacionesStock;
+  }, [ubicaciones, linea.codigoArticulo, linea.unidadPedido, linea.unidadBase]);
 
   const key = linea.movPosicionLinea;
   const expedicion = expediciones[key] || {
@@ -434,7 +436,7 @@ const LineaPedido = ({
     cantidad: '0'
   };
   
-  const formatearUnidades = () => {
+  const formatted = useMemo(() => {
     const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
     const unidadVenta = linea.unidadBase || 'ud';
     const unidadStock = linea.unidadAlternativa || 'ud';
@@ -450,11 +452,9 @@ const LineaPedido = ({
         ? formatearUnidad(equivalencia, unidadStock) 
         : null
     };
-  };
+  }, [linea.unidadesPendientes, linea.unidadBase, linea.unidadAlternativa, linea.factorConversion, formatearUnidad]);
   
-  const formatted = formatearUnidades();
-  
-  const validarCantidad = (value) => {
+  const validarCantidad = useCallback((value) => {
     if (value === '') return '0';
     
     // Permitir decimales
@@ -483,18 +483,18 @@ const LineaPedido = ({
     }
     
     return newValue;
-  };
+  }, [expedicion.ubicacion, linea.unidadesPendientes, ubicacionesConStock]);
   
-  const handleCambioCantidad = (e) => {
+  const handleCambioCantidad = useCallback((e) => {
     const nuevaCantidad = validarCantidad(e.target.value);
     handleExpedicionChange(
       key, 
       'cantidad', 
       nuevaCantidad
     );
-  };
+  }, [validarCantidad, handleExpedicionChange, key]);
   
-  const handleCambioUbicacion = (e) => {
+  const handleCambioUbicacion = useCallback((e) => {
     const nuevaUbicacion = e.target.value;
     const ubicacionSeleccionada = ubicacionesConStock.find(
       ubi => ubi.ubicacion === nuevaUbicacion
@@ -528,7 +528,7 @@ const LineaPedido = ({
         );
       }
     }
-  };
+  }, [expedicion.cantidad, handleExpedicionChange, key, linea.unidadesPendientes, ubicacionesConStock]);
   
   return (
     <>
@@ -709,10 +709,10 @@ const LineaPedido = ({
       </tr>
     </>
   );
-};
+});
 
-// Componente Tarjeta de Pedido
-const PedidoCard = ({ 
+// Componente Tarjeta de Pedido (Optimizado)
+const PedidoCard = React.memo(({ 
   pedido, 
   togglePedidoView, 
   pedidoViewModes, 
@@ -728,21 +728,21 @@ const PedidoCard = ({
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   
-  const tieneLineasParciales = () => {
+  const tieneLineasParciales = useMemo(() => {
     return pedido.articulos.some(articulo => {
       const unidadesExpedidas = parseFloat(articulo.unidadesPedidas) - parseFloat(articulo.unidadesPendientes);
       return unidadesExpedidas > 0 && unidadesExpedidas < parseFloat(articulo.unidadesPedidas);
     });
-  };
+  }, [pedido.articulos]);
 
-  const estaCompletamenteExpedido = () => {
+  const estaCompletamenteExpedido = useMemo(() => {
     return pedido.articulos.every(articulo => 
       parseFloat(articulo.unidadesPendientes) === 0
     );
-  };
+  }, [pedido.articulos]);
   
-  const parcial = tieneLineasParciales();
-  const completo = estaCompletamenteExpedido();
+  const parcial = tieneLineasParciales;
+  const completo = estaCompletamenteExpedido;
   
   return (
     <div className={`pedido-card ${parcial ? 'pedido-parcial' : ''}`}>
@@ -778,16 +778,17 @@ const PedidoCard = ({
                       setShowMenu(false);
                     }}
                     className="menu-item"
+                    disabled={generandoAlbaran}
                   >
-                    <FaCheck /> Completar Pedido
+                    <FaCheck /> {generandoAlbaran ? 'Procesando...' : 'Completar Pedido'}
                   </button>
                 )}
                 <button 
-                  className="menu-item"
-                  onClick={() => {
-                    togglePedidoView(pedido.numeroPedido);
-                    setShowMenu(false);
-                  }}
+                    className="menu-item"
+                    onClick={() => {
+                      togglePedidoView(pedido.numeroPedido);
+                      setShowMenu(false);
+                    }}
                 >
                   <FaEllipsisV /> 
                   {pedidoViewModes[pedido.numeroPedido] === 'show' ? ' Ocultar líneas' : ' Mostrar líneas'}
@@ -833,7 +834,7 @@ const PedidoCard = ({
               <thead>
                 <tr>
                   <th>Artículo</th>
-                  <th>Descripción</th>
+                  <th>Descripcion</th>
                   <th>Pendiente</th>
                   <th>Ubicación</th>
                   <th>Cantidad</th>
@@ -862,43 +863,78 @@ const PedidoCard = ({
       )}
     </div>
   );
-};
+});
 
-// Componente de Paginación
-const Paginacion = ({ totalPaginas, paginaActual, cambiarPagina }) => {
+// Componente de Paginación (Optimizado)
+const Paginacion = React.memo(({ totalPaginas, paginaActual, cambiarPagina }) => {
+  const paginas = useMemo(() => {
+    const paginas = [];
+    const maxPaginasVisibles = 5;
+    let inicio = Math.max(1, paginaActual - Math.floor(maxPaginasVisibles / 2));
+    let fin = Math.min(totalPaginas, inicio + maxPaginasVisibles - 1);
+    
+    if (fin - inicio + 1 < maxPaginasVisibles) {
+      inicio = Math.max(1, fin - maxPaginasVisibles + 1);
+    }
+    
+    for (let i = inicio; i <= fin; i++) {
+      paginas.push(i);
+    }
+    
+    return paginas;
+  }, [totalPaginas, paginaActual]);
+  
   return (
     totalPaginas > 1 && (
       <div className="pagination">
         <button 
           onClick={() => cambiarPagina(1)} 
           disabled={paginaActual === 1}
+          className="pagination-btn"
         >
           &laquo;
         </button>
         
-        {Array.from({ length: totalPaginas }, (_, i) => i + 1).map(numero => (
+        <button 
+          onClick={() => cambiarPagina(paginaActual - 1)} 
+          disabled={paginaActual === 1}
+          className="pagination-btn"
+        >
+          &lsaquo;
+        </button>
+        
+        {paginas.map(numero => (
           <button
             key={numero}
             onClick={() => cambiarPagina(numero)}
-            className={paginaActual === numero ? 'active' : ''}
+            className={`pagination-btn ${paginaActual === numero ? 'active' : ''}`}
           >
             {numero}
           </button>
         ))}
         
         <button 
+          onClick={() => cambiarPagina(paginaActual + 1)} 
+          disabled={paginaActual === totalPaginas}
+          className="pagination-btn"
+        >
+          &rsaquo;
+        </button>
+        
+        <button 
           onClick={() => cambiarPagina(totalPaginas)} 
           disabled={paginaActual === totalPaginas}
+          className="pagination-btn"
         >
           &raquo;
         </button>
       </div>
     )
   );
-};
+});
 
-// Componente Modal de Cámara
-const CameraModal = ({ 
+// Componente Modal de Cámara (Optimizado)
+const CameraModal = React.memo(({ 
   showCamera, 
   setShowCamera, 
   cameras, 
@@ -1007,9 +1043,9 @@ const CameraModal = ({
       </div>
     </div>
   );
-};
+});
 
-// Componente Principal PedidosScreen
+// Componente Principal PedidosScreen (Optimizado)
 const PedidosScreen = () => {
   const navigate = useNavigate();
   const [user] = useState(() => {
@@ -1030,6 +1066,7 @@ const PedidosScreen = () => {
   const [loading, setLoading] = useState(true);
   const [generandoAlbaran, setGenerandoAlbaran] = useState(false);
   const [filtroBusqueda, setFiltroBusqueda] = useState('');
+  const debouncedFiltroBusqueda = useDebounce(filtroBusqueda, 500);
   const [rangoFechas, setRangoFechas] = useState('semana');
   const [filtroFormaEntrega, setFiltroFormaEntrega] = useState('');
   const [paginaActual, setPaginaActual] = useState(1);
@@ -1044,102 +1081,122 @@ const PedidosScreen = () => {
   const [selectedCamera, setSelectedCamera] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
-  const formasEntrega = [
+  const formasEntrega = useMemo(() => [
     { id: 1, nombre: 'Recogida Guadalhorce' },
     { id: 3, nombre: 'Nuestros Medios' },
     { id: 4, nombre: 'Agencia' },
     { id: 5, nombre: 'Directo Fabrica' },
     { id: 6, nombre: 'Pedido Express' }
-  ];
+  ], []);
 
-  useEffect(() => {
-    const cargarPedidos = async () => {
-      try {
-        setLoading(true);
-        setError('');
-        
-        const codigoEmpresa = user?.CodigoEmpresa;
-        if (!codigoEmpresa) {
-          setError('No se encontró el código de empresa del usuario.');
-          setLoading(false);
-          return;
-        }
-        
-        const headers = getAuthHeader();
-        
-        const response = await axios.get(`http://localhost:3000/pedidosPendientes`, { 
-          headers,
-          params: { 
-            codigoEmpresa,
-            rango: rangoFechas,
-            formaEntrega: filtroFormaEntrega 
-          } 
-        });
-        
-        setPedidos(response.data);
-        
-        const articulosConUnidad = response.data.flatMap(pedido => 
-          pedido.articulos.map(articulo => ({
-            codigo: articulo.codigoArticulo,
-            unidad: articulo.unidadPedido
-          }))
+  // Función para cargar pedidos con cancelación
+  const cargarPedidos = useCallback(async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+    
+    try {
+      setLoading(true);
+      setError('');
+      
+      const codigoEmpresa = user?.CodigoEmpresa;
+      if (!codigoEmpresa) {
+        setError('No se encontró el código de empresa del usuario.');
+        setLoading(false);
+        return;
+      }
+      
+      const headers = getAuthHeader();
+      
+      const response = await axios.get(`http://localhost:3000/pedidosPendientes`, { 
+        headers,
+        params: { 
+          codigoEmpresa,
+          rango: rangoFechas,
+          formaEntrega: filtroFormaEntrega 
+        },
+        signal
+      });
+      
+      if (signal.aborted) return;
+      
+      setPedidos(response.data);
+      
+      const articulosConUnidad = response.data.flatMap(pedido => 
+        pedido.articulos.map(articulo => ({
+          codigo: articulo.codigoArticulo,
+          unidad: articulo.unidadPedido
+        }))
+      );
+
+      if (articulosConUnidad.length > 0) {
+        const responseUbicaciones = await axios.post(
+          'http://localhost:3000/ubicacionesMultiples',
+          { articulos: articulosConUnidad },
+          { headers, signal }
         );
-
-        if (articulosConUnidad.length > 0) {
-          const responseUbicaciones = await axios.post(
-            'http://localhost:3000/ubicacionesMultiples',
-            { articulos: articulosConUnidad },
-            { headers }
+        
+        if (signal.aborted) return;
+        setUbicaciones(responseUbicaciones.data);
+      }
+      
+      const nuevasExpediciones = {};
+      response.data.forEach(pedido => {
+        pedido.articulos.forEach(linea => {
+          const key = linea.movPosicionLinea;
+          
+          let ubicacionesConStock = ubicaciones[linea.codigoArticulo]?.filter(ubi => 
+            ubi.unidadSaldo > 0 && 
+            ubi.unidadMedida === linea.unidadPedido
+          ) || [];
+          
+          let cantidadInicial = Math.min(
+            parseFloat(linea.unidadesPendientes) || 0,
+            ubicacionesConStock[0]?.unidadSaldo !== Infinity ? 
+              parseFloat(ubicacionesConStock[0]?.unidadSaldo) || 0 : 
+              parseFloat(linea.unidadesPendientes) || 0
           );
-          setUbicaciones(responseUbicaciones.data);
-        }
-        
-        const nuevasExpediciones = {};
-        response.data.forEach(pedido => {
-          pedido.articulos.forEach(linea => {
-            const key = linea.movPosicionLinea;
-            
-            let ubicacionesConStock = ubicaciones[linea.codigoArticulo]?.filter(ubi => 
-              ubi.unidadSaldo > 0 && 
-              ubi.unidadMedida === linea.unidadPedido
-            ) || [];
-            
-            let cantidadInicial = Math.min(
-              parseFloat(linea.unidadesPendientes) || 0,
-              ubicacionesConStock[0]?.unidadSaldo !== Infinity ? 
-                parseFloat(ubicacionesConStock[0]?.unidadSaldo) || 0 : 
-                parseFloat(linea.unidadesPendientes) || 0
-            );
 
-            if (isNaN(cantidadInicial)) cantidadInicial = 0;
-            
-            if (ubicacionesConStock.length === 0) {
-              ubicacionesConStock.push({
-                codigoAlmacen: "N/A",
-                ubicacion: "Zona descarga",
-                partida: null,
-                unidadSaldo: Infinity,
-                unidadMedida: linea.unidadBase || 'ud'
-              });
-            }
-            
-            nuevasExpediciones[key] = {
-              almacen: ubicacionesConStock[0]?.codigoAlmacen || '',
-              ubicacion: ubicacionesConStock[0]?.ubicacion || "Zona descarga",
-              partida: ubicacionesConStock[0]?.partida || null,
-              cantidad: cantidadInicial.toString()
-            };
-          });
+          if (isNaN(cantidadInicial)) cantidadInicial = 0;
+          
+          if (ubicacionesConStock.length === 0) {
+            ubicacionesConStock.push({
+              codigoAlmacen: "N/A",
+              ubicacion: "Zona descarga",
+              partida: null,
+              unidadSaldo: Infinity,
+              unidadMedida: linea.unidadBase || 'ud'
+            });
+          }
+          
+          nuevasExpediciones[key] = {
+            almacen: ubicacionesConStock[0]?.codigoAlmacen || '',
+            ubicacion: ubicacionesConStock[0]?.ubicacion || "Zona descarga",
+            partida: ubicacionesConStock[0]?.partida || null,
+            cantidad: cantidadInicial.toString()
+          };
         });
-        setExpediciones(nuevasExpediciones);
-        
-        const initialModes = {};
-        response.data.forEach(pedido => {
-          initialModes[pedido.numeroPedido] = 'show';
-        });
-        setPedidoViewModes(initialModes);
-      } catch (err) {
+      });
+      
+      if (signal.aborted) return;
+      setExpediciones(nuevasExpediciones);
+      
+      const initialModes = {};
+      response.data.forEach(pedido => {
+        initialModes[pedido.numeroPedido] = 'show';
+      });
+      
+      if (signal.aborted) return;
+      setPedidoViewModes(initialModes);
+    } catch (err) {
+      if (axios.isCancel(err)) {
+        console.log('Solicitud cancelada');
+      } else {
         console.error('Error al obtener pedidos:', err);
         if (err.response?.status === 500) {
           setError('Error interno del servidor. Inténtalo más tarde');
@@ -1148,13 +1205,23 @@ const PedidosScreen = () => {
         } else {
           setError('Error de conexión con el servidor');
         }
-      } finally {
+      }
+    } finally {
+      if (!signal.aborted) {
         setLoading(false);
       }
-    };
-    
-    cargarPedidos();
+    }
   }, [rangoFechas, filtroFormaEntrega, user?.CodigoEmpresa]);
+
+  useEffect(() => {
+    cargarPedidos();
+    
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [cargarPedidos]);
 
   useEffect(() => {
     if (showCamera && Html5Qrcode) {
@@ -1162,7 +1229,7 @@ const PedidosScreen = () => {
         if (devices && devices.length) {
           setCameras(devices);
           setSelectedCamera(devices[0].id);
-          setCameraError(''); // Limpiar error si se obtienen cámaras
+          setCameraError('');
         } else {
           setCameraError('No se encontraron cámaras disponibles.');
         }
@@ -1203,20 +1270,50 @@ const PedidosScreen = () => {
     };
   }, [showCamera, selectedCamera]);
 
-  const abrirModalDetalles = async (detalles, linea, pedido) => {
+  const abrirModalDetalles = useCallback(async (detallesAnidados, linea, pedido) => {
     try {
+      // Transformar la estructura anidada a plana
+      const detallesPlana = [];
+      
+      if (detallesAnidados && Array.isArray(detallesAnidados)) {
+        detallesAnidados.forEach(variante => {
+          if (variante.tallas && typeof variante.tallas === 'object') {
+            Object.entries(variante.tallas).forEach(([codigoTalla, talla]) => {
+              if (talla && typeof talla === 'object') {
+                // Extraer el código real de la talla de la descripción
+                let codigoTallaReal = codigoTalla;
+                
+                // Si la descripción contiene el código real, extraerlo
+                if (talla.descripcion && talla.descripcion.includes('Talla ')) {
+                  codigoTallaReal = talla.descripcion.replace('Talla ', '');
+                }
+                
+                detallesPlana.push({
+                  codigoArticulo: linea.codigoArticulo,
+                  codigoColor: variante.color?.codigo || '',
+                  codigoTalla: codigoTallaReal,
+                  cantidadPendiente: talla.unidades || 0,
+                  descripcionTalla: talla.descripcion || `Talla ${codigoTalla}`,
+                  colorNombre: variante.color?.nombre || variante.color?.codigo || 'Sin color'
+                });
+              }
+            });
+          }
+        });
+      }
+
       setDetallesModal({
-        detalles,
+        detalles: detallesPlana,
         linea,
         pedido
       });
     } catch (error) {
-      console.error('Error al obtener ubicaciones:', error);
-      alert('Error al obtener ubicaciones para este artículo');
+      console.error('Error al procesar detalles del artículo:', error);
+      alert('Error al obtener información para este artículo');
     }
-  };
+  }, []);
 
-  const handleExpedirVariante = async (datosVariante) => {
+  const handleExpedirVariante = useCallback(async (datosVariante) => {
     const { articulo, color, talla, cantidad, ubicacion, almacen, partida, unidadMedida } = datosVariante;
     const { pedido, linea } = detallesModal;
 
@@ -1277,16 +1374,16 @@ const PedidosScreen = () => {
 
         alert(`Expedición realizada: ${cantidad} unidades de la variante`);
         
-        return Promise.resolve(); // Indicar que la expedición fue exitosa
+        return Promise.resolve();
       }
     } catch (error) {
       console.error('Error al expedir variante:', error);
       alert('Error al expedir: ' + (error.response?.data?.mensaje || error.message));
-      return Promise.reject(error); // Indicar que hubo un error
+      return Promise.reject(error);
     }
-  };
+  }, [detallesModal, pedidos]);
 
-  const handleExpedir = async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea, detalle = null) => {
+  const handleExpedir = useCallback(async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea, detalle = null) => {
     if (!canPerformActions || isScanning) return;
     
     setIsScanning(true);
@@ -1385,17 +1482,17 @@ const PedidosScreen = () => {
     } finally {
       setIsScanning(false);
     }
-  };
+  }, [canPerformActions, isScanning, expediciones, pedidos]);
 
-  const iniciarEscaneo = (linea, pedido, detalle = null) => {
+  const iniciarEscaneo = useCallback((linea, pedido, detalle = null) => {
     if (!canPerformActions) return;
     
     setCurrentScanningLine({ linea, pedido, detalle });
     setShowCamera(true);
     setManualCode('');
-  };
+  }, [canPerformActions]);
 
-  const handleScanSuccess = (decodedText) => {
+  const handleScanSuccess = useCallback((decodedText) => {
     if (!currentScanningLine) return;
     
     const { linea, pedido, detalle } = currentScanningLine;
@@ -1424,9 +1521,9 @@ const PedidosScreen = () => {
     }
     
     setShowCamera(false);
-  };
+  }, [currentScanningLine, handleExpedir]);
 
-  const handleManualVerification = () => {
+  const handleManualVerification = useCallback(() => {
     if (!currentScanningLine || !manualCode) return;
     
     const { linea, pedido, detalle } = currentScanningLine;
@@ -1456,30 +1553,30 @@ const PedidosScreen = () => {
     
     setShowCamera(false);
     setManualCode('');
-  };
+  }, [currentScanningLine, manualCode, handleExpedir]);
 
-  const togglePedidoView = (numeroPedido) => {
+  const togglePedidoView = useCallback((numeroPedido) => {
     setPedidoViewModes(prev => ({
       ...prev,
       [numeroPedido]: prev[numeroPedido] === 'show' ? 'hide' : 'show'
     }));
-  };
+  }, []);
 
-  const handleExpedicionChange = (key, field, value) => {
+  const handleExpedicionChange = useCallback((key, field, value) => {
     if (!canPerformActions) return;
     
     setExpediciones(prev => ({
       ...prev,
       [key]: { ...(prev[key] || {}), [field]: value }
     }));
-  };
+  }, [canPerformActions]);
 
-  const cambiarPagina = (numeroPagina) => {
+  const cambiarPagina = useCallback((numeroPagina) => {
     setPaginaActual(numeroPagina);
     window.scrollTo(0, 0);
-  };
+  }, []);
 
-  const generarAlbaranParcial = async (pedido) => {
+  const generarAlbaranParcial = useCallback(async (pedido) => {
     if (!canPerformActions) return;
     
     try {
@@ -1508,25 +1605,35 @@ const PedidosScreen = () => {
     } finally {
       setGenerandoAlbaran(false);
     }
-  };
+  }, [canPerformActions]);
 
-  const pedidosFiltrados = pedidos.filter(pedido => {
-    const searchText = filtroBusqueda.toLowerCase();
-    
-    return (
-      pedido.numeroPedido.toString().includes(searchText) ||
-      pedido.razonSocial.toLowerCase().includes(searchText) ||
-      pedido.domicilio.toLowerCase().includes(searchText) ||
-      (pedido.obra && pedido.obra.toLowerCase().includes(searchText))
-    );
-  });
+  // Filtrar pedidos con useMemo para evitar recálculos innecesarios
+  const pedidosFiltrados = useMemo(() => {
+    return pedidos.filter(pedido => {
+      const searchText = debouncedFiltroBusqueda.toLowerCase();
+      
+      return (
+        pedido.numeroPedido.toString().includes(searchText) ||
+        pedido.razonSocial.toLowerCase().includes(searchText) ||
+        pedido.domicilio.toLowerCase().includes(searchText) ||
+        (pedido.obra && pedido.obra.toLowerCase().includes(searchText))
+      );
+    });
+  }, [pedidos, debouncedFiltroBusqueda]);
 
-  const pedidosOrdenados = [...pedidosFiltrados];
+  const pedidosOrdenados = useMemo(() => [...pedidosFiltrados], [pedidosFiltrados]);
   
   const indexUltimoPedido = paginaActual * pedidosPorPagina;
   const indexPrimerPedido = indexUltimoPedido - pedidosPorPagina;
-  const pedidosActuales = pedidosOrdenados.slice(indexPrimerPedido, indexUltimoPedido);
-  const totalPaginas = Math.ceil(pedidosOrdenados.length / pedidosPorPagina);
+  const pedidosActuales = useMemo(() => 
+    pedidosOrdenados.slice(indexPrimerPedido, indexUltimoPedido),
+    [pedidosOrdenados, indexPrimerPedido, indexUltimoPedido]
+  );
+  
+  const totalPaginas = useMemo(() => 
+    Math.ceil(pedidosOrdenados.length / pedidosPorPagina),
+    [pedidosOrdenados.length, pedidosPorPagina]
+  );
 
   if (!canViewAllOrders) {
     return (
@@ -1550,7 +1657,7 @@ const PedidosScreen = () => {
         <div className="pedidos-controls">
           <div className="filtros-container">
             <div className="filtro-group search-group">
-              <label>Buscar:</label>
+              <label><FaSearch /> Buscar:</label>
               <div className="search-input-container">
                 <input
                   type="text"
@@ -1563,9 +1670,8 @@ const PedidosScreen = () => {
             </div>
             
             <div className="filtro-group date-group">
-              <label>Rango de fechas:</label>
+              <label><FaCalendarAlt /> Rango de fechas:</label>
               <div className="select-container">
-                <FaCalendarAlt className="select-icon" />
                 <select
                   value={rangoFechas}
                   onChange={e => setRangoFechas(e.target.value)}
@@ -1574,13 +1680,13 @@ const PedidosScreen = () => {
                   <option value="semana">Una semana</option>
                   <option value="dia">Un día</option>
                 </select>
+                <div className="select-arrow"><FaChevronDown /></div>
               </div>
             </div>
             
             <div className="filtro-group delivery-group">
-              <label>Forma de entrega:</label>
+              <label><FaTruck /> Forma de entrega:</label>
               <div className="select-container">
-                <FaTruck className="select-icon" />
                 <select
                   value={filtroFormaEntrega}
                   onChange={e => setFiltroFormaEntrega(e.target.value)}
@@ -1593,6 +1699,7 @@ const PedidosScreen = () => {
                     </option>
                   ))}
                 </select>
+                <div className="select-arrow"><FaChevronDown /></div>
               </div>
             </div>
           </div>
@@ -1608,15 +1715,12 @@ const PedidosScreen = () => {
         
         <div className="pedidos-content">
           {error ? (
-            <div className="error-pedidos">
-              <p>{error}</p>
-              <button onClick={() => window.location.reload()}>Reintentar</button>
-            </div>
+            <ErrorMessage 
+              message={error} 
+              onRetry={cargarPedidos}
+            />
           ) : loading ? (
-            <div className="loading-pedidos">
-              <div className="loader"></div>
-              <p>Cargando pedidos...</p>
-            </div>
+            <LoadingSpinner message="Cargando pedidos..." />
           ) : pedidosOrdenados.length === 0 ? (
             <div className="no-pedidos">
               <p>No hay pedidos pendientes</p>
