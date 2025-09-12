@@ -500,6 +500,17 @@ const LineaPedido = React.memo(({
       ubi => ubi.ubicacion === nuevaUbicacion
     );
     
+    // Calcular la nueva cantidad: mínimo entre stock y pendientes
+    let nuevaCantidad = 0;
+    if (ubicacionSeleccionada) {
+      const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
+      const stockDisponible = ubicacionSeleccionada.unidadSaldo === Infinity 
+        ? unidadesPendientes 
+        : parseFloat(ubicacionSeleccionada.unidadSaldo) || 0;
+      
+      nuevaCantidad = Math.min(unidadesPendientes, stockDisponible);
+    }
+    
     handleExpedicionChange(
       key, 
       'ubicacion', 
@@ -513,22 +524,14 @@ const LineaPedido = React.memo(({
         ubicacionSeleccionada.codigoAlmacen
       );
       
-      const cantidadActual = parseFloat(expedicion.cantidad) || 0;
-      let maxPermitido = parseFloat(linea.unidadesPendientes);
-      
-      if (ubicacionSeleccionada.unidadSaldo !== Infinity) {
-        maxPermitido = Math.min(maxPermitido, ubicacionSeleccionada.unidadSaldo);
-      }
-      
-      if (cantidadActual > maxPermitido) {
-        handleExpedicionChange(
-          key, 
-          'cantidad', 
-          maxPermitido.toString()
-        );
-      }
+      // Actualizar la cantidad con el valor calculado
+      handleExpedicionChange(
+        key, 
+        'cantidad', 
+        nuevaCantidad.toString()
+      );
     }
-  }, [expedicion.cantidad, handleExpedicionChange, key, linea.unidadesPendientes, ubicacionesConStock]);
+  }, [handleExpedicionChange, key, linea.unidadesPendientes, ubicacionesConStock]);
   
   return (
     <>
@@ -834,7 +837,7 @@ const PedidoCard = React.memo(({
               <thead>
                 <tr>
                   <th>Artículo</th>
-                  <th>Descripción</th>
+                  <th>Descripcion</th>
                   <th>Pendiente</th>
                   <th>Ubicación</th>
                   <th>Cantidad</th>
@@ -1334,7 +1337,8 @@ const PedidosScreen = () => {
           partida: partida,
           unidadMedida: unidadMedida,
           codigoColor: color,
-          codigoTalla: talla
+          codigoTalla: talla,
+          esZonaDescarga: ubicacion === "Zona descarga"
         },
         { headers }
       );
@@ -1404,8 +1408,8 @@ const PedidosScreen = () => {
     try {
       const headers = getAuthHeader();
       
-      // Validación básica en frontend
-      if (cantidadExpedida > unidadesPendientes) {
+      // Validación básica en frontend - omitir para Zona descarga
+      if (expedicion.ubicacion !== "Zona descarga" && cantidadExpedida > unidadesPendientes) {
         alert(`No puedes expedir más de ${unidadesPendientes} unidades (pendientes)`);
         setIsScanning(false);
         return;
@@ -1423,6 +1427,7 @@ const PedidosScreen = () => {
         ubicacion: expedicion.ubicacion,
         partida: expedicion.partida || '',
         unidadMedida: expedicion.unidadMedida || linea.unidadPedido,
+        esZonaDescarga: expedicion.ubicacion === "Zona descarga"
       };
 
       // Si hay detalle (variante con talla y color), añadimos esos campos
@@ -1470,10 +1475,12 @@ const PedidosScreen = () => {
         );
         setUbicaciones(responseUbicaciones.data);
 
-        alert(`Se expedieron ${cantidadExpedida} unidades correctamente. Stock restante: ${response.data.detalles.stockRestante}`);
+        alert(`Se expedieron ${cantidadExpedida} unidades correctamente. ${expedicion.ubicacion !== "Zona descarga" ? `Stock restante: ${response.data.detalles.stockRestante}` : 'Desde Zona de descarga'}`);
       }
     } catch (error) {
       console.error('Error al expedir artículo:', error);
+      console.error('Respuesta del servidor:', error.response?.data);
+      
       if (error.response?.data?.mensaje) {
         alert('Error al expedir artículo: ' + error.response.data.mensaje);
       } else {

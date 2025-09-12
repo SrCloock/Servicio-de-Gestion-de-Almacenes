@@ -769,7 +769,7 @@ app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
   }
 });
 
-// ✅ 7.2 ALBARANES PENDIENTES (ÚLTIMO MES) - ACTUALIZADO
+// ✅ 7.2 ALBARANES PENDIENTES (ACTUALIZADO CON FILTRO FORMA ENTREGA 3 Y 7 DÍAS)
 app.get('/albaranesPendientes', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -780,26 +780,33 @@ app.get('/albaranesPendientes', async (req, res) => {
   try {
     const query = `
       SELECT 
-        NumeroAlbaran, 
-        SerieAlbaran, 
-        EjercicioAlbaran,
-        CodigoEmpresa,
-        FechaAlbaran, 
-        CodigoCliente, 
-        RazonSocial, 
-        Domicilio, 
-        Municipio, 
-        ImporteLiquido,
-        StatusFacturado,
-        EmpleadoAsignado,
-        obra,
-        Contacto,
-        Telefono AS TelefonoContacto
-      FROM CabeceraAlbaranCliente
-      WHERE CodigoEmpresa = @codigoEmpresa
-        AND StatusFacturado = 0
-        AND FechaAlbaran >= DATEADD(MONTH, -1, GETDATE()) -- Último mes
-      ORDER BY FechaAlbaran DESC
+        cac.NumeroAlbaran, 
+        cac.SerieAlbaran, 
+        cac.EjercicioAlbaran,
+        cac.CodigoEmpresa,
+        cac.FechaAlbaran, 
+        cac.CodigoCliente, 
+        cac.RazonSocial, 
+        cac.Domicilio, 
+        cac.Municipio, 
+        cac.ImporteLiquido,
+        cac.StatusFacturado,
+        cac.EmpleadoAsignado,
+        cac.obra,
+        cac.Contacto,
+        cac.Telefono AS TelefonoContacto,
+        cpc.FormaEntrega
+      FROM CabeceraAlbaranCliente cac
+      INNER JOIN CabeceraPedidoCliente cpc ON 
+        cac.CodigoEmpresa = cpc.CodigoEmpresa 
+        AND cac.EjercicioPedido = cpc.EjercicioPedido
+        AND cac.SeriePedido = cpc.SeriePedido
+        AND cac.NumeroPedido = cpc.NumeroPedido
+      WHERE cac.CodigoEmpresa = @codigoEmpresa
+        AND cac.StatusFacturado = 0
+        AND cac.FechaAlbaran >= DATEADD(DAY, -7, GETDATE())
+        AND cpc.FormaEntrega = 3  -- Solo nuestros medios
+      ORDER BY cac.FechaAlbaran DESC
     `;
     
     const cabeceras = await poolGlobal.request()
@@ -847,6 +854,7 @@ app.get('/albaranesPendientes', async (req, res) => {
         obra: cabecera.obra,
         contacto: cabecera.Contacto,
         telefonoContacto: cabecera.TelefonoContacto,
+        FormaEntrega: cabecera.FormaEntrega,
         articulos: lineas.recordset.map(art => ({
           ...art,
           cantidadOriginal: art.cantidadOriginal || art.cantidad,
@@ -1319,7 +1327,7 @@ app.post('/revertir-albaran', async (req, res) => {
   }
 });
 
-// ✅ 8.9 ALBARANES COMPLETADOS
+// ✅ 8.9 ALBARANES COMPLETADOS (ACTUALIZADO CON FILTRO FORMA ENTREGA 3 Y 7 DÍAS)
 app.get('/albaranes-completados', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1332,19 +1340,27 @@ app.get('/albaranes-completados', async (req, res) => {
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(`
         SELECT 
-          CONCAT(EjercicioAlbaran, '-', SerieAlbaran, '-', NumeroAlbaran) AS id,
-          NumeroAlbaran,
-          SerieAlbaran,
-          EjercicioAlbaran,
-          CodigoEmpresa,
-          FechaAlbaran,
-          RazonSocial,
-          obra,
-          StatusFacturado
-        FROM CabeceraAlbaranCliente
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND StatusFacturado = -1
-        ORDER BY FechaAlbaran DESC
+          CONCAT(cac.EjercicioAlbaran, '-', cac.SerieAlbaran, '-', cac.NumeroAlbaran) AS id,
+          cac.NumeroAlbaran,
+          cac.SerieAlbaran,
+          cac.EjercicioAlbaran,
+          cac.CodigoEmpresa,
+          cac.FechaAlbaran,
+          cac.RazonSocial,
+          cac.obra,
+          cac.StatusFacturado,
+          cpc.FormaEntrega
+        FROM CabeceraAlbaranCliente cac
+        INNER JOIN CabeceraPedidoCliente cpc ON 
+          cac.CodigoEmpresa = cpc.CodigoEmpresa 
+          AND cac.EjercicioPedido = cpc.EjercicioPedido
+          AND cac.SeriePedido = cpc.SeriePedido
+          AND cac.NumeroPedido = cpc.NumeroPedido
+        WHERE cac.CodigoEmpresa = @codigoEmpresa
+          AND cac.StatusFacturado = -1
+          AND cac.FechaAlbaran >= DATEADD(DAY, -7, GETDATE())
+          AND cpc.FormaEntrega = 3  -- Solo nuestros medios
+        ORDER BY cac.FechaAlbaran DESC
       `);
       
     res.json(result.recordset);
@@ -1357,8 +1373,6 @@ app.get('/albaranes-completados', async (req, res) => {
     });
   }
 });
-
-
 
 // ============================================
 // ✅ 11. FUNCIONES EXTRA
@@ -3143,8 +3157,106 @@ app.get('/historial-traspasos', async (req, res) => {
   }
 });
 
-// ✅ 10.5 OBTENER TODAS LAS UBICACIONES AGRUPADAS POR ALMACÉN
-app.get('/ubicaciones-agrupadas', async (req, res) => {
+// ✅ 10.5 OBTENER UBICACIONES AGRUPADAS POR ALMACÉN (VERSIÓN PAGINADA)
+app.get('/ubicaciones-agrupadas-paginadas', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
+  const page = parseInt(req.query.page) || 1;
+  const pageSize = parseInt(req.query.pageSize) || 50;
+  const offset = (page - 1) * pageSize;
+
+  if (!codigoEmpresa) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Código de empresa requerido.' 
+    });
+  }
+
+  try {
+    // Consulta para obtener almacenes con paginación
+    const almacenesQuery = `
+      SELECT DISTINCT
+        a.CodigoAlmacen,
+        a.Almacen AS NombreAlmacen
+      FROM Almacenes a
+      WHERE a.CodigoEmpresa = @codigoEmpresa
+        AND a.CodigoAlmacen IN ('CEN', 'BCN', 'N5', 'N1', 'PK', '5')
+      ORDER BY a.Almacen
+      OFFSET @offset ROWS
+      FETCH NEXT @pageSize ROWS ONLY
+    `;
+
+    const countQuery = `
+      SELECT COUNT(DISTINCT CodigoAlmacen) AS Total
+      FROM Almacenes
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND CodigoAlmacen IN ('CEN', 'BCN', 'N5', 'N1', 'PK', '5')
+    `;
+
+    const request = poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('offset', sql.Int, offset)
+      .input('pageSize', sql.Int, pageSize);
+
+    const almacenesResult = await request.query(almacenesQuery);
+    const countResult = await request.query(countQuery);
+    
+    const total = countResult.recordset[0].Total;
+    const totalPages = Math.ceil(total / pageSize);
+
+    // Para cada almacén, obtener sus ubicaciones (esto se puede optimizar aún más)
+    const almacenesConUbicaciones = [];
+    
+    for (const almacen of almacenesResult.recordset) {
+      const ubicacionesResult = await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('codigoAlmacen', sql.VarChar, almacen.CodigoAlmacen)
+        .query(`
+          SELECT TOP 10 
+            u.Ubicacion,
+            '' AS DescripcionUbicacion,
+            COUNT(s.CodigoArticulo) AS CantidadArticulos
+          FROM Ubicaciones u
+          LEFT JOIN AcumuladoStockUbicacion s 
+            ON s.CodigoEmpresa = u.CodigoEmpresa 
+            AND s.CodigoAlmacen = u.CodigoAlmacen 
+            AND s.Ubicacion = u.Ubicacion
+            AND s.Periodo = 99
+            AND s.UnidadSaldo > 0
+          WHERE u.CodigoEmpresa = @codigoEmpresa
+            AND u.CodigoAlmacen = @codigoAlmacen
+          GROUP BY u.Ubicacion
+          ORDER BY u.Ubicacion
+        `);
+      
+      almacenesConUbicaciones.push({
+        codigo: almacen.CodigoAlmacen,
+        nombre: almacen.Almacen,
+        ubicaciones: ubicacionesResult.recordset
+      });
+    }
+
+    res.json({
+      almacenes: almacenesConUbicaciones,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages
+      }
+    });
+  } catch (err) {
+    console.error('[ERROR UBICACIONES AGRUPADAS PAGINADAS]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener ubicaciones agrupadas.',
+      error: err.message 
+    });
+  }
+});
+
+// ✅ OBTENER UBICACIONES POR ALMACÉN (PARA CARGA BAJO DEMANDA)
+app.get('/ubicaciones-por-almacen/:codigoAlmacen', async (req, res) => {
+  const { codigoAlmacen } = req.params;
   const codigoEmpresa = req.user.CodigoEmpresa;
 
   if (!codigoEmpresa) {
@@ -3157,9 +3269,55 @@ app.get('/ubicaciones-agrupadas', async (req, res) => {
   try {
     const result = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
       .query(`
         SELECT 
-          a.CodigoAlmacen,
+          u.Ubicacion,
+          '' AS DescripcionUbicacion,
+          COUNT(s.CodigoArticulo) AS CantidadArticulos
+        FROM Ubicaciones u
+        LEFT JOIN AcumuladoStockUbicacion s 
+          ON s.CodigoEmpresa = u.CodigoEmpresa 
+          AND s.CodigoAlmacen = u.CodigoAlmacen 
+          AND s.Ubicacion = u.Ubicacion
+          AND s.Periodo = 99
+          AND s.UnidadSaldo > 0
+        WHERE u.CodigoEmpresa = @codigoEmpresa
+          AND u.CodigoAlmacen = @codigoAlmacen
+        GROUP BY u.Ubicacion
+        ORDER BY u.Ubicacion
+      `);
+    
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR UBICACIONES POR ALMACEN]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener ubicaciones por almacén.',
+      error: err.message 
+    });
+  }
+});
+
+// ✅ BUSCAR UBICACIONES
+app.get('/buscar-ubicaciones', async (req, res) => {
+  const { termino } = req.query;
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
+  if (!codigoEmpresa) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Código de empresa requerido.' 
+    });
+  }
+
+  try {
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('termino', sql.VarChar, `%${termino}%`)
+      .query(`
+        SELECT TOP 20
+          u.CodigoAlmacen,
           a.Almacen AS NombreAlmacen,
           u.Ubicacion,
           '' AS DescripcionUbicacion,
@@ -3175,37 +3333,17 @@ app.get('/ubicaciones-agrupadas', async (req, res) => {
           AND s.Periodo = 99
           AND s.UnidadSaldo > 0
         WHERE u.CodigoEmpresa = @codigoEmpresa
-        GROUP BY a.CodigoAlmacen, a.Almacen, u.Ubicacion
-        ORDER BY a.Almacen, u.Ubicacion
+          AND u.Ubicacion LIKE @termino
+        GROUP BY u.CodigoAlmacen, a.Almacen, u.Ubicacion
+        ORDER BY u.Ubicacion
       `);
     
-    // Agrupar por almacén
-    const almacenesMap = {};
-    result.recordset.forEach(row => {
-      const key = row.CodigoAlmacen;
-      
-      if (!almacenesMap[key]) {
-        almacenesMap[key] = {
-          codigo: row.CodigoAlmacen,
-          nombre: row.NombreAlmacen,
-          ubicaciones: []
-        };
-      }
-      
-      almacenesMap[key].ubicaciones.push({
-        codigo: row.Ubicacion,
-        descripcion: row.Ubicacion, // Mostrar código en lugar de descripción
-        cantidadArticulos: row.CantidadArticulos
-      });
-    });
-    
-    const almacenesArray = Object.values(almacenesMap);
-    res.json(almacenesArray);
+    res.json(result.recordset);
   } catch (err) {
-    console.error('[ERROR UBICACIONES AGRUPADAS]', err);
+    console.error('[ERROR BUSCAR UBICACIONES]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener ubicaciones agrupadas.',
+      mensaje: 'Error al buscar ubicaciones.',
       error: err.message 
     });
   }
@@ -3570,7 +3708,7 @@ app.post('/asignarEmpleado', async (req, res) => {
   }
 });
 
-// ✅ 5.3 ACTUALIZAR LÍNEA DE PEDIDO (VERSIÓN MEJORADA)
+// ✅ 5.3 ACTUALIZAR LÍNEA DE PEDIDO (VERSIÓN MEJORADA CON SOPORTE PARA ZONA DESCARGA)
 app.post('/actualizarLineaPedido', async (req, res) => {
   const datosLinea = req.body;
 
@@ -3588,6 +3726,9 @@ app.post('/actualizarLineaPedido', async (req, res) => {
       });
     }
   }
+
+  // Verificar si es Zona descarga (stock infinito)
+  const esZonaDescarga = datosLinea.esZonaDescarga || datosLinea.ubicacion === "Zona descarga";
 
   const transaction = new sql.Transaction(poolGlobal);
   
@@ -3650,41 +3791,43 @@ app.post('/actualizarLineaPedido', async (req, res) => {
       });
     }
 
-    // 2. Verificar stock disponible en la ubicación específica
-    const stockResult = await request
-      .input('almacen', sql.VarChar, datosLinea.almacen)
-      .input('ubicacion', sql.VarChar, datosLinea.ubicacion)
-      .input('partida', sql.VarChar, datosLinea.partida || '')
-      .input('unidadMedida', sql.VarChar, unidadMedida)
-      .input('codigoColor', sql.VarChar, datosLinea.codigoColor || '')
-      .input('codigoTalla', sql.VarChar, datosLinea.codigoTalla || '')
-      .query(`
-        SELECT UnidadSaldo
-        FROM AcumuladoStockUbicacion
-        WHERE 
-          CodigoEmpresa = @codigoEmpresa
-          AND CodigoAlmacen = @almacen
-          AND CodigoArticulo = @codigoArticulo
-          AND Ubicacion = @ubicacion
-          AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-          AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
-          AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-          AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-          AND Periodo = 99
-      `);
+    // 2. Verificar stock disponible solo si NO es Zona descarga
+    if (!esZonaDescarga) {
+      const stockResult = await request
+        .input('almacen', sql.VarChar, datosLinea.almacen)
+        .input('ubicacion', sql.VarChar, datosLinea.ubicacion)
+        .input('partida', sql.VarChar, datosLinea.partida || '')
+        .input('unidadMedida', sql.VarChar, unidadMedida)
+        .input('codigoColor', sql.VarChar, datosLinea.codigoColor || '')
+        .input('codigoTalla', sql.VarChar, datosLinea.codigoTalla || '')
+        .query(`
+          SELECT UnidadSaldo
+          FROM AcumuladoStockUbicacion
+          WHERE 
+            CodigoEmpresa = @codigoEmpresa
+            AND CodigoAlmacen = @almacen
+            AND CodigoArticulo = @codigoArticulo
+            AND Ubicacion = @ubicacion
+            AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+            AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
+            AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+            AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+            AND Periodo = 99
+        `);
 
-    let stockDisponible = 0;
-    if (stockResult.recordset.length > 0) {
-      stockDisponible = parseFloat(stockResult.recordset[0].UnidadSaldo);
-    }
+      let stockDisponible = 0;
+      if (stockResult.recordset.length > 0) {
+        stockDisponible = parseFloat(stockResult.recordset[0].UnidadSaldo);
+      }
 
-    // Verificar que la cantidad expedida no supere el stock disponible
-    if (cantidadExpedidaStock > stockDisponible) {
-      await transaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: `No hay suficiente stock en ${datosLinea.ubicacion}. Solo hay ${stockDisponible} unidades disponibles.` 
-      });
+      // Verificar que la cantidad expedida no supere el stock disponible
+      if (cantidadExpedidaStock > stockDisponible) {
+        await transaction.rollback();
+        return res.status(400).json({ 
+          success: false, 
+          mensaje: `No hay suficiente stock en ${datosLinea.ubicacion}. Solo hay ${stockDisponible} unidades disponibles.` 
+        });
+      }
     }
 
     // 3. Actualizar línea de pedido (reducir unidades pendientes)
@@ -3707,76 +3850,127 @@ app.post('/actualizarLineaPedido', async (req, res) => {
     const periodo = fechaActual.getMonth() + 1;
     const importe = precio * datosLinea.cantidadExpedida;
 
-    await request
-      .input('fecha', sql.DateTime, fechaActual)
-      .input('periodo', sql.Int, periodo)
-      .input('importe', sql.Decimal(18, 4), importe)
-      .input('cantidadExpedidaStock', sql.Decimal(18, 4), cantidadExpedidaStock)
-      .input('precio', sql.Decimal(18, 4), precio)
-      .query(`
-        INSERT INTO MovimientoStock (
-          CodigoEmpresa,
-          Ejercicio,
-          Periodo,
-          Fecha,
-          TipoMovimiento,
-          CodigoArticulo,
-          CodigoAlmacen,
-          UnidadMedida1_,
-          PrecioMedio,
-          Importe,
-          Ubicacion,
-          Partida,
-          Unidades,
-          CodigoColor_,
-          CodigoTalla01_
-        ) VALUES (
-          @codigoEmpresa,
-          @ejercicio,
-          @periodo,
-          @fecha,
-          2,  -- 2 = Salida
-          @codigoArticulo,
-          @almacen,
-          @unidadMedida,
-          @precio,
-          @importe,
-          @ubicacion,
-          @partida,
-          @cantidadExpedidaStock,
-          @codigoColor,
-          @codigoTalla
-        )
-      `);
+    // Para Zona descarga, no actualizamos el stock físico
+    if (!esZonaDescarga) {
+      await request
+        .input('fecha', sql.DateTime, fechaActual)
+        .input('periodo', sql.Int, periodo)
+        .input('importe', sql.Decimal(18, 4), importe)
+        .input('cantidadExpedidaStock', sql.Decimal(18, 4), cantidadExpedidaStock)
+        .input('precio', sql.Decimal(18, 4), precio)
+        .query(`
+          INSERT INTO MovimientoStock (
+            CodigoEmpresa,
+            Ejercicio,
+            Periodo,
+            Fecha,
+            TipoMovimiento,
+            CodigoArticulo,
+            CodigoAlmacen,
+            UnidadMedida1_,
+            PrecioMedio,
+            Importe,
+            Ubicacion,
+            Partida,
+            Unidades,
+            CodigoColor_,
+            CodigoTalla01_
+          ) VALUES (
+            @codigoEmpresa,
+            @ejercicio,
+            @periodo,
+            @fecha,
+            2,  -- 2 = Salida
+            @codigoArticulo,
+            @almacen,
+            @unidadMedida,
+            @precio,
+            @importe,
+            @ubicacion,
+            @partida,
+            @cantidadExpedidaStock,
+            @codigoColor,
+            @codigoTalla
+          )
+        `);
+    } else {
+      // Para Zona descarga, registramos un movimiento especial sin afectar stock
+      await request
+        .input('fecha', sql.DateTime, fechaActual)
+        .input('periodo', sql.Int, periodo)
+        .input('importe', sql.Decimal(18, 4), importe)
+        .input('cantidadExpedidaStock', sql.Decimal(18, 4), cantidadExpedidaStock)
+        .input('precio', sql.Decimal(18, 4), precio)
+        .query(`
+          INSERT INTO MovimientoStock (
+            CodigoEmpresa,
+            Ejercicio,
+            Periodo,
+            Fecha,
+            TipoMovimiento,
+            CodigoArticulo,
+            CodigoAlmacen,
+            UnidadMedida1_,
+            PrecioMedio,
+            Importe,
+            Ubicacion,
+            Partida,
+            Unidades,
+            CodigoColor_,
+            CodigoTalla01_,
+            Comentario
+          ) VALUES (
+            @codigoEmpresa,
+            @ejercicio,
+            @periodo,
+            @fecha,
+            9,  -- 9 = Expedición desde Zona Descarga (tipo especial)
+            @codigoArticulo,
+            @almacen,
+            @unidadMedida,
+            @precio,
+            @importe,
+            @ubicacion,
+            @partida,
+            @cantidadExpedidaStock,
+            @codigoColor,
+            @codigoTalla,
+            'Expedición desde Zona de Descarga (stock virtual)'
+          )
+        `);
+    }
 
     await transaction.commit();
 
-    // 5. Consultar el stock actual después del commit
-    const stockActualResult = await poolGlobal.request()
-      .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
-      .input('codigoAlmacen', sql.VarChar, datosLinea.almacen)
-      .input('codigoArticulo', sql.VarChar, datosLinea.codigoArticulo)
-      .input('ubicacion', sql.VarChar, datosLinea.ubicacion)
-      .input('partida', sql.VarChar, datosLinea.partida || '')
-      .input('unidadMedida', sql.VarChar, unidadMedida)
-      .input('codigoColor', sql.VarChar, datosLinea.codigoColor || '')
-      .input('codigoTalla', sql.VarChar, datosLinea.codigoTalla || '')
-      .query(`
-        SELECT UnidadSaldo
-        FROM AcumuladoStockUbicacion
-        WHERE 
-          CodigoEmpresa = @codigoEmpresa
-          AND CodigoAlmacen = @codigoAlmacen
-          AND CodigoArticulo = @codigoArticulo
-          AND Ubicacion = @ubicacion
-          AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-          AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
-          AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-          AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-          AND Periodo = 99
-      `);
+    // 5. Consultar el stock actual después del commit (solo si no es Zona descarga)
+    let stockRestante = 0;
+    if (!esZonaDescarga) {
+      const stockActualResult = await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
+        .input('codigoAlmacen', sql.VarChar, datosLinea.almacen)
+        .input('codigoArticulo', sql.VarChar, datosLinea.codigoArticulo)
+        .input('ubicacion', sql.VarChar, datosLinea.ubicacion)
+        .input('partida', sql.VarChar, datosLinea.partida || '')
+        .input('unidadMedida', sql.VarChar, unidadMedida)
+        .input('codigoColor', sql.VarChar, datosLinea.codigoColor || '')
+        .input('codigoTalla', sql.VarChar, datosLinea.codigoTalla || '')
+        .query(`
+          SELECT UnidadSaldo
+          FROM AcumuladoStockUbicacion
+          WHERE 
+            CodigoEmpresa = @codigoEmpresa
+            AND CodigoAlmacen = @codigoAlmacen
+            AND CodigoArticulo = @codigoArticulo
+            AND Ubicacion = @ubicacion
+            AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+            AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
+            AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+            AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+            AND Periodo = 99
+        `);
 
-    const stockRestante = stockActualResult.recordset[0]?.UnidadSaldo || 0;
+      stockRestante = stockActualResult.recordset[0]?.UnidadSaldo || 0;
+    }
 
     res.json({ 
       success: true, 
@@ -3785,7 +3979,7 @@ app.post('/actualizarLineaPedido', async (req, res) => {
         cantidadExpedidaVenta: datosLinea.cantidadExpedida,
         cantidadExpedidaStock: cantidadExpedidaStock,
         unidadesPendientesRestantes: unidadesPendientes - datosLinea.cantidadExpedida,
-        stockRestante: stockRestante
+        stockRestante: esZonaDescarga ? 'N/A (Zona Descarga)' : stockRestante
       }
     });
   } catch (err) {

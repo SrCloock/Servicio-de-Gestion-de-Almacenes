@@ -31,6 +31,12 @@ function GestionDocumentalScreen() {
   };
 
   const handleRevertir = async (albaran) => {
+    // Validar que sea de nuestros medios
+    if (albaran.FormaEntrega !== 3) {
+      alert('Solo se pueden revertir albaranes de nuestros medios (forma de entrega 3)');
+      return;
+    }
+
     if (window.confirm('¿Revertir este albarán a pendiente? Se volverá a mostrar en las pantallas de gestión.')) {
       try {
         const headers = getAuthHeader();
@@ -52,7 +58,7 @@ function GestionDocumentalScreen() {
   return (
     <div className="gestion-documental">
       <h2>Gestión Documental</h2>
-      <p>Albaranes entregados y firmados</p>
+      <p>Albaranes entregados y firmados (Solo nuestros medios - últimos 7 días)</p>
       
       {loading && (
         <div className="GD-loading">
@@ -65,7 +71,7 @@ function GestionDocumentalScreen() {
 
       {!loading && albaranes.length === 0 ? (
         <div className="GD-no-albaranes">
-          <p>No hay albaranes completados</p>
+          <p>No hay albaranes completados (solo nuestros medios)</p>
         </div>
       ) : (
         <div className="GD-grid">
@@ -73,6 +79,7 @@ function GestionDocumentalScreen() {
             <div key={albaran.id} className="GD-card">
               <div className="GD-card-header">
                 <h3>Albarán: {albaran.SerieAlbaran || ''}-{albaran.NumeroAlbaran}</h3>
+                <span className="forma-entrega-tag">Nuestros medios</span>
               </div>
               <div className="GD-card-body">
                 <p><strong>Cliente:</strong> {albaran.RazonSocial}</p>

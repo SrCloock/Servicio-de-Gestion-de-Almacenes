@@ -58,6 +58,7 @@ function GestionRutas() {
   // Filtrar albaranes por búsqueda y por usuario (si es repartidor)
   const albaranesFiltrados = albaranes
     .filter(albaran => isDelivery ? albaran.empleadoAsignado === user.UsuarioLogicNet : true)
+    .filter(albaran => albaran.FormaEntrega === 3)  // Solo nuestros medios
     .filter(albaran => {
       const searchLower = searchTerm.toLowerCase();
       return (
@@ -123,7 +124,7 @@ function GestionRutas() {
         </div>
 
         <div className="subtitle-container">
-          <h3>Entregas Asignadas a Tu Ruta</h3>
+          <h3>Entregas Asignadas a Tu Ruta (Solo Nuestros Medios)</h3>
         </div>
 
         <div className="search-and-pagination">
@@ -167,7 +168,7 @@ function GestionRutas() {
 
         {!loading && albaranesFiltrados.length === 0 && (
           <div className="no-albaranes">
-            <p>No hay albaranes pendientes de entrega</p>
+            <p>No hay albaranes pendientes de entrega (solo nuestros medios)</p>
           </div>
         )}
 
@@ -209,6 +210,11 @@ function GestionRutas() {
                   <span className="icon">🚚</span>
                   <strong>Repartidor asignado:</strong> 
                   {albaran.repartidor || 'Sin asignar'}
+                </div>
+
+                <div className="forma-entrega-info">
+                  <span className="icon">📦</span>
+                  <strong>Forma de entrega:</strong> Nuestros medios
                 </div>
               </div>
               

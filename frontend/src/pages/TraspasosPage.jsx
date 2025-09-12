@@ -53,7 +53,11 @@ const TraspasosPage = () => {
   const [colorOrigen, setColorOrigen] = useState('');
   const [stockDisponibleInfo, setStockDisponibleInfo] = useState('');
   const [tipoUnidadMedida, setTipoUnidadMedida] = useState('');
-  
+  const [almacenesExpandidos, setAlmacenesExpandidos] = useState({});
+  const [ubicacionesCargadas, setUbicacionesCargadas] = useState({});
+  const [cargandoBusquedaUbicacion, setCargandoBusquedaUbicacion] = useState(false);
+  const [ubicacionesBuscadas, setUbicacionesBuscadas] = useState([]);
+
   const searchTimer = useRef(null);
   const searchRef = useRef(null);
   const listaRef = useRef(null);
@@ -89,10 +93,6 @@ const TraspasosPage = () => {
         const headers = getAuthHeader();
         const resAlmacenes = await axios.get('http://localhost:3000/almacenes', { headers });
         setAlmacenes(resAlmacenes.data);
-        
-        const resUbicaciones = await axios.get('http://localhost:3000/ubicaciones-agrupadas', { headers });
-        setUbicacionesAgrupadas(resUbicaciones.data);
-        setUbicacionesFiltradas(resUbicaciones.data);
       } catch (error) {
         console.error('Error cargando datos iniciales:', error);
         alert(`Error cargando datos iniciales: ${error.response?.data?.mensaje || error.message}`);
@@ -111,22 +111,36 @@ const TraspasosPage = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Efecto para buscar ubicaciones
   useEffect(() => {
-    if (busquedaUbicacion.trim() === '') {
-      setUbicacionesFiltradas(ubicacionesAgrupadas);
-      return;
-    }
-    
-    const termino = busquedaUbicacion.toLowerCase();
-    const filtradas = ubicacionesAgrupadas.map(almacen => ({
-      ...almacen,
-      ubicaciones: almacen.ubicaciones.filter(ubicacion => 
-        ubicacion.codigo.toLowerCase().includes(termino)
-      )
-    })).filter(almacen => almacen.ubicaciones.length > 0);
-    
-    setUbicacionesFiltradas(filtradas);
-  }, [busquedaUbicacion, ubicacionesAgrupadas]);
+    const buscarUbicaciones = async () => {
+      if (busquedaUbicacion.trim().length < 2) {
+        setUbicacionesBuscadas([]);
+        return;
+      }
+
+      setCargandoBusquedaUbicacion(true);
+      try {
+        const headers = getAuthHeader();
+        const response = await axios.get(
+          'http://localhost:3000/buscar-ubicaciones',
+          {
+            headers,
+            params: { termino: busquedaUbicacion }
+          }
+        );
+        setUbicacionesBuscadas(response.data);
+      } catch (error) {
+        console.error('Error buscando ubicaciones:', error);
+        setUbicacionesBuscadas([]);
+      } finally {
+        setCargandoBusquedaUbicacion(false);
+      }
+    };
+
+    const delayDebounceFn = setTimeout(buscarUbicaciones, 500);
+    return () => clearTimeout(delayDebounceFn);
+  }, [busquedaUbicacion]);
 
   const cargarArticulosConStock = async (page = 1, search = '', append = false) => {
     setLoadingArticulos(true);
@@ -286,6 +300,40 @@ const TraspasosPage = () => {
       alert(`Error cargando historial: ${error.response?.data?.mensaje || error.message}`);
     }
   }, []);
+
+  // Función para alternar la expansión de un almacén
+  const toggleAlmacenExpandido = async (codigoAlmacen) => {
+    // Si ya está expandido, lo contraemos
+    if (almacenesExpandidos[codigoAlmacen]) {
+      setAlmacenesExpandidos(prev => ({ ...prev, [codigoAlmacen]: false }));
+      return;
+    }
+
+    // Si no tenemos las ubicaciones de este almacén, las cargamos
+    if (!ubicacionesCargadas[codigoAlmacen]) {
+      try {
+        setLoading(true);
+        const headers = getAuthHeader();
+        const response = await axios.get(
+          `http://localhost:3000/ubicaciones-por-almacen/${codigoAlmacen}`,
+          { headers }
+        );
+        
+        setUbicacionesCargadas(prev => ({
+          ...prev,
+          [codigoAlmacen]: response.data
+        }));
+      } catch (error) {
+        console.error('Error cargando ubicaciones:', error);
+        alert(`Error cargando ubicaciones: ${error.response?.data?.mensaje || error.message}`);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // Expandimos el almacén
+    setAlmacenesExpandidos(prev => ({ ...prev, [codigoAlmacen]: true }));
+  };
 
   const seleccionarArticulo = (articulo) => {
     setArticuloSeleccionado(articulo);
@@ -961,49 +1009,67 @@ const TraspasosPage = () => {
                       placeholder="Escriba el código de ubicación..."
                       className="search-input"
                     />
+                    {cargandoBusquedaUbicacion && <div className="cargando">Buscando...</div>}
                   </div>
                   
-                  <div className="ubicaciones-agrupadas">
-                    {ubicacionesFiltradas.map(almacen => (
-                      <div key={almacen.codigo} className="almacen-item">
+                  {busquedaUbicacion ? (
+                    // Mostrar resultados de búsqueda
+                    <div className="resultados-busqueda-ubicacion">
+                      {ubicacionesBuscadas.map(ubicacion => (
                         <div 
-                          className="almacen-header"
-                          onClick={() => setAlmacenExpandido(
-                            almacenExpandido === almacen.codigo ? null : almacen.codigo
-                          )}
+                          key={`${ubicacion.CodigoAlmacen}-${ubicacion.Ubicacion}`}
+                          className="ubicacion-item"
+                          onClick={() => cargarArticulosUbicacion(ubicacion.CodigoAlmacen, ubicacion.Ubicacion)}
                         >
-                          <span>{almacen.nombre} ({almacen.codigo})</span>
-                          <span>{almacenExpandido === almacen.codigo ? '▲' : '▼'}</span>
+                          <span className="almacen-ubicacion">
+                            {getNombreAlmacen(ubicacion.CodigoAlmacen)} → {ubicacion.Ubicacion}
+                          </span>
+                          <span className="cantidad-articulos">
+                            {ubicacion.CantidadArticulos} artículos
+                          </span>
                         </div>
-                        
-                        {almacenExpandido === almacen.codigo && (
-                          <div className="ubicaciones-list">
-                            {almacen.ubicaciones.map(ubicacion => (
-                              <div 
-                                key={`${almacen.codigo}-${ubicacion.codigo}`}
-                                className={`ubicacion-item ${
-                                  ubicacionSeleccionada?.almacen === almacen.codigo && 
-                                  ubicacionSeleccionada?.ubicacion === ubicacion.codigo 
-                                    ? 'seleccionada' 
-                                    : ''
-                                }`}
-                                onClick={() => cargarArticulosUbicacion(almacen.codigo, ubicacion.codigo)}
-                              >
-                                <span className="ubicacion-codigo">{ubicacion.codigo}</span>
-                                <span className="ubicacion-stock">
-                                  {ubicacion.cantidadArticulos} artículos
-                                </span>
-                              </div>
-                            ))}
+                      ))}
+                      {busquedaUbicacion && ubicacionesBuscadas.length === 0 && !cargandoBusquedaUbicacion && (
+                        <div className="sin-resultados">No se encontraron ubicaciones</div>
+                      )}
+                    </div>
+                  ) : (
+                    // Mostrar almacenes con carga bajo demanda
+                    <div className="almacenes-container">
+                      {almacenes.map(almacen => (
+                        <div key={almacen.CodigoAlmacen} className="almacen-item">
+                          <div 
+                            className="almacen-header"
+                            onClick={() => toggleAlmacenExpandido(almacen.CodigoAlmacen)}
+                          >
+                            <span>{almacen.Almacen} ({almacen.CodigoAlmacen})</span>
+                            <span>{almacenesExpandidos[almacen.CodigoAlmacen] ? '▲' : '▼'}</span>
                           </div>
-                        )}
-                      </div>
-                    ))}
-                    
-                    {ubicacionesFiltradas.length === 0 && (
-                      <div className="no-results">No se encontraron ubicaciones</div>
-                    )}
-                  </div>
+                          
+                          {almacenesExpandidos[almacen.CodigoAlmacen] && (
+                            <div className="ubicaciones-list">
+                              {loading ? (
+                                <div className="cargando-ubicaciones">Cargando ubicaciones...</div>
+                              ) : (
+                                ubicacionesCargadas[almacen.CodigoAlmacen]?.map(ubicacion => (
+                                  <div 
+                                    key={`${almacen.CodigoAlmacen}-${ubicacion.Ubicacion}`}
+                                    className="ubicacion-item"
+                                    onClick={() => cargarArticulosUbicacion(almacen.CodigoAlmacen, ubicacion.Ubicacion)}
+                                  >
+                                    <span className="ubicacion-codigo">{ubicacion.Ubicacion}</span>
+                                    <span className="ubicacion-stock">
+                                      {ubicacion.CantidadArticulos} artículos
+                                    </span>
+                                  </div>
+                                )) || <div className="sin-ubicaciones">No hay ubicaciones</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
