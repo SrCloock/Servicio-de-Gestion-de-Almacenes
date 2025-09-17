@@ -38,9 +38,11 @@ function GestionRutas() {
           headers
         });
 
+        // Procesar para incluir albaranes parciales
         const processedAlbaranes = response.data.map(albaran => ({
           ...albaran,
-          repartidor: albaran.empleadoAsignado || 'Sin asignar'
+          repartidor: albaran.empleadoAsignado || 'Sin asignar',
+          esParcial: albaran.Status === 'Parcial'
         }));
 
         setAlbaranes(processedAlbaranes);
@@ -176,11 +178,12 @@ function GestionRutas() {
           {currentAlbaranes.map((albaran) => (
             <div 
               key={`${albaran.ejercicio}-${albaran.serie}-${albaran.numero}`} 
-              className="ruta-card"
+              className={`ruta-card ${albaran.esParcial ? 'albaran-parcial' : ''}`}
               onClick={() => canPerformActionsInRutas && navigate('/detalle-albaran', { state: { albaran } })}
             >
               <div className="card-header">
                 <h4>Albarán: {albaran.albaran}</h4>
+                {albaran.esParcial && <span className="parcial-badge">Parcial</span>}
                 <span className="fecha-albaran">
                   {formatFecha(albaran.FechaAlbaran)}
                 </span>

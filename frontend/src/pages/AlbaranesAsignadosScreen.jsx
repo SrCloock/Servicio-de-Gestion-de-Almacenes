@@ -28,7 +28,13 @@ function AlbaranesAsignadosScreen() {
           axios.get('http://localhost:3000/repartidores', { headers })
         ]);
         
-        setAlbaranes(albaranesResponse.data);
+        // Procesar para incluir albaranes parciales
+        const albaranesConStatus = albaranesResponse.data.map(albaran => ({
+          ...albaran,
+          esParcial: albaran.Status === 'Parcial'
+        }));
+        
+        setAlbaranes(albaranesConStatus);
         setRepartidores(repartidoresResponse.data);
         
         // Inicializar asignaciones
@@ -134,6 +140,7 @@ function AlbaranesAsignadosScreen() {
                     <th>Cliente</th>
                     <th>Obra</th>
                     <th>Municipio</th>
+                    <th>Estado</th>
                     <th>Repartidor</th>
                     <th>Acciones</th>
                   </tr>
@@ -142,13 +149,17 @@ function AlbaranesAsignadosScreen() {
                   {albaranes.map(albaran => {
                     const key = `albaran-${albaran.EjercicioAlbaran}-${albaran.SerieAlbaran || ''}-${albaran.NumeroAlbaran}`;
                     return (
-                      <tr key={key}>
-                        <td>{albaran.albaran}</td>
+                      <tr key={key} className={albaran.esParcial ? 'AA-fila-parcial' : ''}>
+                        <td>
+                          {albaran.albaran}
+                          {albaran.esParcial && <span className="AA-badge-parcial">Parcial</span>}
+                        </td>
                         <td>{formatFecha(albaran.FechaAlbaran)}</td>
                         <td>{albaran.NumeroPedido}</td>
                         <td>{albaran.RazonSocial}</td>
                         <td>{albaran.obra || 'No especificada'}</td>
                         <td>{albaran.Municipio || ''}</td>
+                        <td>{albaran.Status || 'Pendiente'}</td>
                         <td>
                           <select
                             value={asignaciones[key] || ''}

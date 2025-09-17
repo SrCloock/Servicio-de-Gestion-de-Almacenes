@@ -410,19 +410,22 @@ const LineaPedido = React.memo(({
   const formatearUnidad = useFormatearUnidad();
   
   const ubicacionesConStock = useMemo(() => {
+    // Primero buscar ubicaciones con stock real (excluyendo Zona descarga)
     let ubicacionesStock = ubicaciones[linea.codigoArticulo]?.filter(ubi => 
       ubi.unidadSaldo > 0 && 
-      ubi.unidadMedida === linea.unidadPedido
+      ubi.unidadMedida === linea.unidadPedido &&
+      ubi.ubicacion !== "Zona descarga"
     ) || [];
     
+    // Solo si no hay ubicaciones con stock, añadir Zona descarga
     if (ubicacionesStock.length === 0) {
-      ubicacionesStock.push({
+      ubicacionesStock = [{
         codigoAlmacen: "N/A",
         ubicacion: "Zona descarga",
         partida: null,
         unidadSaldo: Infinity,
         unidadMedida: linea.unidadBase || 'ud'
-      });
+      }];
     }
     
     return ubicacionesStock;
@@ -504,11 +507,17 @@ const LineaPedido = React.memo(({
     let nuevaCantidad = 0;
     if (ubicacionSeleccionada) {
       const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
-      const stockDisponible = ubicacionSeleccionada.unidadSaldo === Infinity 
-        ? unidadesPendientes 
-        : parseFloat(ubicacionSeleccionada.unidadSaldo) || 0;
       
-      nuevaCantidad = Math.min(unidadesPendientes, stockDisponible);
+      if (ubicacionSeleccionada.ubicacion === "Zona descarga") {
+        // Para Zona descarga, usar todas las unidades pendientes
+        nuevaCantidad = unidadesPendientes;
+      } else {
+        // Para ubicaciones normales, usar el mínimo entre pendientes y stock
+        nuevaCantidad = Math.min(
+          unidadesPendientes,
+          parseFloat(ubicacionSeleccionada.unidadSaldo) || 0
+        );
+      }
     }
     
     handleExpedicionChange(
@@ -727,6 +736,7 @@ const PedidoCard = React.memo(({
   iniciarEscaneo,
   abrirModalDetalles,
   canPerformActions,
+  canPerformActionsInPedidos,
   isScanning
 }) => {
   const [showMenu, setShowMenu] = useState(false);
@@ -757,6 +767,9 @@ const PedidoCard = React.memo(({
             <span className="fecha-entrega">
               Entrega: {pedido.fechaEntrega ? new Date(pedido.fechaEntrega).toLocaleDateString() : 'Sin fecha'}
             </span>
+            <span className={`status-pedido status-${pedido.Status?.toLowerCase() || 'revision'}`}>
+              {pedido.Status || 'Revisión'}
+            </span>
           </div>
           <div className="cliente-info">
             <span className="cliente">{pedido.razonSocial}</span>
@@ -774,7 +787,7 @@ const PedidoCard = React.memo(({
             
             {showMenu && (
               <div className="dropdown-menu">
-                {parcial && !completo && (
+                {parcial && !completo && canPerformActionsInPedidos && (
                   <button 
                     onClick={() => {
                       generarAlbaranParcial(pedido);
@@ -783,7 +796,7 @@ const PedidoCard = React.memo(({
                     className="menu-item"
                     disabled={generandoAlbaran}
                   >
-                    <FaCheck /> {generandoAlbaran ? 'Procesando...' : 'Completar Pedido'}
+                    <FaCheck /> {generandoAlbaran ? 'Procesando...' : 'Generar Albarán Parcial'}
                   </button>
                 )}
                 <button 
@@ -837,7 +850,7 @@ const PedidoCard = React.memo(({
               <thead>
                 <tr>
                   <th>Artículo</th>
-                  <th>Descripcion</th>
+                  <th>Descripción</th>
                   <th>Pendiente</th>
                   <th>Ubicación</th>
                   <th>Cantidad</th>
@@ -1059,7 +1072,8 @@ const PedidosScreen = () => {
   
   const { 
     canViewAllOrders, 
-    canPerformActions 
+    canPerformActions,
+    canPerformActionsInPedidos
   } = usePermissions();
   
   const [pedidos, setPedidos] = useState([]);
@@ -1086,6 +1100,24 @@ const PedidosScreen = () => {
   const scannerRef = useRef(null);
   const abortControllerRef = useRef(null);
 
+  // Refs para evitar bucles en efectos
+  const rangoFechasRef = useRef(rangoFechas);
+  const filtroFormaEntregaRef = useRef(filtroFormaEntrega);
+  const userRef = useRef(user);
+
+  // Actualizar refs cuando cambien los valores
+  useEffect(() => {
+    rangoFechasRef.current = rangoFechas;
+  }, [rangoFechas]);
+
+  useEffect(() => {
+    filtroFormaEntregaRef.current = filtroFormaEntrega;
+  }, [filtroFormaEntrega]);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
   const formasEntrega = useMemo(() => [
     { id: 1, nombre: 'Recogida Guadalhorce' },
     { id: 3, nombre: 'Nuestros Medios' },
@@ -1107,7 +1139,10 @@ const PedidosScreen = () => {
       setLoading(true);
       setError('');
       
-      const codigoEmpresa = user?.CodigoEmpresa;
+      const codigoEmpresa = userRef.current?.CodigoEmpresa;
+      const rango = rangoFechasRef.current;
+      const formaEntrega = filtroFormaEntregaRef.current;
+      
       if (!codigoEmpresa) {
         setError('No se encontró el código de empresa del usuario.');
         setLoading(false);
@@ -1120,8 +1155,8 @@ const PedidosScreen = () => {
         headers,
         params: { 
           codigoEmpresa,
-          rango: rangoFechas,
-          formaEntrega: filtroFormaEntrega 
+          rango: rango,
+          formaEntrega: formaEntrega 
         },
         signal
       });
@@ -1137,6 +1172,7 @@ const PedidosScreen = () => {
         }))
       );
 
+      let ubicacionesData = {};
       if (articulosConUnidad.length > 0) {
         const responseUbicaciones = await axios.post(
           'http://localhost:3000/ubicacionesMultiples',
@@ -1145,7 +1181,8 @@ const PedidosScreen = () => {
         );
         
         if (signal.aborted) return;
-        setUbicaciones(responseUbicaciones.data);
+        ubicacionesData = responseUbicaciones.data;
+        setUbicaciones(ubicacionesData);
       }
       
       const nuevasExpediciones = {};
@@ -1153,34 +1190,44 @@ const PedidosScreen = () => {
         pedido.articulos.forEach(linea => {
           const key = linea.movPosicionLinea;
           
-          let ubicacionesConStock = ubicaciones[linea.codigoArticulo]?.filter(ubi => 
+          // Buscar las ubicaciones para este artículo en los datos frescos
+          const ubicacionesArticulo = ubicacionesData[linea.codigoArticulo] || [];
+          
+          // Filtrar ubicaciones con stock real (excluyendo Zona descarga)
+          const ubicacionesConStockReales = ubicacionesArticulo.filter(ubi => 
             ubi.unidadSaldo > 0 && 
-            ubi.unidadMedida === linea.unidadPedido
-          ) || [];
-          
-          let cantidadInicial = Math.min(
-            parseFloat(linea.unidadesPendientes) || 0,
-            ubicacionesConStock[0]?.unidadSaldo !== Infinity ? 
-              parseFloat(ubicacionesConStock[0]?.unidadSaldo) || 0 : 
-              parseFloat(linea.unidadesPendientes) || 0
+            ubi.unidadMedida === linea.unidadPedido &&
+            ubi.ubicacion !== "Zona descarga"
           );
-
-          if (isNaN(cantidadInicial)) cantidadInicial = 0;
           
-          if (ubicacionesConStock.length === 0) {
-            ubicacionesConStock.push({
+          let ubicacionInicial;
+          let cantidadInicial = 0;
+          
+          if (ubicacionesConStockReales.length > 0) {
+            // Si hay ubicaciones con stock, usar la primera
+            ubicacionInicial = ubicacionesConStockReales[0];
+            cantidadInicial = Math.min(
+              parseFloat(linea.unidadesPendientes) || 0,
+              parseFloat(ubicacionInicial.unidadSaldo) || 0
+            );
+          } else {
+            // Si no hay ubicaciones con stock, usar Zona descarga
+            ubicacionInicial = {
               codigoAlmacen: "N/A",
               ubicacion: "Zona descarga",
               partida: null,
               unidadSaldo: Infinity,
               unidadMedida: linea.unidadBase || 'ud'
-            });
+            };
+            cantidadInicial = parseFloat(linea.unidadesPendientes) || 0;
           }
+
+          if (isNaN(cantidadInicial)) cantidadInicial = 0;
           
           nuevasExpediciones[key] = {
-            almacen: ubicacionesConStock[0]?.codigoAlmacen || '',
-            ubicacion: ubicacionesConStock[0]?.ubicacion || "Zona descarga",
-            partida: ubicacionesConStock[0]?.partida || null,
+            almacen: ubicacionInicial.codigoAlmacen,
+            ubicacion: ubicacionInicial.ubicacion,
+            partida: ubicacionInicial.partida,
             cantidad: cantidadInicial.toString()
           };
         });
@@ -1214,7 +1261,7 @@ const PedidosScreen = () => {
         setLoading(false);
       }
     }
-  }, [rangoFechas, filtroFormaEntrega, user?.CodigoEmpresa]);
+  }, []);
 
   useEffect(() => {
     cargarPedidos();
@@ -1224,7 +1271,7 @@ const PedidosScreen = () => {
         abortControllerRef.current.abort();
       }
     };
-  }, [cargarPedidos]);
+  }, [rangoFechas, filtroFormaEntrega, cargarPedidos]);
 
   useEffect(() => {
     if (showCamera && Html5Qrcode) {
@@ -1345,21 +1392,23 @@ const PedidosScreen = () => {
 
       if (response.data.success) {
         // Actualizar el estado local para reflejar la expedición
-        setPedidos(prev => prev.map(p => 
-          p.numeroPedido === pedido.numeroPedido 
-            ? { 
-                ...p, 
-                articulos: p.articulos.map(a => 
-                  a.codigoArticulo === linea.codigoArticulo 
-                    ? { 
-                        ...a, 
-                        unidadesPendientes: a.unidadesPendientes - cantidad 
-                      }
-                    : a
-                )
-              } 
-            : p
-        ));
+        setPedidos(prev => 
+          prev.map(p => 
+            p.numeroPedido === pedido.numeroPedido 
+              ? { 
+                  ...p, 
+                  articulos: p.articulos.map(a => 
+                    a.codigoArticulo === linea.codigoArticulo 
+                      ? { 
+                          ...a, 
+                          unidadesPendientes: a.unidadesPendientes - cantidad 
+                        }
+                      : a
+                  )
+                } 
+              : p
+          )
+        );
 
         // Actualizar las ubicaciones (refrescar datos de stock)
         const articulosConUnidad = pedidos.flatMap(pedido => 
@@ -1455,9 +1504,9 @@ const PedidosScreen = () => {
                         unidadesPendientes: response.data.detalles.unidadesPendientesRestantes 
                       }
                     : a
-                )
-              } 
-            : p
+              )
+            } 
+          : p
         ));
 
         // Actualizar ubicaciones (refrescar datos de stock)
@@ -1584,35 +1633,87 @@ const PedidosScreen = () => {
   }, []);
 
   const generarAlbaranParcial = useCallback(async (pedido) => {
-    if (!canPerformActions) return;
+    if (!canPerformActionsInPedidos) return;
     
     try {
       setGenerandoAlbaran(true);
       const headers = getAuthHeader();
       
-      await axios.post(
-        'http://localhost:3000/marcarPedidoCompletado',
+      // Obtener las líneas expedidas
+      const lineasExpedidas = [];
+      pedido.articulos.forEach(articulo => {
+        const key = articulo.movPosicionLinea;
+        const expedicion = expediciones[key];
+        
+        if (expedicion && parseFloat(expedicion.cantidad) > 0) {
+          lineasExpedidas.push({
+            codigoArticulo: articulo.codigoArticulo,
+            descripcionArticulo: articulo.descripcionArticulo,
+            cantidad: parseFloat(expedicion.cantidad),
+            precio: articulo.precio || 0,
+            codigoAlmacen: expedicion.almacen,
+            partida: expedicion.partida
+          });
+        }
+      });
+
+      if (lineasExpedidas.length === 0) {
+        alert('No hay líneas con cantidades para expedir');
+        setGenerandoAlbaran(false);
+        return;
+      }
+
+      const response = await axios.post(
+        'http://localhost:3000/generarAlbaranParcial',
         {
           codigoEmpresa: pedido.codigoEmpresa,
           ejercicio: pedido.ejercicioPedido,
           serie: pedido.seriePedido,
-          numeroPedido: pedido.numeroPedido
+          numeroPedido: pedido.numeroPedido,
+          lineasExpedidas: lineasExpedidas
         },
         { headers }
       );
 
-      setPedidos(prev => 
-        prev.filter(p => p.numeroPedido !== pedido.numeroPedido)
-      );
-      
-      alert('Pedido marcado como completado. Ahora debe ser asignado a un empleado para generar el albarán.');
+      if (response.data.success) {
+        // Actualizar el estado del pedido
+        setPedidos(prev => 
+          prev.map(p => 
+            p.numeroPedido === pedido.numeroPedido 
+              ? { ...p, Status: response.data.statusPedido }
+              : p
+          )
+        );
+        
+        // Limpiar las expediciones para este pedido
+        const nuevasExpediciones = { ...expediciones };
+        pedido.articulos.forEach(articulo => {
+          const key = articulo.movPosicionLinea;
+          if (nuevasExpediciones[key]) {
+            nuevasExpediciones[key].cantidad = '0';
+          }
+        });
+        setExpediciones(nuevasExpediciones);
+        
+        alert(`Albarán parcial generado correctamente. Estado del pedido: ${response.data.statusPedido}`);
+      }
     } catch (error) {
-      console.error('Error al completar pedido:', error);
-      alert('Error al completar pedido: ' + (error.response?.data?.mensaje || error.message));
+      console.error('Error al generar albarán parcial:', error);
+      
+      // Manejo mejorado de errores
+      if (error.response?.status === 403) {
+        alert('Error de permisos: ' + (error.response.data?.mensaje || 'No tienes permiso para realizar esta acción.'));
+      } else if (error.response?.data?.mensaje) {
+        alert('Error al generar albarán parcial: ' + error.response.data.mensaje);
+      } else if (error.request) {
+        alert('Error de conexión: No se pudo contactar al servidor.');
+      } else {
+        alert('Error inesperado: ' + error.message);
+      }
     } finally {
       setGenerandoAlbaran(false);
     }
-  }, [canPerformActions]);
+  }, [canPerformActionsInPedidos, expediciones]);
 
   // Filtrar pedidos con useMemo para evitar recálculos innecesarios
   const pedidosFiltrados = useMemo(() => {
@@ -1748,6 +1849,7 @@ const PedidosScreen = () => {
                   iniciarEscaneo={iniciarEscaneo}
                   abrirModalDetalles={abrirModalDetalles}
                   canPerformActions={canPerformActions}
+                  canPerformActionsInPedidos={canPerformActionsInPedidos}
                   isScanning={isScanning}
                 />
               ))}
