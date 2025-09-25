@@ -680,7 +680,7 @@ const LineaPedido = React.memo(({
                         key={`${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
                         value={ubicacion.ubicacion}
                       >
-                        {ubicacion.codigoAlmacen} - {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''}
+                        {ubicacion.codigoAlmacen} - {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.Partida})` : ''}
                       </option>
                     ))}
                   </select>
@@ -850,7 +850,7 @@ const PedidoCard = React.memo(({
               <thead>
                 <tr>
                   <th>Artículo</th>
-                  <th>Descripción</th>
+                  <th>Descripcion</th>
                   <th>Pendiente</th>
                   <th>Ubicación</th>
                   <th>Cantidad</th>
@@ -1491,23 +1491,29 @@ const PedidosScreen = () => {
         { headers }
       );
 
-      // Actualizar estado local con la respuesta del backend
+      // Después de la expedición exitosa
       if (response.data.success) {
-        setPedidos(prev => prev.map(p => 
-          p.numeroPedido === numeroPedido 
-            ? { 
-                ...p, 
-                articulos: p.articulos.map(a => 
-                  a.movPosicionLinea === linea.movPosicionLinea 
-                    ? { 
-                        ...a, 
-                        unidadesPendientes: response.data.detalles.unidadesPendientesRestantes 
-                      }
-                    : a
-              )
-            } 
-          : p
-        ));
+        if (response.data.pedidoCompleto) {
+          // Eliminar el pedido completado de la lista actual
+          setPedidos(prev => prev.filter(p => p.numeroPedido !== numeroPedido));
+          
+          // Mostrar mensaje de que el pedido está listo para asignación
+          alert('¡Pedido completado! Ahora aparecerá en la pantalla de asignación de albaranes.');
+        } else {
+          // Actualizar solo las unidades pendientes
+          setPedidos(prev => prev.map(p => 
+            p.numeroPedido === numeroPedido 
+              ? {
+                  ...p,
+                  articulos: p.articulos.map(a =>
+                    a.movPosicionLinea === linea.movPosicionLinea
+                      ? { ...a, unidadesPendientes: response.data.detalles.unidadesPendientesRestantes }
+                      : a
+                  )
+                }
+              : p
+          ));
+        }
 
         // Actualizar ubicaciones (refrescar datos de stock)
         const articulosConUnidad = pedidos.flatMap(pedido => 

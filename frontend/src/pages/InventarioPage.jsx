@@ -5,7 +5,8 @@ import Navbar from '../components/Navbar';
 import { 
   FiSearch, FiChevronDown, FiChevronUp, 
   FiFilter, FiEdit, FiX, 
-  FiCheck, FiClock, FiList, FiRefreshCw, FiPlus, FiMinus
+  FiCheck, FiClock, FiList, FiRefreshCw, FiPlus, FiMinus,
+  FiMapPin, FiPackage, FiDatabase, FiLayers, FiBox
 } from 'react-icons/fi';
 import '../styles/InventarioPage.css';
 
@@ -34,6 +35,19 @@ const InventarioPage = () => {
   const [detallesModal, setDetallesModal] = useState(null);
   const [cargandoDetalles, setCargandoDetalles] = useState(false);
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
+  
+  // Estados para nuevo inventario
+  const [nuevoInventarioModal, setNuevoInventarioModal] = useState(false);
+  const [articuloBuscado, setArticuloBuscado] = useState('');
+  const [resultadosBusqueda, setResultadosBusqueda] = useState([]);
+  const [articuloSeleccionado, setArticuloSeleccionado] = useState(null);
+  const [almacenes, setAlmacenes] = useState([]);
+  const [almacenSeleccionado, setAlmacenSeleccionado] = useState('');
+  const [ubicaciones, setUbicaciones] = useState([]);
+  const [ubicacionSeleccionada, setUbicacionSeleccionada] = useState('');
+  const [unidadMedidaSeleccionada, setUnidadMedidaSeleccionada] = useState('unidades');
+  const [cantidadNuevoInventario, setCantidadNuevoInventario] = useState('');
+  const [unidadesMedidaDisponibles, setUnidadesMedidaDisponibles] = useState(['unidades']);
 
   const formatearUnidad = (cantidad, unidad) => {
     if (!unidad || unidad.trim() === '') {
@@ -134,10 +148,9 @@ const InventarioPage = () => {
       // Filtrar solo los almacenes permitidos
       const almacenesPermitidos = ['CEN', 'BCN', 'N5', 'N1', 'PK', '5'];
       if (!almacenesPermitidos.includes(item.CodigoAlmacen)) {
-        return; // Saltar este registro si no está en los almacenes permitidos
+        return;
       }
       
-      // Usamos la clave única generada por el backend
       const clave = item.ClaveUnica;
       
       if (!agrupado[item.CodigoArticulo]) {
@@ -171,7 +184,8 @@ const InventarioPage = () => {
         CodigoTalla01: item.CodigoTalla01_,
         GrupoUnico: clave,
         MovPosicionLinea: item.MovPosicionLinea,
-        detalles: item.detalles
+        detalles: null,
+        esSinUbicacion: item.EsSinUbicacion === 1 || item.TipoStock === 'SIN_UBICACION'
       };
       
       agrupado[item.CodigoArticulo].ubicaciones.push(ubicacion);
@@ -179,7 +193,11 @@ const InventarioPage = () => {
     });
     
     Object.values(agrupado).forEach(articulo => {
+      // Ordenar ubicaciones: primero las con ubicación, luego las sin ubicación
       articulo.ubicaciones.sort((a, b) => {
+        if (a.esSinUbicacion && !b.esSinUbicacion) return 1;
+        if (!a.esSinUbicacion && b.esSinUbicacion) return -1;
+        
         if (a.NombreAlmacen < b.NombreAlmacen) return -1;
         if (a.NombreAlmacen > b.NombreAlmacen) return 1;
         
@@ -212,7 +230,7 @@ const InventarioPage = () => {
       setError('');
       const headers = getAuthHeader();
       const response = await axios.get(
-        'http://localhost:3000/inventario/stock-total',
+        'http://localhost:3000/inventario/stock-total-completo',
         { headers }
       );
       
@@ -244,6 +262,72 @@ const InventarioPage = () => {
     }
   }, []);
 
+  // Función para buscar artículos
+  const buscarArticulos = async (termino) => {
+    if (termino.length < 2) {
+      setResultadosBusqueda([]);
+      return;
+    }
+    
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.get(
+        `http://localhost:3000/buscar-articulos?termino=${termino}`,
+        { headers }
+      );
+      setResultadosBusqueda(response.data);
+    } catch (error) {
+      console.error('Error al buscar artículos:', error);
+      setResultadosBusqueda([]);
+    }
+  };
+
+  // Función para cargar almacenes
+  const cargarAlmacenes = async () => {
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.get(
+        'http://localhost:3000/almacenes',
+        { headers }
+      );
+      setAlmacenes(response.data);
+    } catch (error) {
+      console.error('Error al cargar almacenes:', error);
+    }
+  };
+
+  // Función para cargar ubicaciones de un almacén
+  const cargarUbicaciones = async (codigoAlmacen) => {
+    if (!codigoAlmacen) return;
+    
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.get(
+        `http://localhost:3000/ubicaciones/${codigoAlmacen}`,
+        { headers }
+      );
+      setUbicaciones(response.data);
+    } catch (error) {
+      console.error('Error al cargar ubicaciones:', error);
+      setUbicaciones([]);
+    }
+  };
+
+  // Función para obtener información detallada del artículo
+  const obtenerInfoArticulo = async (codigoArticulo) => {
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.get(
+        `http://localhost:3000/articulos/${codigoArticulo}`,
+        { headers }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error al obtener información del artículo:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'inventario' && inventario.length === 0) {
       cargarInventario();
@@ -251,6 +335,30 @@ const InventarioPage = () => {
       cargarHistorialAjustes();
     }
   }, [activeTab, cargarInventario, cargarHistorialAjustes, inventario.length, historialAjustes.length]);
+
+  useEffect(() => {
+    if (nuevoInventarioModal) {
+      cargarAlmacenes();
+    }
+  }, [nuevoInventarioModal]);
+
+  useEffect(() => {
+    if (almacenSeleccionado) {
+      cargarUbicaciones(almacenSeleccionado);
+    }
+  }, [almacenSeleccionado]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (articuloBuscado.length >= 2) {
+        buscarArticulos(articuloBuscado);
+      } else {
+        setResultadosBusqueda([]);
+      }
+    }, 300);
+    
+    return () => clearTimeout(timeoutId);
+  }, [articuloBuscado]);
 
   const refreshInventario = useCallback(() => {
     if (activeTab === 'inventario') {
@@ -305,7 +413,6 @@ const InventarioPage = () => {
   const filteredInventario = useMemo(() => {
     let result = [...inventario];
     
-    // Filtro por código de artículo, descripción y descripción2
     if (filters.codigo) {
       const term = filters.codigo.toLowerCase();
       result = result.filter(articulo => 
@@ -315,7 +422,6 @@ const InventarioPage = () => {
       );
     }
     
-    // Filtro por término de búsqueda general
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter(articulo => 
@@ -325,7 +431,6 @@ const InventarioPage = () => {
       );
     }
     
-    // Filtro por código o nombre de almacén
     if (filters.almacen) {
       const term = filters.almacen.toLowerCase();
       result = result.filter(articulo => 
@@ -336,7 +441,6 @@ const InventarioPage = () => {
       );
     }
     
-    // Filtro por código o descripción de ubicación
     if (filters.ubicacion) {
       const term = filters.ubicacion.toLowerCase();
       result = result.filter(articulo => 
@@ -402,8 +506,10 @@ const InventarioPage = () => {
     const totalArticulos = filteredInventario.length;
     const totalUnidades = filteredInventario.reduce((total, art) => total + art.totalStockBase, 0);
     const totalUbicaciones = filteredInventario.reduce((total, art) => total + art.ubicaciones.length, 0);
+    const stockSinUbicacion = filteredInventario.reduce((total, art) => 
+      total + art.ubicaciones.filter(ubic => ubic.esSinUbicacion).reduce((sum, ubic) => sum + ubic.CantidadBase, 0), 0);
     
-    return { totalArticulos, totalUnidades, totalUbicaciones };
+    return { totalArticulos, totalUnidades, totalUbicaciones, stockSinUbicacion };
   }, [filteredInventario]);
 
   const totalPages = Math.ceil(filteredInventario.length / pageSize);
@@ -432,7 +538,7 @@ const InventarioPage = () => {
     }
   };
 
-  const iniciarEdicionCantidad = (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida, unidadStock, codigoColor, codigoTalla01) => {
+  const iniciarEdicionCantidad = (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida, unidadStock, codigoColor, codigoTalla01, esSinUbicacion) => {
     const articuloCompleto = inventario.find(art => art.CodigoArticulo === articulo);
     
     setEditandoCantidad({
@@ -442,11 +548,12 @@ const InventarioPage = () => {
       cantidadActual,
       clave,
       codigoAlmacen,
-      ubicacionStr,
+      ubicacionStr: esSinUbicacion ? 'SIN UBICACIÓN' : ubicacionStr,
       partida: partida || '',
       unidadStock: unidadStock || 'unidades',
       codigoColor: codigoColor || '',
-      codigoTalla01: codigoTalla01 || ''
+      codigoTalla01: codigoTalla01 || '',
+      esSinUbicacion: esSinUbicacion || false
     });
     setNuevaCantidad(cantidadActual.toString());
   };
@@ -510,7 +617,7 @@ const InventarioPage = () => {
     try {
       const headers = getAuthHeader();
       const response = await axios.post(
-        'http://localhost:3000/inventario/ajustar',
+        'http://localhost:3000/inventario/ajustar-completo',
         { ajustes: ajustesPendientes },
         { headers }
       );
@@ -519,7 +626,7 @@ const InventarioPage = () => {
         refreshInventario();
         cargarHistorialAjustes();
         setAjustesPendientes([]);
-        alert('Ajustes realizados correctamente');
+        alert('Ajustes realizados correctamente y registrados en inventarios');
       }
     } catch (error) {
       console.error('Error al confirmar ajustes:', error);
@@ -528,6 +635,101 @@ const InventarioPage = () => {
                           error.message;
       alert(`Error al confirmar ajustes: ${errorMessage}`);
     }
+  };
+
+  // Función para seleccionar artículo en el nuevo inventario
+  const seleccionarArticulo = async (articulo) => {
+    setArticuloSeleccionado(articulo);
+    setArticuloBuscado(`${articulo.CodigoArticulo} - ${articulo.DescripcionArticulo}`);
+    setResultadosBusqueda([]);
+    
+    // Obtener información detallada del artículo para las unidades de medida
+    const infoArticulo = await obtenerInfoArticulo(articulo.CodigoArticulo);
+    if (infoArticulo) {
+      // Crear array de unidades disponibles (eliminar duplicados y valores nulos)
+      const unidades = [
+        infoArticulo.UnidadMedida2_,
+        infoArticulo.UnidadMedidaAlternativa_
+      ].filter((unidad, index, self) => 
+        unidad && 
+        unidad.trim() !== '' && 
+        self.indexOf(unidad) === index
+      );
+      
+      // Si no hay unidades, usar 'unidades' por defecto
+      if (unidades.length === 0) {
+        unidades.push('unidades');
+      }
+      
+      setUnidadesMedidaDisponibles(unidades);
+      setUnidadMedidaSeleccionada(unidades[0]); // Seleccionar la primera unidad por defecto
+    }
+  };
+
+  // Función para guardar el nuevo inventario
+  const guardarNuevoInventario = async () => {
+    if (!articuloSeleccionado || !almacenSeleccionado || !cantidadNuevoInventario) {
+      alert('Por favor, complete todos los campos obligatorios');
+      return;
+    }
+
+    const cantidad = parseFloat(cantidadNuevoInventario);
+    if (isNaN(cantidad) || cantidad < 0) {
+      alert('Por favor ingrese una cantidad válida');
+      return;
+    }
+
+    const nuevoAjuste = {
+      articulo: articuloSeleccionado.CodigoArticulo,
+      descripcionArticulo: articuloSeleccionado.DescripcionArticulo,
+      codigoAlmacen: almacenSeleccionado,
+      ubicacionStr: ubicacionSeleccionada || 'SIN UBICACIÓN',
+      partida: '',
+      unidadStock: unidadMedidaSeleccionada,
+      nuevaCantidad: cantidad,
+      codigoColor: '',
+      codigoTalla01: ''
+    };
+
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.post(
+        'http://localhost:3000/inventario/ajustar-completo',
+        { ajustes: [nuevoAjuste] },
+        { headers }
+      );
+
+      if (response.data.success) {
+        alert('Nuevo inventario creado correctamente');
+        setNuevoInventarioModal(false);
+        // Limpiar formulario
+        setArticuloBuscado('');
+        setArticuloSeleccionado(null);
+        setAlmacenSeleccionado('');
+        setUbicacionSeleccionada('');
+        setUnidadMedidaSeleccionada('unidades');
+        setUnidadesMedidaDisponibles(['unidades']);
+        setCantidadNuevoInventario('');
+        // Recargar inventario
+        cargarInventario();
+      }
+    } catch (error) {
+      console.error('Error al crear nuevo inventario:', error);
+      alert('Error al crear nuevo inventario: ' + (error.response?.data?.mensaje || error.message));
+    }
+  };
+
+  // Función para limpiar el formulario de nuevo inventario
+  const limpiarFormularioNuevoInventario = () => {
+    setArticuloBuscado('');
+    setArticuloSeleccionado(null);
+    setAlmacenSeleccionado('');
+    setUbicacionSeleccionada('');
+    setUnidadMedidaSeleccionada('unidades');
+    setUnidadesMedidaDisponibles(['unidades']);
+    setCantidadNuevoInventario('');
+    setResultadosBusqueda([]);
+    setNuevoInventarioModal(false);
   };
 
   return (
@@ -546,9 +748,19 @@ const InventarioPage = () => {
               aria-label="Buscar"
             />
           </div>
-          <button className="inventario-refresh-btn" onClick={refreshInventario} aria-label="Actualizar">
-            <FiRefreshCw /> Actualizar
-          </button>
+          <div className="inventario-action-buttons">
+            <button className="inventario-refresh-btn" onClick={refreshInventario} aria-label="Actualizar">
+              <FiRefreshCw /> Actualizar
+            </button>
+            {activeTab === 'inventario' && (
+              <button 
+                className="inventario-nuevo-btn" 
+                onClick={() => setNuevoInventarioModal(true)}
+              >
+                <FiPlus /> Nuevo Inventario
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="inventario-tabs-container">
@@ -705,7 +917,7 @@ const InventarioPage = () => {
           <div className="inventario-stats">
             <div className="inventario-stat-card">
               <div className="inventario-stat-icon">
-                <FiList />
+                <FiPackage />
               </div>
               <div>
                 <span className="inventario-stat-value">{stats.totalArticulos}</span>
@@ -714,7 +926,7 @@ const InventarioPage = () => {
             </div>
             <div className="inventario-stat-card">
               <div className="inventario-stat-icon">
-                <FiCheck />
+                <FiLayers />
               </div>
               <div>
                 <span className="inventario-stat-value">
@@ -725,11 +937,22 @@ const InventarioPage = () => {
             </div>
             <div className="inventario-stat-card">
               <div className="inventario-stat-icon">
-                <FiFilter />
+                <FiMapPin />
               </div>
               <div>
                 <span className="inventario-stat-value">{stats.totalUbicaciones}</span>
                 <span className="inventario-stat-label">Ubicaciones</span>
+              </div>
+            </div>
+            <div className="inventario-stat-card inventario-stat-sin-ubicacion">
+              <div className="inventario-stat-icon">
+                <FiDatabase />
+              </div>
+              <div>
+                <span className="inventario-stat-value">
+                  {stats.stockSinUbicacion.toLocaleString()}
+                </span>
+                <span className="inventario-stat-label">Sin Ubicación</span>
               </div>
             </div>
           </div>
@@ -834,16 +1057,21 @@ const InventarioPage = () => {
                           </div>
                           
                           {articulo.ubicaciones.map(ubicacion => (
-                            <div key={ubicacion.clave} className="inventario-ubicacion-item">
+                            <div key={ubicacion.clave} className={`inventario-ubicacion-item ${ubicacion.esSinUbicacion ? 'sin-ubicacion' : ''}`}>
                               <div className="desktop-ubicacion-fields">
                                 <div className="data-cell inventario-ubicacion-almacen">
                                   {ubicacion.NombreAlmacen}
+                                  {ubicacion.esSinUbicacion && (
+                                    <span className="badge-sin-ubicacion">
+                                      <FiMapPin /> SIN UBICACIÓN
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="data-cell inventario-ubicacion-codigo">
-                                  {ubicacion.Ubicacion}
+                                  {ubicacion.Ubicacion || 'N/A'}
                                 </div>
                                 <div className="data-cell inventario-ubicacion-desc">
-                                  {ubicacion.DescripcionUbicacion || 'Sin descripción'}
+                                  {ubicacion.DescripcionUbicacion || 'Stock sin ubicación asignada'}
                                 </div>
                                 <div className="data-cell inventario-ubicacion-unidad">
                                   {ubicacion.UnidadStock || 'unidades'}
@@ -870,12 +1098,14 @@ const InventarioPage = () => {
                                       ubicacion.Partida,
                                       ubicacion.UnidadStock,
                                       ubicacion.CodigoColor,
-                                      ubicacion.CodigoTalla01
+                                      ubicacion.CodigoTalla01,
+                                      ubicacion.esSinUbicacion
                                     )}
+                                    title="Editar cantidad"
                                   >
                                     <FiEdit /> Editar
                                   </button>
-                                  {ubicacion.detalles && (
+                                  {ubicacion.MovPosicionLinea && !ubicacion.esSinUbicacion && (
                                     <button 
                                       className="inventario-btn-detalles"
                                       onClick={() => verDetalles(ubicacion.MovPosicionLinea)}
@@ -1088,6 +1318,118 @@ const InventarioPage = () => {
                 onClick={guardarAjustePendiente}
               >
                 Guardar Ajuste
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {nuevoInventarioModal && (
+        <div className="inventario-modal-edicion">
+          <div className="inventario-modal-contenido">
+            <h3><FiBox /> Nuevo Inventario</h3>
+            
+            <div className="inventario-form-group">
+              <label>Artículo *:</label>
+              <div className="inventario-buscador-container">
+                <input 
+                  type="text"
+                  placeholder="Buscar artículo por código o descripción..."
+                  value={articuloBuscado}
+                  onChange={(e) => setArticuloBuscado(e.target.value)}
+                  className="inventario-buscador-input"
+                />
+                {resultadosBusqueda.length > 0 && (
+                  <div className="inventario-resultados-busqueda">
+                    {resultadosBusqueda.map(articulo => (
+                      <div 
+                        key={articulo.CodigoArticulo}
+                        className="inventario-resultado-item"
+                        onClick={() => seleccionarArticulo(articulo)}
+                      >
+                        <strong>{articulo.CodigoArticulo}</strong> - {articulo.DescripcionArticulo}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="inventario-form-group">
+              <label>Almacén *:</label>
+              <select 
+                value={almacenSeleccionado}
+                onChange={(e) => setAlmacenSeleccionado(e.target.value)}
+                className="inventario-select"
+              >
+                <option value="">Seleccionar almacén</option>
+                {almacenes.map(almacen => (
+                  <option key={almacen.CodigoAlmacen} value={almacen.CodigoAlmacen}>
+                    {almacen.NombreAlmacen} ({almacen.CodigoAlmacen})
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="inventario-form-group">
+              <label>Ubicación:</label>
+              <select 
+                value={ubicacionSeleccionada}
+                onChange={(e) => setUbicacionSeleccionada(e.target.value)}
+                className="inventario-select"
+                disabled={!almacenSeleccionado}
+              >
+                <option value="">Seleccionar ubicación</option>
+                {ubicaciones.map(ubicacion => (
+                  <option key={ubicacion.Ubicacion} value={ubicacion.Ubicacion}>
+                    {ubicacion.Ubicacion} - {ubicacion.DescripcionUbicacion}
+                  </option>
+                ))}
+                <option value="SIN UBICACIÓN">SIN UBICACIÓN</option>
+              </select>
+            </div>
+            
+            <div className="inventario-form-group">
+              <label>Unidad de Medida *:</label>
+              <select 
+                value={unidadMedidaSeleccionada}
+                onChange={(e) => setUnidadMedidaSeleccionada(e.target.value)}
+                className="inventario-select"
+              >
+                {unidadesMedidaDisponibles.map(unidad => (
+                  <option key={unidad} value={unidad}>
+                    {unidad}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="inventario-form-group">
+              <label>Cantidad *:</label>
+              <input 
+                type="number"
+                value={cantidadNuevoInventario}
+                onChange={(e) => setCantidadNuevoInventario(e.target.value)}
+                className="inventario-input"
+                placeholder="0"
+                step="any"
+                min="0"
+              />
+            </div>
+            
+            <div className="inventario-modal-acciones">
+              <button 
+                className="inventario-btn-cancelar"
+                onClick={limpiarFormularioNuevoInventario}
+              >
+                Cancelar
+              </button>
+              <button 
+                className="inventario-btn-guardar"
+                onClick={guardarNuevoInventario}
+                disabled={!articuloSeleccionado || !almacenSeleccionado || !cantidadNuevoInventario}
+              >
+                <FiCheck /> Crear Inventario
               </button>
             </div>
           </div>
