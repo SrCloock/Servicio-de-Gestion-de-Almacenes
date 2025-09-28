@@ -62,6 +62,53 @@ const TraspasosPage = () => {
   const searchRef = useRef(null);
   const listaRef = useRef(null);
 
+  // Función mejorada para obtener nombre de almacén
+  const getNombreAlmacen = (codigo) => {
+    if (!codigo || codigo === 'undefined') return 'Almacén no disponible';
+    if (codigo === 'SIN-UBICACION') return 'Stock Sin Ubicación';
+    
+    const almacen = almacenes.find(a => a.CodigoAlmacen === codigo);
+    return almacen ? `${almacen.Almacen} (${codigo})` : `${codigo}`;
+  };
+
+  // Función para formatear ubicación
+  const formatUbicacionDisplay = (ubicacion, esSinUbicacion) => {
+    if (esSinUbicacion || ubicacion === 'SIN-UBICACION') {
+      return 'Stock Sin Ubicación';
+    }
+    return ubicacion;
+  };
+
+  // Función corregida para cargar historial
+  const cargarHistorial = useCallback(async () => {
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.get('http://localhost:3000/historial-traspasos', { 
+        headers,
+        params: { page: 1, pageSize: 50 }
+      });
+      
+      // Manejar correctamente la respuesta del backend corregido
+      if (response.data && response.data.success) {
+        setHistorial(response.data.traspasos || []);
+      } else {
+        setHistorial([]);
+      }
+    } catch (error) {
+      console.error('Error cargando historial:', error);
+      
+      let errorMsg = 'Error al cargar historial';
+      if (error.response?.data?.mensaje) {
+        errorMsg += `: ${error.response.data.mensaje}`;
+      } else if (error.message) {
+        errorMsg += `: ${error.message}`;
+      }
+      
+      alert(errorMsg);
+      setHistorial([]);
+    }
+  }, []);
+
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (terminoBusqueda.trim().length > 2) {
@@ -129,7 +176,20 @@ const TraspasosPage = () => {
             params: { termino: busquedaUbicacion }
           }
         );
-        setUbicacionesBuscadas(response.data);
+        
+        const resultados = response.data;
+        if (busquedaUbicacion.toUpperCase().includes('SIN') || 
+            busquedaUbicacion.toUpperCase().includes('UBICACION')) {
+          resultados.unshift({
+            CodigoAlmacen: 'TODOS',
+            NombreAlmacen: 'Stock Sin Ubicación',
+            Ubicacion: 'SIN-UBICACION',
+            DescripcionUbicacion: 'Stock sin ubicación asignada',
+            CantidadArticulos: 'Varios'
+          });
+        }
+        
+        setUbicacionesBuscadas(resultados);
       } catch (error) {
         console.error('Error buscando ubicaciones:', error);
         setUbicacionesBuscadas([]);
@@ -181,48 +241,73 @@ const TraspasosPage = () => {
     }
   };
 
-  useEffect(() => {
-    const cargarStock = async () => {
-      if (!articuloSeleccionado) return;
+  // Función cargarStock mejorada
+  const cargarStock = async () => {
+    if (!articuloSeleccionado) return;
+    
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.get(
+        `http://localhost:3000/stock/por-articulo?codigoArticulo=${articuloSeleccionado.CodigoArticulo}&incluirSinUbicacion=true`,
+        { headers }
+      );
       
-      try {
-        const headers = getAuthHeader();
-        const response = await axios.get(
-          `http://localhost:3000/stock/por-articulo?codigoArticulo=${articuloSeleccionado.CodigoArticulo}`,
-          { headers }
+      const stockData = Array.isArray(response.data) ? response.data : 
+                       (response.data.detalleUbicaciones || response.data.recordset || []);
+      
+      const stockNormalizado = stockData.map(item => ({
+        ...item,
+        UnidadMedida: item.UnidadMedida || 'unidades',
+        TipoUnidadMedida_: item.TipoUnidadMedida_ || item.UnidadMedida || 'unidades',
+        EsSinUbicacion: Boolean(item.EsSinUbicacion) || item.Ubicacion === 'SIN-UBICACION'
+      }));
+      
+      setStockDisponible(stockNormalizado);
+      
+      if (stockNormalizado.length > 0) {
+        const almacenConMasStock = stockNormalizado.reduce((max, item) => 
+          item.Cantidad > max.Cantidad ? item : max
         );
         
-        const stockNormalizado = response.data.map(item => ({
-          ...item,
-          UnidadMedida: item.UnidadMedida || 'unidades',
-          TipoUnidadMedida_: item.TipoUnidadMedida_ || item.UnidadMedida || 'unidades'
-        }));
-        
-        setStockDisponible(stockNormalizado);
-        
-        if (stockNormalizado.length > 0) {
-          const almacenConMasStock = stockNormalizado.reduce((max, item) => 
-            item.Cantidad > max.Cantidad ? item : max
-          );
-          
-          setAlmacenOrigen(almacenConMasStock.CodigoAlmacen);
-          setUbicacionOrigen(almacenConMasStock.Ubicacion);
-          setUnidadMedida(almacenConMasStock.UnidadMedida);
-          setTipoUnidadMedida(almacenConMasStock.TipoUnidadMedida_);
-          setPartida(almacenConMasStock.Partida || '');
-          setTallaOrigen(almacenConMasStock.Talla || '');
-          setColorOrigen(almacenConMasStock.CodigoColor_ || '');
-          setStockDisponibleInfo(`${almacenConMasStock.Cantidad} ${almacenConMasStock.UnidadMedida}`);
-        }
-      } catch (error) {
-        console.error('Error cargando stock:', error);
-        setStockDisponible([]);
-        alert(`Error cargando stock: ${error.response?.data?.mensaje || error.message}`);
+        setAlmacenOrigen(almacenConMasStock.CodigoAlmacen);
+        setUbicacionOrigen(almacenConMasStock.Ubicacion);
+        setUnidadMedida(almacenConMasStock.UnidadMedida);
+        setTipoUnidadMedida(almacenConMasStock.TipoUnidadMedida_);
+        setPartida(almacenConMasStock.Partida || '');
+        setTallaOrigen(almacenConMasStock.Talla || '');
+        setColorOrigen(almacenConMasStock.CodigoColor_ || '');
+        setStockDisponibleInfo(`${almacenConMasStock.Cantidad} ${almacenConMasStock.UnidadMedida}`);
       }
-    };
-    
+    } catch (error) {
+      console.error('Error cargando stock:', error);
+      setStockDisponible([]);
+      alert(`Error cargando stock: ${error.response?.data?.mensaje || error.message}`);
+    }
+  };
+
+  useEffect(() => {
     cargarStock();
   }, [articuloSeleccionado]);
+
+  const cargarUbicacionesConResiliencia = async (codigoAlmacen) => {
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.get(
+        `http://localhost:3000/ubicaciones-por-almacen/${codigoAlmacen}`,
+        { headers, timeout: 10000 }
+      );
+      return response.data;
+    } catch (error) {
+      console.warn(`No se pudieron cargar las ubicaciones para ${codigoAlmacen}, usando valor por defecto`);
+      return [
+        { 
+          Ubicacion: 'SIN-UBICACION', 
+          DescripcionUbicacion: 'Stock sin ubicación asignada',
+          CantidadArticulos: 'Varios'
+        }
+      ];
+    }
+  };
 
   const cargarArticulosUbicacion = useCallback(async (almacen, ubicacion, page = 1) => {
     try {
@@ -240,7 +325,6 @@ const TraspasosPage = () => {
         }
       );
       
-      // Asegurarse de que todos los artículos tengan TipoUnidadMedida_
       const articulosConTipoUnidad = response.data.articulos.map(articulo => ({
         ...articulo,
         TipoUnidadMedida_: articulo.TipoUnidadMedida_ || articulo.UnidadMedida || 'unidades'
@@ -268,12 +352,13 @@ const TraspasosPage = () => {
     try {
       const headers = getAuthHeader();
       const response = await axios.get(
-        'http://localhost:3000/ubicaciones',
+        'http://localhost:3000/ubicaciones-completas',
         { 
           headers,
           params: {
             codigoAlmacen: almacenDestino,
-            excluirUbicacion
+            excluirUbicacion,
+            incluirSinUbicacion: 'true'
           }
         }
       );
@@ -290,48 +375,47 @@ const TraspasosPage = () => {
     cargarUbicacionesDestino();
   }, [almacenDestino, cargarUbicacionesDestino]);
 
-  const cargarHistorial = useCallback(async () => {
-    try {
-      const headers = getAuthHeader();
-      const response = await axios.get('http://localhost:3000/historial-traspasos', { headers });
-      setHistorial(response.data);
-    } catch (error) {
-      console.error('Error cargando historial:', error);
-      alert(`Error cargando historial: ${error.response?.data?.mensaje || error.message}`);
-    }
-  }, []);
-
-  // Función para alternar la expansión de un almacén
   const toggleAlmacenExpandido = async (codigoAlmacen) => {
-    // Si ya está expandido, lo contraemos
     if (almacenesExpandidos[codigoAlmacen]) {
       setAlmacenesExpandidos(prev => ({ ...prev, [codigoAlmacen]: false }));
       return;
     }
 
-    // Si no tenemos las ubicaciones de este almacén, las cargamos
     if (!ubicacionesCargadas[codigoAlmacen]) {
       try {
         setLoading(true);
-        const headers = getAuthHeader();
-        const response = await axios.get(
-          `http://localhost:3000/ubicaciones-por-almacen/${codigoAlmacen}`,
-          { headers }
-        );
+        const ubicacionesData = await cargarUbicacionesConResiliencia(codigoAlmacen);
+        
+        const ubicacionesConSinUbicacion = [
+          { 
+            Ubicacion: 'SIN-UBICACION', 
+            DescripcionUbicacion: 'Stock sin ubicación asignada',
+            CantidadArticulos: 'Varios'
+          },
+          ...ubicacionesData
+        ];
         
         setUbicacionesCargadas(prev => ({
           ...prev,
-          [codigoAlmacen]: response.data
+          [codigoAlmacen]: ubicacionesConSinUbicacion
         }));
       } catch (error) {
         console.error('Error cargando ubicaciones:', error);
-        alert(`Error cargando ubicaciones: ${error.response?.data?.mensaje || error.message}`);
+        setUbicacionesCargadas(prev => ({
+          ...prev,
+          [codigoAlmacen]: [
+            { 
+              Ubicacion: 'SIN-UBICACION', 
+              DescripcionUbicacion: 'Stock sin ubicación asignada',
+              CantidadArticulos: 'Varios'
+            }
+          ]
+        }));
       } finally {
         setLoading(false);
       }
     }
 
-    // Expandimos el almacén
     setAlmacenesExpandidos(prev => ({ ...prev, [codigoAlmacen]: true }));
   };
 
@@ -456,7 +540,8 @@ const TraspasosPage = () => {
         almacen: almacenOrigen,
         ubicacion: ubicacionOrigen,
         grupoUnico: grupoUnicoOrigen,
-        tipoUnidadMedida: tipoUnidadMedida
+        tipoUnidadMedida: tipoUnidadMedida,
+        esSinUbicacion: stockItem?.EsSinUbicacion || false
       },
       destino: {
         almacen: almacenDestino,
@@ -514,7 +599,8 @@ const TraspasosPage = () => {
       origen: {
         almacen: ubicacionSeleccionada.almacen,
         ubicacion: ubicacionSeleccionada.ubicacion,
-        tipoUnidadMedida: articuloUbicacionSeleccionado.TipoUnidadMedida_ || articuloUbicacionSeleccionado.UnidadMedida || 'unidades'
+        tipoUnidadMedida: articuloUbicacionSeleccionado.TipoUnidadMedida_ || articuloUbicacionSeleccionado.UnidadMedida || 'unidades',
+        esSinUbicacion: ubicacionSeleccionada.ubicacion === 'SIN-UBICACION'
       },
       destino: {
         almacen: almacenDestino,
@@ -551,36 +637,36 @@ const TraspasosPage = () => {
       const traspasosValidados = traspasosPendientes.map(traspaso => {
         const cantidadEntera = parseFloat(Number(traspaso.cantidad));
         
-        // Asegurarse de que los campos de variantes se envíen correctamente
         const partida = traspaso.partida || '';
         const talla = traspaso.talla || '';
         const color = traspaso.color || '';
         const tipoUnidadMedida = traspaso.tipoUnidadMedida || traspaso.unidadMedida || 'unidades';
         
+        const ubicacionOrigenFinal = traspaso.origen.esSinUbicacion ? 'SIN-UBICACION' : traspaso.origen.ubicacion;
+        
         return {
           articulo: traspaso.articulo.CodigoArticulo,
           origenAlmacen: traspaso.origen.almacen,
-          origenUbicacion: traspaso.origen.ubicacion,
+          origenUbicacion: ubicacionOrigenFinal,
           destinoAlmacen: traspaso.destino.almacen,
           destinoUbicacion: traspaso.destino.ubicacion,
           cantidad: cantidadEntera,
           unidadMedida: traspaso.unidadMedida || 'unidades',
-          TipoUnidadMedida_: tipoUnidadMedida,
           partida: partida,
           grupoTalla: talla ? 1 : 0,
           codigoTalla: talla,
           codigoColor: color,
           codigoEmpresa: empresa,
           ejercicio: ejercicio,
-          // Campos adicionales para mejor trazabilidad
           grupoUnicoOrigen: traspaso.origen.grupoUnico || '',
-          descripcionArticulo: traspaso.articulo.DescripcionArticulo || ''
+          descripcionArticulo: traspaso.articulo.DescripcionArticulo || '',
+          esSinUbicacion: traspaso.origen.esSinUbicacion || false
         };
       });
 
       console.log('Datos a enviar:', JSON.stringify(traspasosValidados, null, 2));
 
-      // Enviar los traspasos uno por uno para mejor control de errores
+      // Enviar los traspasos uno por uno
       const resultados = [];
       for (const [index, traspaso] of traspasosValidados.entries()) {
         try {
@@ -602,7 +688,6 @@ const TraspasosPage = () => {
         }
       }
 
-      // Verificar si hubo errores
       const traspasosFallidos = resultados.filter(r => !r.success);
       if (traspasosFallidos.length > 0) {
         const mensajeError = traspasosFallidos.map(t => 
@@ -611,7 +696,6 @@ const TraspasosPage = () => {
         
         alert(`Algunos traspasos fallaron:\n\n${mensajeError}`);
         
-        // Mantener solo los traspasos fallados en la lista de pendientes
         const indicesFallados = traspasosFallidos.map(t => t.traspasoIndex);
         setTraspasosPendientes(prev => prev.filter((_, index) => indicesFallados.includes(index)));
       } else {
@@ -641,11 +725,6 @@ const TraspasosPage = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const getNombreAlmacen = (codigo) => {
-    const almacen = almacenes.find(a => a.CodigoAlmacen === codigo);
-    return almacen ? `${almacen.Almacen} (${codigo})` : codigo;
   };
 
   const formatFecha = (fechaStr) => {
@@ -868,18 +947,21 @@ const TraspasosPage = () => {
                         <option value="">Seleccionar ubicación y variante</option>
                         {stockDisponible
                           .filter(item => item.CodigoAlmacen === almacenOrigen)
-                          .map((item) => {
+                          .map((item, index) => {
                             const tallaColor = item.Talla && item.CodigoColor_ 
                               ? `${item.Talla}${item.CodigoColor_}` 
                               : '';
                             
+                            const uniqueKey = `${item.GrupoUnico}_${index}`;
+                            
                             return (
                               <option 
-                                key={item.GrupoUnico} 
+                                key={uniqueKey}
                                 value={`${item.Ubicacion}-${item.TipoUnidadMedida_}-${item.Partida || ''}-${item.Talla || ''}-${item.CodigoColor_ || ''}`}
                                 data-item-id={item.GrupoUnico}
                               >
-                                {item.Ubicacion} - 
+                                {item.EsSinUbicacion ? '[SIN UBICACIÓN] ' : ''}
+                                {formatUbicacionDisplay(item.Ubicacion, item.EsSinUbicacion)} - 
                                 {tallaColor && ` ${tallaColor} -`}
                                 {formatCantidad(item.Cantidad)} {item.UnidadMedida}
                                 {item.Partida && ` (Lote: ${item.Partida})`}
@@ -908,6 +990,9 @@ const TraspasosPage = () => {
                         {stockDisponibleInfo && (
                           <div className="stock-disponible-info">
                             <strong>Stock disponible:</strong> {stockDisponibleInfo}
+                            {ubicacionOrigen === 'SIN-UBICACION' && (
+                              <span className="sin-ubicacion-badge"> - Stock Sin Ubicación</span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -952,7 +1037,9 @@ const TraspasosPage = () => {
                           )
                           .map((ubicacion) => (
                             <option key={ubicacion.Ubicacion} value={ubicacion.Ubicacion}>
-                              {ubicacion.Ubicacion}
+                              {ubicacion.Ubicacion === 'SIN-UBICACION' ? '[SIN UBICACIÓN] ' : ''}
+                              {formatUbicacionDisplay(ubicacion.Ubicacion, ubicacion.Ubicacion === 'SIN-UBICACION')}
+                              {ubicacion.DescripcionUbicacion && ` - ${ubicacion.DescripcionUbicacion}`}
                             </option>
                           ))}
                       </select>
@@ -1013,7 +1100,6 @@ const TraspasosPage = () => {
                   </div>
                   
                   {busquedaUbicacion ? (
-                    // Mostrar resultados de búsqueda
                     <div className="resultados-busqueda-ubicacion">
                       {ubicacionesBuscadas.map(ubicacion => (
                         <div 
@@ -1022,7 +1108,7 @@ const TraspasosPage = () => {
                           onClick={() => cargarArticulosUbicacion(ubicacion.CodigoAlmacen, ubicacion.Ubicacion)}
                         >
                           <span className="almacen-ubicacion">
-                            {getNombreAlmacen(ubicacion.CodigoAlmacen)} → {ubicacion.Ubicacion}
+                            {getNombreAlmacen(ubicacion.CodigoAlmacen)} → {formatUbicacionDisplay(ubicacion.Ubicacion, ubicacion.Ubicacion === 'SIN-UBICACION')}
                           </span>
                           <span className="cantidad-articulos">
                             {ubicacion.CantidadArticulos} artículos
@@ -1034,7 +1120,6 @@ const TraspasosPage = () => {
                       )}
                     </div>
                   ) : (
-                    // Mostrar almacenes con carga bajo demanda
                     <div className="almacenes-container">
                       {almacenes.map(almacen => (
                         <div key={almacen.CodigoAlmacen} className="almacen-item">
@@ -1051,18 +1136,20 @@ const TraspasosPage = () => {
                               {loading ? (
                                 <div className="cargando-ubicaciones">Cargando ubicaciones...</div>
                               ) : (
-                                ubicacionesCargadas[almacen.CodigoAlmacen]?.map(ubicacion => (
+                                ubicacionesCargadas[almacen.CodigoAlmacen]?.map((ubicacion, index) => (
                                   <div 
-                                    key={`${almacen.CodigoAlmacen}-${ubicacion.Ubicacion}`}
-                                    className="ubicacion-item"
+                                    key={`${almacen.CodigoAlmacen}-${ubicacion.Ubicacion}-${index}`}
+                                    className={`ubicacion-item ${ubicacion.Ubicacion === 'SIN-UBICACION' ? 'sin-ubicacion-option' : ''}`}
                                     onClick={() => cargarArticulosUbicacion(almacen.CodigoAlmacen, ubicacion.Ubicacion)}
                                   >
-                                    <span className="ubicacion-codigo">{ubicacion.Ubicacion}</span>
+                                    <span className="ubicacion-codigo">
+                                      {ubicacion.Ubicacion === 'SIN-UBICACION' ? '[SIN UBICACIÓN]' : ubicacion.Ubicacion}
+                                    </span>
                                     <span className="ubicacion-stock">
                                       {ubicacion.CantidadArticulos} artículos
                                     </span>
                                   </div>
-                                )) || <div className="sin-ubicaciones">No hay ubicaciones</div>
+                                )) || <div className="sin-ubicaciones">No hay ubicaciones disponibles</div>
                               )}
                             </div>
                           )}
@@ -1084,13 +1171,13 @@ const TraspasosPage = () => {
                     >
                       &larr; Volver a ubicaciones
                     </button>
-                    <h2>Artículos en {ubicacionSeleccionada.ubicacion}</h2>
+                    <h2>Artículos en {formatUbicacionDisplay(ubicacionSeleccionada.ubicacion, ubicacionSeleccionada.ubicacion === 'SIN-UBICACION')}</h2>
                   </div>
                   
                   <div className="form-section">
                     <div className="ubicacion-seleccionada-info">
                       <span>Almacén: {getNombreAlmacen(ubicacionSeleccionada.almacen)}</span>
-                      <span>Ubicación: {ubicacionSeleccionada.ubicacion}</span>
+                      <span>Ubicación: {formatUbicacionDisplay(ubicacionSeleccionada.ubicacion, ubicacionSeleccionada.ubicacion === 'SIN-UBICACION')}</span>
                     </div>
                     
                     <div className="articulos-ubicacion">
@@ -1108,14 +1195,15 @@ const TraspasosPage = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {articulosUbicacion.map((articulo) => {
+                            {articulosUbicacion.map((articulo, index) => {
                               const uniqueKey = [
                                 articulo.CodigoArticulo,
                                 ubicacionSeleccionada.ubicacion,
                                 articulo.TipoUnidadMedida_,
                                 articulo.Partida || '',
                                 articulo.Talla || '',
-                                articulo.CodigoColor_ || ''
+                                articulo.CodigoColor_ || '',
+                                index
                               ].join('|');
                               
                               const tallaColor = formatTallaColor(articulo.Talla, articulo.CodigoColor_);
@@ -1278,7 +1366,8 @@ const TraspasosPage = () => {
                           )
                           .map((ubicacion) => (
                             <option key={ubicacion.Ubicacion} value={ubicacion.Ubicacion}>
-                              {ubicacion.Ubicacion}
+                              {ubicacion.Ubicacion === 'SIN-UBICACION' ? '[SIN UBICACIÓN] ' : ''}
+                              {formatUbicacionDisplay(ubicacion.Ubicacion, ubicacion.Ubicacion === 'SIN-UBICACION')}
                             </option>
                           ))}
                       </select>
@@ -1352,7 +1441,8 @@ const TraspasosPage = () => {
                         </td>
                         <td>
                           {getNombreAlmacen(traspaso.origen.almacen)}
-                          <br />{traspaso.origen.ubicacion}
+                          <br />
+                          {traspaso.origen.esSinUbicacion ? '[SIN UBICACIÓN]' : traspaso.origen.ubicacion}
                         </td>
                         <td>
                           {getNombreAlmacen(traspaso.destino.almacen)}
@@ -1456,7 +1546,7 @@ const TraspasosPage = () => {
                         </td>
                         <td>
                           {item.OrigenAlmacen}<br />
-                          {item.OrigenUbicacion}
+                          {item.OrigenUbicacion === 'SIN-UBICACION' ? '[SIN UBICACIÓN]' : item.OrigenUbicacion}
                         </td>
                         <td>
                           {item.DestinoAlmacen}<br />
@@ -1465,10 +1555,7 @@ const TraspasosPage = () => {
                         <td>
                           {formatCantidad(item.Cantidad)}
                           <div className="unidad-lote">
-                            {formatUnidadMedida(item.UnidadMedida1_)}
-                            {item.TipoUnidadMedida_ && item.TipoUnidadMedida_ !== item.UnidadMedida1_ && 
-                              <span> ({item.TipoUnidadMedida_})</span>
-                            }
+                            {formatUnidadMedida(item.UnidadMedida)}
                           </div>
                         </td>
                         <td>

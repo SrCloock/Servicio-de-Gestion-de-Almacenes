@@ -741,6 +741,7 @@ const PedidoCard = React.memo(({
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   
+  // ✅ CORREGIDO: Detectar correctamente pedidos parciales
   const tieneLineasParciales = useMemo(() => {
     return pedido.articulos.some(articulo => {
       const unidadesExpedidas = parseFloat(articulo.unidadesPedidas) - parseFloat(articulo.unidadesPendientes);
@@ -753,9 +754,17 @@ const PedidoCard = React.memo(({
       parseFloat(articulo.unidadesPendientes) === 0
     );
   }, [pedido.articulos]);
+
+  // ✅ USAR EL ESTADO DEL BACKEND COMO FUENTE PRINCIPAL
+  const esParcialBackend = pedido.Estado === 4;
+  const esServidoBackend = pedido.Estado === 2;
   
-  const parcial = tieneLineasParciales;
-  const completo = estaCompletamenteExpedido;
+  // ✅ COMBINAR DETECCIÓN FRONTEND Y BACKEND
+  const parcial = esParcialBackend || (tieneLineasParciales && !esServidoBackend);
+  const completo = esServidoBackend || estaCompletamenteExpedido;
+
+  // ✅ MOSTRAR OPCIONES CORRECTAMENTE
+  const mostrarOpcionParcial = parcial && !completo && canPerformActionsInPedidos;
   
   return (
     <div className={`pedido-card ${parcial ? 'pedido-parcial' : ''}`}>
@@ -787,7 +796,8 @@ const PedidoCard = React.memo(({
             
             {showMenu && (
               <div className="dropdown-menu">
-                {parcial && !completo && canPerformActionsInPedidos && (
+                {/* ✅ SOLO MOSTRAR OPCIÓN PARCIAL CUANDO CORRESPONDA */}
+                {mostrarOpcionParcial && (
                   <button 
                     onClick={() => {
                       generarAlbaranParcial(pedido);
@@ -1436,6 +1446,7 @@ const PedidosScreen = () => {
     }
   }, [detallesModal, pedidos]);
 
+  // ✅ CORREGIDO: Función handleExpedir con actualización de estado
   const handleExpedir = useCallback(async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea, detalle = null) => {
     if (!canPerformActions || isScanning) return;
     
@@ -1491,28 +1502,34 @@ const PedidosScreen = () => {
         { headers }
       );
 
-      // Después de la expedición exitosa
+      // ✅ ACTUALIZAR CORRECTAMENTE EL ESTADO DEL PEDIDO
       if (response.data.success) {
-        if (response.data.pedidoCompleto) {
-          // Eliminar el pedido completado de la lista actual
+        if (response.data.detalles.pedidoCompletado) {
+          // Eliminar pedido completado
           setPedidos(prev => prev.filter(p => p.numeroPedido !== numeroPedido));
-          
-          // Mostrar mensaje de que el pedido está listo para asignación
-          alert('¡Pedido completado! Ahora aparecerá en la pantalla de asignación de albaranes.');
         } else {
-          // Actualizar solo las unidades pendientes
-          setPedidos(prev => prev.map(p => 
-            p.numeroPedido === numeroPedido 
-              ? {
-                  ...p,
-                  articulos: p.articulos.map(a =>
-                    a.movPosicionLinea === linea.movPosicionLinea
-                      ? { ...a, unidadesPendientes: response.data.detalles.unidadesPendientesRestantes }
-                      : a
-                  )
-                }
-              : p
-          ));
+          // ✅ ACTUALIZAR ESTADO DEL PEDIDO SEGÚN RESPUESTA DEL BACKEND
+          setPedidos(prev => 
+            prev.map(p => 
+              p.numeroPedido === numeroPedido 
+                ? {
+                    ...p,
+                    // ✅ ACTUALIZAR UNIDADES PENDIENTES
+                    articulos: p.articulos.map(a =>
+                      a.movPosicionLinea === linea.movPosicionLinea
+                        ? { 
+                            ...a, 
+                            unidadesPendientes: response.data.detalles.unidadesPendientesRestantes 
+                          }
+                        : a
+                    ),
+                    // ✅ ACTUALIZAR ESTADO SEGÚN BACKEND
+                    Estado: response.data.nuevoEstado || p.Estado,
+                    Status: response.data.nuevoStatus || p.Status
+                  }
+                : p
+            )
+          );
         }
 
         // Actualizar ubicaciones (refrescar datos de stock)

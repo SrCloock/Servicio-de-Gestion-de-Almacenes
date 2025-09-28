@@ -50,16 +50,22 @@ const InventarioPage = () => {
   const [unidadesMedidaDisponibles, setUnidadesMedidaDisponibles] = useState(['unidades']);
 
   const formatearUnidad = (cantidad, unidad) => {
+    // Validar y convertir cantidad
+    let cantidadNum = parseFloat(cantidad);
+    if (isNaN(cantidadNum)) {
+      cantidadNum = 0;
+    }
+    
     if (!unidad || unidad.trim() === '') {
       unidad = 'unidad';
     }
     
-    let cantidadFormateada = cantidad;
-    if (!Number.isInteger(cantidad)) {
-      cantidadFormateada = parseFloat(cantidad.toFixed(2));
+    let cantidadFormateada = cantidadNum;
+    if (!Number.isInteger(cantidadNum)) {
+      cantidadFormateada = parseFloat(cantidadNum.toFixed(2));
     }
 
-    const unidadesInvariables = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
+    const unidadesInvariables = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3', 'barra', 'metro'];
     
     const unidadLower = unidad.toLowerCase();
     
@@ -169,6 +175,18 @@ const InventarioPage = () => {
         };
       }
       
+      // Validar y convertir CantidadBase
+      let cantidadBase = parseFloat(item.CantidadBase);
+      if (isNaN(cantidadBase)) {
+        cantidadBase = 0;
+      }
+      
+      // Validar y convertir Cantidad
+      let cantidad = parseFloat(item.Cantidad);
+      if (isNaN(cantidad)) {
+        cantidad = 0;
+      }
+      
       const ubicacion = {
         clave,
         CodigoAlmacen: item.CodigoAlmacen,
@@ -178,8 +196,8 @@ const InventarioPage = () => {
         Partida: item.Partida,
         Periodo: item.Periodo,
         UnidadStock: item.UnidadStock,
-        Cantidad: item.Cantidad,
-        CantidadBase: item.CantidadBase,
+        Cantidad: cantidad,
+        CantidadBase: cantidadBase,
         CodigoColor: item.CodigoColor_,
         CodigoTalla01: item.CodigoTalla01_,
         GrupoUnico: clave,
@@ -189,7 +207,7 @@ const InventarioPage = () => {
       };
       
       agrupado[item.CodigoArticulo].ubicaciones.push(ubicacion);
-      agrupado[item.CodigoArticulo].totalStockBase += item.CantidadBase;
+      agrupado[item.CodigoArticulo].totalStockBase += cantidadBase;
     });
     
     Object.values(agrupado).forEach(articulo => {
@@ -211,6 +229,11 @@ const InventarioPage = () => {
         
         return 0;
       });
+      
+      // Validar totalStockBase
+      if (isNaN(articulo.totalStockBase)) {
+        articulo.totalStockBase = 0;
+      }
       
       if (articulo.totalStockBase === 0) {
         articulo.estado = 'agotado';
@@ -504,10 +527,10 @@ const InventarioPage = () => {
 
   const stats = useMemo(() => {
     const totalArticulos = filteredInventario.length;
-    const totalUnidades = filteredInventario.reduce((total, art) => total + art.totalStockBase, 0);
+    const totalUnidades = filteredInventario.reduce((total, art) => total + (art.totalStockBase || 0), 0);
     const totalUbicaciones = filteredInventario.reduce((total, art) => total + art.ubicaciones.length, 0);
     const stockSinUbicacion = filteredInventario.reduce((total, art) => 
-      total + art.ubicaciones.filter(ubic => ubic.esSinUbicacion).reduce((sum, ubic) => sum + ubic.CantidadBase, 0), 0);
+      total + art.ubicaciones.filter(ubic => ubic.esSinUbicacion).reduce((sum, ubic) => sum + (ubic.CantidadBase || 0), 0), 0);
     
     return { totalArticulos, totalUnidades, totalUbicaciones, stockSinUbicacion };
   }, [filteredInventario]);
