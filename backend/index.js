@@ -1472,49 +1472,68 @@ app.get('/albaranes-completados', async (req, res) => {
 // ✅ 9. INVENTARIO SCREEN
 // ============================================
 
-// ✅ 9.1 OBTENER STOCK POR ARTÍCULO (VERSIÓN MEJORADA CON CLAVES ÚNICAS)
-app.get('/stock/por-articulo', async (req, res) => {
-  const { codigoArticulo, incluirSinUbicacion = 'true' } = req.query;
+// ✅ 9.14 OBTENER STOCK TOTAL CORREGIDO - VERSIÓN SIN COLUMNA PROBLEMÁTICA
+app.get('/inventario/stock-total-completo', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
-  
-  if (!codigoEmpresa || !codigoArticulo) {
+  const añoActual = new Date().getFullYear();
+
+  if (!codigoEmpresa) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Código de empresa y artículo requeridos.' 
+      mensaje: 'Código de empresa requerido.' 
     });
   }
 
   try {
-    const añoActual = new Date().getFullYear();
+    console.log('🔍 Solicitando stock total para empresa:', codigoEmpresa);
     
-    // Consulta para stock con ubicación - CLAVES ÚNICAS MEJORADAS
-    const stockConUbicacionQuery = `
+    const query = `
       SELECT 
+        s.CodigoEmpresa,
+        s.Ejercicio,
+        s.Periodo,
+        s.CodigoArticulo,
+        a.DescripcionArticulo,
+        a.Descripcion2Articulo,
+        a.CodigoFamilia,
+        a.CodigoSubfamilia,
         s.CodigoAlmacen,
         alm.Almacen AS NombreAlmacen,
         s.Ubicacion,
         u.DescripcionUbicacion,
-        CAST(s.UnidadSaldo AS DECIMAL(18, 2)) AS Cantidad,
-        COALESCE(NULLIF(s.TipoUnidadMedida_, ''), 'unidades') AS UnidadMedida,
-        s.TipoUnidadMedida_,
-        art.UnidadMedida2_ AS UnidadBase,
-        art.UnidadMedidaAlternativa_ AS UnidadAlternativa,
-        art.FactorConversion_ AS FactorConversion,
         s.Partida,
+        CAST(s.UnidadSaldo AS DECIMAL(18, 0)) AS Cantidad,
+        s.TipoUnidadMedida_ AS UnidadStock,
+        a.UnidadMedida2_ AS UnidadBase,
+        a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
+        a.FactorConversion_ AS FactorConversion,
         s.CodigoColor_,
-        c.Color_ AS NombreColor,
-        s.CodigoTalla01_ AS Talla,
+        s.CodigoTalla01_,
+        CASE 
+          WHEN s.TipoUnidadMedida_ = a.UnidadMedidaAlternativa_ 
+            THEN CAST(s.UnidadSaldo * a.FactorConversion_ AS DECIMAL(18, 0))
+          WHEN s.TipoUnidadMedida_ = a.UnidadMedida2_ 
+            THEN CAST(s.UnidadSaldo AS DECIMAL(18, 0))
+          ELSE CAST(s.UnidadSaldo * a.FactorConversion_ AS DECIMAL(18, 0))
+        END AS CantidadBase,
         CONCAT(
           s.CodigoEmpresa, '_',
-          s.CodigoAlmacen, '_', 
-          s.Ubicacion, '_', 
-          COALESCE(NULLIF(s.TipoUnidadMedida_, ''), 'unidades'), '_',
+          s.Ejercicio, '_',
+          s.CodigoAlmacen, '_',
+          s.Ubicacion, '_',
+          s.CodigoArticulo, '_',
+          ISNULL(s.TipoUnidadMedida_, 'unidades'), '_',
           ISNULL(s.Partida, ''), '_',
-          ISNULL(s.CodigoTalla01_, ''), '_',
-          ISNULL(s.CodigoColor_, '')
-        ) AS GrupoUnico,
-        0 AS EsSinUbicacion
+          ISNULL(s.CodigoColor_, ''), '_',
+          ISNULL(s.CodigoTalla01_, '')
+        ) AS ClaveUnica,
+        NULL AS MovPosicionLinea, -- Eliminada columna problemática
+        0 AS EsSinUbicacion,
+        'CON_UBICACION' AS TipoStock
       FROM AcumuladoStockUbicacion s
+      INNER JOIN Articulos a 
+        ON a.CodigoEmpresa = s.CodigoEmpresa 
+        AND a.CodigoArticulo = s.CodigoArticulo
       INNER JOIN Almacenes alm 
         ON alm.CodigoEmpresa = s.CodigoEmpresa 
         AND alm.CodigoAlmacen = s.CodigoAlmacen
@@ -1522,99 +1541,98 @@ app.get('/stock/por-articulo', async (req, res) => {
         ON u.CodigoEmpresa = s.CodigoEmpresa 
         AND u.CodigoAlmacen = s.CodigoAlmacen 
         AND u.Ubicacion = s.Ubicacion
-      INNER JOIN Articulos art
-        ON art.CodigoEmpresa = s.CodigoEmpresa
-        AND art.CodigoArticulo = s.CodigoArticulo
-      LEFT JOIN Colores_ c 
-        ON c.CodigoEmpresa = s.CodigoEmpresa
-        AND c.CodigoColor_ = s.CodigoColor_
       WHERE s.CodigoEmpresa = @codigoEmpresa
-        AND s.CodigoArticulo = @codigoArticulo
         AND s.Periodo = 99
+        AND s.Ejercicio = @ejercicio
         AND s.UnidadSaldo > 0
-    `;
-
-    // Consulta para stock sin ubicación - CLAVES ÚNICAS MEJORADAS
-    const stockSinUbicacionQuery = `
+      
+      UNION ALL
+      
+      -- Stock sin ubicación (simplificado)
       SELECT 
-        ast.CodigoAlmacen,
+        s.CodigoEmpresa,
+        s.Ejercicio,
+        s.Periodo,
+        s.CodigoArticulo,
+        a.DescripcionArticulo,
+        a.Descripcion2Articulo,
+        a.CodigoFamilia,
+        a.CodigoSubfamilia,
+        s.CodigoAlmacen,
         alm.Almacen AS NombreAlmacen,
-        'SIN-UBICACION' AS Ubicacion,
+        'SIN UBICACIÓN' AS Ubicacion,
         'Stock sin ubicación asignada' AS DescripcionUbicacion,
-        CAST((ast.UnidadSaldo - ISNULL(asu.StockUbicacion, 0)) AS DECIMAL(18, 2)) AS Cantidad,
-        COALESCE(NULLIF(ast.TipoUnidadMedida_, ''), 'unidades') AS UnidadMedida,
-        ast.TipoUnidadMedida_,
-        art.UnidadMedida2_ AS UnidadBase,
-        art.UnidadMedidaAlternativa_ AS UnidadAlternativa,
-        art.FactorConversion_ AS FactorConversion,
-        ast.Partida,
-        ast.CodigoColor_,
-        NULL AS NombreColor,
-        ast.CodigoTalla01_ AS Talla,
+        s.Partida,
+        CAST(s.UnidadSaldo AS DECIMAL(18, 0)) AS Cantidad,
+        s.TipoUnidadMedida_ AS UnidadStock,
+        a.UnidadMedida2_ AS UnidadBase,
+        a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
+        a.FactorConversion_ AS FactorConversion,
+        s.CodigoColor_,
+        s.CodigoTalla01_,
+        CASE 
+          WHEN s.TipoUnidadMedida_ = a.UnidadMedidaAlternativa_ 
+            THEN CAST(s.UnidadSaldo * a.FactorConversion_ AS DECIMAL(18, 0))
+          WHEN s.TipoUnidadMedida_ = a.UnidadMedida2_ 
+            THEN CAST(s.UnidadSaldo AS DECIMAL(18, 0))
+          ELSE CAST(s.UnidadSaldo * a.FactorConversion_ AS DECIMAL(18, 0))
+        END AS CantidadBase,
         CONCAT(
-          ast.CodigoEmpresa, '_',
-          ast.CodigoAlmacen, '_', 
-          'SIN-UBICACION', '_', 
-          COALESCE(NULLIF(ast.TipoUnidadMedida_, ''), 'unidades'), '_',
-          ISNULL(ast.Partida, ''), '_',
-          ISNULL(ast.CodigoTalla01_, ''), '_',
-          ISNULL(ast.CodigoColor_, '')
-        ) AS GrupoUnico,
-        1 AS EsSinUbicacion
-      FROM AcumuladoStock ast
-      INNER JOIN Articulos art 
-        ON art.CodigoEmpresa = ast.CodigoEmpresa 
-        AND art.CodigoArticulo = ast.CodigoArticulo
+          s.CodigoEmpresa, '_',
+          s.Ejercicio, '_',
+          s.CodigoAlmacen, '_',
+          'SIN_UBICACION', '_',
+          s.CodigoArticulo, '_',
+          ISNULL(s.TipoUnidadMedida_, 'unidades'), '_',
+          ISNULL(s.Partida, ''), '_',
+          ISNULL(s.CodigoColor_, ''), '_',
+          ISNULL(s.CodigoTalla01_, '')
+        ) AS ClaveUnica,
+        NULL AS MovPosicionLinea, -- Eliminada columna problemática
+        1 AS EsSinUbicacion,
+        'SIN_UBICACION' AS TipoStock
+      FROM AcumuladoStock s
+      INNER JOIN Articulos a 
+        ON a.CodigoEmpresa = s.CodigoEmpresa 
+        AND a.CodigoArticulo = s.CodigoArticulo
       INNER JOIN Almacenes alm 
-        ON alm.CodigoEmpresa = ast.CodigoEmpresa 
-        AND alm.CodigoAlmacen = ast.CodigoAlmacen
-      LEFT JOIN (
-        SELECT 
-          CodigoAlmacen, CodigoArticulo, TipoUnidadMedida_, Partida, 
-          CodigoColor_, CodigoTalla01_, SUM(UnidadSaldo) AS StockUbicacion
-        FROM AcumuladoStockUbicacion
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND CodigoArticulo = @codigoArticulo
-          AND Periodo = 99
-        GROUP BY CodigoAlmacen, CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_
-      ) asu ON asu.CodigoAlmacen = ast.CodigoAlmacen
-        AND asu.CodigoArticulo = ast.CodigoArticulo
-        AND asu.TipoUnidadMedida_ = ast.TipoUnidadMedida_
-        AND ISNULL(asu.Partida, '') = ISNULL(ast.Partida, '')
-        AND ISNULL(asu.CodigoColor_, '') = ISNULL(ast.CodigoColor_, '')
-        AND ISNULL(asu.CodigoTalla01_, '') = ISNULL(ast.CodigoTalla01_, '')
-      WHERE ast.CodigoEmpresa = @codigoEmpresa
-        AND ast.CodigoArticulo = @codigoArticulo
-        AND ast.Periodo = 99
-        AND ast.UnidadSaldo > 0
-        AND (ast.UnidadSaldo - ISNULL(asu.StockUbicacion, 0)) > 0
+        ON alm.CodigoEmpresa = s.CodigoEmpresa 
+        AND alm.CodigoAlmacen = s.CodigoAlmacen
+      WHERE s.CodigoEmpresa = @codigoEmpresa
+        AND s.Periodo = 99
+        AND s.Ejercicio = @ejercicio
+        AND s.UnidadSaldo > 0
+        AND NOT EXISTS (
+          SELECT 1 
+          FROM AcumuladoStockUbicacion su 
+          WHERE su.CodigoEmpresa = s.CodigoEmpresa
+            AND su.Ejercicio = s.Ejercicio
+            AND su.CodigoAlmacen = s.CodigoAlmacen
+            AND su.CodigoArticulo = s.CodigoArticulo
+            AND su.TipoUnidadMedida_ = s.TipoUnidadMedida_
+            AND ISNULL(su.Partida, '') = ISNULL(s.Partida, '')
+            AND ISNULL(su.CodigoColor_, '') = ISNULL(s.CodigoColor_, '')
+            AND ISNULL(su.CodigoTalla01_, '') = ISNULL(s.CodigoTalla01_, '')
+            AND su.Periodo = 99
+        )
+      
+      ORDER BY CodigoArticulo, CodigoAlmacen, EsSinUbicacion, Ubicacion
     `;
-
-    let query = stockConUbicacionQuery;
-    
-    if (incluirSinUbicacion === 'true') {
-      query = `
-        ${stockConUbicacionQuery}
-        UNION ALL
-        ${stockSinUbicacionQuery}
-        ORDER BY EsSinUbicacion, CodigoAlmacen, Ubicacion
-      `;
-    } else {
-      query += ' ORDER BY CodigoAlmacen, Ubicacion';
-    }
 
     const result = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('codigoArticulo', sql.VarChar, codigoArticulo)
+      .input('ejercicio', sql.SmallInt, añoActual)
       .query(query);
       
+    console.log('✅ Stock total obtenido:', result.recordset.length, 'registros');
     res.json(result.recordset);
   } catch (err) {
-    console.error('[ERROR STOCK ARTICULO]', err);
+    console.error('❌ [ERROR STOCK TOTAL CORREGIDO]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener stock del artículo.',
-      error: err.message 
+      mensaje: 'Error al obtener stock total',
+      error: err.message,
+      details: err.originalError?.info?.message || 'Sin detalles adicionales'
     });
   }
 });
@@ -3100,7 +3118,7 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
         FROM AcumuladoStock
         WHERE CodigoEmpresa = @codigoEmpresa
           AND Ejercicio = @ejercicio
-          AND CodigoAlmacen = 'CEN'  -- SOLO ALMACÉN CEN
+          AND CodigoAlmacen = 'CEN'  
           AND Periodo = 99
         GROUP BY CodigoArticulo, TipoUnidadMedida_
       ),
