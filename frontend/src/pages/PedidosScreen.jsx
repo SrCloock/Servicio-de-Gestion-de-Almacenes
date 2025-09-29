@@ -107,19 +107,19 @@ const useFormatearUnidad = () => {
 
 // Componente de carga mejorado
 const LoadingSpinner = React.memo(({ message = "Cargando..." }) => (
-  <div className="loading-container">
-    <div className="spinner"></div>
+  <div className="ps-loading-container">
+    <div className="ps-spinner"></div>
     <p>{message}</p>
   </div>
 ));
 
 // Componente de error mejorado
 const ErrorMessage = React.memo(({ message, onRetry }) => (
-  <div className="error-message">
-    <FaExclamationTriangle className="error-icon" />
+  <div className="ps-error-message">
+    <FaExclamationTriangle className="ps-error-icon" />
     <p>{message}</p>
     {onRetry && (
-      <button onClick={onRetry} className="btn-retry">
+      <button onClick={onRetry} className="ps-btn-retry">
         <FaSync /> Reintentar
       </button>
     )}
@@ -275,13 +275,13 @@ const DetallesArticuloModal = React.memo(({
 
   if (!detalles || detalles.length === 0) {
     return (
-      <div className="modal-detalles" onClick={onClose}>
-        <div className="modal-contenido modal-detalles-contenido" onClick={e => e.stopPropagation()}>
-          <button className="cerrar-modal" onClick={onClose}><FaTimes /></button>
-          <h3 className="modal-titulo">Artículo: {linea.descripcionArticulo}</h3>
-          <div className="modal-no-variantes">
+      <div className="ps-modal-detalles" onClick={onClose}>
+        <div className="ps-modal-contenido ps-modal-detalles-contenido" onClick={e => e.stopPropagation()}>
+          <button className="ps-cerrar-modal" onClick={onClose}><FaTimes /></button>
+          <h3 className="ps-modal-titulo">Artículo: {linea.descripcionArticulo}</h3>
+          <div className="ps-modal-no-variantes">
             <p>No hay variantes disponibles para este artículo.</p>
-            <button className="btn-cerrar-modal" onClick={onClose}>
+            <button className="ps-btn-cerrar-modal" onClick={onClose}>
               Cerrar
             </button>
           </div>
@@ -291,11 +291,11 @@ const DetallesArticuloModal = React.memo(({
   }
 
   return (
-    <div className="modal-detalles" onClick={onClose}>
-      <div className="modal-contenido modal-detalles-contenido" onClick={e => e.stopPropagation()}>
-        <button className="cerrar-modal" onClick={onClose}><FaTimes /></button>
-        <h3 className="modal-titulo">Artículo: {linea.descripcionArticulo}</h3>
-        <div className="modal-subtitulo">
+    <div className="ps-modal-detalles" onClick={onClose}>
+      <div className="ps-modal-contenido ps-modal-detalles-contenido" onClick={e => e.stopPropagation()}>
+        <button className="ps-cerrar-modal" onClick={onClose}><FaTimes /></button>
+        <h3 className="ps-modal-titulo">Artículo: {linea.descripcionArticulo}</h3>
+        <div className="ps-modal-subtitulo">
           <span>Código: {linea.codigoArticulo}</span>
           <span>Unidad: {linea.unidadBase || 'ud'}</span>
         </div>
@@ -303,8 +303,8 @@ const DetallesArticuloModal = React.memo(({
         {cargandoUbicaciones ? (
           <LoadingSpinner message="Cargando información de stock..." />
         ) : (
-          <div className="tabla-detalles-container">
-            <table className="tabla-detalles">
+          <div className="ps-tabla-detalles-container">
+            <table className="ps-tabla-detalles">
               <thead>
                 <tr>
                   <th>Color</th>
@@ -323,7 +323,7 @@ const DetallesArticuloModal = React.memo(({
                   const error = erroresCarga[key];
 
                   return (
-                    <tr key={index} className={ubicaciones.length === 0 ? 'sin-stock-row' : ''}>
+                    <tr key={index} className={ubicaciones.length === 0 ? 'ps-sin-stock-row' : ''}>
                       <td>{detalle.colorNombre || detalle.codigoColor}</td>
                       <td>{detalle.descripcionTalla || detalle.codigoTalla}</td>
                       <td>{formatearUnidad(detalle.cantidadPendiente, linea.unidadBase)}</td>
@@ -331,7 +331,7 @@ const DetallesArticuloModal = React.memo(({
                         {error ? (
                           <ErrorMessage message="Error al cargar ubicaciones" />
                         ) : ubicaciones.length > 0 ? (
-                          <div className="ubicacion-select-container">
+                          <div className="ps-ubicacion-select-container">
                             <select
                               value={seleccion.ubicacion || ""}
                               onChange={(e) => handleCambioSeleccion(key, "ubicacion", e.target.value)}
@@ -345,14 +345,14 @@ const DetallesArticuloModal = React.memo(({
                                 </option>
                               ))}
                             </select>
-                            <div className="select-arrow"><FaChevronDown /></div>
+                            <div className="ps-select-arrow"><FaChevronDown /></div>
                           </div>
                         ) : (
-                          <span className="sin-stock">Sin stock disponible</span>
+                          <span className="ps-sin-stock">Sin stock disponible</span>
                         )}
                       </td>
                       <td>
-                        <div className="cantidad-input-container">
+                        <div className="ps-cantidad-input-container">
                           <input
                             type="number"
                             value={seleccion.cantidad || ""}
@@ -362,12 +362,12 @@ const DetallesArticuloModal = React.memo(({
                             disabled={!canPerformActions || ubicaciones.length === 0 || !!error}
                             placeholder="0"
                           />
-                          <span className="unidad-info">{linea.unidadBase || 'ud'}</span>
+                          <span className="ps-unidad-info">{linea.unidadBase || 'ud'}</span>
                         </div>
                       </td>
                       <td>
                         <button
-                          className="btn-expedir-variante"
+                          className="ps-btn-expedir-variante"
                           onClick={() => handleExpedir(detalle)}
                           disabled={!canPerformActions || !seleccion.ubicacion || !seleccion.cantidad || parseFloat(seleccion.cantidad) <= 0 || procesando || !!error}
                         >
@@ -382,9 +382,9 @@ const DetallesArticuloModal = React.memo(({
           </div>
         )}
 
-        <div className="modal-actions">
+        <div className="ps-modal-actions">
           <button 
-            className="btn-cerrar-modal"
+            className="ps-btn-cerrar-modal"
             onClick={onClose}
           >
             Cerrar
@@ -544,22 +544,22 @@ const LineaPedido = React.memo(({
   
   return (
     <>
-      <tr className="desktop-view">
-        <td className="td-izquierda">
-          <div className="codigo-articulo">{linea.codigoArticulo}</div>
-          <div className="codigo-alternativo">{linea.codigoAlternativo}</div>
+      <tr className="ps-desktop-view">
+        <td className="ps-td-izquierda">
+          <div className="ps-codigo-articulo">{linea.codigoArticulo}</div>
+          <div className="ps-codigo-alternativo">{linea.codigoAlternativo}</div>
         </td>
-        <td className="td-izquierda">
-          <div className="descripcion-articulo">{linea.descripcionArticulo}</div>
-          <div className="detalles-articulo">{linea.descripcion2Articulo}</div>
+        <td className="ps-td-izquierda">
+          <div className="ps-descripcion-articulo">{linea.descripcionArticulo}</div>
+          <div className="ps-detalles-articulo">{linea.descripcion2Articulo}</div>
         </td>
-        <td className="td-centrado">
-          <div className="pendiente-container">
+        <td className="ps-td-centrado">
+          <div className="ps-pendiente-container">
             {linea.unidadesPendientes > 0 ? (
               <>
-                <span className="pendiente-valor">{formatted.pendiente}</span>
+                <span className="ps-pendiente-valor">{formatted.pendiente}</span>
                 {formatted.equivalencia && (
-                  <div className="equivalencia-stock">
+                  <div className="ps-equivalencia-stock">
                     {formatted.equivalencia}
                   </div>
                 )}
@@ -569,23 +569,23 @@ const LineaPedido = React.memo(({
                       e.stopPropagation();
                       abrirModalDetalles(linea.detalles, linea, pedido);
                     }}
-                    className="btn-detalles"
+                    className="ps-btn-detalles"
                   >
                     <FaInfoCircle />
                   </button>
                 )}
               </>
             ) : (
-              <span className="completada-badge">COMPLETADA</span>
+              <span className="ps-completada-badge">COMPLETADA</span>
             )}
           </div>
         </td>
         <td>
-          <div className="ubicacion-select-container">
+          <div className="ps-ubicacion-select-container">
             <select
               value={expedicion.ubicacion}
               onChange={handleCambioUbicacion}
-              className={`ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'zona-descarga' : ''}`}
+              className={`ps-ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga' : ''}`}
               disabled={!canPerformActions}
             >
               {ubicacionesConStock.map((ubicacion, locIndex) => {
@@ -595,7 +595,7 @@ const LineaPedido = React.memo(({
                   <option 
                     key={`${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
                     value={ubicacion.ubicacion}
-                    className={ubicacion.ubicacion === "Zona descarga" ? 'zona-descarga-option' : ''}
+                    className={ubicacion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-option' : ''}
                   >
                     {ubicacion.codigoAlmacen} - {ubicacion.ubicacion} {ubicacion.partida ? `(${ubicacion.partida})` : ''} - 
                     Stock: {ubicacion.unidadSaldo === Infinity 
@@ -605,24 +605,24 @@ const LineaPedido = React.memo(({
                 );
               })}
             </select>
-            <div className="select-arrow"><FaChevronDown /></div>
+            <div className="ps-select-arrow"><FaChevronDown /></div>
           </div>
         </td>
         <td>
-          <div className="cantidad-container">
+          <div className="ps-cantidad-container">
             <input
               type="text"
               value={expedicion.cantidad}
               onChange={handleCambioCantidad}
-              className={expedicion.ubicacion === "Zona descarga" ? 'zona-descarga-input' : ''}
+              className={expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-input' : ''}
               disabled={!canPerformActions}
             />
-            <div className="unidad-info">{linea.unidadBase || 'ud'}</div>
+            <div className="ps-unidad-info">{linea.unidadBase || 'ud'}</div>
           </div>
         </td>
-        <td className="td-centrado">
+        <td className="ps-td-centrado">
           <button
-            className="btn-expedir"
+            className="ps-btn-expedir"
             onClick={(e) => {
               e.stopPropagation();
               if (canPerformActions) iniciarEscaneo(linea, pedido);
@@ -634,27 +634,27 @@ const LineaPedido = React.memo(({
         </td>
       </tr>
       
-      <tr className="mobile-view">
+      <tr className="ps-mobile-view">
         <td colSpan="6">
-          <div className="linea-mobile">
-            <div className="mobile-header">
-              <div className="mobile-articulo">
-                <div className="codigo-articulo">{linea.codigoArticulo}</div>
-                <div className="codigo-alternativo">{linea.codigoAlternativo}</div>
+          <div className="ps-linea-mobile">
+            <div className="ps-mobile-header">
+              <div className="ps-mobile-articulo">
+                <div className="ps-codigo-articulo">{linea.codigoArticulo}</div>
+                <div className="ps-codigo-alternativo">{linea.codigoAlternativo}</div>
               </div>
-              <div className="mobile-descripcion">
-                <div className="descripcion-articulo">{linea.descripcionArticulo}</div>
+              <div className="ps-mobile-descripcion">
+                <div className="ps-descripcion-articulo">{linea.descripcionArticulo}</div>
               </div>
             </div>
             
-            <div className="mobile-details">
-              <div className="detail-item">
-                <span className="detail-label">Pendiente:</span>
-                <div className="detail-value">
+            <div className="ps-mobile-details">
+              <div className="ps-detail-item">
+                <span className="ps-detail-label">Pendiente:</span>
+                <div className="ps-detail-value">
                   <span>{formatted.pendiente}</span>
                   {linea.detalles && linea.movPosicionLinea && (
                     <button 
-                      className="btn-detalles"
+                      className="ps-btn-detalles"
                       onClick={(e) => {
                         e.stopPropagation();
                         abrirModalDetalles(linea.detalles, linea, pedido);
@@ -666,13 +666,13 @@ const LineaPedido = React.memo(({
                 </div>
               </div>
               
-              <div className="detail-item">
-                <span className="detail-label">Ubicación:</span>
-                <div className="ubicacion-select-container">
+              <div className="ps-detail-item">
+                <span className="ps-detail-label">Ubicación:</span>
+                <div className="ps-ubicacion-select-container">
                   <select
                     value={expedicion.ubicacion}
                     onChange={handleCambioUbicacion}
-                    className={`ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'zona-descarga' : ''}`}
+                    className={`ps-ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga' : ''}`}
                     disabled={!canPerformActions}
                   >
                     {ubicacionesConStock.map((ubicacion, locIndex) => (
@@ -684,27 +684,27 @@ const LineaPedido = React.memo(({
                       </option>
                     ))}
                   </select>
-                  <div className="select-arrow"><FaChevronDown /></div>
+                  <div className="ps-select-arrow"><FaChevronDown /></div>
                 </div>
               </div>
               
-              <div className="detail-item">
-                <span className="detail-label">Cantidad:</span>
-                <div className="cantidad-container">
+              <div className="ps-detail-item">
+                <span className="ps-detail-label">Cantidad:</span>
+                <div className="ps-cantidad-container">
                   <input
                     type="text"
                     value={expedicion.cantidad}
                     onChange={handleCambioCantidad}
-                    className={expedicion.ubicacion === "Zona descarga" ? 'zona-descarga-input' : ''}
+                    className={expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-input' : ''}
                     disabled={!canPerformActions}
                   />
-                  <div className="unidad-info">{linea.unidadBase || 'ud'}</div>
+                  <div className="ps-unidad-info">{linea.unidadBase || 'ud'}</div>
                 </div>
               </div>
               
-              <div className="detail-item acciones">
+              <div className="ps-detail-item ps-acciones">
                 <button
-                  className="btn-expedir"
+                  className="ps-btn-expedir"
                   onClick={(e) => {
                     e.stopPropagation();
                     if (canPerformActions) iniciarEscaneo(linea, pedido);
@@ -767,35 +767,35 @@ const PedidoCard = React.memo(({
   const mostrarOpcionParcial = parcial && !completo && canPerformActionsInPedidos;
   
   return (
-    <div className={`pedido-card ${parcial ? 'pedido-parcial' : ''}`}>
-      <div className="pedido-header">
-        <div className="pedido-header-left">
-          <div className="pedido-info-top">
-            <span className="numero-pedido">#{pedido.numeroPedido}</span>
-            <span className="fecha-pedido">{new Date(pedido.fechaPedido).toLocaleDateString()}</span>
-            <span className="fecha-entrega">
+    <div className={`ps-pedido-card ${parcial ? 'ps-pedido-parcial' : ''}`}>
+      <div className="ps-pedido-header">
+        <div className="ps-pedido-header-left">
+          <div className="ps-pedido-info-top">
+            <span className="ps-numero-pedido">#{pedido.numeroPedido}</span>
+            <span className="ps-fecha-pedido">{new Date(pedido.fechaPedido).toLocaleDateString()}</span>
+            <span className="ps-fecha-entrega">
               Entrega: {pedido.fechaEntrega ? new Date(pedido.fechaEntrega).toLocaleDateString() : 'Sin fecha'}
             </span>
-            <span className={`status-pedido status-${pedido.Status?.toLowerCase() || 'revision'}`}>
+            <span className={`ps-status-pedido ps-status-${pedido.Status?.toLowerCase() || 'revision'}`}>
               {pedido.Status || 'Revisión'}
             </span>
           </div>
-          <div className="cliente-info">
-            <span className="cliente">{pedido.razonSocial}</span>
+          <div className="ps-cliente-info">
+            <span className="ps-cliente">{pedido.razonSocial}</span>
           </div>
         </div>
         
-        <div className="pedido-header-right">
-          <div className="pedido-actions">
+        <div className="ps-pedido-header-right">
+          <div className="ps-pedido-actions">
             <button 
-              className="btn-menu"
+              className="ps-btn-menu"
               onClick={() => setShowMenu(!showMenu)}
             >
               <FaEllipsisV />
             </button>
             
             {showMenu && (
-              <div className="dropdown-menu">
+              <div className="ps-dropdown-menu">
                 {/* ✅ SOLO MOSTRAR OPCIÓN PARCIAL CUANDO CORRESPONDA */}
                 {mostrarOpcionParcial && (
                   <button 
@@ -803,27 +803,21 @@ const PedidoCard = React.memo(({
                       generarAlbaranParcial(pedido);
                       setShowMenu(false);
                     }}
-                    className="menu-item"
+                    className="ps-menu-item"
                     disabled={generandoAlbaran}
                   >
                     <FaCheck /> {generandoAlbaran ? 'Procesando...' : 'Generar Albarán Parcial'}
                   </button>
                 )}
                 <button 
-                    className="menu-item"
+                    className="ps-menu-item"
                     onClick={() => {
                       togglePedidoView(pedido.numeroPedido);
                       setShowMenu(false);
                     }}
                 >
                   <FaEllipsisV /> 
-                  {pedidoViewModes[pedido.numeroPedido] === 'show' ? ' Ocultar líneas' : ' Mostrar líneas'}
-                </button>
-                <button className="menu-item">
-                  <FaBarcode /> Exportar PDF
-                </button>
-                <button className="menu-item">
-                  <FaBarcode /> Imprimir
+                  {pedidoViewModes[pedido.numeroPedido] === 'show' ? ' Ocultar líneas y detalles' : ' Mostrar líneas y detalles'}
                 </button>
               </div>
             )}
@@ -831,61 +825,63 @@ const PedidoCard = React.memo(({
         </div>
       </div>
       
-      <div className="pedido-details">
-        <div className="pedido-detail-item">
-          <strong>Forma de entrega:</strong> {pedido.formaEntrega}
-        </div>
-        <div className="pedido-detail-item">
-          <strong>Obra:</strong> {pedido.obra || 'Sin obra especificada'}
-        </div>
-        <div className="pedido-detail-item">
-          <strong>Dirección:</strong> {pedido.domicilio}
-        </div>
-        <div className="pedido-detail-item">
-          <strong>Municipio:</strong> {pedido.municipio}
-        </div>
-        
-        <div className="observaciones-container">
-          <strong>Observaciones:</strong>
-          <div className="observaciones-content">
-            {pedido.observaciones || 'Sin observaciones'}
-          </div>
-        </div>
-      </div>
-      
       {pedidoViewModes[pedido.numeroPedido] === 'show' && (
-        <div className="lineas-container">
-          <div className="table-responsive">
-            <table className="lineas-table">
-              <thead>
-                <tr>
-                  <th>Artículo</th>
-                  <th>Descripcion</th>
-                  <th>Pendiente</th>
-                  <th>Ubicación</th>
-                  <th>Cantidad</th>
-                  <th>Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pedido.articulos.map((linea) => (
-                  <LineaPedido 
-                    key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${linea.movPosicionLinea}`}
-                    linea={linea} 
-                    pedido={pedido} 
-                    expediciones={expediciones}
-                    handleExpedicionChange={handleExpedicionChange}
-                    ubicaciones={ubicaciones}
-                    iniciarEscaneo={iniciarEscaneo}
-                    abrirModalDetalles={abrirModalDetalles}
-                    canPerformActions={canPerformActions}
-                    isScanning={isScanning}
-                  />
-                ))}
-              </tbody>
-            </table>
+        <>
+          <div className="ps-pedido-details">
+            <div className="ps-pedido-detail-item">
+              <strong>Forma de entrega:</strong> {pedido.formaEntrega}
+            </div>
+            <div className="ps-pedido-detail-item">
+              <strong>Obra:</strong> {pedido.obra || 'Sin obra especificada'}
+            </div>
+            <div className="ps-pedido-detail-item">
+              <strong>Dirección:</strong> {pedido.domicilio}
+            </div>
+            <div className="ps-pedido-detail-item">
+              <strong>Municipio:</strong> {pedido.municipio}
+            </div>
+            
+            <div className="ps-observaciones-container">
+              <strong>Observaciones:</strong>
+              <div className="ps-observaciones-content">
+                {pedido.observaciones || 'Sin observaciones'}
+              </div>
+            </div>
           </div>
-        </div>
+          
+          <div className="ps-lineas-container">
+            <div className="ps-table-responsive">
+              <table className="ps-lineas-table">
+                <thead>
+                  <tr>
+                    <th>Artículo</th>
+                    <th>Descripcion</th>
+                    <th>Pendiente</th>
+                    <th>Ubicación</th>
+                    <th>Cantidad</th>
+                    <th>Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pedido.articulos.map((linea) => (
+                    <LineaPedido 
+                      key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${linea.movPosicionLinea}`}
+                      linea={linea} 
+                      pedido={pedido} 
+                      expediciones={expediciones}
+                      handleExpedicionChange={handleExpedicionChange}
+                      ubicaciones={ubicaciones}
+                      iniciarEscaneo={iniciarEscaneo}
+                      abrirModalDetalles={abrirModalDetalles}
+                      canPerformActions={canPerformActions}
+                      isScanning={isScanning}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
@@ -912,11 +908,11 @@ const Paginacion = React.memo(({ totalPaginas, paginaActual, cambiarPagina }) =>
   
   return (
     totalPaginas > 1 && (
-      <div className="pagination">
+      <div className="ps-pagination">
         <button 
           onClick={() => cambiarPagina(1)} 
           disabled={paginaActual === 1}
-          className="pagination-btn"
+          className="ps-pagination-btn"
         >
           &laquo;
         </button>
@@ -924,7 +920,7 @@ const Paginacion = React.memo(({ totalPaginas, paginaActual, cambiarPagina }) =>
         <button 
           onClick={() => cambiarPagina(paginaActual - 1)} 
           disabled={paginaActual === 1}
-          className="pagination-btn"
+          className="ps-pagination-btn"
         >
           &lsaquo;
         </button>
@@ -933,7 +929,7 @@ const Paginacion = React.memo(({ totalPaginas, paginaActual, cambiarPagina }) =>
           <button
             key={numero}
             onClick={() => cambiarPagina(numero)}
-            className={`pagination-btn ${paginaActual === numero ? 'active' : ''}`}
+            className={`ps-pagination-btn ${paginaActual === numero ? 'active' : ''}`}
           >
             {numero}
           </button>
@@ -942,7 +938,7 @@ const Paginacion = React.memo(({ totalPaginas, paginaActual, cambiarPagina }) =>
         <button 
           onClick={() => cambiarPagina(paginaActual + 1)} 
           disabled={paginaActual === totalPaginas}
-          className="pagination-btn"
+          className="ps-pagination-btn"
         >
           &rsaquo;
         </button>
@@ -950,7 +946,7 @@ const Paginacion = React.memo(({ totalPaginas, paginaActual, cambiarPagina }) =>
         <button 
           onClick={() => cambiarPagina(totalPaginas)} 
           disabled={paginaActual === totalPaginas}
-          className="pagination-btn"
+          className="ps-pagination-btn"
         >
           &raquo;
         </button>
@@ -975,25 +971,25 @@ const CameraModal = React.memo(({
   if (!showCamera) return null;
 
   return (
-    <div className="camera-overlay">
-      <div className="camera-container">
-        <button className="cerrar-modal" onClick={() => setShowCamera(false)}>
+    <div className="ps-camera-overlay">
+      <div className="ps-camera-container">
+        <button className="ps-cerrar-modal" onClick={() => setShowCamera(false)}>
           <FaTimes />
         </button>
-        <div className="camera-header">
+        <div className="ps-camera-header">
           <FaQrcode />
           <h3>Escanear Artículo</h3>
         </div>
         
         {cameraError ? (
-          <div className="camera-error">
-            <div className="error-icon">
+          <div className="ps-camera-error">
+            <div className="ps-error-icon">
               <FaExclamationTriangle />
             </div>
             <p>{cameraError}</p>
             <p>Por favor, introduce el código manualmente:</p>
-            <div className="manual-verification">
-              <div className="input-group">
+            <div className="ps-manual-verification">
+              <div className="ps-input-group">
                 <FaBarcode />
                 <input
                   type="text"
@@ -1004,20 +1000,20 @@ const CameraModal = React.memo(({
                 />
               </div>
               <button 
-                className="btn-verificar-manual"
+                className="ps-btn-verificar-manual"
                 onClick={handleManualVerification}
                 disabled={!manualCode}
               >
                 <FaCheck /> Verificar
               </button>
             </div>
-            <button className="btn-cerrar-camara" onClick={() => setShowCamera(false)}>
+            <button className="ps-btn-cerrar-camara" onClick={() => setShowCamera(false)}>
               <FaTimes /> Cancelar
             </button>
           </div>
         ) : (
           <>
-            <div className="camera-selector">
+            <div className="ps-camera-selector">
               <label><FaCamera /> Seleccionar cámara:</label>
               <select 
                 value={selectedCamera} 
@@ -1032,18 +1028,18 @@ const CameraModal = React.memo(({
               </select>
             </div>
             
-            <div id="camera-container" className="camera-view">
-              <div className="scan-frame">
-                <div className="frame-line top-left"></div>
-                <div className="frame-line top-right"></div>
-                <div className="frame-line bottom-left"></div>
-                <div className="frame-line bottom-right"></div>
+            <div id="ps-camera-container" className="ps-camera-view">
+              <div className="ps-scan-frame">
+                <div className="ps-frame-line top-left"></div>
+                <div className="ps-frame-line top-right"></div>
+                <div className="ps-frame-line bottom-left"></div>
+                <div className="ps-frame-line bottom-right"></div>
               </div>
             </div>
             
-            <div className="manual-verification">
+            <div className="ps-manual-verification">
               <p>O introduce el código manualmente:</p>
-              <div className="input-group">
+              <div className="ps-input-group">
                 <FaBarcode />
                 <input
                   type="text"
@@ -1053,7 +1049,7 @@ const CameraModal = React.memo(({
                 />
               </div>
               <button 
-                className="btn-verificar-manual"
+                className="ps-btn-verificar-manual"
                 onClick={handleManualVerification}
                 disabled={!manualCode}
               >
@@ -1061,7 +1057,7 @@ const CameraModal = React.memo(({
               </button>
             </div>
             
-            <button className="btn-cerrar-camara" onClick={() => setShowCamera(false)}>
+            <button className="ps-btn-cerrar-camara" onClick={() => setShowCamera(false)}>
               <FaTimes /> Cancelar
             </button>
           </>
@@ -1303,7 +1299,7 @@ const PedidosScreen = () => {
   useEffect(() => {
     if (showCamera && selectedCamera && !scannerRef.current) {
       const scanner = new Html5QrcodeScanner(
-        "camera-container",
+        "ps-camera-container",
         { 
           fps: 10, 
           qrbox: { width: 250, height: 250 },
@@ -1768,11 +1764,11 @@ const PedidosScreen = () => {
 
   if (!canViewAllOrders) {
     return (
-      <div className="pedidos-screen">
-        <div className="no-permission">
+      <div className="ps-pedidos-screen">
+        <div className="ps-no-permission">
           <h2>Acceso restringido</h2>
           <p>No tienes permiso para ver esta sección.</p>
-          <button onClick={() => navigate('/')} className="btn-volver">
+          <button onClick={() => navigate('/')} className="ps-btn-volver">
             Volver al inicio
           </button>
         </div>
@@ -1782,46 +1778,46 @@ const PedidosScreen = () => {
   }
   
   return (
-    <div className="pedidos-screen">
-      <div className="pedidos-container">
+    <div className="ps-pedidos-screen">
+      <div className="ps-pedidos-container">
         
-        <div className="pedidos-controls">
-          <div className="filtros-container">
-            <div className="filtro-group search-group">
+        <div className="ps-pedidos-controls">
+          <div className="ps-filtros-container">
+            <div className="ps-filtro-group ps-search-group">
               <label><FaSearch /> Buscar:</label>
-              <div className="search-input-container">
+              <div className="ps-search-input-container">
                 <input
                   type="text"
                   placeholder="Nº pedido, cliente, dirección, obra..."
                   value={filtroBusqueda}
                   onChange={e => setFiltroBusqueda(e.target.value)}
-                  className="search-input"
+                  className="ps-search-input"
                 />
               </div>
             </div>
             
-            <div className="filtro-group date-group">
+            <div className="ps-filtro-group ps-date-group">
               <label><FaCalendarAlt /> Rango de fechas:</label>
-              <div className="select-container">
+              <div className="ps-select-container">
                 <select
                   value={rangoFechas}
                   onChange={e => setRangoFechas(e.target.value)}
-                  className="sort-select"
+                  className="ps-sort-select"
                 >
                   <option value="semana">Una semana</option>
                   <option value="dia">Un día</option>
                 </select>
-                <div className="select-arrow"><FaChevronDown /></div>
+                <div className="ps-select-arrow"><FaChevronDown /></div>
               </div>
             </div>
             
-            <div className="filtro-group delivery-group">
+            <div className="ps-filtro-group ps-delivery-group">
               <label><FaTruck /> Forma de entrega:</label>
-              <div className="select-container">
+              <div className="ps-select-container">
                 <select
                   value={filtroFormaEntrega}
                   onChange={e => setFiltroFormaEntrega(e.target.value)}
-                  className="sort-select"
+                  className="ps-sort-select"
                 >
                   <option value="">Todas</option>
                   {formasEntrega.map(forma => (
@@ -1830,13 +1826,13 @@ const PedidosScreen = () => {
                     </option>
                   ))}
                 </select>
-                <div className="select-arrow"><FaChevronDown /></div>
+                <div className="ps-select-arrow"><FaChevronDown /></div>
               </div>
             </div>
           </div>
         </div>
         
-        <div className="pagination-container">
+        <div className="ps-pagination-container">
           <Paginacion 
             totalPaginas={totalPaginas} 
             paginaActual={paginaActual} 
@@ -1844,7 +1840,7 @@ const PedidosScreen = () => {
           />
         </div>
         
-        <div className="pedidos-content">
+        <div className="ps-pedidos-content">
           {error ? (
             <ErrorMessage 
               message={error} 
@@ -1853,7 +1849,7 @@ const PedidosScreen = () => {
           ) : loading ? (
             <LoadingSpinner message="Cargando pedidos..." />
           ) : pedidosOrdenados.length === 0 ? (
-            <div className="no-pedidos">
+            <div className="ps-no-pedidos">
               <p>No hay pedidos pendientes</p>
             </div>
           ) : (
@@ -1880,7 +1876,7 @@ const PedidosScreen = () => {
           )}
         </div>
         
-        <div className="pagination-container">
+        <div className="ps-pagination-container">
           <Paginacion 
             totalPaginas={totalPaginas} 
             paginaActual={paginaActual} 

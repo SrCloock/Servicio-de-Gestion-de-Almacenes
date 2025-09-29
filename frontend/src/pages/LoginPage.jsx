@@ -29,19 +29,19 @@ function LoginPage() {
   };
 
   return (
-    <div className="login-body">
-      <div className="login-container">
-        <div className="logo-container">
+    <div className="lp-login-body">
+      <div className="lp-login-container">
+        <div className="lp-logo-container">
           <img 
             src="/img/logo-ferreteria-luque.png" 
             alt="Ferretería Luque" 
-            className="main-logo"
+            className="lp-main-logo"
           />
-          <p className="app-subtitle">Sistema de Gestión de Almacenes</p>
+          <p className="lp-app-subtitle">Sistema de Gestión de Almacenes</p>
         </div>
         
         <form onSubmit={handleSubmit} autoComplete="off">
-          <div className="input-group">
+          <div className="lp-input-group">
             <label htmlFor="usuario">Usuario</label>
             <input
               type="text"
@@ -53,7 +53,7 @@ function LoginPage() {
             />
           </div>
           
-          <div className="input-group">
+          <div className="lp-input-group">
             <label htmlFor="contrasena">Contraseña</label>
             <input
               type="password"
@@ -65,15 +65,15 @@ function LoginPage() {
             />
           </div>
           
-          <div className="button-container">
+          <div className="lp-button-container">
             <button 
               type="submit" 
-              className="login-button" 
+              className="lp-login-button" 
               disabled={loading}
             >
               {loading ? (
-                <span className="button-loading">
-                  <span className="spinner"></span> Cargando...
+                <span className="lp-button-loading">
+                  <span className="lp-spinner"></span> Cargando...
                 </span>
               ) : (
                 'Iniciar Sesión →'
@@ -82,11 +82,11 @@ function LoginPage() {
           </div>
         </form>
         
-        <div className="partner-logo">
+        <div className="lp-partner-logo">
           <img 
             src="/img/logo-eurobag.png" 
             alt="Eurobag" 
-            className="partner-image"
+            className="lp-partner-image"
           />
         </div>
       </div>

@@ -1,4 +1,8 @@
-.login-body {
+/* ==========================================================================
+   LOGIN PAGE - PREFIJO LP
+   ========================================================================== */
+
+.lp-login-body {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -7,140 +11,140 @@
   padding: 20px;
 }
 
-.login-container {
+.lp-login-container {
   background: white;
-  border-radius: var(--inventario-radius);
-  box-shadow: var(--inventario-shadow);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   padding: 40px;
   width: 100%;
   max-width: 450px;
   text-align: center;
 }
 
-.logo-container {
+.lp-logo-container {
   margin-bottom: 30px;
 }
 
-.main-logo {
+.lp-main-logo {
   max-width: 200px;
   margin-bottom: 15px;
 }
 
-.app-subtitle {
-  color: var(--inventario-text-secondary);
+.lp-app-subtitle {
+  color: #6c757d;
   font-size: 1.1rem;
 }
 
-.input-group {
+.lp-input-group {
   margin-bottom: 25px;
   text-align: left;
 }
 
-.input-group label {
+.lp-input-group label {
   display: block;
   margin-bottom: 8px;
   font-weight: 600;
-  color: var(--inventario-primary-color);
+  color: #2c3e50;
   font-size: 0.95rem;
 }
 
-.input-group input {
+.lp-input-group input {
   width: 100%;
   padding: 14px 20px;
-  border: 1px solid var(--inventario-border-color);
-  border-radius: var(--inventario-radius);
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
   font-size: 1rem;
-  transition: var(--inventario-transition);
+  transition: all 0.2s ease;
   background: white;
 }
 
-.input-group input:focus {
-  border-color: var(--inventario-secondary-color);
+.lp-input-group input:focus {
+  border-color: #3498db;
   outline: none;
   box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 
-.button-container {
+.lp-button-container {
   margin-top: 30px;
 }
 
-.login-button {
+.lp-login-button {
   width: 100%;
   padding: 14px;
-  background: linear-gradient(to bottom, var(--inventario-secondary-color), #2980b9);
+  background: linear-gradient(to bottom, #3498db, #2980b9);
   color: white;
   border: none;
-  border-radius: var(--inventario-radius);
+  border-radius: 8px;
   font-weight: 600;
   cursor: pointer;
-  transition: var(--inventario-transition);
+  transition: all 0.2s ease;
   font-size: 1.1rem;
-  box-shadow: var(--inventario-shadow);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   position: relative;
 }
 
-.login-button:hover {
+.lp-login-button:hover {
   background: linear-gradient(to bottom, #2980b9, #1a6da8);
   transform: translateY(-2px);
-  box-shadow: 0 6px 15px rgba(0,0,0,0.1);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
 }
 
-.button-loading {
+.lp-button-loading {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
 }
 
-.spinner {
+.lp-spinner {
   border: 3px solid rgba(255, 255, 255, 0.3);
   border-top: 3px solid white;
   border-radius: 50%;
   width: 20px;
   height: 20px;
-  animation: spin 1s linear infinite;
+  animation: lp-spin 1s linear infinite;
 }
 
-@keyframes spin {
+@keyframes lp-spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
 
-.partner-logo {
+.lp-partner-logo {
   margin-top: 40px;
   padding-top: 30px;
-  border-top: 1px solid var(--inventario-border-color);
+  border-top: 1px solid #e1e5e9;
 }
 
-.partner-image {
+.lp-partner-image {
   max-width: 150px;
 }
 
 /* Responsive */
 @media (max-width: 768px) {
-  .login-container {
+  .lp-login-container {
     padding: 30px;
   }
 }
 
 @media (max-width: 480px) {
-  .login-container {
+  .lp-login-container {
     padding: 25px 20px;
   }
   
-  .main-logo {
+  .lp-main-logo {
     max-width: 160px;
   }
   
-  .app-subtitle {
+  .lp-app-subtitle {
     font-size: 1rem;
   }
   
-  .input-group input {
+  .lp-input-group input {
     padding: 12px 15px;
   }
   
-  .login-button {
+  .lp-login-button {
     padding: 12px;
     font-size: 1rem;
   }
