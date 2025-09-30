@@ -47,10 +47,13 @@ const InventarioPage = () => {
   const [ubicacionSeleccionada, setUbicacionSeleccionada] = useState('');
   const [unidadMedidaSeleccionada, setUnidadMedidaSeleccionada] = useState('unidades');
   const [cantidadNuevoInventario, setCantidadNuevoInventario] = useState('');
-  const [unidadesMedidaDisponibles, setUnidadesMedidaDisponibles] = useState(['unidades']);
+  const [unidadesDisponibles, setUnidadesDisponibles] = useState(['unidades']);
+  const [tallasDisponibles, setTallasDisponibles] = useState([]);
+  const [coloresDisponibles, setColoresDisponibles] = useState([]);
+  const [tallaSeleccionada, setTallaSeleccionada] = useState('');
+  const [colorSeleccionado, setColorSeleccionado] = useState('');
 
   const formatearUnidad = (cantidad, unidad) => {
-    // Validar y convertir cantidad
     let cantidadNum = parseFloat(cantidad);
     if (isNaN(cantidadNum)) {
       cantidadNum = 0;
@@ -147,11 +150,102 @@ const InventarioPage = () => {
     }
   };
 
+  const formatTallaColor = (talla, color) => {
+    if (!talla && !color) return 'N/A';
+    
+    let result = '';
+    if (talla && talla !== 'N/A') result += `T: ${talla}`;
+    if (color && color !== 'N/A') result += `${result ? ' | ' : ''}C: ${color}`;
+    
+    return result || 'N/A';
+  };
+
+  const getColorStyle = (colorCode) => {
+    const colorMap = {
+      'A': { color: '#1E88E5', fontWeight: 'bold' },
+      'V': { color: '#43A047', fontWeight: 'bold' },
+      'R': { color: '#E53935', fontWeight: 'bold' },
+      'N': { color: '#000000', fontWeight: 'bold' },
+      'B': { color: '#FFFFFF', backgroundColor: '#333', padding: '2px 5px', borderRadius: '3px' },
+    };
+    return colorMap[colorCode] || {};
+  };
+
+  // 🔥 CORRECCIÓN: Añadir parámetro unidadActual
+  const cargarVariantesArticulo = useCallback(async (codigoArticulo, unidadActual) => {
+    try {
+      const headers = getAuthHeader();
+      
+      // Obtener información del artículo para unidades de medida
+      const infoArticulo = await obtenerInfoArticulo(codigoArticulo);
+      if (infoArticulo) {
+        const unidades = [
+          infoArticulo.UnidadMedida2_,
+          infoArticulo.UnidadMedidaAlternativa_
+        ].filter((unidad, index, self) => 
+          unidad && 
+          unidad.trim() !== '' && 
+          self.indexOf(unidad) === index
+        );
+        
+        if (unidades.length === 0) {
+          unidades.push('unidades');
+        }
+        
+        setUnidadesDisponibles(unidades);
+        
+        // 🔥 CORRECCIÓN: Solo establecer unidad por defecto si no hay una actual
+        if (!unidadActual) {
+          setUnidadMedidaSeleccionada(unidades[0]);
+        } else {
+          setUnidadMedidaSeleccionada(unidadActual);
+        }
+      }
+
+      // Obtener stock para extraer tallas y colores disponibles
+      const response = await axios.get(
+        `http://localhost:3000/stock/por-articulo?codigoArticulo=${codigoArticulo}&incluirSinUbicacion=true`,
+        { headers }
+      );
+      
+      const stockData = Array.isArray(response.data) ? response.data : 
+                       (response.data.detalleUbicaciones || response.data.recordset || []);
+      
+      // Extraer tallas únicas
+      const tallasUnicas = [...new Set(stockData
+        .filter(item => item.CodigoTalla01_ && item.CodigoTalla01_.trim() !== '')
+        .map(item => item.CodigoTalla01_)
+      )].sort();
+      
+      // Extraer colores únicos
+      const coloresUnicos = [...new Set(stockData
+        .filter(item => item.CodigoColor_ && item.CodigoColor_.trim() !== '')
+        .map(item => item.CodigoColor_)
+      )].sort();
+      
+      setTallasDisponibles(tallasUnicas);
+      setColoresDisponibles(coloresUnicos);
+      
+      // Seleccionar primera talla y color por defecto si existen
+      if (tallasUnicas.length > 0) {
+        setTallaSeleccionada(tallasUnicas[0]);
+      }
+      if (coloresUnicos.length > 0) {
+        setColorSeleccionado(coloresUnicos[0]);
+      }
+      
+    } catch (error) {
+      console.error('Error cargando variantes del artículo:', error);
+      setUnidadesDisponibles(['unidades']);
+      setTallasDisponibles([]);
+      setColoresDisponibles([]);
+    }
+  }, []);
+
   const agruparPorArticulo = useCallback((data) => {
     const agrupado = {};
     
     data.forEach(item => {
-      // Filtrar solo los almacenes permitidos
       const almacenesPermitidos = ['CEN', 'BCN', 'N5', 'N1', 'PK', '5'];
       if (!almacenesPermitidos.includes(item.CodigoAlmacen)) {
         return;
@@ -175,13 +269,11 @@ const InventarioPage = () => {
         };
       }
       
-      // Validar y convertir CantidadBase
       let cantidadBase = parseFloat(item.CantidadBase);
       if (isNaN(cantidadBase)) {
         cantidadBase = 0;
       }
       
-      // Validar y convertir Cantidad
       let cantidad = parseFloat(item.Cantidad);
       if (isNaN(cantidad)) {
         cantidad = 0;
@@ -203,7 +295,8 @@ const InventarioPage = () => {
         GrupoUnico: clave,
         MovPosicionLinea: item.MovPosicionLinea,
         detalles: null,
-        esSinUbicacion: item.EsSinUbicacion === 1 || item.TipoStock === 'SIN_UBICACION'
+        esSinUbicacion: item.EsSinUbicacion === 1 || item.TipoStock === 'SIN_UBICACION',
+        TallaColorDisplay: formatTallaColor(item.CodigoTalla01_, item.CodigoColor_)
       };
       
       agrupado[item.CodigoArticulo].ubicaciones.push(ubicacion);
@@ -211,7 +304,6 @@ const InventarioPage = () => {
     });
     
     Object.values(agrupado).forEach(articulo => {
-      // Ordenar ubicaciones: primero las con ubicación, luego las sin ubicación
       articulo.ubicaciones.sort((a, b) => {
         if (a.esSinUbicacion && !b.esSinUbicacion) return 1;
         if (!a.esSinUbicacion && b.esSinUbicacion) return -1;
@@ -230,7 +322,6 @@ const InventarioPage = () => {
         return 0;
       });
       
-      // Validar totalStockBase
       if (isNaN(articulo.totalStockBase)) {
         articulo.totalStockBase = 0;
       }
@@ -285,7 +376,6 @@ const InventarioPage = () => {
     }
   }, []);
 
-  // Función para buscar artículos
   const buscarArticulos = async (termino) => {
     if (termino.length < 2) {
       setResultadosBusqueda([]);
@@ -305,7 +395,6 @@ const InventarioPage = () => {
     }
   };
 
-  // Función para cargar almacenes
   const cargarAlmacenes = async () => {
     try {
       const headers = getAuthHeader();
@@ -319,7 +408,6 @@ const InventarioPage = () => {
     }
   };
 
-  // Función para cargar ubicaciones de un almacén
   const cargarUbicaciones = async (codigoAlmacen) => {
     if (!codigoAlmacen) return;
     
@@ -336,7 +424,6 @@ const InventarioPage = () => {
     }
   };
 
-  // Función para obtener información detallada del artículo
   const obtenerInfoArticulo = async (codigoArticulo) => {
     try {
       const headers = getAuthHeader();
@@ -561,8 +648,21 @@ const InventarioPage = () => {
     }
   };
 
-  const iniciarEdicionCantidad = (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida, unidadStock, codigoColor, codigoTalla01, esSinUbicacion) => {
+  const seleccionarArticulo = async (articulo) => {
+    setArticuloSeleccionado(articulo);
+    setArticuloBuscado(`${articulo.CodigoArticulo} - ${articulo.DescripcionArticulo}`);
+    setResultadosBusqueda([]);
+    
+    // Cargar variantes del artículo (unidades, tallas, colores)
+    await cargarVariantesArticulo(articulo.CodigoArticulo);
+  };
+
+  // 🔥 CORRECCIÓN: Pasar unidadStock como unidadActual
+  const iniciarEdicionCantidad = async (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida, unidadStock, codigoColor, codigoTalla01, esSinUbicacion) => {
     const articuloCompleto = inventario.find(art => art.CodigoArticulo === articulo);
+    
+    // 🔥 CORRECCIÓN: Pasar la unidad actual para mantenerla
+    await cargarVariantesArticulo(articulo, unidadStock);
     
     setEditandoCantidad({
       articulo,
@@ -578,6 +678,11 @@ const InventarioPage = () => {
       codigoTalla01: codigoTalla01 || '',
       esSinUbicacion: esSinUbicacion || false
     });
+    
+    // Establecer valores actuales en los selects
+    setUnidadMedidaSeleccionada(unidadStock || 'unidades');
+    setTallaSeleccionada(codigoTalla01 || '');
+    setColorSeleccionado(codigoColor || '');
     setNuevaCantidad(cantidadActual.toString());
   };
 
@@ -596,10 +701,10 @@ const InventarioPage = () => {
       codigoAlmacen: editandoCantidad.codigoAlmacen,
       ubicacionStr: editandoCantidad.ubicacionStr,
       partida: editandoCantidad.partida || '',
-      unidadStock: editandoCantidad.unidadStock || 'unidades',
+      unidadStock: unidadMedidaSeleccionada,
       nuevaCantidad: cantidad,
-      codigoColor: editandoCantidad.codigoColor || '',
-      codigoTalla01: editandoCantidad.codigoTalla01 || ''
+      codigoColor: colorSeleccionado || '',
+      codigoTalla01: tallaSeleccionada || ''
     };
     
     setAjustesPendientes(prev => [...prev, nuevoAjuste]);
@@ -660,36 +765,6 @@ const InventarioPage = () => {
     }
   };
 
-  // Función para seleccionar artículo en el nuevo inventario
-  const seleccionarArticulo = async (articulo) => {
-    setArticuloSeleccionado(articulo);
-    setArticuloBuscado(`${articulo.CodigoArticulo} - ${articulo.DescripcionArticulo}`);
-    setResultadosBusqueda([]);
-    
-    // Obtener información detallada del artículo para las unidades de medida
-    const infoArticulo = await obtenerInfoArticulo(articulo.CodigoArticulo);
-    if (infoArticulo) {
-      // Crear array de unidades disponibles (eliminar duplicados y valores nulos)
-      const unidades = [
-        infoArticulo.UnidadMedida2_,
-        infoArticulo.UnidadMedidaAlternativa_
-      ].filter((unidad, index, self) => 
-        unidad && 
-        unidad.trim() !== '' && 
-        self.indexOf(unidad) === index
-      );
-      
-      // Si no hay unidades, usar 'unidades' por defecto
-      if (unidades.length === 0) {
-        unidades.push('unidades');
-      }
-      
-      setUnidadesMedidaDisponibles(unidades);
-      setUnidadMedidaSeleccionada(unidades[0]); // Seleccionar la primera unidad por defecto
-    }
-  };
-
-  // Función para guardar el nuevo inventario
   const guardarNuevoInventario = async () => {
     if (!articuloSeleccionado || !almacenSeleccionado || !cantidadNuevoInventario) {
       alert('Por favor, complete todos los campos obligatorios');
@@ -710,8 +785,8 @@ const InventarioPage = () => {
       partida: '',
       unidadStock: unidadMedidaSeleccionada,
       nuevaCantidad: cantidad,
-      codigoColor: '',
-      codigoTalla01: ''
+      codigoColor: colorSeleccionado || '',
+      codigoTalla01: tallaSeleccionada || ''
     };
 
     try {
@@ -725,15 +800,7 @@ const InventarioPage = () => {
       if (response.data.success) {
         alert('Nuevo inventario creado correctamente');
         setNuevoInventarioModal(false);
-        // Limpiar formulario
-        setArticuloBuscado('');
-        setArticuloSeleccionado(null);
-        setAlmacenSeleccionado('');
-        setUbicacionSeleccionada('');
-        setUnidadMedidaSeleccionada('unidades');
-        setUnidadesMedidaDisponibles(['unidades']);
-        setCantidadNuevoInventario('');
-        // Recargar inventario
+        limpiarFormularioNuevoInventario();
         cargarInventario();
       }
     } catch (error) {
@@ -742,14 +809,14 @@ const InventarioPage = () => {
     }
   };
 
-  // Función para limpiar el formulario de nuevo inventario
   const limpiarFormularioNuevoInventario = () => {
     setArticuloBuscado('');
     setArticuloSeleccionado(null);
     setAlmacenSeleccionado('');
     setUbicacionSeleccionada('');
     setUnidadMedidaSeleccionada('unidades');
-    setUnidadesMedidaDisponibles(['unidades']);
+    setTallaSeleccionada('');
+    setColorSeleccionado('');
     setCantidadNuevoInventario('');
     setResultadosBusqueda([]);
     setNuevoInventarioModal(false);
@@ -1075,6 +1142,7 @@ const InventarioPage = () => {
                             <div className="header-cell">Ubicación</div>
                             <div className="header-cell">Descripción</div>
                             <div className="header-cell">Unidad</div>
+                            <div className="header-cell">Talla/Color</div>
                             <div className="header-cell">Cantidad</div>
                             <div className="header-cell">Acciones</div>
                           </div>
@@ -1099,6 +1167,20 @@ const InventarioPage = () => {
                                 <div className="data-cell inventario-ubicacion-unidad">
                                   {ubicacion.UnidadStock || 'unidades'}
                                 </div>
+                                
+                                <div className="data-cell inventario-ubicacion-talla-color">
+                                  {ubicacion.TallaColorDisplay && ubicacion.TallaColorDisplay !== 'N/A' ? (
+                                    <span 
+                                      className="talla-color-display"
+                                      style={getColorStyle(ubicacion.CodigoColor)}
+                                    >
+                                      {ubicacion.TallaColorDisplay}
+                                    </span>
+                                  ) : (
+                                    'N/A'
+                                  )}
+                                </div>
+                                
                                 <div className="data-cell inventario-ubicacion-cantidad" style={getStockStyle(ubicacion.Cantidad)}>
                                   {formatearUnidad(ubicacion.Cantidad, ubicacion.UnidadStock)}
                                   {articulo.UnidadAlternativa && 
@@ -1302,10 +1384,61 @@ const InventarioPage = () => {
                 <span>{editandoCantidad.ubicacionStr}</span>
               </div>
               <div className="inventario-detail-item">
-                <span>Unidad:</span>
-                <span>{editandoCantidad.unidadStock || 'unidades'}</span>
+                <span>Partida/Lote:</span>
+                <span>{editandoCantidad.partida || 'N/A'}</span>
               </div>
             </div>
+            
+            <div className="inventario-form-group">
+              <label>Unidad de Medida:</label>
+              <select 
+                value={unidadMedidaSeleccionada}
+                onChange={(e) => setUnidadMedidaSeleccionada(e.target.value)}
+                className="inventario-select"
+              >
+                {unidadesDisponibles.map(unidad => (
+                  <option key={unidad} value={unidad}>
+                    {unidad}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {tallasDisponibles.length > 0 && (
+              <div className="inventario-form-group">
+                <label>Talla:</label>
+                <select 
+                  value={tallaSeleccionada}
+                  onChange={(e) => setTallaSeleccionada(e.target.value)}
+                  className="inventario-select"
+                >
+                  <option value="">Seleccionar talla</option>
+                  {tallasDisponibles.map(talla => (
+                    <option key={talla} value={talla}>
+                      {talla}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {coloresDisponibles.length > 0 && (
+              <div className="inventario-form-group">
+                <label>Color:</label>
+                <select 
+                  value={colorSeleccionado}
+                  onChange={(e) => setColorSeleccionado(e.target.value)}
+                  className="inventario-select"
+                >
+                  <option value="">Seleccionar color</option>
+                  {coloresDisponibles.map(color => (
+                    <option key={color} value={color}>
+                      {color}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             
             <div className="inventario-form-group">
               <label>Cantidad Actual:</label>
@@ -1332,7 +1465,12 @@ const InventarioPage = () => {
             <div className="inventario-modal-acciones">
               <button 
                 className="inventario-btn-cancelar"
-                onClick={() => setEditandoCantidad(null)}
+                onClick={() => {
+                  setEditandoCantidad(null);
+                  setUnidadMedidaSeleccionada('unidades');
+                  setTallaSeleccionada('');
+                  setColorSeleccionado('');
+                }}
               >
                 Cancelar
               </button>
@@ -1418,14 +1556,51 @@ const InventarioPage = () => {
                 value={unidadMedidaSeleccionada}
                 onChange={(e) => setUnidadMedidaSeleccionada(e.target.value)}
                 className="inventario-select"
+                disabled={!articuloSeleccionado}
               >
-                {unidadesMedidaDisponibles.map(unidad => (
+                {unidadesDisponibles.map(unidad => (
                   <option key={unidad} value={unidad}>
                     {unidad}
                   </option>
                 ))}
               </select>
             </div>
+
+            {tallasDisponibles.length > 0 && (
+              <div className="inventario-form-group">
+                <label>Talla:</label>
+                <select 
+                  value={tallaSeleccionada}
+                  onChange={(e) => setTallaSeleccionada(e.target.value)}
+                  className="inventario-select"
+                >
+                  <option value="">Seleccionar talla</option>
+                  {tallasDisponibles.map(talla => (
+                    <option key={talla} value={talla}>
+                      {talla}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {coloresDisponibles.length > 0 && (
+              <div className="inventario-form-group">
+                <label>Color:</label>
+                <select 
+                  value={colorSeleccionado}
+                  onChange={(e) => setColorSeleccionado(e.target.value)}
+                  className="inventario-select"
+                >
+                  <option value="">Seleccionar color</option>
+                  {coloresDisponibles.map(color => (
+                    <option key={color} value={color}>
+                      {color}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             
             <div className="inventario-form-group">
               <label>Cantidad *:</label>

@@ -88,7 +88,6 @@ const TraspasosPage = () => {
         params: { page: 1, pageSize: 50 }
       });
       
-      // Manejar correctamente la respuesta del backend corregido
       if (response.data && response.data.success) {
         setHistorial(response.data.traspasos || []);
       } else {
@@ -241,25 +240,49 @@ const TraspasosPage = () => {
     }
   };
 
-  // Función cargarStock mejorada
+  // Función cargarStock CORREGIDA - Usando ubicacionesMultiples que SÍ funciona
   const cargarStock = async () => {
     if (!articuloSeleccionado) return;
     
     try {
+      await cargarStockAlternativo();
+    } catch (error) {
+      console.error('Error cargando stock:', error);
+      setStockDisponible([]);
+      alert(`Error cargando stock: No se pudo obtener información del stock para este artículo`);
+    }
+  };
+
+  // Función usando /ubicacionesMultiples que SÍ devuelve tallas y colores
+  const cargarStockAlternativo = async () => {
+    try {
       const headers = getAuthHeader();
-      const response = await axios.get(
-        `http://localhost:3000/stock/por-articulo?codigoArticulo=${articuloSeleccionado.CodigoArticulo}&incluirSinUbicacion=true`,
+      
+      const response = await axios.post(
+        'http://localhost:3000/ubicacionesMultiples',
+        {
+          articulos: [{ codigo: articuloSeleccionado.CodigoArticulo }]
+        },
         { headers }
       );
       
-      const stockData = Array.isArray(response.data) ? response.data : 
-                       (response.data.detalleUbicaciones || response.data.recordset || []);
+      const stockData = response.data[articuloSeleccionado.CodigoArticulo] || [];
+      
+      console.log('Datos de stock recibidos:', stockData); // Para debug
       
       const stockNormalizado = stockData.map(item => ({
-        ...item,
-        UnidadMedida: item.UnidadMedida || 'unidades',
-        TipoUnidadMedida_: item.TipoUnidadMedida_ || item.UnidadMedida || 'unidades',
-        EsSinUbicacion: Boolean(item.EsSinUbicacion) || item.Ubicacion === 'SIN-UBICACION'
+        CodigoAlmacen: item.codigoAlmacen,
+        NombreAlmacen: item.nombreAlmacen,
+        Ubicacion: item.ubicacion,
+        DescripcionUbicacion: item.descripcionUbicacion,
+        Cantidad: item.unidadSaldo,
+        UnidadMedida: item.unidadMedida || 'unidades',
+        TipoUnidadMedida_: item.unidadMedida || 'unidades',
+        Partida: item.partida || '',
+        CodigoColor_: item.codigoColor || '',
+        Talla: item.codigoTalla || '',
+        EsSinUbicacion: false,
+        GrupoUnico: `${item.codigoAlmacen}_${item.ubicacion}_${item.unidadMedida}_${item.partida || ''}_${item.codigoTalla || ''}_${item.codigoColor || ''}`
       }));
       
       setStockDisponible(stockNormalizado);
@@ -272,21 +295,22 @@ const TraspasosPage = () => {
         setAlmacenOrigen(almacenConMasStock.CodigoAlmacen);
         setUbicacionOrigen(almacenConMasStock.Ubicacion);
         setUnidadMedida(almacenConMasStock.UnidadMedida);
-        setTipoUnidadMedida(almacenConMasStock.TipoUnidadMedida_);
+        setTipoUnidadMedida(almacenConMasStock.UnidadMedida);
         setPartida(almacenConMasStock.Partida || '');
         setTallaOrigen(almacenConMasStock.Talla || '');
         setColorOrigen(almacenConMasStock.CodigoColor_ || '');
         setStockDisponibleInfo(`${almacenConMasStock.Cantidad} ${almacenConMasStock.UnidadMedida}`);
       }
     } catch (error) {
-      console.error('Error cargando stock:', error);
-      setStockDisponible([]);
-      alert(`Error cargando stock: ${error.response?.data?.mensaje || error.message}`);
+      console.error('Error cargando stock alternativo:', error);
+      throw error;
     }
   };
 
   useEffect(() => {
-    cargarStock();
+    if (articuloSeleccionado) {
+      cargarStock();
+    }
   }, [articuloSeleccionado]);
 
   const cargarUbicacionesConResiliencia = async (codigoAlmacen) => {
@@ -533,8 +557,7 @@ const TraspasosPage = () => {
         tipoUnidadMedida: tipoUnidadMedida,
         partida: partida,
         talla: tallaOrigen,
-        color: colorOrigen,
-        nombreColor: stockItem?.NombreColor || ''
+        color: colorOrigen
       },
       origen: {
         almacen: almacenOrigen,
@@ -593,8 +616,7 @@ const TraspasosPage = () => {
         tipoUnidadMedida: articuloUbicacionSeleccionado.TipoUnidadMedida_ || articuloUbicacionSeleccionado.UnidadMedida || 'unidades',
         partida: articuloUbicacionSeleccionado.Partida || '',
         talla: articuloUbicacionSeleccionado.Talla || '',
-        color: articuloUbicacionSeleccionado.CodigoColor_ || '',
-        nombreColor: articuloUbicacionSeleccionado.NombreColor || ''
+        color: articuloUbicacionSeleccionado.CodigoColor_ || ''
       },
       origen: {
         almacen: ubicacionSeleccionada.almacen,
@@ -948,11 +970,29 @@ const TraspasosPage = () => {
                         {stockDisponible
                           .filter(item => item.CodigoAlmacen === almacenOrigen)
                           .map((item, index) => {
-                            const tallaColor = item.Talla && item.CodigoColor_ 
-                              ? `${item.Talla}${item.CodigoColor_}` 
-                              : '';
+                            const tallaColor = formatTallaColor(item.Talla, item.CodigoColor_);
                             
                             const uniqueKey = `${item.GrupoUnico}_${index}`;
+                            
+                            // Texto mejorado para el selector
+                            let optionText = '';
+                            
+                            if (item.EsSinUbicacion) {
+                              optionText += '[SIN UBICACIÓN] ';
+                            }
+                            
+                            optionText += formatUbicacionDisplay(item.Ubicacion, item.EsSinUbicacion);
+                            
+                            // Agregar Talla/Color de manera prominente
+                            if (tallaColor) {
+                              optionText += ` - Talla/Color: ${tallaColor}`;
+                            }
+                            
+                            optionText += ` - ${formatCantidad(item.Cantidad)} ${item.UnidadMedida}`;
+                            
+                            if (item.Partida) {
+                              optionText += ` (Lote: ${item.Partida})`;
+                            }
                             
                             return (
                               <option 
@@ -960,12 +1000,7 @@ const TraspasosPage = () => {
                                 value={`${item.Ubicacion}-${item.TipoUnidadMedida_}-${item.Partida || ''}-${item.Talla || ''}-${item.CodigoColor_ || ''}`}
                                 data-item-id={item.GrupoUnico}
                               >
-                                {item.EsSinUbicacion ? '[SIN UBICACIÓN] ' : ''}
-                                {formatUbicacionDisplay(item.Ubicacion, item.EsSinUbicacion)} - 
-                                {tallaColor && ` ${tallaColor} -`}
-                                {formatCantidad(item.Cantidad)} {item.UnidadMedida}
-                                {item.Partida && ` (Lote: ${item.Partida})`}
-                                {item.TipoUnidadMedida_ && item.TipoUnidadMedida_ !== item.UnidadMedida && ` [${item.TipoUnidadMedida_}]`}
+                                {optionText}
                               </option>
                             );
                           })}
@@ -975,12 +1010,12 @@ const TraspasosPage = () => {
                     {ubicacionOrigen && (
                       <div className="unidad-info">
                         <strong>Unidad seleccionada:</strong> {formatUnidadMedida(unidadMedida)}
-                        {tipoUnidadMedida && tipoUnidadMedida !== unidadMedida && <span> ({tipoUnidadMedida})</span>}
                         {partida && <span>, <strong>Lote:</strong> {partida}</span>}
                         {(tallaOrigen || colorOrigen) && (
-                          <span>, <strong>Talla/Color:</strong> 
+                          <span>, 
+                            <strong>Talla/Color:</strong> 
                             <span 
-                              className="talla-color-display"
+                              className="talla-color-display destacado"
                               style={getColorStyle(colorOrigen)}
                             >
                               {tallaOrigen}{colorOrigen}
@@ -1189,7 +1224,6 @@ const TraspasosPage = () => {
                               <th>Descripción</th>
                               <th>Stock</th>
                               <th>Unidad</th>
-                              <th>Tipo Unidad</th>
                               <th>Talla y Color</th>
                               <th>Acciones</th>
                             </tr>
@@ -1233,7 +1267,6 @@ const TraspasosPage = () => {
                                     )}
                                   </td>
                                   <td>{articulo.UnidadMedida || 'unidades'}</td>
-                                  <td>{articulo.TipoUnidadMedida_ || 'unidades'}</td>
                                   <td>
                                     {tallaColor && (
                                       <span 
@@ -1301,9 +1334,6 @@ const TraspasosPage = () => {
                       ({articuloUbicacionSeleccionado.CodigoArticulo})
                       <div className="unidad-info">
                         <strong>Unidad:</strong> {formatUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida)}
-                        {articuloUbicacionSeleccionado.TipoUnidadMedida_ && articuloUbicacionSeleccionado.TipoUnidadMedida_ !== articuloUbicacionSeleccionado.UnidadMedida && 
-                          <span> ({articuloUbicacionSeleccionado.TipoUnidadMedida_})</span>
-                        }
                         {articuloUbicacionSeleccionado.Partida && <span>, <strong>Lote:</strong> {articuloUbicacionSeleccionado.Partida}</span>}
                       </div>
                       
@@ -1313,7 +1343,7 @@ const TraspasosPage = () => {
                             <strong>Talla/Color:</strong> 
                             <span 
                               style={getColorStyle(articuloUbicacionSeleccionado.CodigoColor_)}
-                              className="talla-color-display"
+                              className="talla-color-display destacado"
                             >
                               {articuloUbicacionSeleccionado.tallaColorDisplay}
                             </span>
@@ -1387,9 +1417,6 @@ const TraspasosPage = () => {
                       />
                       <div className="stock-info">
                         <strong>Stock disponible:</strong> {formatCantidad(articuloUbicacionSeleccionado.Cantidad)} {formatUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida)}
-                        {articuloUbicacionSeleccionado.TipoUnidadMedida_ && articuloUbicacionSeleccionado.TipoUnidadMedida_ !== articuloUbicacionSeleccionado.UnidadMedida && 
-                          <span> ({articuloUbicacionSeleccionado.TipoUnidadMedida_})</span>
-                        }
                       </div>
                     </div>
 
@@ -1453,9 +1480,6 @@ const TraspasosPage = () => {
                           <br />
                           <span className="unidad-medida">
                             {formatUnidadMedida(traspaso.unidadMedida)}
-                            {traspaso.tipoUnidadMedida && traspaso.tipoUnidadMedida !== traspaso.unidadMedida && 
-                              <span> ({traspaso.tipoUnidadMedida})</span>
-                            }
                           </span>
                         </td>
                         <td>

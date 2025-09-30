@@ -24,12 +24,6 @@ function GestionDocumentalScreen() {
     fetchAlbaranes();
   }, []);
 
-  const handleDescargar = (albaran) => {
-    // Aquí implementar la descarga del PDF
-    // Por ahora, solo un placeholder
-    alert(`Descargando albarán ${albaran.id}`);
-  };
-
   const handleRevertir = async (albaran) => {
     // Validar que sea de nuestros medios
     if (albaran.FormaEntrega !== 3) {
@@ -49,6 +43,7 @@ function GestionDocumentalScreen() {
         
         // Eliminar de la lista
         setAlbaranes(albaranes.filter(a => a.id !== albaran.id));
+        alert('Albarán revertido correctamente');
       } catch (error) {
         alert('Error al revertir: ' + error.message);
       }
@@ -85,14 +80,9 @@ function GestionDocumentalScreen() {
                 <p><strong>Cliente:</strong> {albaran.RazonSocial}</p>
                 <p><strong>Obra:</strong> {albaran.obra || 'No especificada'}</p>
                 <p><strong>Fecha:</strong> {new Date(albaran.FechaAlbaran).toLocaleDateString('es-ES')}</p>
+                <p><strong>Estado:</strong> <span className="estado-completado">Completado</span></p>
               </div>
               <div className="GD-card-footer">
-                <button 
-                  className="GD-btn-descargar"
-                  onClick={() => handleDescargar(albaran)}
-                >
-                  Descargar PDF
-                </button>
                 <button 
                   className="GD-btn-revertir"
                   onClick={() => handleRevertir(albaran)}
