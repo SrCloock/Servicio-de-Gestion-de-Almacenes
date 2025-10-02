@@ -1807,24 +1807,38 @@ const PedidosScreen = () => {
       const headers = getAuthHeader();
       
       const lineasExpedidas = [];
+      
+      // ✅ CORRECCIÓN: Calcular las unidades YA EXPEDIDAS (no las pendientes)
       pedido.articulos.forEach(articulo => {
-        const key = articulo.movPosicionLinea;
-        const expedicion = expediciones[key];
+        const unidadesPedidas = parseFloat(articulo.unidadesPedidas) || 0;
+        const unidadesPendientes = parseFloat(articulo.unidadesPendientes) || 0;
+        const unidadesExpedidas = unidadesPedidas - unidadesPendientes;
         
-        if (expedicion && parseFloat(expedicion.cantidad) > 0) {
+        // Solo incluir si se ha expedido algo (unidadesExpedidas > 0)
+        if (unidadesExpedidas > 0) {
           lineasExpedidas.push({
             codigoArticulo: articulo.codigoArticulo,
             descripcionArticulo: articulo.descripcionArticulo,
-            cantidad: parseFloat(expedicion.cantidad),
+            cantidad: unidadesExpedidas, // ✅ Esto es lo que YA se expedió
             precio: articulo.precio || 0,
-            codigoAlmacen: expedicion.almacen,
-            partida: expedicion.partida
+            codigoAlmacen: articulo.codigoAlmacen || 'CEN',
+            partida: articulo.partida || ''
+          });
+          
+          console.log(`[ALBARAN PARCIAL] Línea incluida:`, {
+            articulo: articulo.codigoArticulo,
+            expedidas: unidadesExpedidas,
+            pedidas: unidadesPedidas,
+            pendientes: unidadesPendientes,
+            precio: articulo.precio
           });
         }
       });
 
+      console.log('[ALBARAN PARCIAL] Líneas expedidas a incluir:', lineasExpedidas);
+
       if (lineasExpedidas.length === 0) {
-        alert('No hay líneas con cantidades para expedir');
+        alert('No hay líneas con cantidades expedidas para generar albarán parcial.');
         setGenerandoAlbaran(false);
         return;
       }
@@ -1842,24 +1856,20 @@ const PedidosScreen = () => {
       );
 
       if (response.data.success) {
+        // ✅ Actualizar el estado local del pedido
         setPedidos(prev => 
           prev.map(p => 
             p.numeroPedido === pedido.numeroPedido 
-              ? { ...p, Status: response.data.statusPedido }
+              ? { 
+                  ...p, 
+                  Estado: response.data.statusPedido === 'Parcial' ? 4 : 2,
+                  Status: response.data.statusPedido
+                }
               : p
           )
         );
         
-        const nuevasExpediciones = { ...expediciones };
-        pedido.articulos.forEach(articulo => {
-          const key = articulo.movPosicionLinea;
-          if (nuevasExpediciones[key]) {
-            nuevasExpediciones[key].cantidad = '0';
-          }
-        });
-        setExpediciones(nuevasExpediciones);
-        
-        alert(`Albarán parcial generado correctamente. Estado del pedido: ${response.data.statusPedido}`);
+        alert(`✅ Albarán parcial generado correctamente\nNúmero: ${response.data.albaran.serie}${response.data.albaran.numero}\nEstado del pedido: ${response.data.statusPedido}`);
       }
     } catch (error) {
       console.error('Error al generar albarán parcial:', error);
@@ -1876,7 +1886,7 @@ const PedidosScreen = () => {
     } finally {
       setGenerandoAlbaran(false);
     }
-  }, [canPerformActionsInPedidos, expediciones]);
+  }, [canPerformActionsInPedidos]);
 
   // Filtrar pedidos con useMemo para evitar recálculos innecesarios
   const pedidosFiltrados = useMemo(() => {

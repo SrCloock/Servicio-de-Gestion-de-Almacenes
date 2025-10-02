@@ -81,14 +81,6 @@ function LoginPage() {
             </button>
           </div>
         </form>
-        
-        <div className="lp-partner-logo">
-          <img 
-            src="/img/logo-eurobag.png" 
-            alt="Eurobag" 
-            className="lp-partner-image"
-          />
-        </div>
       </div>
     </div>
   );

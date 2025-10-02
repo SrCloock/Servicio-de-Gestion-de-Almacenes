@@ -23,39 +23,38 @@ function GestionRutas() {
     isDelivery
   } = usePermissions();
   
+  const fetchAlbaranes = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const headers = getAuthHeader();
+      const response = await axios.get('http://localhost:3000/albaranesPendientes', { 
+        headers
+      });
+
+      // Procesar para incluir albaranes parciales y voluminosos
+      const processedAlbaranes = response.data.map(albaran => ({
+        ...albaran,
+        repartidor: albaran.empleadoAsignado || 'Sin asignar',
+        esParcial: albaran.EstadoPedido === 4, // Estado 4 = Parcial
+        esVoluminoso: albaran.EsVoluminoso // ✅ NUEVO: Campo voluminoso
+      }));
+
+      setAlbaranes(processedAlbaranes);
+    } catch (err) {
+      console.error("Error cargando albaranes:", err);
+      setError('Error al cargar albaranes: ' + (err.response?.data?.mensaje || err.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!canViewGestionRutas) {
       navigate('/');
       return;
     }
-
-    const fetchAlbaranes = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        const headers = getAuthHeader();
-        const response = await axios.get('http://localhost:3000/albaranesPendientes', { 
-          headers
-        });
-
-        // Procesar para incluir albaranes parciales y voluminosos
-        const processedAlbaranes = response.data.map(albaran => ({
-          ...albaran,
-          repartidor: albaran.empleadoAsignado || 'Sin asignar',
-          esParcial: albaran.EstadoPedido === 4, // Estado 4 = Parcial
-          esVoluminoso: albaran.EsVoluminoso // ✅ NUEVO: Campo voluminoso
-        }));
-
-        setAlbaranes(processedAlbaranes);
-      } catch (err) {
-        console.error("Error cargando albaranes:", err);
-        setError('Error al cargar albaranes: ' + (err.response?.data?.mensaje || err.message));
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchAlbaranes();
   }, [canViewGestionRutas, navigate]);
 
@@ -83,28 +82,36 @@ function GestionRutas() {
   const handleCompletarAlbaran = async (albaran) => {
     if (!canPerformActionsInRutas) return;
     
+    // Opcional: Pedir observaciones al usuario
+    const observaciones = prompt('¿Alguna observación sobre la entrega? (Opcional)') || '';
+    
     if (!window.confirm(`¿Estás seguro de que quieres marcar el albarán ${albaran.albaran} como entregado?`)) {
       return;
     }
     
     try {
-      await axios.post(
+      const response = await axios.post(
         'http://localhost:3000/completar-albaran',
         {
           codigoEmpresa: albaran.codigoEmpresa,
           ejercicio: albaran.ejercicio,
           serie: albaran.serie,
-          numeroAlbaran: albaran.numero
+          numeroAlbaran: albaran.numero,
+          observaciones: observaciones
         },
         { headers: getAuthHeader() }
       );
 
-      // Actualizar la lista
-      setAlbaranes(prev => prev.filter(a => 
-        !(a.numero === albaran.numero && a.serie === albaran.serie && a.ejercicio === albaran.ejercicio)
-      ));
-      
-      alert(`Albarán ${albaran.albaran} marcado como entregado correctamente`);
+      if (response.data.success) {
+        // Actualizar la lista
+        setAlbaranes(prev => prev.filter(a => 
+          !(a.numero === albaran.numero && a.serie === albaran.serie && a.ejercicio === albaran.ejercicio)
+        ));
+        
+        alert(`Albarán ${albaran.albaran} marcado como entregado correctamente`);
+      } else {
+        alert(`Error: ${response.data.mensaje}`);
+      }
     } catch (error) {
       console.error('Error completando albarán:', error);
       alert(`Error: ${error.response?.data?.mensaje || error.message}`);
