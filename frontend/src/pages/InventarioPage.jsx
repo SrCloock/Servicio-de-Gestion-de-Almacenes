@@ -140,15 +140,16 @@ const InventarioPage = () => {
     }
   };
 
-  // 🔥 CORRECCIÓN: Función mejorada para manejar números negativos
+  // 🔥 CORRECCIÓN: Función mejorada para manejar números negativos y cero
   const formatearUnidad = (cantidad, unidad) => {
     let cantidadNum = parseFloat(cantidad);
     if (isNaN(cantidadNum)) {
       cantidadNum = 0;
     }
     
-    // Manejar números negativos
+    // Manejar números negativos y cero
     const esNegativo = cantidadNum < 0;
+    const esCero = cantidadNum === 0;
     const cantidadAbs = Math.abs(cantidadNum);
     
     if (!unidad || unidad.trim() === '') {
@@ -195,6 +196,10 @@ const InventarioPage = () => {
       'cubos': 'cubos',
       'pares': 'pares'
     };
+
+    if (esCero) {
+      return `0 ${unidad}`;
+    }
 
     if (cantidadFormateada === 1) {
       if (unidadLower === 'unidad' || unidadLower === 'unidades') {
@@ -263,9 +268,16 @@ const InventarioPage = () => {
     return colorMap[colorCode] || {};
   };
 
-  // 🔥 CORRECCIÓN: Estilos mejorados para números negativos
+  // 🔥 CORRECCIÓN: Estilos mejorados para números negativos y cero
   const getStockStyle = (cantidad) => {
-    if (cantidad === 0) return { color: '#e74c3c', fontWeight: 'bold' };
+    if (cantidad === 0) return { 
+      color: '#ff9800', 
+      fontWeight: 'bold', 
+      backgroundColor: '#fff3e0', 
+      padding: '2px 6px', 
+      borderRadius: '4px',
+      border: '1px solid #ffb74d'
+    };
     if (cantidad < 0) return { 
       color: '#e67e22', 
       fontWeight: 'bold', 
@@ -280,7 +292,8 @@ const InventarioPage = () => {
   const getEstadoColor = (estado) => {
     switch (estado) {
       case 'positivo': return '#2ecc71';
-      case 'negativo': return '#f39c12';
+      case 'negativo': return '#e67e22';
+      case 'cero': return '#ff9800';
       case 'agotado': return '#e74c3c';
       default: return '#7f8c8d';
     }
@@ -355,7 +368,7 @@ const InventarioPage = () => {
     }
   }, []);
 
-  // 🔥 CORRECCIÓN: Función agruparPorArticulo que incluye negativos
+  // 🔥 CORRECCIÓN: Función agruparPorArticulo que incluye negativos y cero
   const agruparPorArticulo = useCallback((data) => {
     const agrupado = {};
     
@@ -450,9 +463,9 @@ const InventarioPage = () => {
         articulo.totalStockBase = 0;
       }
       
-      // 🔥 CORRECCIÓN: Determinar estado incluyendo negativos
+      // 🔥 CORRECCIÓN: Determinar estado incluyendo negativos y cero
       if (articulo.totalStockBase === 0) {
-        articulo.estado = 'agotado';
+        articulo.estado = 'cero';
       } else if (articulo.totalStockBase < 0) {
         articulo.estado = 'negativo';
       } else {
@@ -571,7 +584,7 @@ const InventarioPage = () => {
     setSortConfig({ key, direction });
   };
 
-  const estadoOrden = { 'positivo': 1, 'negativo': 2, 'agotado': 3 };
+  const estadoOrden = { 'positivo': 1, 'negativo': 2, 'cero': 3, 'agotado': 4 };
 
   const filteredInventario = useMemo(() => {
     let result = [...inventario];
@@ -672,11 +685,21 @@ const InventarioPage = () => {
     const stockSinUbicacion = filteredInventario.reduce((total, art) => 
       total + art.ubicaciones.filter(ubic => ubic.esSinUbicacion).reduce((sum, ubic) => sum + (ubic.CantidadBase || 0), 0), 0);
     
-    // 🔥 NUEVO: Calcular stock negativo
+    // 🔥 NUEVO: Calcular stock negativo y cero
     const stockNegativo = filteredInventario.reduce((total, art) => 
       total + art.ubicaciones.filter(ubic => ubic.Cantidad < 0).reduce((sum, ubic) => sum + (ubic.Cantidad || 0), 0), 0);
     
-    return { totalArticulos, totalUnidades, totalUbicaciones, stockSinUbicacion, stockNegativo };
+    const stockCero = filteredInventario.reduce((total, art) => 
+      total + art.ubicaciones.filter(ubic => ubic.Cantidad === 0).length, 0);
+    
+    return { 
+      totalArticulos, 
+      totalUnidades, 
+      totalUbicaciones, 
+      stockSinUbicacion, 
+      stockNegativo,
+      stockCero 
+    };
   }, [filteredInventario]);
 
   const totalPages = Math.ceil(filteredInventario.length / pageSize);
@@ -1064,6 +1087,20 @@ const InventarioPage = () => {
                 </div>
               </div>
             )}
+            {/* 🔥 NUEVO: Estadística para registros cero */}
+            {stats.stockCero > 0 && (
+              <div className="inventario-stat-card inventario-stat-cero">
+                <div className="inventario-stat-icon">
+                  <FiMinus />
+                </div>
+                <div>
+                  <span className="inventario-stat-value" style={{color: '#ff9800'}}>
+                    {stats.stockCero}
+                  </span>
+                  <span className="inventario-stat-label">Registros Cero</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
         
@@ -1130,7 +1167,13 @@ const InventarioPage = () => {
                   {paginatedInventario.map(articulo => (
                     <div 
                       key={articulo.CodigoArticulo} 
-                      className={`inventario-item ${articulo.estado === 'agotado' ? 'inventario-estado-agotado' : ''} ${articulo.estado === 'negativo' ? 'inventario-estado-negativo' : ''}`}
+                      className={`inventario-item ${
+                        articulo.estado === 'agotado' ? 'inventario-estado-agotado' : ''
+                      } ${
+                        articulo.estado === 'negativo' ? 'inventario-estado-negativo' : ''
+                      } ${
+                        articulo.estado === 'cero' ? 'inventario-estado-cero' : ''
+                      }`}
                       style={{ borderLeft: `5px solid ${getEstadoColor(articulo.estado)}` }}
                     >
                       <div 
@@ -1160,6 +1203,11 @@ const InventarioPage = () => {
                                 <FiAlertTriangle /> NEGATIVO
                               </span>
                             )}
+                            {articulo.estado === 'cero' && (
+                              <span className="badge-cero">
+                                <FiMinus /> CERO
+                              </span>
+                            )}
                             <span className="inventario-ubicaciones-count">
                               ({articulo.ubicaciones.length} ubicaciones)
                             </span>
@@ -1183,7 +1231,13 @@ const InventarioPage = () => {
                           </div>
                           
                           {articulo.ubicaciones.map(ubicacion => (
-                            <div key={ubicacion.clave} className={`inventario-ubicacion-item ${ubicacion.esSinUbicacion ? 'sin-ubicacion' : ''} ${ubicacion.Cantidad < 0 ? 'stock-negativo' : ''}`}>
+                            <div key={ubicacion.clave} className={`inventario-ubicacion-item ${
+                              ubicacion.esSinUbicacion ? 'sin-ubicacion' : ''
+                            } ${
+                              ubicacion.Cantidad < 0 ? 'stock-negativo' : ''
+                            } ${
+                              ubicacion.Cantidad === 0 ? 'stock-cero' : ''
+                            }`}>
                               <div className="desktop-ubicacion-fields">
                                 <div className="data-cell inventario-ubicacion-almacen">
                                   {ubicacion.NombreAlmacen}
@@ -1195,6 +1249,11 @@ const InventarioPage = () => {
                                   {ubicacion.Cantidad < 0 && (
                                     <span className="badge-negativo-item">
                                       <FiAlertTriangle /> NEGATIVO
+                                    </span>
+                                  )}
+                                  {ubicacion.Cantidad === 0 && (
+                                    <span className="badge-cero-item">
+                                      <FiMinus /> CERO
                                     </span>
                                   )}
                                 </div>

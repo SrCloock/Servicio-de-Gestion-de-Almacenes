@@ -1748,8 +1748,6 @@ app.get('/albaranes-completados', async (req, res) => {
 // ============================================
 
 // ✅ 9.2 BUSCAR ARTÍCULOS
-
-
 app.get('/buscar-articulos', async (req, res) => {
   const { termino } = req.query;
   const codigoEmpresa = req.user.CodigoEmpresa;
@@ -2643,8 +2641,8 @@ app.get('/stock/por-variante', async (req, res) => {
 });
 
 
-/// ============================================
-// ✅ 9.14 OBTENER STOCK TOTAL COMPLETO (CORREGIDO - COMPARACIÓN CONSISTENTE)
+// ============================================
+// ✅ 9.14 OBTENER STOCK TOTAL COMPLETO (INCLUYENDO ARTÍCULOS SIN REGISTROS EN UBICACIÓN)
 // ============================================
 app.get('/inventario/stock-total-completo', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
@@ -2658,16 +2656,16 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
   }
 
   try {
-    console.log('🔍 Solicitando stock total CORREGIDO para empresa:', codigoEmpresa, 'Ejercicio:', añoActual);
+    console.log('🔍 Solicitando stock total COMPLETO (incluyendo artículos sin ubicación) para empresa:', codigoEmpresa, 'Ejercicio:', añoActual);
     
     const query = `
-      -- 1. STOCK OFICIAL (AcumuladoStock) - USANDO LA COLUMNA CORRECTA SEGÚN TIPO DE UNIDAD
+      -- 1. STOCK OFICIAL (AcumuladoStock) - INCLUYENDO CERO Y NEGATIVOS
       WITH StockOficial AS (
         SELECT 
           s.CodigoArticulo,
           s.CodigoAlmacen,
           s.TipoUnidadMedida_ AS UnidadStock,
-          -- 🔥 CORRECCIÓN: USAR UnidadSaldoTipo_ PARA UNIDADES ALTERNATIVAS, UnidadSaldo PARA BASE
+          -- 🔥 INCLUIR TODOS LOS REGISTROS, INCLUSO CERO
           CASE 
             WHEN s.TipoUnidadMedida_ = a.UnidadMedidaAlternativa_ 
               THEN CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo) AS DECIMAL(18, 2))
@@ -2675,7 +2673,14 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
           END AS StockTotalOficial,
           a.UnidadMedida2_ AS UnidadBase,
           a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
-          a.FactorConversion_ AS FactorConversion
+          a.FactorConversion_ AS FactorConversion,
+          a.DescripcionArticulo,
+          a.Descripcion2Articulo,
+          a.CodigoFamilia,
+          a.CodigoSubfamilia,
+          s.Partida,
+          s.CodigoColor_,
+          s.CodigoTalla01_
         FROM AcumuladoStock s
         INNER JOIN Articulos a 
           ON a.CodigoEmpresa = s.CodigoEmpresa 
@@ -2684,10 +2689,10 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
           AND s.Ejercicio = @ejercicio
           AND s.CodigoAlmacen IN ('CEN', 'BCN', 'N5', 'N1', 'PK', '5')
           AND s.Periodo = 99
-          AND s.UnidadSaldo > 0
+          -- 🔥 CORRECCIÓN CRÍTICA: QUITAR FILTRO QUE EXCLUYE CERO
       ),
       
-      -- 2. STOCK EN UBICACIONES VÁLIDAS (USANDO LA MISMA LÓGICA QUE STOCK OFICIAL)
+      -- 2. STOCK EN UBICACIONES VÁLIDAS
       StockUbicacionesValidas AS (
         SELECT 
           s.CodigoArticulo,
@@ -2697,7 +2702,6 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
           s.Ubicacion,
           COALESCE(u.DescripcionUbicacion, 'Ubicación general') AS DescripcionUbicacion,
           COALESCE(s.Partida, '') AS Partida,
-          -- 🔥 CORRECCIÓN: USAR LA MISMA LÓGICA QUE EN STOCK OFICIAL
           CASE 
             WHEN s.TipoUnidadMedida_ = a.UnidadMedidaAlternativa_ 
               THEN CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo) AS DECIMAL(18, 2))
@@ -2712,36 +2716,17 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
           COALESCE(a.UnidadMedida2_, 'unidades') AS UnidadBase,
           COALESCE(a.UnidadMedidaAlternativa_, '') AS UnidadAlternativa,
           COALESCE(a.FactorConversion_, 1) AS FactorConversion,
-          -- 🔥 CORRECCIÓN: CANTIDAD BASE CALCULADA CONSISTENTEMENTE
           CASE 
-            -- Si la unidad de stock es la ALTERNATIVA (METRO), DIVIDIR para obtener BASE (KILO)
             WHEN s.TipoUnidadMedida_ = a.UnidadMedidaAlternativa_ 
               THEN CAST(
-                CASE 
-                  WHEN s.UnidadSaldo < 0 THEN 0 
-                  ELSE COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo) / NULLIF(COALESCE(a.FactorConversion_, 1), 0)
-                END AS DECIMAL(18, 2)
+                COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo) / NULLIF(COALESCE(a.FactorConversion_, 1), 0) AS DECIMAL(18, 2)
               )
-            -- Si la unidad de stock es la BASE (KILO), usar directamente
             WHEN s.TipoUnidadMedida_ = a.UnidadMedida2_ 
-              THEN CAST(
-                CASE 
-                  WHEN s.UnidadSaldo < 0 THEN 0 
-                  ELSE s.UnidadSaldo
-                END AS DECIMAL(18, 2)
-              )
-            -- Para cualquier otro caso, usar directamente
-            ELSE CAST(
-              CASE 
-                WHEN s.UnidadSaldo < 0 THEN 0 
-                ELSE s.UnidadSaldo
-              END AS DECIMAL(18, 2)
-            )
+              THEN CAST(s.UnidadSaldo AS DECIMAL(18, 2))
+            ELSE CAST(s.UnidadSaldo AS DECIMAL(18, 2))
           END AS CantidadBase,
-          -- 🔥 INCLUIR AMBAS COLUMNAS PARA DEBUG
           CAST(s.UnidadSaldo AS DECIMAL(18, 2)) AS UnidadSaldo_Original,
           CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo) AS DECIMAL(18, 2)) AS UnidadSaldoTipo_Corregido,
-          -- 🔥 INFO DE CONVERSIÓN PARA DEBUG
           CASE 
             WHEN s.TipoUnidadMedida_ = a.UnidadMedidaAlternativa_ THEN 'ALTERNATIVA->BASE'
             WHEN s.TipoUnidadMedida_ = a.UnidadMedida2_ THEN 'BASE'
@@ -2762,13 +2747,6 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
           AND s.Periodo = 99
           AND s.Ejercicio = @ejercicio
           AND s.CodigoAlmacen IN ('CEN', 'BCN', 'N5', 'N1', 'PK', '5')
-          AND (
-            CASE 
-              WHEN s.TipoUnidadMedida_ = a.UnidadMedidaAlternativa_ 
-                THEN COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo)
-              ELSE s.UnidadSaldo
-            END
-          ) > 0
           AND s.Ubicacion NOT IN ('Zona descarga', 'PASILLO 1')
       ),
       
@@ -2782,45 +2760,54 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
         GROUP BY CodigoArticulo, CodigoAlmacen, UnidadStock
       ),
       
-      -- 🔥 CORRECCIÓN CRÍTICA: COMPARAR VALORES CONSISTENTES
-      StockCalculado AS (
+      -- 🔥 NUEVA LÓGICA: INCLUIR ARTÍCULOS QUE EXISTEN EN STOCKOFICIAL PERO NO EN STOCKUBICACIONES
+      StockCompleto AS (
         SELECT 
           so.CodigoArticulo,
           so.CodigoAlmacen,
           so.UnidadStock,
           so.StockTotalOficial,
           COALESCE(su.StockUbicadoValido, 0) AS StockUbicadoValido,
-          -- 🔥 SOLO CALCULAR STOCK SIN UBICACIÓN SI HAY DIFERENCIA REAL
+          -- 🔥 CALCULAR STOCK SIN UBICACIÓN INCLUYENDO CERO
           CASE 
-            WHEN so.StockTotalOficial > 0 AND so.StockTotalOficial > COALESCE(su.StockUbicadoValido, 0)
+            WHEN so.StockTotalOficial IS NOT NULL AND COALESCE(su.StockUbicadoValido, 0) IS NOT NULL
             THEN so.StockTotalOficial - COALESCE(su.StockUbicadoValido, 0)
-            ELSE 0
+            ELSE so.StockTotalOficial  -- Si no hay registros en ubicación, todo el stock está sin ubicación
           END AS StockSinUbicacion,
           CASE 
             WHEN so.StockTotalOficial = COALESCE(su.StockUbicadoValido, 0) THEN 'CUADRADO'
             WHEN so.StockTotalOficial > COALESCE(su.StockUbicadoValido, 0) THEN 'CON_SIN_UBICACION'
-            ELSE 'EXCESO_UBICACION'
+            WHEN COALESCE(su.StockUbicadoValido, 0) > so.StockTotalOficial THEN 'EXCESO_UBICACION'
+            ELSE 'SIN_UBICACION'  -- Cuando no hay registros en ubicación
           END AS Estado,
           so.UnidadBase,
           so.UnidadAlternativa,
-          so.FactorConversion
+          so.FactorConversion,
+          so.DescripcionArticulo,
+          so.Descripcion2Articulo,
+          so.CodigoFamilia,
+          so.CodigoSubfamilia,
+          so.Partida,
+          so.CodigoColor_,
+          so.CodigoTalla01_
         FROM StockOficial so
         LEFT JOIN StockUbicadoAgrupado su 
           ON su.CodigoArticulo = so.CodigoArticulo 
           AND su.CodigoAlmacen = so.CodigoAlmacen
           AND su.UnidadStock = so.UnidadStock
-        WHERE so.StockTotalOficial > 0 OR COALESCE(su.StockUbicadoValido, 0) > 0
+        -- 🔥 CORRECCIÓN CRÍTICA: INCLUIR TODOS LOS REGISTROS DE STOCKOFICIAL
+        WHERE so.StockTotalOficial IS NOT NULL
       )
       
-      -- 5. CONSTRUIR RESULTADO FINAL
+      -- CONSTRUIR RESULTADO FINAL (INCLUYENDO ARTÍCULOS SIN UBICACIÓN)
       SELECT 
-        uv.CodigoArticulo,
-        uv.DescripcionArticulo,
-        uv.Descripcion2Articulo,
-        uv.CodigoFamilia,
-        uv.CodigoSubfamilia,
-        uv.CodigoAlmacen,
-        uv.NombreAlmacen,
+        sc.CodigoArticulo,
+        sc.DescripcionArticulo,
+        sc.Descripcion2Articulo,
+        sc.CodigoFamilia,
+        sc.CodigoSubfamilia,
+        sc.CodigoAlmacen,
+        alm.Almacen AS NombreAlmacen,
         uv.Ubicacion,
         uv.DescripcionUbicacion,
         uv.Partida,
@@ -2835,9 +2822,9 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
         sc.StockSinUbicacion,
         sc.Estado,
         CONCAT(
-          uv.CodigoArticulo, '_', 
+          sc.CodigoArticulo, '_', 
           uv.UnidadStock, '_',
-          uv.CodigoAlmacen, '_',
+          sc.CodigoAlmacen, '_',
           uv.Ubicacion, '_',
           uv.Partida, '_',
           uv.CodigoColor_, '_',
@@ -2848,37 +2835,36 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
         NULL AS MovPosicionLinea,
         0 AS EsSinUbicacion,
         'CON_UBICACION' AS TipoStock,
-        -- 🔥 INCLUIR DEBUG INFO
         uv.UnidadSaldo_Original,
         uv.UnidadSaldoTipo_Corregido,
         uv.TipoConversion
-      FROM StockUbicacionesValidas uv
-      INNER JOIN StockCalculado sc 
-        ON sc.CodigoArticulo = uv.CodigoArticulo 
-        AND sc.CodigoAlmacen = uv.CodigoAlmacen
-        AND sc.UnidadStock = uv.UnidadStock
-      WHERE uv.Cantidad > 0
+      FROM StockCompleto sc
+      INNER JOIN Almacenes alm ON alm.CodigoEmpresa = @codigoEmpresa AND alm.CodigoAlmacen = sc.CodigoAlmacen
+      LEFT JOIN StockUbicacionesValidas uv 
+        ON uv.CodigoArticulo = sc.CodigoArticulo 
+        AND uv.CodigoAlmacen = sc.CodigoAlmacen
+        AND uv.UnidadStock = sc.UnidadStock
+      WHERE uv.CodigoArticulo IS NOT NULL  -- Solo registros con ubicación
       
       UNION ALL
       
-      -- 🔥 CORRECCIÓN CRÍTICA: SOLO AGREGAR STOCK SIN UBICACIÓN SI HAY DIFERENCIA REAL
+      -- 🔥 NUEVA SECCIÓN: ARTÍCULOS QUE EXISTEN EN STOCKOFICIAL PERO NO EN STOCKUBICACIONES
       SELECT 
         sc.CodigoArticulo,
-        a.DescripcionArticulo,
-        a.Descripcion2Articulo,
-        a.CodigoFamilia,
-        a.CodigoSubfamilia,
+        sc.DescripcionArticulo,
+        sc.Descripcion2Articulo,
+        sc.CodigoFamilia,
+        sc.CodigoSubfamilia,
         sc.CodigoAlmacen,
         alm.Almacen AS NombreAlmacen,
         'SIN UBICACIÓN' AS Ubicacion,
         'Stock sin ubicación asignada' AS DescripcionUbicacion,
-        '' AS Partida,
+        sc.Partida AS Partida,
         sc.StockSinUbicacion AS Cantidad,
         sc.UnidadStock,
         sc.UnidadBase,
         sc.UnidadAlternativa,
         sc.FactorConversion,
-        -- 🔥 CORRECCIÓN: Usar sc.UnidadAlternativa (sin guión bajo)
         CASE 
           WHEN sc.UnidadStock = sc.UnidadAlternativa 
             THEN CAST(sc.StockSinUbicacion / NULLIF(COALESCE(sc.FactorConversion, 1), 0) AS DECIMAL(18, 2))
@@ -2889,22 +2875,66 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
         sc.StockSinUbicacion,
         sc.Estado,
         CONCAT(sc.CodigoArticulo, '_', sc.UnidadStock, '_', sc.CodigoAlmacen, '_SIN_UBICACION') AS ClaveUnica,
-        NULL AS CodigoColor_,
-        NULL AS CodigoTalla01_,
+        sc.CodigoColor_,
+        sc.CodigoTalla01_,
         NULL AS MovPosicionLinea,
         1 AS EsSinUbicacion,
         'SIN_UBICACION' AS TipoStock,
         sc.StockSinUbicacion AS UnidadSaldo_Original,
         sc.StockSinUbicacion AS UnidadSaldoTipo_Corregido,
         'SIN_UBICACION' AS TipoConversion
-      FROM StockCalculado sc
-      INNER JOIN Articulos a 
-        ON a.CodigoEmpresa = @codigoEmpresa 
-        AND a.CodigoArticulo = sc.CodigoArticulo
-      INNER JOIN Almacenes alm
-        ON alm.CodigoEmpresa = @codigoEmpresa
-        AND alm.CodigoAlmacen = sc.CodigoAlmacen
-      WHERE sc.StockSinUbicacion > 0
+      FROM StockCompleto sc
+      INNER JOIN Almacenes alm ON alm.CodigoEmpresa = @codigoEmpresa AND alm.CodigoAlmacen = sc.CodigoAlmacen
+      WHERE sc.StockSinUbicacion != 0  -- Incluir cero también para que aparezca el artículo
+        AND NOT EXISTS (
+          SELECT 1 FROM StockUbicacionesValidas uv 
+          WHERE uv.CodigoArticulo = sc.CodigoArticulo 
+            AND uv.CodigoAlmacen = sc.CodigoAlmacen
+            AND uv.UnidadStock = sc.UnidadStock
+        )
+      
+      UNION ALL
+      
+      -- 🔥 INCLUIR ARTÍCULOS CON STOCK CERO QUE NO TIENEN UBICACIÓN
+      SELECT 
+        sc.CodigoArticulo,
+        sc.DescripcionArticulo,
+        sc.Descripcion2Articulo,
+        sc.CodigoFamilia,
+        sc.CodigoSubfamilia,
+        sc.CodigoAlmacen,
+        alm.Almacen AS NombreAlmacen,
+        'SIN UBICACIÓN' AS Ubicacion,
+        'Stock sin ubicación asignada' AS DescripcionUbicacion,
+        sc.Partida AS Partida,
+        0 AS Cantidad,  -- Forzar cero para que aparezca
+        sc.UnidadStock,
+        sc.UnidadBase,
+        sc.UnidadAlternativa,
+        sc.FactorConversion,
+        0 AS CantidadBase,  -- Forzar cero
+        sc.StockTotalOficial AS StockTotal,
+        sc.StockUbicadoValido,
+        sc.StockSinUbicacion,
+        'CERO_SIN_UBICACION' AS Estado,
+        CONCAT(sc.CodigoArticulo, '_', sc.UnidadStock, '_', sc.CodigoAlmacen, '_SIN_UBICACION_CERO') AS ClaveUnica,
+        sc.CodigoColor_,
+        sc.CodigoTalla01_,
+        NULL AS MovPosicionLinea,
+        1 AS EsSinUbicacion,
+        'SIN_UBICACION' AS TipoStock,
+        0 AS UnidadSaldo_Original,
+        0 AS UnidadSaldoTipo_Corregido,
+        'CERO' AS TipoConversion
+      FROM StockCompleto sc
+      INNER JOIN Almacenes alm ON alm.CodigoEmpresa = @codigoEmpresa AND alm.CodigoAlmacen = sc.CodigoAlmacen
+      WHERE sc.StockTotalOficial = 0  -- Solo artículos con stock cero
+        AND NOT EXISTS (
+          SELECT 1 FROM StockUbicacionesValidas uv 
+          WHERE uv.CodigoArticulo = sc.CodigoArticulo 
+            AND uv.CodigoAlmacen = sc.CodigoAlmacen
+            AND uv.UnidadStock = sc.UnidadStock
+        )
       
       ORDER BY CodigoArticulo, CodigoAlmacen, UnidadStock, EsSinUbicacion, Ubicacion
     `;
@@ -2914,26 +2944,30 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
       .input('ejercicio', sql.SmallInt, añoActual)
       .query(query);
       
-    console.log('✅ Stock total CORREGIDO obtenido:', result.recordset.length, 'registros');
+    console.log('✅ Stock total COMPLETO obtenido:', result.recordset.length, 'registros (incluyendo artículos sin ubicación)');
     
-    // 🔥 LOG PARA DEBUG DE CONVERSIONES Y STOCK SIN UBICACIÓN
-    const articuloX0054 = result.recordset.filter(item => item.CodigoArticulo === 'X0054');
-    if (articuloX0054.length > 0) {
-      console.log('🔍 DEBUG Artículo X0054 - Stock encontrado:');
-      articuloX0054.forEach((item, index) => {
+    // 🔥 LOG ESPECÍFICO PARA EL ARTÍCULO 040969
+    const articulo040969 = result.recordset.filter(item => item.CodigoArticulo === '040969');
+    if (articulo040969.length > 0) {
+      console.log('🔍 DEBUG Artículo 040969 encontrado:');
+      articulo040969.forEach((item, index) => {
         console.log(`   ${index + 1}. Almacén: ${item.CodigoAlmacen}, Ubicación: ${item.Ubicacion}, ` +
-                   `Unidad: ${item.UnidadStock}, Cantidad: ${item.Cantidad}, ` +
-                   `Tipo: ${item.TipoStock}, StockTotal: ${item.StockTotal}, ` +
-                   `StockUbicado: ${item.StockUbicadoValido}, StockSinUbicacion: ${item.StockSinUbicacion}`);
+                   `Cantidad: ${item.Cantidad}, Estado: ${item.Estado}, Tipo: ${item.TipoStock}`);
       });
+    } else {
+      console.log('❌ Artículo 040969 NO encontrado en los resultados');
     }
+    
+    // 🔥 LOG PARA DEBUG DE ARTÍCULOS CON CERO
+    const articulosConCero = result.recordset.filter(item => item.Cantidad === 0);
+    console.log(`🔍 Se encontraron ${articulosConCero.length} registros con cantidad cero`);
     
     res.json(result.recordset);
   } catch (err) {
-    console.error('❌ [ERROR STOCK TOTAL CORREGIDO]', err);
+    console.error('❌ [ERROR STOCK TOTAL COMPLETO]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener stock total corregido',
+      mensaje: 'Error al obtener stock total completo',
       error: err.message,
       details: err.originalError?.info?.message || 'Sin detalles adicionales'
     });
@@ -4073,7 +4107,7 @@ app.get('/buscar-ubicaciones', async (req, res) => {
 
 
 // ============================================
-// ✅ 9.22 OBTENER STOCK POR ARTÍCULO (CORREGIDO - INCLUIR NEGATIVOS)
+// ✅ 9.22 OBTENER STOCK POR ARTÍCULO (INCLUYENDO NEGATIVOS Y CERO)
 // ============================================
 app.get('/stock/por-articulo', async (req, res) => {
   const { codigoArticulo, incluirSinUbicacion } = req.query;
@@ -4091,7 +4125,7 @@ app.get('/stock/por-articulo', async (req, res) => {
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('codigoArticulo', sql.VarChar, codigoArticulo);
 
-    // Consulta principal para stock con ubicación - INCLUYENDO NEGATIVOS
+    // Consulta principal para stock con ubicación - INCLUYENDO NEGATIVOS Y CERO
     let query = `
       SELECT 
         s.CodigoAlmacen,
@@ -4122,7 +4156,6 @@ app.get('/stock/por-articulo', async (req, res) => {
           ISNULL(s.CodigoColor_, ''), '_',
           ISNULL(s.CodigoTalla01_, '')
         ) AS GrupoUnico,
-        -- 🔥 INCLUIR AMBAS COLUMNAS PARA DEBUG
         CAST(s.UnidadSaldo AS DECIMAL(18, 2)) AS UnidadSaldo_Original,
         CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo) AS DECIMAL(18, 2)) AS UnidadSaldoTipo_Corregido
       FROM AcumuladoStockUbicacion s
@@ -4143,8 +4176,7 @@ app.get('/stock/por-articulo', async (req, res) => {
         AND s.CodigoArticulo = @codigoArticulo
         AND s.CodigoAlmacen IN ('CEN', 'BCN', 'N5', 'N1', 'PK', '5')
         AND s.Periodo IN (0, 99)
-        -- 🔥 CORRECCIÓN: QUITAR FILTRO QUE EXCLUYE NEGATIVOS
-        -- (Se removió la condición que filtraba por cantidad > 0)
+        -- 🔥 CORRECCIÓN: QUITAR FILTRO QUE EXCLUYE NEGATIVOS Y CERO
     `;
 
     // Si se solicita incluir stock sin ubicación
@@ -4152,7 +4184,7 @@ app.get('/stock/por-articulo', async (req, res) => {
       query = `
         ${query}
         UNION ALL
-        -- Stock sin ubicación por almacén (sin variantes) - INCLUYENDO NEGATIVOS
+        -- Stock sin ubicación por almacén (sin variantes) - INCLUYENDO NEGATIVOS Y CERO
         SELECT 
           s.CodigoAlmacen,
           alm.Almacen AS NombreAlmacen,
@@ -4197,8 +4229,8 @@ app.get('/stock/por-articulo', async (req, res) => {
             AND Periodo = 99
           GROUP BY CodigoAlmacen, CodigoArticulo
         ) u ON u.CodigoAlmacen = s.CodigoAlmacen AND u.CodigoArticulo = s.CodigoArticulo
-        -- 🔥 CORRECCIÓN: QUITAR FILTRO QUE EXCLUYE NEGATIVOS
-        -- WHERE (s.StockTotal - ISNULL(u.StockUbicado, 0)) > 0
+        -- 🔥 CORRECCIÓN: INCLUIR CERO Y NEGATIVOS EN STOCK SIN UBICACIÓN
+        WHERE (s.StockTotal - ISNULL(u.StockUbicado, 0)) != 0
       `;
     }
 
@@ -4206,16 +4238,27 @@ app.get('/stock/por-articulo', async (req, res) => {
 
     const result = await request.query(query);
       
-    console.log(`[DEBUG STOCK POR ARTICULO] Artículo: ${codigoArticulo}, Registros: ${result.recordset.length}`);
+    console.log(`[DEBUG STOCK POR ARTICULO] Artículo: ${codigoArticulo}, Registros: ${result.recordset.length} (incluyendo negativos y cero)`);
     
-    // Log para debugging de variantes (incluyendo negativos)
-    if (codigoArticulo === '034872' || result.recordset.some(item => item.Cantidad < 0)) {
+    // Log para debugging de variantes (incluyendo negativos y cero)
+    const registrosNegativos = result.recordset.filter(item => item.Cantidad < 0);
+    const registrosCero = result.recordset.filter(item => item.Cantidad === 0);
+    
+    console.log(`🔍 Artículo ${codigoArticulo}: ${registrosNegativos.length} negativos, ${registrosCero.length} cero`);
+    
+    if (registrosNegativos.length > 0) {
       console.log('🔍 DEBUG Artículo con negativos encontrados:');
-      result.recordset.forEach((item, index) => {
-        if (item.Cantidad < 0) {
-          console.log(`   ⚠️ NEGATIVO - ${index + 1}. Almacén: ${item.CodigoAlmacen}, Ubicación: ${item.Ubicacion}, ` +
-                     `Talla: ${item.Talla}, Cantidad: ${item.Cantidad}`);
-        }
+      registrosNegativos.forEach((item, index) => {
+        console.log(`   ⚠️ NEGATIVO - ${index + 1}. Almacén: ${item.CodigoAlmacen}, Ubicación: ${item.Ubicacion}, ` +
+                   `Talla: ${item.Talla}, Cantidad: ${item.Cantidad}`);
+      });
+    }
+    
+    if (registrosCero.length > 0) {
+      console.log('🔍 DEBUG Artículo con ceros encontrados:');
+      registrosCero.forEach((item, index) => {
+        console.log(`   0️⃣ CERO - ${index + 1}. Almacén: ${item.CodigoAlmacen}, Ubicación: ${item.Ubicacion}, ` +
+                   `Talla: ${item.Talla}, Cantidad: ${item.Cantidad}`);
       });
     }
     
