@@ -117,15 +117,13 @@
 
 /* Secciones */
 .info-section,
-.articulos-section,
-.observaciones-section {
+.tabs-section {
   padding: 20px;
   border-bottom: 1px solid var(--DA-gray-200);
 }
 
 .info-section h3,
-.articulos-section h3,
-.observaciones-section h3 {
+.tabs-section h3 {
   color: var(--DA-primary-color);
   margin-bottom: 15px;
   font-size: 1.2rem;
@@ -157,6 +155,54 @@
 .info-item span {
   font-weight: 500;
   font-size: 1rem;
+}
+
+/* Sistema de pestañas */
+.tabs-header {
+  display: flex;
+  background: var(--DA-gray-100);
+  border-radius: var(--DA-border-radius) var(--DA-border-radius) 0 0;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+
+.tab-button {
+  flex: 1;
+  padding: 15px 20px;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--DA-gray-700);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.tab-button:hover {
+  background: var(--DA-gray-200);
+  color: var(--DA-primary-color);
+}
+
+.tab-button.active {
+  background: white;
+  color: var(--DA-primary-color);
+  border-bottom: 3px solid var(--DA-accent-color);
+}
+
+.tabs-content {
+  background: white;
+  padding: 0;
+}
+
+/* Contenido de pestañas */
+.articulos-section,
+.firmas-section {
+  padding: 20px;
 }
 
 /* Tabla de artículos */
@@ -231,6 +277,17 @@
 }
 
 /* Observaciones */
+.observaciones-section {
+  margin-top: 20px;
+  padding: 15px;
+  background: var(--DA-gray-100);
+  border-radius: var(--DA-border-radius);
+}
+
+.observaciones-section h3 {
+  margin-top: 0;
+}
+
 .observaciones-section textarea {
   width: 100%;
   padding: 12px;
@@ -250,6 +307,112 @@
 .observaciones-section textarea:disabled {
   background: var(--DA-gray-200);
   cursor: not-allowed;
+}
+
+/* Sección de firmas */
+.firmas-instructions {
+  color: var(--DA-gray-700);
+  margin-bottom: 20px;
+  padding: 10px 15px;
+  background: var(--DA-gray-100);
+  border-radius: var(--DA-border-radius);
+  border-left: 4px solid var(--DA-accent-color);
+}
+
+.firmas-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+  margin-bottom: 20px;
+}
+
+.firma-item {
+  background: var(--DA-gray-100);
+  border-radius: var(--DA-border-radius);
+  padding: 20px;
+  border: 1px solid var(--DA-gray-300);
+}
+
+.firma-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.firma-header h4 {
+  margin: 0;
+  color: var(--DA-primary-color);
+  font-size: 1.1rem;
+}
+
+.btn-limpiar {
+  background: var(--DA-danger-color);
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.3s;
+}
+
+.btn-limpiar:hover:not(:disabled) {
+  background: #c53030;
+}
+
+.btn-limpiar:disabled {
+  background: var(--DA-gray-500);
+  cursor: not-allowed;
+}
+
+.firma-canvas {
+  width: 100%;
+  height: 200px;
+  border: 2px dashed var(--DA-gray-300);
+  border-radius: 4px;
+  background: white;
+  cursor: crosshair;
+  margin-bottom: 15px;
+}
+
+.firma-info {
+  background: white;
+  padding: 12px;
+  border-radius: 4px;
+  border-left: 3px solid var(--DA-accent-color);
+}
+
+.firma-info p {
+  margin: 5px 0;
+  font-size: 0.9rem;
+}
+
+.firma-info strong {
+  color: var(--DA-primary-color);
+}
+
+.firmas-warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 15px;
+  background: #fffaf0;
+  border: 1px solid var(--DA-warning-color);
+  border-radius: var(--DA-border-radius);
+  color: var(--DA-warning-color);
+}
+
+.firmas-warning svg {
+  flex-shrink: 0;
+}
+
+.firmas-warning p {
+  margin: 0;
+  font-weight: 500;
 }
 
 /* Mensajes de error */
@@ -290,6 +453,12 @@
   gap: 15px;
   justify-content: flex-end;
   flex-wrap: wrap;
+  border-top: 1px solid var(--DA-gray-200);
+}
+
+.actions-section.main-actions {
+  background: var(--DA-gray-100);
+  margin-top: 0;
 }
 
 .btn-actualizar,
@@ -328,6 +497,23 @@
 .btn-completar:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Estados de carga */
+.btn-actualizar:disabled::after,
+.btn-completar:disabled::after {
+  content: "";
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top: 2px solid currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* Responsive */
@@ -383,6 +569,25 @@
     text-align: center;
   }
   
+  .firmas-container {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .tabs-header {
+    flex-direction: column;
+  }
+  
+  .tab-button {
+    border-bottom: none;
+    border-right: 3px solid transparent;
+  }
+  
+  .tab-button.active {
+    border-bottom: none;
+    border-right: 3px solid var(--DA-accent-color);
+  }
+  
   .actions-section {
     flex-direction: column;
   }
@@ -413,8 +618,12 @@
   }
   
   .info-section,
+  .tabs-section {
+    padding: 15px;
+  }
+  
   .articulos-section,
-  .observaciones-section {
+  .firmas-section {
     padding: 15px;
   }
   
@@ -428,21 +637,48 @@
     padding: 10px 15px;
     font-size: 0.95rem;
   }
+  
+  .firma-canvas {
+    height: 150px;
+  }
+}
+/* Indicadores de firma válida */
+.firma-ok {
+  color: var(--DA-success-color);
+  font-weight: bold;
+  margin-left: 5px;
 }
 
-/* Estados de carga */
-.btn-actualizar:disabled::after,
-.btn-completar:disabled::after {
-  content: "";
-  width: 16px;
-  height: 16px;
-  border: 2px solid transparent;
-  border-top: 2px solid currentColor;
+.firmas-completas-badge {
+  background: var(--DA-success-color);
+  color: white;
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  margin-left: 8px;
 }
 
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+/* Estados del botón completar */
+.btn-completar:disabled {
+  background: var(--DA-gray-500);
+  cursor: not-allowed;
+}
+
+/* Mejoras visuales para las firmas */
+.firma-canvas {
+  transition: border-color 0.3s ease;
+}
+
+.firma-canvas:focus {
+  border-color: var(--DA-accent-color);
+}
+
+/* Indicador de firma vacía vs llena */
+.firma-item:has(.firma-ok) .firma-canvas {
+  border-color: var(--DA-success-color);
+  border-style: solid;
 }

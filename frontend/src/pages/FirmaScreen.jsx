@@ -1,6 +1,8 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import SignatureCanvas from 'react-signature-canvas';
 import { useLocation, useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { getAuthHeader } from '../helpers/authHelper';
 import { usePermissions } from '../PermissionsManager';
 import Navbar from '../components/Navbar';
 import './FirmaScreen.css';
@@ -8,19 +10,16 @@ import './FirmaScreen.css';
 function FirmaScreen() {
   const navigate = useNavigate();
   const { state } = useLocation();
-  const ruta = state?.ruta;
+  const albaran = state?.albaran;
+  const [observaciones, setObservaciones] = useState('');
+  const [loading, setLoading] = useState(false);
   
-  // Obtener permisos del usuario
-  const { 
-    canViewWaybills, 
-    canPerformActions 
-  } = usePermissions();
+  const { canPerformActions } = usePermissions();
   
   const sigCliente = useRef();
   const sigRepartidor = useRef();
 
-  // Verificar permisos
-  if (!canViewWaybills || !canPerformActions) {
+  if (!canPerformActions) {
     return (
       <div className="firma-screen">
         <div className="no-permission">
@@ -35,8 +34,7 @@ function FirmaScreen() {
     );
   }
 
-  // Verificar si se recibió el albarán
-  if (!ruta) {
+  if (!albaran) {
     return (
       <div className="firma-screen">
         <div className="no-albaran">
@@ -63,25 +61,62 @@ function FirmaScreen() {
     }
   };
 
-  const finalizarFirma = () => {
+  const finalizarFirma = async () => {
     const firmaCliente = sigCliente.current.getTrimmedCanvas().toDataURL('image/png');
     const firmaRepartidor = sigRepartidor.current.getTrimmedCanvas().toDataURL('image/png');
 
-    navigate('/GestionRutas', {
-      state: {
-        ...ruta,
-        firmaCliente,
-        firmaRepartidor
+    // Validar que ambas firmas estén presentes
+    if (firmaCliente.length < 1000) {
+      alert('Por favor, capture la firma del cliente');
+      return;
+    }
+
+    if (firmaRepartidor.length < 1000) {
+      alert('Por favor, capture la firma del repartidor');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      const response = await axios.post(
+        'http://localhost:3000/completarAlbaranConFirmas',
+        {
+          codigoEmpresa: albaran.codigoEmpresa,
+          ejercicio: albaran.ejercicio,
+          serie: albaran.serie,
+          numeroAlbaran: albaran.numero,
+          firmaCliente: firmaCliente,
+          firmaRepartidor: firmaRepartidor,
+          observaciones: observaciones
+        },
+        { headers: getAuthHeader() }
+      );
+
+      if (response.data.success) {
+        alert(`Albarán ${albaran.albaran} completado correctamente con firmas`);
+        navigate('/rutas');
+      } else {
+        alert(`Error: ${response.data.mensaje}`);
       }
-    });
+    } catch (error) {
+      console.error('Error completando albarán con firmas:', error);
+      alert(`Error: ${error.response?.data?.mensaje || error.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="firma-screen">
       <div className="firma-header">
-        <h2>Registro de Entrega - Albarán {ruta.albaran}</h2>
-        <p>Cliente: {ruta.cliente}</p>
-        <p>Dirección: {ruta.direccion}</p>
+        <h2>Registro de Entrega - Albarán {albaran.albaran}</h2>
+        <div className="albaran-info">
+          <p><strong>Cliente:</strong> {albaran.cliente}</p>
+          <p><strong>Dirección:</strong> {albaran.direccion}</p>
+          <p><strong>Obra:</strong> {albaran.obra || 'No especificada'}</p>
+          <p><strong>Contacto:</strong> {albaran.contacto || 'No especificado'}</p>
+        </div>
       </div>
 
       <div className="firma-content">
@@ -91,6 +126,7 @@ function FirmaScreen() {
             <button 
               onClick={limpiarFirmaCliente}
               className="btn-limpiar"
+              disabled={loading}
             >
               Limpiar Firma
             </button>
@@ -111,6 +147,7 @@ function FirmaScreen() {
             <button 
               onClick={limpiarFirmaRepartidor}
               className="btn-limpiar"
+              disabled={loading}
             >
               Limpiar Firma
             </button>
@@ -124,19 +161,32 @@ function FirmaScreen() {
             ref={sigRepartidor} 
           />
         </div>
+
+        <div className="observaciones-section">
+          <h3>Observaciones de la Entrega</h3>
+          <textarea
+            value={observaciones}
+            onChange={(e) => setObservaciones(e.target.value)}
+            placeholder="Ingrese cualquier observación sobre la entrega (opcional)"
+            rows="3"
+            disabled={loading}
+          />
+        </div>
         
         <div className="firma-actions">
           <button 
             onClick={() => navigate('/rutas')}
             className="btn-cancelar"
+            disabled={loading}
           >
             Cancelar
           </button>
           <button 
             onClick={finalizarFirma}
             className="btn-guardar"
+            disabled={loading}
           >
-            Guardar Firmas y Finalizar
+            {loading ? 'Guardando...' : 'Guardar Firmas y Completar Entrega'}
           </button>
         </div>
       </div>

@@ -2,11 +2,14 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
+import { FaSync } from "react-icons/fa";
+
 import { 
   FiSearch, FiChevronDown, FiChevronUp, 
   FiFilter, FiEdit, FiX, 
   FiCheck, FiClock, FiList, FiRefreshCw, FiPlus, FiMinus,
-  FiMapPin, FiPackage, FiDatabase, FiLayers, FiBox
+  FiMapPin, FiPackage, FiDatabase, FiLayers, FiBox,
+  FiAlertTriangle, FiRefreshCcw
 } from 'react-icons/fi';
 import '../styles/InventarioPage.css';
 
@@ -36,7 +39,13 @@ const InventarioPage = () => {
   const [cargandoDetalles, setCargandoDetalles] = useState(false);
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   
-  // Estados para edición de cantidad (mantener estos)
+  // Nuevos estados para sincronización
+  const [sincronizando, setSincronizando] = useState(false);
+  const [modalSincronizarArticulo, setModalSincronizarArticulo] = useState(false);
+  const [codigoArticuloSincronizar, setCodigoArticuloSincronizar] = useState('');
+  const [resultadoSincronizacion, setResultadoSincronizacion] = useState(null);
+  
+  // Estados para edición de cantidad
   const [unidadesDisponibles, setUnidadesDisponibles] = useState(['unidades']);
   const [tallasDisponibles, setTallasDisponibles] = useState([]);
   const [coloresDisponibles, setColoresDisponibles] = useState([]);
@@ -44,19 +53,111 @@ const InventarioPage = () => {
   const [tallaSeleccionada, setTallaSeleccionada] = useState('');
   const [colorSeleccionado, setColorSeleccionado] = useState('');
 
+  // 🔥 NUEVAS FUNCIONES DE SINCRONIZACIÓN
+  const sincronizarTodoElStock = async () => {
+    if (!window.confirm('¿Estás seguro de que quieres sincronizar TODO el stock? Esto puede tomar varios minutos.')) {
+      return;
+    }
+
+    setSincronizando(true);
+    setResultadoSincronizacion(null);
+    
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.post(
+        'http://localhost:3000/inventario/sincronizar-stock',
+        { forzarTodo: true },
+        { headers }
+      );
+
+      setResultadoSincronizacion(response.data);
+      
+      if (response.data.success) {
+        alert(`✅ Sincronización completada\n\nCorrecciones aplicadas: ${response.data.resumen.correccionesAplicadas}\nErrores: ${response.data.resumen.errores}`);
+        // Recargar el inventario para reflejar los cambios
+        cargarInventario();
+      } else {
+        alert('❌ Error en la sincronización');
+      }
+    } catch (error) {
+      console.error('Error sincronizando todo el stock:', error);
+      alert('❌ Error al sincronizar el stock');
+    } finally {
+      setSincronizando(false);
+    }
+  };
+
+  const sincronizarArticuloEspecifico = async () => {
+    if (!codigoArticuloSincronizar.trim()) {
+      alert('Por favor, ingresa un código de artículo');
+      return;
+    }
+
+    setSincronizando(true);
+    setResultadoSincronizacion(null);
+    
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.post(
+        `http://localhost:3000/inventario/sincronizar-articulo/${codigoArticuloSincronizar}`,
+        {},
+        { headers }
+      );
+
+      setResultadoSincronizacion(response.data);
+      
+      if (response.data.success) {
+        alert(`✅ Artículo ${codigoArticuloSincronizar} sincronizado correctamente`);
+        setModalSincronizarArticulo(false);
+        setCodigoArticuloSincronizar('');
+        // Recargar el inventario para reflejar los cambios
+        cargarInventario();
+      } else {
+        alert(`❌ Error sincronizando artículo: ${response.data.mensaje}`);
+      }
+    } catch (error) {
+      console.error('Error sincronizando artículo:', error);
+      alert('❌ Error al sincronizar el artículo');
+    } finally {
+      setSincronizando(false);
+    }
+  };
+
+  const verificarDiscrepancias = async () => {
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.get(
+        'http://localhost:3000/inventario/verificar-discrepancias',
+        { headers }
+      );
+
+      if (response.data.success) {
+        alert(`📊 Discrepancias encontradas:\n\nTotal registros: ${response.data.totalRegistros}\nDiscrepancias: ${response.data.totalDiscrepancias}\nDiferencia total: ${response.data.diferenciaTotal}`);
+      }
+    } catch (error) {
+      console.error('Error verificando discrepancias:', error);
+      alert('❌ Error al verificar discrepancias');
+    }
+  };
+
+  // 🔥 CORRECCIÓN: Función mejorada para manejar números negativos
   const formatearUnidad = (cantidad, unidad) => {
     let cantidadNum = parseFloat(cantidad);
     if (isNaN(cantidadNum)) {
       cantidadNum = 0;
     }
     
+    // Manejar números negativos
+    const esNegativo = cantidadNum < 0;
+    const cantidadAbs = Math.abs(cantidadNum);
+    
     if (!unidad || unidad.trim() === '') {
       unidad = 'unidad';
     }
     
-    let cantidadFormateada = cantidadNum;
-    if (!Number.isInteger(cantidadNum)) {
-      cantidadFormateada = parseFloat(cantidadNum.toFixed(2));
+    let cantidadFormateada = cantidadAbs;
+    if (!Number.isInteger(cantidadAbs)) {
+      cantidadFormateada = parseFloat(cantidadAbs.toFixed(2));
     }
 
     const unidadesInvariables = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3', 'barra', 'metro'];
@@ -64,7 +165,7 @@ const InventarioPage = () => {
     const unidadLower = unidad.toLowerCase();
     
     if (unidadesInvariables.includes(unidadLower)) {
-      return `${cantidadFormateada} ${unidad}`;
+      return `${esNegativo ? '-' : ''}${cantidadFormateada} ${unidad}`;
     }
     
     const pluralesIrregulares = {
@@ -97,25 +198,25 @@ const InventarioPage = () => {
 
     if (cantidadFormateada === 1) {
       if (unidadLower === 'unidad' || unidadLower === 'unidades') {
-        return '1 unidad';
+        return `${esNegativo ? '-' : ''}1 unidad`;
       }
-      return `1 ${unidad}`;
+      return `${esNegativo ? '-' : ''}1 ${unidad}`;
     } else {
       if (unidadLower === 'unidad' || unidadLower === 'unidades') {
-        return `${cantidadFormateada} unidades`;
+        return `${esNegativo ? '-' : ''}${cantidadFormateada} unidades`;
       }
       
       if (pluralesIrregulares[unidadLower]) {
-        return `${cantidadFormateada} ${pluralesIrregulares[unidadLower]}`;
+        return `${esNegativo ? '-' : ''}${cantidadFormateada} ${pluralesIrregulares[unidadLower]}`;
       }
       
       const ultimaLetra = unidad.charAt(unidad.length - 1);
       const penultimaLetra = unidad.charAt(unidad.length - 2);
       
       if (['a', 'e', 'i', 'o', 'u'].includes(ultimaLetra)) {
-        return `${cantidadFormateada} ${unidad}s`;
+        return `${esNegativo ? '-' : ''}${cantidadFormateada} ${unidad}s`;
       } else {
-        return `${cantidadFormateada} ${unidad}es`;
+        return `${esNegativo ? '-' : ''}${cantidadFormateada} ${unidad}es`;
       }
     }
   };
@@ -160,6 +261,29 @@ const InventarioPage = () => {
       'B': { color: '#FFFFFF', backgroundColor: '#333', padding: '2px 5px', borderRadius: '3px' },
     };
     return colorMap[colorCode] || {};
+  };
+
+  // 🔥 CORRECCIÓN: Estilos mejorados para números negativos
+  const getStockStyle = (cantidad) => {
+    if (cantidad === 0) return { color: '#e74c3c', fontWeight: 'bold' };
+    if (cantidad < 0) return { 
+      color: '#e67e22', 
+      fontWeight: 'bold', 
+      backgroundColor: '#fef9e7', 
+      padding: '2px 6px', 
+      borderRadius: '4px',
+      border: '1px solid #f39c12'
+    };
+    return { color: '#27ae60' };
+  };
+
+  const getEstadoColor = (estado) => {
+    switch (estado) {
+      case 'positivo': return '#2ecc71';
+      case 'negativo': return '#f39c12';
+      case 'agotado': return '#e74c3c';
+      default: return '#7f8c8d';
+    }
   };
 
   const cargarVariantesArticulo = useCallback(async (codigoArticulo, unidadActual) => {
@@ -231,6 +355,7 @@ const InventarioPage = () => {
     }
   }, []);
 
+  // 🔥 CORRECCIÓN: Función agruparPorArticulo que incluye negativos
   const agruparPorArticulo = useCallback((data) => {
     const agrupado = {};
     
@@ -240,7 +365,8 @@ const InventarioPage = () => {
         return;
       }
       
-      const clave = item.ClaveUnica;
+      // 🔥 CORRECCIÓN: Generar clave única que incluya TODOS los campos relevantes
+      const claveUnica = `${item.CodigoArticulo}_${item.CodigoAlmacen}_${item.Ubicacion}_${item.UnidadStock || 'unidades'}_${item.Partida || ''}_${item.CodigoColor_ || ''}_${item.CodigoTalla01_ || ''}`;
       
       if (!agrupado[item.CodigoArticulo]) {
         agrupado[item.CodigoArticulo] = {
@@ -269,7 +395,7 @@ const InventarioPage = () => {
       }
       
       const ubicacion = {
-        clave,
+        clave: claveUnica,
         CodigoAlmacen: item.CodigoAlmacen,
         NombreAlmacen: item.NombreAlmacen,
         Ubicacion: item.Ubicacion,
@@ -281,15 +407,24 @@ const InventarioPage = () => {
         CantidadBase: cantidadBase,
         CodigoColor: item.CodigoColor_,
         CodigoTalla01: item.CodigoTalla01_,
-        GrupoUnico: clave,
+        GrupoUnico: claveUnica,
         MovPosicionLinea: item.MovPosicionLinea,
         detalles: null,
         esSinUbicacion: item.EsSinUbicacion === 1 || item.TipoStock === 'SIN_UBICACION',
         TallaColorDisplay: formatTallaColor(item.CodigoTalla01_, item.CodigoColor_)
       };
       
-      agrupado[item.CodigoArticulo].ubicaciones.push(ubicacion);
-      agrupado[item.CodigoArticulo].totalStockBase += cantidadBase;
+      // 🔥 VERIFICAR DUPLICADOS ANTES DE AGREGAR
+      const existeDuplicado = agrupado[item.CodigoArticulo].ubicaciones.some(
+        u => u.clave === claveUnica
+      );
+      
+      if (!existeDuplicado) {
+        agrupado[item.CodigoArticulo].ubicaciones.push(ubicacion);
+        agrupado[item.CodigoArticulo].totalStockBase += cantidadBase;
+      } else {
+        console.warn(`⚠️ Se evitó duplicado: ${claveUnica}`);
+      }
     });
     
     Object.values(agrupado).forEach(articulo => {
@@ -315,6 +450,7 @@ const InventarioPage = () => {
         articulo.totalStockBase = 0;
       }
       
+      // 🔥 CORRECCIÓN: Determinar estado incluyendo negativos
       if (articulo.totalStockBase === 0) {
         articulo.estado = 'agotado';
       } else if (articulo.totalStockBase < 0) {
@@ -536,7 +672,11 @@ const InventarioPage = () => {
     const stockSinUbicacion = filteredInventario.reduce((total, art) => 
       total + art.ubicaciones.filter(ubic => ubic.esSinUbicacion).reduce((sum, ubic) => sum + (ubic.CantidadBase || 0), 0), 0);
     
-    return { totalArticulos, totalUnidades, totalUbicaciones, stockSinUbicacion };
+    // 🔥 NUEVO: Calcular stock negativo
+    const stockNegativo = filteredInventario.reduce((total, art) => 
+      total + art.ubicaciones.filter(ubic => ubic.Cantidad < 0).reduce((sum, ubic) => sum + (ubic.Cantidad || 0), 0), 0);
+    
+    return { totalArticulos, totalUnidades, totalUbicaciones, stockSinUbicacion, stockNegativo };
   }, [filteredInventario]);
 
   const totalPages = Math.ceil(filteredInventario.length / pageSize);
@@ -548,21 +688,6 @@ const InventarioPage = () => {
   const goToPage = (page) => {
     if (page < 1 || page > totalPages) return;
     setCurrentPage(page);
-  };
-
-  const getStockStyle = (cantidad) => {
-    if (cantidad === 0) return { color: '#e74c3c', fontWeight: 'bold' };
-    if (cantidad < 0) return { color: '#f39c12', fontWeight: '600' };
-    return { color: '#27ae60' };
-  };
-
-  const getEstadoColor = (estado) => {
-    switch (estado) {
-      case 'positivo': return '#2ecc71';
-      case 'negativo': return '#f39c12';
-      case 'agotado': return '#e74c3c';
-      default: return '#7f8c8d';
-    }
   };
 
   const iniciarEdicionCantidad = async (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida, unidadStock, codigoColor, codigoTalla01, esSinUbicacion) => {
@@ -688,9 +813,46 @@ const InventarioPage = () => {
             />
           </div>
           <div className="inventario-action-buttons">
-            <button className="inventario-refresh-btn" onClick={refreshInventario} aria-label="Actualizar">
+            <button 
+              className="inventario-refresh-btn" 
+              onClick={refreshInventario} 
+              aria-label="Actualizar"
+              disabled={sincronizando}
+            >
               <FiRefreshCw /> Actualizar
             </button>
+            
+            {/* 🔥 NUEVO: Botones de sincronización */}
+            {activeTab === 'inventario' && (
+              <>
+                <button 
+                  className="inventario-sync-articulo-btn"
+                  onClick={() => setModalSincronizarArticulo(true)}
+                  disabled={sincronizando}
+                  title="Sincronizar un artículo específico"
+                >
+                  <FaSync /> Sincronizar Artículo
+                </button>
+                
+                <button 
+                  className="inventario-sync-all-btn"
+                  onClick={sincronizarTodoElStock}
+                  disabled={sincronizando}
+                  title="Sincronizar todo el stock"
+                >
+                  <FiRefreshCcw /> Sincronizar Todo
+                </button>
+                
+                <button 
+                  className="inventario-verificar-btn"
+                  onClick={verificarDiscrepancias}
+                  disabled={sincronizando}
+                  title="Verificar discrepancias"
+                >
+                  <FiAlertTriangle /> Verificar
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -828,7 +990,9 @@ const InventarioPage = () => {
                     <div className="inventario-cantidad">
                       <span className="inventario-label">Nueva Cantidad:</span> 
                       <span className="inventario-value">
-                        <strong>{formatearUnidad(ajuste.nuevaCantidad, ajuste.unidadStock)}</strong>
+                        <strong style={getStockStyle(ajuste.nuevaCantidad)}>
+                          {formatearUnidad(ajuste.nuevaCantidad, ajuste.unidadStock)}
+                        </strong>
                       </span>
                     </div>
                   </div>
@@ -886,6 +1050,20 @@ const InventarioPage = () => {
                 <span className="inventario-stat-label">Sin Ubicación</span>
               </div>
             </div>
+            {/* 🔥 NUEVO: Estadística para stock negativo */}
+            {stats.stockNegativo < 0 && (
+              <div className="inventario-stat-card inventario-stat-negativo">
+                <div className="inventario-stat-icon">
+                  <FiAlertTriangle />
+                </div>
+                <div>
+                  <span className="inventario-stat-value" style={{color: '#e67e22'}}>
+                    {stats.stockNegativo.toLocaleString()}
+                  </span>
+                  <span className="inventario-stat-label">Stock Negativo</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
         
@@ -893,6 +1071,17 @@ const InventarioPage = () => {
           <div className="inventario-cargando-detalles">
             <div className="inventario-spinner"></div>
             <p>Cargando detalles...</p>
+          </div>
+        )}
+        
+        {/* 🔥 NUEVO: Overlay de sincronización */}
+        {sincronizando && (
+          <div className="inventario-sincronizando-overlay">
+            <div className="inventario-sincronizando-content">
+              <div className="inventario-spinner-large"></div>
+              <p>Sincronizando stock...</p>
+              <p className="inventario-sincronizando-subtitle">Esto puede tomar varios minutos</p>
+            </div>
           </div>
         )}
         
@@ -964,8 +1153,13 @@ const InventarioPage = () => {
                           </div>
                         </div>
                         <div className="inventario-articulo-total">
-                          <span className="inventario-total-unidades">
+                          <span className="inventario-total-unidades" style={getStockStyle(articulo.totalStockBase)}>
                             {formatearUnidad(articulo.totalStockBase, articulo.UnidadBase)}
+                            {articulo.estado === 'negativo' && (
+                              <span className="badge-negativo">
+                                <FiAlertTriangle /> NEGATIVO
+                              </span>
+                            )}
                             <span className="inventario-ubicaciones-count">
                               ({articulo.ubicaciones.length} ubicaciones)
                             </span>
@@ -989,13 +1183,18 @@ const InventarioPage = () => {
                           </div>
                           
                           {articulo.ubicaciones.map(ubicacion => (
-                            <div key={ubicacion.clave} className={`inventario-ubicacion-item ${ubicacion.esSinUbicacion ? 'sin-ubicacion' : ''}`}>
+                            <div key={ubicacion.clave} className={`inventario-ubicacion-item ${ubicacion.esSinUbicacion ? 'sin-ubicacion' : ''} ${ubicacion.Cantidad < 0 ? 'stock-negativo' : ''}`}>
                               <div className="desktop-ubicacion-fields">
                                 <div className="data-cell inventario-ubicacion-almacen">
                                   {ubicacion.NombreAlmacen}
                                   {ubicacion.esSinUbicacion && (
                                     <span className="badge-sin-ubicacion">
                                       <FiMapPin /> SIN UBICACIÓN
+                                    </span>
+                                  )}
+                                  {ubicacion.Cantidad < 0 && (
+                                    <span className="badge-negativo-item">
+                                      <FiAlertTriangle /> NEGATIVO
                                     </span>
                                   )}
                                 </div>
@@ -1027,7 +1226,7 @@ const InventarioPage = () => {
                                   {articulo.UnidadAlternativa && 
                                   ubicacion.UnidadStock === articulo.UnidadAlternativa && (
                                     <span className="inventario-conversion-info">
-                                      ({formatearUnidad(ubicacion.CantidadBase, articulo.UnidadBase)})
+                                      ({formatearUnidad(ubicacion.Cantidad * (articulo.FactorConversion || 1), articulo.UnidadBase)})
                                     </span>
                                   )}
                                 </div>
@@ -1185,6 +1384,12 @@ const InventarioPage = () => {
                                     <span>{detalle.Comentario || 'Sin comentario'}</span>
                                   </div>
                                   <div>
+                                    <span className="inventario-ajuste-label">Tipo:</span>
+                                    <span className={`badge-${detalle.TipoRegistro?.toLowerCase() || 'movimiento'}`}>
+                                      {detalle.TipoRegistro || 'MOVIMIENTO'}
+                                    </span>
+                                  </div>
+                                  <div>
                                     <span className="inventario-ajuste-label">Fecha y hora:</span>
                                     <span>
                                       {formatearFecha(detalle.FechaRegistro)}
@@ -1204,6 +1409,65 @@ const InventarioPage = () => {
           )}
         </div>
       </div>
+      
+      {/* 🔥 NUEVO: Modal para sincronizar artículo específico */}
+      {modalSincronizarArticulo && (
+        <div className="inventario-modal-edicion">
+          <div className="inventario-modal-contenido">
+            <h3>
+              <FaSync /> Sincronizar Artículo Específico
+            </h3>
+            
+            <div className="inventario-modal-details">
+              <p>Ingresa el código del artículo que deseas sincronizar entre las tablas de stock.</p>
+              <p className="inventario-modal-warning">
+                ⚠️ Esto corregirá las discrepancias entre AcumuladoStock y AcumuladoStockUbicacion
+              </p>
+            </div>
+            
+            <div className="inventario-form-group">
+              <label>Código de Artículo:</label>
+              <input 
+                type="text" 
+                value={codigoArticuloSincronizar}
+                onChange={(e) => setCodigoArticuloSincronizar(e.target.value.toUpperCase())}
+                className="inventario-input"
+                placeholder="Ej: 011439"
+                autoFocus
+              />
+            </div>
+            
+            <div className="inventario-modal-acciones">
+              <button 
+                className="inventario-btn-cancelar"
+                onClick={() => {
+                  setModalSincronizarArticulo(false);
+                  setCodigoArticuloSincronizar('');
+                }}
+                disabled={sincronizando}
+              >
+                Cancelar
+              </button>
+              <button 
+                className="inventario-btn-sincronizar"
+                onClick={sincronizarArticuloEspecifico}
+                disabled={sincronizando || !codigoArticuloSincronizar.trim()}
+              >
+                {sincronizando ? (
+                  <>
+                    <div className="inventario-spinner-small"></div>
+                    Sincronizando...
+                  </>
+                ) : (
+                  <>
+                    <FaSync /> Sincronizar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {editandoCantidad && (
         <div className="inventario-modal-edicion">
@@ -1288,6 +1552,7 @@ const InventarioPage = () => {
                 value={formatearUnidad(editandoCantidad.cantidadActual, editandoCantidad.unidadStock)} 
                 disabled 
                 className="inventario-cantidad-actual"
+                style={getStockStyle(editandoCantidad.cantidadActual)}
               />
             </div>
             
@@ -1300,6 +1565,7 @@ const InventarioPage = () => {
                 autoFocus
                 className="inventario-nueva-cantidad"
                 step="any"
+                placeholder="Ingrese la nueva cantidad..."
               />
             </div>
             

@@ -62,6 +62,84 @@ const TraspasosPage = () => {
   const searchRef = useRef(null);
   const listaRef = useRef(null);
 
+  // 🔥 MISMAS FUNCIONES DE FORMATEO QUE INVENTARIO
+  const formatearUnidad = (cantidad, unidad) => {
+    let cantidadNum = parseFloat(cantidad);
+    if (isNaN(cantidadNum)) {
+      cantidadNum = 0;
+    }
+    
+    const esNegativo = cantidadNum < 0;
+    const cantidadAbs = Math.abs(cantidadNum);
+    
+    if (!unidad || unidad.trim() === '') {
+      unidad = 'unidad';
+    }
+    
+    let cantidadFormateada = cantidadAbs;
+    if (!Number.isInteger(cantidadAbs)) {
+      cantidadFormateada = parseFloat(cantidadAbs.toFixed(2));
+    }
+
+    const unidadesInvariables = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3', 'barra', 'metro'];
+    
+    const unidadLower = unidad.toLowerCase();
+    
+    if (unidadesInvariables.includes(unidadLower)) {
+      return `${esNegativo ? '-' : ''}${cantidadFormateada} ${unidad}`;
+    }
+    
+    const pluralesIrregulares = {
+      'ud': 'uds',
+      'par': 'pares',
+      'metro': 'metros',
+      'pack': 'packs',
+      'saco': 'sacos',
+      'barra': 'barras',
+      'caja': 'cajas',
+      'rollo': 'rollos',
+      'lata': 'latas',
+      'bote': 'botes',
+      'tubo': 'tubos',
+      'unidad': 'unidades',
+      'juego': 'juegos',
+      'kit': 'kits',
+      'paquete': 'paquetes'
+    };
+
+    if (cantidadFormateada === 1) {
+      if (unidadLower === 'unidad' || unidadLower === 'unidades') {
+        return `${esNegativo ? '-' : ''}1 unidad`;
+      }
+      return `${esNegativo ? '-' : ''}1 ${unidad}`;
+    } else {
+      if (unidadLower === 'unidad' || unidadLower === 'unidades') {
+        return `${esNegativo ? '-' : ''}${cantidadFormateada} unidades`;
+      }
+      
+      if (pluralesIrregulares[unidadLower]) {
+        return `${esNegativo ? '-' : ''}${cantidadFormateada} ${pluralesIrregulares[unidadLower]}`;
+      }
+      
+      const ultimaLetra = unidad.charAt(unidad.length - 1);
+      const penultimaLetra = unidad.charAt(unidad.length - 2);
+      
+      if (['a', 'e', 'i', 'o', 'u'].includes(ultimaLetra)) {
+        return `${esNegativo ? '-' : ''}${cantidadFormateada} ${unidad}s`;
+      } else {
+        return `${esNegativo ? '-' : ''}${cantidadFormateada} ${unidad}es`;
+      }
+    }
+  };
+
+  const formatCantidad = (valor) => {
+    const num = parseFloat(valor);
+    return isNaN(num) ? '0' : num.toLocaleString('es-ES', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    });
+  };
+
   // Función mejorada para obtener nombre de almacén
   const getNombreAlmacen = (codigo) => {
     if (!codigo || codigo === 'undefined') return 'Almacén no disponible';
@@ -240,7 +318,7 @@ const TraspasosPage = () => {
     }
   };
 
-  // Función cargarStock CORREGIDA - Usando ubicacionesMultiples que SÍ funciona
+  // 🔥 CORRECCIÓN: Función mejorada para cargar stock usando el nuevo endpoint
   const cargarStock = async () => {
     if (!articuloSeleccionado) return;
     
@@ -253,36 +331,42 @@ const TraspasosPage = () => {
     }
   };
 
-  // Función usando /ubicacionesMultiples que SÍ devuelve tallas y colores
+  // 🔥 CORRECCIÓN: Usar el nuevo endpoint específico para traspasos
   const cargarStockAlternativo = async () => {
     try {
       const headers = getAuthHeader();
       
-      const response = await axios.post(
-        'http://localhost:3000/ubicacionesMultiples',
-        {
-          articulos: [{ codigo: articuloSeleccionado.CodigoArticulo }]
-        },
-        { headers }
+      // 🔥 USAR EL NUEVO ENDPOINT ESPECÍFICO PARA TRASPASOS
+      const response = await axios.get(
+        `http://localhost:3000/traspasos/stock-por-articulo`,
+        { 
+          headers,
+          params: { codigoArticulo: articuloSeleccionado.CodigoArticulo }
+        }
       );
       
-      const stockData = response.data[articuloSeleccionado.CodigoArticulo] || [];
+      const stockData = response.data;
       
-      console.log('Datos de stock recibidos:', stockData); // Para debug
+      console.log('✅ [TRASPASOS] Datos de stock recibidos:', stockData);
       
       const stockNormalizado = stockData.map(item => ({
-        CodigoAlmacen: item.codigoAlmacen,
-        NombreAlmacen: item.nombreAlmacen,
-        Ubicacion: item.ubicacion,
-        DescripcionUbicacion: item.descripcionUbicacion,
-        Cantidad: item.unidadSaldo,
-        UnidadMedida: item.unidadMedida || 'unidades',
-        TipoUnidadMedida_: item.unidadMedida || 'unidades',
-        Partida: item.partida || '',
-        CodigoColor_: item.codigoColor || '',
-        Talla: item.codigoTalla || '',
-        EsSinUbicacion: false,
-        GrupoUnico: `${item.codigoAlmacen}_${item.ubicacion}_${item.unidadMedida}_${item.partida || ''}_${item.codigoTalla || ''}_${item.codigoColor || ''}`
+        CodigoAlmacen: item.CodigoAlmacen,
+        NombreAlmacen: item.NombreAlmacen,
+        Ubicacion: item.Ubicacion,
+        DescripcionUbicacion: item.DescripcionUbicacion,
+        Cantidad: item.Cantidad,
+        UnidadMedida: item.UnidadStock,
+        TipoUnidadMedida_: item.UnidadStock,
+        Partida: item.Partida || '',
+        CodigoColor_: item.CodigoColor_ || '',
+        Talla: item.CodigoTalla01_ || '',
+        EsSinUbicacion: item.EsSinUbicacion === 1 || item.TipoStock === 'SIN_UBICACION',
+        GrupoUnico: item.ClaveUnica,
+        // 🔥 INCLUIR INFORMACIÓN DE CONVERSIÓN PARA CONSISTENCIA
+        UnidadBase: item.UnidadBase,
+        UnidadAlternativa: item.UnidadAlternativa,
+        FactorConversion: item.FactorConversion,
+        CantidadBase: item.CantidadBase
       }));
       
       setStockDisponible(stockNormalizado);
@@ -302,8 +386,58 @@ const TraspasosPage = () => {
         setStockDisponibleInfo(`${almacenConMasStock.Cantidad} ${almacenConMasStock.UnidadMedida}`);
       }
     } catch (error) {
-      console.error('Error cargando stock alternativo:', error);
-      throw error;
+      console.error('❌ [TRASPASOS] Error cargando stock:', error);
+      
+      // 🔥 FALLBACK: Intentar con el método anterior si el nuevo falla
+      try {
+        console.log('🔄 [TRASPASOS] Intentando fallback con ubicacionesMultiples...');
+        const headers = getAuthHeader();
+        
+        const response = await axios.post(
+          'http://localhost:3000/ubicacionesMultiples',
+          {
+            articulos: [{ codigo: articuloSeleccionado.CodigoArticulo }]
+          },
+          { headers }
+        );
+        
+        const stockData = response.data[articuloSeleccionado.CodigoArticulo] || [];
+        
+        const stockNormalizado = stockData.map(item => ({
+          CodigoAlmacen: item.codigoAlmacen,
+          NombreAlmacen: item.nombreAlmacen,
+          Ubicacion: item.ubicacion,
+          DescripcionUbicacion: item.descripcionUbicacion,
+          Cantidad: item.unidadSaldo,
+          UnidadMedida: item.unidadMedida || 'unidades',
+          TipoUnidadMedida_: item.unidadMedida || 'unidades',
+          Partida: item.partida || '',
+          CodigoColor_: item.codigoColor || '',
+          Talla: item.codigoTalla || '',
+          EsSinUbicacion: false,
+          GrupoUnico: `${item.codigoAlmacen}_${item.ubicacion}_${item.unidadMedida}_${item.partida || ''}_${item.codigoTalla || ''}_${item.codigoColor || ''}`
+        }));
+        
+        setStockDisponible(stockNormalizado);
+        
+        if (stockNormalizado.length > 0) {
+          const almacenConMasStock = stockNormalizado.reduce((max, item) => 
+            item.Cantidad > max.Cantidad ? item : max
+          );
+          
+          setAlmacenOrigen(almacenConMasStock.CodigoAlmacen);
+          setUbicacionOrigen(almacenConMasStock.Ubicacion);
+          setUnidadMedida(almacenConMasStock.UnidadMedida);
+          setTipoUnidadMedida(almacenConMasStock.UnidadMedida);
+          setPartida(almacenConMasStock.Partida || '');
+          setTallaOrigen(almacenConMasStock.Talla || '');
+          setColorOrigen(almacenConMasStock.CodigoColor_ || '');
+          setStockDisponibleInfo(`${almacenConMasStock.Cantidad} ${almacenConMasStock.UnidadMedida}`);
+        }
+      } catch (fallbackError) {
+        console.error('❌ [TRASPASOS] Error en fallback:', fallbackError);
+        throw error;
+      }
     }
   };
 
@@ -787,14 +921,6 @@ const TraspasosPage = () => {
     }
   };
 
-  const formatCantidad = (valor) => {
-    const num = parseFloat(valor);
-    return isNaN(num) ? '0' : num.toLocaleString('es-ES', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    });
-  };
-
   const formatUnidadMedida = (unidad) => {
     return unidad || 'unidades';
   };
@@ -988,7 +1114,8 @@ const TraspasosPage = () => {
                               optionText += ` - Talla/Color: ${tallaColor}`;
                             }
                             
-                            optionText += ` - ${formatCantidad(item.Cantidad)} ${item.UnidadMedida}`;
+                            // 🔥 USAR EL MISMO FORMATEO QUE INVENTARIO
+                            optionText += ` - ${formatearUnidad(item.Cantidad, item.UnidadMedida)}`;
                             
                             if (item.Partida) {
                               optionText += ` (Lote: ${item.Partida})`;
@@ -1189,7 +1316,7 @@ const TraspasosPage = () => {
                             </div>
                           )}
                         </div>
-                      ))}
+                      ))},
                     </div>
                   )}
                 </div>
@@ -1259,10 +1386,11 @@ const TraspasosPage = () => {
                                   <td>{articulo.CodigoArticulo}</td>
                                   <td>{articulo.DescripcionArticulo}</td>
                                   <td>
-                                    {formatCantidad(articulo.Cantidad)} 
+                                    {/* 🔥 USAR EL MISMO FORMATEO QUE INVENTARIO */}
+                                    {formatearUnidad(articulo.Cantidad, articulo.UnidadMedida)} 
                                     {articulo.UnidadMedida !== articulo.UnidadBase && articulo.FactorConversion && (
                                       <span className="unidad-base">
-                                        ({formatCantidad(articulo.Cantidad * articulo.FactorConversion)} {articulo.UnidadBase})
+                                        ({formatearUnidad(articulo.Cantidad * articulo.FactorConversion, articulo.UnidadBase)})
                                       </span>
                                     )}
                                   </td>
@@ -1416,7 +1544,7 @@ const TraspasosPage = () => {
                         max={articuloUbicacionSeleccionado.Cantidad}
                       />
                       <div className="stock-info">
-                        <strong>Stock disponible:</strong> {formatCantidad(articuloUbicacionSeleccionado.Cantidad)} {formatUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida)}
+                        <strong>Stock disponible:</strong> {formatearUnidad(articuloUbicacionSeleccionado.Cantidad, articuloUbicacionSeleccionado.UnidadMedida)}
                       </div>
                     </div>
 
@@ -1476,11 +1604,8 @@ const TraspasosPage = () => {
                           <br />{traspaso.destino.ubicacion}
                         </td>
                         <td className="cantidad-td">
-                          {formatCantidad(traspaso.cantidad)}
-                          <br />
-                          <span className="unidad-medida">
-                            {formatUnidadMedida(traspaso.unidadMedida)}
-                          </span>
+                          {/* 🔥 USAR EL MISMO FORMATEO QUE INVENTARIO */}
+                          {formatearUnidad(traspaso.cantidad, traspaso.unidadMedida)}
                         </td>
                         <td>
                           <div className="variantes-info">
@@ -1577,10 +1702,8 @@ const TraspasosPage = () => {
                           {item.DestinoUbicacion}
                         </td>
                         <td>
-                          {formatCantidad(item.Cantidad)}
-                          <div className="unidad-lote">
-                            {formatUnidadMedida(item.UnidadMedida)}
-                          </div>
+                          {/* 🔥 USAR EL MISMO FORMATEO QUE INVENTARIO */}
+                          {formatearUnidad(item.Cantidad, item.UnidadMedida)}
                         </td>
                         <td>
                           <div className="variantes-info">

@@ -126,7 +126,7 @@ const ErrorMessage = React.memo(({ message, onRetry }) => (
   </div>
 ));
 
-// Componente Modal de Detalles de Artículo (Optimizado)
+// Componente Modal de Detalles de Artículo
 const DetallesArticuloModal = React.memo(({ 
   detalles, 
   linea, 
@@ -152,9 +152,13 @@ const DetallesArticuloModal = React.memo(({
     };
   }, []);
 
-  // Cargar stock cuando abrimos el modal
+  // Cargar stock cuando abrimos el modal - SOLO para variantes con unidades pendientes
   useEffect(() => {
-    if (!detalles || detalles.length === 0) {
+    const detallesConStock = detalles.filter(detalle => 
+      parseFloat(detalle.cantidadPendiente) > 0
+    );
+
+    if (!detallesConStock || detallesConStock.length === 0) {
       setCargandoUbicaciones(false);
       return;
     }
@@ -165,7 +169,7 @@ const DetallesArticuloModal = React.memo(({
       const resultados = {};
       const nuevosErrores = {};
 
-      for (const detalle of detalles) {
+      for (const detalle of detallesConStock) {
         const key = `${detalle.codigoArticulo}-${detalle.codigoColor}-${detalle.codigoTalla}`;
         
         // Cancelar petición anterior si existe
@@ -210,6 +214,11 @@ const DetallesArticuloModal = React.memo(({
     cargarUbicaciones();
   }, [detalles]);
 
+  const detallesConPendientes = useMemo(() => 
+    detalles.filter(detalle => parseFloat(detalle.cantidadPendiente) > 0),
+    [detalles]
+  );
+
   // Guardar selección de ubicación y cantidad
   const handleCambioSeleccion = useCallback((detalleKey, field, value) => {
     setSelecciones((prev) => ({
@@ -231,15 +240,20 @@ const DetallesArticuloModal = React.memo(({
       return;
     }
 
-    if (parseFloat(seleccion.cantidad) <= 0) {
+    const cantidad = parseFloat(seleccion.cantidad);
+    if (cantidad <= 0) {
       alert("La cantidad debe ser mayor a cero.");
+      return;
+    }
+
+    if (cantidad > detalle.cantidadPendiente) {
+      alert(`No puedes expedir más de ${detalle.cantidadPendiente} unidades (pendientes para esta variante).`);
       return;
     }
 
     setProcesando(true);
     
     try {
-      // Buscar la ubicación seleccionada para obtener todos los datos necesarios
       const ubicaciones = ubicacionesPorDetalle[detalleKey] || [];
       const ubicacionSeleccionada = ubicaciones.find(ubic => ubic.Ubicacion === seleccion.ubicacion);
       
@@ -249,16 +263,16 @@ const DetallesArticuloModal = React.memo(({
         return;
       }
 
-      // Llamar a la función de expedición con todos los datos necesarios
       await onExpedirVariante({
         articulo: detalle.codigoArticulo,
         color: detalle.codigoColor,
         talla: detalle.codigoTalla,
-        cantidad: parseFloat(seleccion.cantidad),
+        cantidad: cantidad,
         ubicacion: seleccion.ubicacion,
         almacen: ubicacionSeleccionada.CodigoAlmacen,
         partida: ubicacionSeleccionada.Partida || '',
-        unidadMedida: ubicacionSeleccionada.UnidadMedida || linea.unidadBase
+        unidadMedida: ubicacionSeleccionada.UnidadMedida || linea.unidadBase,
+        movPosicionLinea: linea.movPosicionLinea
       });
 
       alert("Expedición confirmada ✅");
@@ -273,14 +287,14 @@ const DetallesArticuloModal = React.memo(({
     }
   }, [selecciones, ubicacionesPorDetalle, onExpedirVariante, linea, handleCambioSeleccion]);
 
-  if (!detalles || detalles.length === 0) {
+  if (!detalles || detallesConPendientes.length === 0) {
     return (
       <div className="ps-modal-detalles" onClick={onClose}>
         <div className="ps-modal-contenido ps-modal-detalles-contenido" onClick={e => e.stopPropagation()}>
           <button className="ps-cerrar-modal" onClick={onClose}><FaTimes /></button>
           <h3 className="ps-modal-titulo">Artículo: {linea.descripcionArticulo}</h3>
           <div className="ps-modal-no-variantes">
-            <p>No hay variantes disponibles para este artículo.</p>
+            <p>No hay variantes con unidades pendientes para este artículo.</p>
             <button className="ps-btn-cerrar-modal" onClick={onClose}>
               Cerrar
             </button>
@@ -316,7 +330,7 @@ const DetallesArticuloModal = React.memo(({
                 </tr>
               </thead>
               <tbody>
-                {detalles.map((detalle, index) => {
+                {detallesConPendientes.map((detalle, index) => {
                   const key = `${detalle.codigoArticulo}-${detalle.codigoColor}-${detalle.codigoTalla}`;
                   const ubicaciones = ubicacionesPorDetalle[key] || [];
                   const seleccion = selecciones[key] || {};
@@ -358,8 +372,14 @@ const DetallesArticuloModal = React.memo(({
                             value={seleccion.cantidad || ""}
                             min={0}
                             max={detalle.cantidadPendiente}
-                            onChange={(e) => handleCambioSeleccion(key, "cantidad", e.target.value)}
-                            disabled={!canPerformActions || ubicaciones.length === 0 || !!error}
+                            onChange={(e) => {
+                              const nuevaCantidad = Math.min(
+                                parseFloat(e.target.value) || 0, 
+                                detalle.cantidadPendiente
+                              );
+                              handleCambioSeleccion(key, "cantidad", nuevaCantidad.toString());
+                            }}
+                            disabled={!canPerformActions || ubicaciones.length === 0 || !!error || detalle.cantidadPendiente <= 0}
                             placeholder="0"
                           />
                           <span className="ps-unidad-info">{linea.unidadBase || 'ud'}</span>
@@ -369,7 +389,16 @@ const DetallesArticuloModal = React.memo(({
                         <button
                           className="ps-btn-expedir-variante"
                           onClick={() => handleExpedir(detalle)}
-                          disabled={!canPerformActions || !seleccion.ubicacion || !seleccion.cantidad || parseFloat(seleccion.cantidad) <= 0 || procesando || !!error}
+                          disabled={
+                            !canPerformActions || 
+                            !seleccion.ubicacion || 
+                            !seleccion.cantidad || 
+                            parseFloat(seleccion.cantidad) <= 0 || 
+                            parseFloat(seleccion.cantidad) > detalle.cantidadPendiente ||
+                            procesando || 
+                            !!error ||
+                            detalle.cantidadPendiente <= 0
+                          }
                         >
                           {procesando ? "Procesando..." : "Expedir"}
                         </button>
@@ -395,7 +424,7 @@ const DetallesArticuloModal = React.memo(({
   );
 });
 
-// Componente Línea de Pedido (VERSIÓN CORREGIDA CON PESO Y SIN ESPACIOS)
+// Componente Línea de Pedido
 const LineaPedido = React.memo(({ 
   linea, 
   pedido, 
@@ -412,38 +441,20 @@ const LineaPedido = React.memo(({
   const ubicacionesConStock = useMemo(() => {
     const ubicacionesArticulo = ubicaciones[linea.codigoArticulo] || [];
     
-    console.log(`[DEBUG FRONTEND] Ubicaciones para ${linea.codigoArticulo}:`, ubicacionesArticulo);
-    
     let ubicacionesConStockReal = ubicacionesArticulo.filter(ubi => {
-      // Verificar que tenga stock positivo
       const tieneStock = parseFloat(ubi.unidadSaldo) > 0;
-      
-      // Verificar coincidencia de unidad de medida
-      const unidadCoincide = 
-        ubi.unidadMedida === linea.unidadPedido ||
-        ubi.unidadMedida === linea.unidadBase ||
-        ubi.unidadMedida === linea.unidadAlternativa ||
-        !ubi.unidadMedida || 
-        ubi.unidadMedida === '' || 
-        ubi.unidadMedida === 'unidades';
-      
-      // Excluir Zona descarga inicialmente
+      const unidadCoincide = ubi.unidadMedida === linea.unidadPedido;
       const noEsZonaDescarga = ubi.ubicacion !== "Zona descarga";
       
       return tieneStock && unidadCoincide && noEsZonaDescarga;
     });
 
-    console.log(`[DEBUG FRONTEND] Ubicaciones con stock real:`, ubicacionesConStockReal);
-
-    // Si no hay ubicaciones con stock, buscar cualquier ubicación (sin stock)
     if (ubicacionesConStockReal.length === 0) {
       ubicacionesConStockReal = ubicacionesArticulo.filter(ubi => 
-        ubi.ubicacion !== "Zona descarga"
+        ubi.ubicacion !== "Zona descarga" && ubi.unidadMedida === linea.unidadPedido
       );
-      console.log(`[DEBUG FRONTEND] Ubicaciones sin stock:`, ubicacionesConStockReal);
     }
 
-    // Si aún no hay ubicaciones, usar Zona descarga
     if (ubicacionesConStockReal.length === 0) {
       ubicacionesConStockReal = [{
         codigoAlmacen: linea.codigoAlmacen || "CEN",
@@ -453,20 +464,16 @@ const LineaPedido = React.memo(({
         unidadMedida: linea.unidadPedido || linea.unidadBase || 'ud',
         descripcionUbicacion: "Stock disponible para expedición directa"
       }];
-      console.log(`[DEBUG FRONTEND] Usando Zona descarga`);
     }
 
-    // Ordenar por stock descendente
     const ubicacionesOrdenadas = ubicacionesConStockReal.sort((a, b) => {
       const stockA = a.unidadSaldo === Infinity ? 999999 : parseFloat(a.unidadSaldo);
       const stockB = b.unidadSaldo === Infinity ? 999999 : parseFloat(b.unidadSaldo);
       return stockB - stockA;
     });
-
-    console.log(`[DEBUG FRONTEND] Ubicaciones finales ordenadas:`, ubicacionesOrdenadas);
     
     return ubicacionesOrdenadas;
-  }, [ubicaciones, linea.codigoArticulo, linea.unidadPedido, linea.unidadBase, linea.unidadAlternativa, linea.codigoAlmacen]);
+  }, [ubicaciones, linea.codigoArticulo, linea.unidadPedido, linea.codigoAlmacen, linea.unidadBase]);
 
   const key = linea.movPosicionLinea;
   const expedicion = expediciones[key] || {
@@ -529,6 +536,7 @@ const LineaPedido = React.memo(({
     if (ubicacionSeleccionada && 
         ubicacionSeleccionada.ubicacion !== "Zona descarga" && 
         ubicacionSeleccionada.unidadSaldo !== Infinity) {
+      // ✅ USAR EL STOCK ACTUALIZADO para la validación
       const stockDisponible = parseFloat(ubicacionSeleccionada.unidadSaldo) || 0;
       maxPermitido = Math.min(unidadesPendientes, stockDisponible);
     }
@@ -563,6 +571,7 @@ const LineaPedido = React.memo(({
     if (ubicacionSeleccionada.ubicacion === "Zona descarga") {
       nuevaCantidad = unidadesPendientes;
     } else {
+      // ✅ USAR EL STOCK ACTUALIZADO para calcular la cantidad
       const stockDisponible = parseFloat(ubicacionSeleccionada.unidadSaldo) || 0;
       nuevaCantidad = Math.min(unidadesPendientes, stockDisponible);
     }
@@ -781,7 +790,7 @@ const LineaPedido = React.memo(({
     </>);
 });
 
-// Componente Tarjeta de Pedido (ACTUALIZADO CON PESO Y VOLUMINOSO)
+// Componente Tarjeta de Pedido
 const PedidoCard = React.memo(({ 
   pedido, 
   togglePedidoView, 
@@ -975,9 +984,9 @@ const PedidoCard = React.memo(({
                   </tr>
                 </thead>
                 <tbody>
-                  {pedido.articulos.map((linea) => (
+                  {pedido.articulos.map((linea, index) => (
                     <LineaPedido 
-                      key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${linea.movPosicionLinea}`}
+                      key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${linea.unidadPedido}-${index}`}
                       linea={linea} 
                       pedido={pedido} 
                       expediciones={expediciones}
@@ -998,7 +1007,7 @@ const PedidoCard = React.memo(({
   );
 });
 
-// Componente de Paginación (Optimizado)
+// Componente de Paginación
 const Paginacion = React.memo(({ totalPaginas, paginaActual, cambiarPagina }) => {
   const paginas = useMemo(() => {
     const paginas = [];
@@ -1062,7 +1071,7 @@ const Paginacion = React.memo(({ totalPaginas, paginaActual, cambiarPagina }) =>
   );
 });
 
-// Componente Modal de Cámara (Optimizado)
+// Componente Modal de Cámara
 const CameraModal = React.memo(({ 
   showCamera, 
   setShowCamera, 
@@ -1172,7 +1181,7 @@ const CameraModal = React.memo(({
   );
 });
 
-// Componente Principal PedidosScreen (COMPLETO Y CORREGIDO)
+// Componente Principal PedidosScreen
 const PedidosScreen = () => {
   const navigate = useNavigate();
   const [user] = useState(() => {
@@ -1237,7 +1246,7 @@ const PedidosScreen = () => {
     { id: 6, nombre: 'Pedido Express' }
   ], []);
 
-  // ✅ NUEVA FUNCIÓN: Actualizar estado voluminoso
+  // ✅ FUNCIÓN: Actualizar estado voluminoso
   const handleActualizarVoluminoso = useCallback(async (pedido, esVoluminoso) => {
     if (!canPerformActionsInPedidos) return;
     
@@ -1275,9 +1284,9 @@ const PedidosScreen = () => {
     }
   }, [canPerformActionsInPedidos]);
 
-  // Función para cargar pedidos con cancelación - VERSIÓN CORREGIDA
-  const cargarPedidos = useCallback(async () => {
-    if (abortControllerRef.current) {
+  // Función para cargar pedidos con cancelación
+  const cargarPedidos = useCallback(async (forzarRecarga = false) => {
+    if (abortControllerRef.current && !forzarRecarga) {
       abortControllerRef.current.abort();
     }
     
@@ -1287,6 +1296,12 @@ const PedidosScreen = () => {
     try {
       setLoading(true);
       setError('');
+      
+      // ✅ LIMPIAR ESTADOS ANTES DE RECARGAR
+      if (forzarRecarga) {
+        setUbicaciones({});
+        setExpediciones({});
+      }
       
       const codigoEmpresa = userRef.current?.CodigoEmpresa;
       const rango = rangoFechasRef.current;
@@ -1407,6 +1422,161 @@ const PedidosScreen = () => {
     }
   }, []);
 
+  // 🔥 FUNCIÓN handleExpedir COMPLETAMENTE CORREGIDA - CON ACTUALIZACIÓN DE UBICACIONES
+  const handleExpedir = useCallback(async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea, detalle = null) => {
+    if (!canPerformActions || isScanning) return;
+    
+    setIsScanning(true);
+    const key = linea.movPosicionLinea;
+    
+    console.log('[FRONTEND DEBUG EXPEDICIÓN] Iniciando expedición:', {
+      articulo: codigoArticulo,
+      unidad: linea.unidadPedido,
+      movPosicionLinea: key,
+      cantidad: expediciones[key]?.cantidad,
+      ubicacion: expediciones[key]?.ubicacion,
+      almacen: expediciones[key]?.almacen,
+      unidadMedida: expediciones[key]?.unidadMedida,
+      lineaCompleta: linea
+    });
+
+    const expedicion = expediciones[key];
+    
+    if (!expedicion) {
+      console.error('[ERROR] No se encontró expedición para la línea:', key);
+      setIsScanning(false);
+      return;
+    }
+
+    let cantidadExpedida = parseFloat(expedicion.cantidad);
+    if (isNaN(cantidadExpedida) || cantidadExpedida <= 0) {
+      alert("La cantidad debe ser mayor a cero");
+      setIsScanning(false);
+      return;
+    }
+
+    try {
+      const headers = getAuthHeader();
+      
+      // VERIFICACIÓN DE STOCK
+      if (expedicion.ubicacion !== "Zona descarga") {
+        const ubicacionesArticulo = ubicaciones[linea.codigoArticulo] || [];
+        const ubicacionActual = ubicacionesArticulo.find(ubi => 
+          ubi.ubicacion === expedicion.ubicacion && 
+          ubi.codigoAlmacen === expedicion.almacen &&
+          ubi.unidadMedida === expedicion.unidadMedida
+        );
+        
+        if (!ubicacionActual) {
+          alert("❌ La ubicación seleccionada ya no está disponible. Por favor, selecciona otra ubicación.");
+          setIsScanning(false);
+          return;
+        }
+        
+        const stockActual = ubicacionActual.unidadSaldo;
+        if (stockActual < cantidadExpedida) {
+          alert(`❌ Stock insuficiente. Solo hay ${stockActual} unidades disponibles en ${expedicion.ubicacion}`);
+          setIsScanning(false);
+          return;
+        }
+      }
+
+      if (expedicion.ubicacion !== "Zona descarga" && cantidadExpedida > unidadesPendientes) {
+        alert(`No puedes expedir más de ${unidadesPendientes} unidades (pendientes)`);
+        setIsScanning(false);
+        return;
+      }
+
+      const datosExpedicion = {
+        codigoEmpresa,
+        ejercicio,
+        serie: serie || '',
+        numeroPedido,
+        codigoArticulo,
+        cantidadExpedida,
+        almacen: expedicion.almacen,
+        ubicacion: expedicion.ubicacion,
+        partida: expedicion.partida || '',
+        unidadMedida: expedicion.unidadMedida || linea.unidadPedido,
+        esZonaDescarga: expedicion.ubicacion === "Zona descarga",
+        movPosicionLinea: key
+      };
+
+      console.log('[FRONTEND DEBUG] Enviando datos al backend:', datosExpedicion);
+
+      if (detalle) {
+        datosExpedicion.codigoColor = detalle.color;
+        datosExpedicion.codigoTalla = detalle.talla;
+      }
+
+      const response = await axios.post(
+        'http://localhost:3000/actualizarLineaPedido',
+        datosExpedicion,
+        { headers }
+      );
+
+      if (response.data.success) {
+        console.log('[FRONTEND DEBUG] Expedición exitosa:', response.data);
+        
+        // ✅ CORRECCIÓN CRÍTICA: ACTUALIZAR EL ESTADO LOCAL DE EXPEDICIONES - RESETEAR A 0
+        setExpediciones(prev => ({
+          ...prev,
+          [key]: {
+            ...prev[key],
+            cantidad: '0' // Resetear a 0 después de expedir
+          }
+        }));
+
+        // ✅ CORRECCIÓN CRÍTICA: ACTUALIZAR EL STOCK EN LAS UBICACIONES
+        if (expedicion.ubicacion !== "Zona descarga") {
+          setUbicaciones(prev => {
+            const nuevasUbicaciones = { ...prev };
+            const ubicacionesArticulo = nuevasUbicaciones[linea.codigoArticulo] || [];
+            
+            const ubicacionesActualizadas = ubicacionesArticulo.map(ubic => {
+              // 🔥 CORRECCIÓN: Comparación más estricta incluyendo unidad de medida
+              if (ubic.ubicacion === expedicion.ubicacion && 
+                  ubic.codigoAlmacen === expedicion.almacen &&
+                  ubic.unidadMedida === expedicion.unidadMedida) {
+                
+                // Restar la cantidad expedida del stock
+                const stockActual = parseFloat(ubic.unidadSaldo) || 0;
+                const nuevoStock = Math.max(0, stockActual - cantidadExpedida);
+                
+                console.log(`[DEBUG STOCK] Actualizando stock de ${ubic.ubicacion}: ${stockActual} -> ${nuevoStock} ${ubic.unidadMedida}`);
+                
+                return {
+                  ...ubic,
+                  unidadSaldo: nuevoStock
+                };
+              }
+              return ubic;
+            });
+            
+            nuevasUbicaciones[linea.codigoArticulo] = ubicacionesActualizadas;
+            return nuevasUbicaciones;
+          });
+        }
+
+        // RECARGAR COMPLETAMENTE LOS PEDIDOS
+        await cargarPedidos(true);
+        
+        alert(`✅ Se expedieron ${cantidadExpedida} unidades correctamente. ${expedicion.ubicacion !== "Zona descarga" ? `Stock restante: ${response.data.detalles.stockRestante}` : 'Desde Zona de descarga'}`);
+      }
+    } catch (error) {
+      console.error('[FRONTEND ERROR] Error al expedir artículo:', error);
+      console.error('Respuesta del servidor:', error.response?.data);
+      
+      if (error.response?.data?.mensaje) {
+        alert('❌ Error al expedir artículo: ' + error.response.data.mensaje);
+      } else {
+        alert('❌ Error al expedir artículo: ' + error.message);
+      }
+    } finally {
+      setIsScanning(false);
+    }
+  }, [canPerformActions, isScanning, expediciones, ubicaciones, cargarPedidos]);
+
   useEffect(() => {
     cargarPedidos();
     
@@ -1472,21 +1642,23 @@ const PedidosScreen = () => {
         detallesAnidados.forEach(variante => {
           if (variante.tallas && typeof variante.tallas === 'object') {
             Object.entries(variante.tallas).forEach(([codigoTalla, talla]) => {
-              if (talla && typeof talla === 'object') {
+              if (talla && typeof talla === 'object' && talla.unidades > 0) {
                 let codigoTallaReal = codigoTalla;
                 
                 if (talla.descripcion && talla.descripcion.includes('Talla ')) {
                   codigoTallaReal = talla.descripcion.replace('Talla ', '');
                 }
                 
-                detallesPlana.push({
-                  codigoArticulo: linea.codigoArticulo,
-                  codigoColor: variante.color?.codigo || '',
-                  codigoTalla: codigoTallaReal,
-                  cantidadPendiente: talla.unidades || 0,
-                  descripcionTalla: talla.descripcion || `Talla ${codigoTalla}`,
-                  colorNombre: variante.color?.nombre || variante.color?.codigo || 'Sin color'
-                });
+                if (parseFloat(talla.unidades) > 0) {
+                  detallesPlana.push({
+                    codigoArticulo: linea.codigoArticulo,
+                    codigoColor: variante.color?.codigo || '',
+                    codigoTalla: codigoTallaReal,
+                    cantidadPendiente: talla.unidades || 0,
+                    descripcionTalla: talla.descripcion || `Talla ${codigoTalla}`,
+                    colorNombre: variante.color?.nombre || variante.color?.codigo || 'Sin color'
+                  });
+                }
               }
             });
           }
@@ -1505,7 +1677,7 @@ const PedidosScreen = () => {
   }, []);
 
   const handleExpedirVariante = useCallback(async (datosVariante) => {
-    const { articulo, color, talla, cantidad, ubicacion, almacen, partida, unidadMedida } = datosVariante;
+    const { articulo, color, talla, cantidad, ubicacion, almacen, partida, unidadMedida, movPosicionLinea } = datosVariante;
     const { pedido, linea } = detallesModal;
 
     try {
@@ -1526,46 +1698,16 @@ const PedidosScreen = () => {
           unidadMedida: unidadMedida,
           codigoColor: color,
           codigoTalla: talla,
-          esZonaDescarga: ubicacion === "Zona descarga"
+          esZonaDescarga: ubicacion === "Zona descarga",
+          movPosicionLinea: movPosicionLinea
         },
         { headers }
       );
 
       if (response.data.success) {
-        setPedidos(prev => 
-          prev.map(p => 
-            p.numeroPedido === pedido.numeroPedido 
-              ? { 
-                  ...p, 
-                  articulos: p.articulos.map(a => 
-                    a.codigoArticulo === linea.codigoArticulo 
-                      ? { 
-                          ...a, 
-                          unidadesPendientes: a.unidadesPendientes - cantidad 
-                        }
-                      : a
-                  )
-                } 
-              : p
-          )
-        );
-
-        const articulosConUnidad = pedidos.flatMap(pedido => 
-          pedido.articulos.map(articulo => ({
-            codigo: articulo.codigoArticulo,
-            unidad: articulo.unidadPedido
-          }))
-        );
-
-        const responseUbicaciones = await axios.post(
-          'http://localhost:3000/ubicacionesMultiples',
-          { articulos: articulosConUnidad },
-          { headers }
-        );
-        setUbicaciones(responseUbicaciones.data);
-
+        await cargarPedidos(true);
+        setDetallesModal(null);
         alert(`Expedición realizada: ${cantidad} unidades de la variante`);
-        
         return Promise.resolve();
       }
     } catch (error) {
@@ -1573,139 +1715,7 @@ const PedidosScreen = () => {
       alert('Error al expedir: ' + (error.response?.data?.mensaje || error.message));
       return Promise.reject(error);
     }
-  }, [detallesModal, pedidos]);
-
-  // 🔥 FUNCIÓN handleExpedir CORREGIDA con validación de stock
-  const handleExpedir = useCallback(async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea, detalle = null) => {
-    if (!canPerformActions || isScanning) return;
-    
-    setIsScanning(true);
-    const key = linea.movPosicionLinea;
-    const expedicion = expediciones[key];
-    
-    if (!expedicion) {
-      setIsScanning(false);
-      return;
-    }
-
-    let cantidadExpedida = parseFloat(expedicion.cantidad);
-    if (isNaN(cantidadExpedida) || cantidadExpedida <= 0) {
-      alert("La cantidad debe ser mayor a cero");
-      setIsScanning(false);
-      return;
-    }
-
-    try {
-      const headers = getAuthHeader();
-      
-      // 🔥 VERIFICACIÓN FINAL: Comprobar stock justo antes de expedir
-      if (expedicion.ubicacion !== "Zona descarga") {
-        const ubicacionesArticulo = ubicaciones[linea.codigoArticulo] || [];
-        const ubicacionActual = ubicacionesArticulo.find(ubi => 
-          ubi.ubicacion === expedicion.ubicacion && 
-          ubi.codigoAlmacen === expedicion.almacen
-        );
-        
-        if (!ubicacionActual) {
-          alert("❌ La ubicación seleccionada ya no está disponible. Por favor, selecciona otra ubicación.");
-          setIsScanning(false);
-          return;
-        }
-        
-        const stockActual = ubicacionActual.unidadSaldo;
-        if (stockActual < cantidadExpedida) {
-          alert(`❌ Stock insuficiente. Solo hay ${stockActual} unidades disponibles en ${expedicion.ubicacion}`);
-          setIsScanning(false);
-          return;
-        }
-      }
-
-      if (expedicion.ubicacion !== "Zona descarga" && cantidadExpedida > unidadesPendientes) {
-        alert(`No puedes expedir más de ${unidadesPendientes} unidades (pendientes)`);
-        setIsScanning(false);
-        return;
-      }
-
-      const datosExpedicion = {
-        codigoEmpresa,
-        ejercicio,
-        serie: serie || '',
-        numeroPedido,
-        codigoArticulo,
-        cantidadExpedida,
-        almacen: expedicion.almacen,
-        ubicacion: expedicion.ubicacion,
-        partida: expedicion.partida || '',
-        unidadMedida: expedicion.unidadMedida || linea.unidadPedido,
-        esZonaDescarga: expedicion.ubicacion === "Zona descarga"
-      };
-
-      if (detalle) {
-        datosExpedicion.codigoColor = detalle.color;
-        datosExpedicion.codigoTalla = detalle.talla;
-      }
-
-      const response = await axios.post(
-        'http://localhost:3000/actualizarLineaPedido',
-        datosExpedicion,
-        { headers }
-      );
-
-      if (response.data.success) {
-        if (response.data.detalles.pedidoCompletado) {
-          setPedidos(prev => prev.filter(p => p.numeroPedido !== numeroPedido));
-        } else {
-          setPedidos(prev => 
-            prev.map(p => 
-              p.numeroPedido === numeroPedido 
-                ? {
-                    ...p,
-                    articulos: p.articulos.map(a =>
-                      a.movPosicionLinea === linea.movPosicionLinea
-                        ? { 
-                            ...a, 
-                            unidadesPendientes: response.data.detalles.unidadesPendientesRestantes 
-                          }
-                        : a
-                    ),
-                    Estado: response.data.nuevoEstado || p.Estado,
-                    Status: response.data.nuevoStatus || p.Status
-                  }
-                : p
-            )
-          );
-        }
-
-        // 🔥 ACTUALIZAR UBICACIONES DESPUÉS DE EXPEDIR
-        const articulosConUnidad = pedidos.flatMap(pedido => 
-          pedido.articulos.map(articulo => ({
-            codigo: articulo.codigoArticulo,
-            unidad: articulo.unidadPedido
-          }))
-        );
-
-        const responseUbicaciones = await axios.post(
-          'http://localhost:3000/ubicacionesMultiples',
-          { articulos: articulosConUnidad },
-          { headers }
-        );
-        setUbicaciones(responseUbicaciones.data);
-
-        alert(`Se expedieron ${cantidadExpedida} unidades correctamente. ${expedicion.ubicacion !== "Zona descarga" ? `Stock restante: ${response.data.detalles.stockRestante}` : 'Desde Zona de descarga'}`);
-      }
-    } catch (error) {
-      console.error('Error al expedir artículo:', error);
-      console.error('Respuesta del servidor:', error.response?.data);
-      
-      if (error.response?.data?.mensaje) {
-        alert('Error al expedir artículo: ' + error.response.data.mensaje);
-      } else {
-        alert('Error al expedir artículo: ' + error.message);
-      }
-    } finally {
-      setIsScanning(false);
-    }
-  }, [canPerformActions, isScanning, expediciones, ubicaciones, pedidos]);
+  }, [detallesModal, cargarPedidos]);
 
   const iniciarEscaneo = useCallback((linea, pedido, detalle = null) => {
     if (!canPerformActions) return;
@@ -1808,34 +1818,22 @@ const PedidosScreen = () => {
       
       const lineasExpedidas = [];
       
-      // ✅ CORRECCIÓN: Calcular las unidades YA EXPEDIDAS (no las pendientes)
       pedido.articulos.forEach(articulo => {
         const unidadesPedidas = parseFloat(articulo.unidadesPedidas) || 0;
         const unidadesPendientes = parseFloat(articulo.unidadesPendientes) || 0;
         const unidadesExpedidas = unidadesPedidas - unidadesPendientes;
         
-        // Solo incluir si se ha expedido algo (unidadesExpedidas > 0)
         if (unidadesExpedidas > 0) {
           lineasExpedidas.push({
             codigoArticulo: articulo.codigoArticulo,
             descripcionArticulo: articulo.descripcionArticulo,
-            cantidad: unidadesExpedidas, // ✅ Esto es lo que YA se expedió
+            cantidad: unidadesExpedidas,
             precio: articulo.precio || 0,
             codigoAlmacen: articulo.codigoAlmacen || 'CEN',
             partida: articulo.partida || ''
           });
-          
-          console.log(`[ALBARAN PARCIAL] Línea incluida:`, {
-            articulo: articulo.codigoArticulo,
-            expedidas: unidadesExpedidas,
-            pedidas: unidadesPedidas,
-            pendientes: unidadesPendientes,
-            precio: articulo.precio
-          });
         }
       });
-
-      console.log('[ALBARAN PARCIAL] Líneas expedidas a incluir:', lineasExpedidas);
 
       if (lineasExpedidas.length === 0) {
         alert('No hay líneas con cantidades expedidas para generar albarán parcial.');
@@ -1856,7 +1854,6 @@ const PedidosScreen = () => {
       );
 
       if (response.data.success) {
-        // ✅ Actualizar el estado local del pedido
         setPedidos(prev => 
           prev.map(p => 
             p.numeroPedido === pedido.numeroPedido 
