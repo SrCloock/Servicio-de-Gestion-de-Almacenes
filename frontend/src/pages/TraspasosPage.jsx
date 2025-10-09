@@ -140,6 +140,22 @@ const TraspasosPage = () => {
     });
   };
 
+  // 🔥 CORRECCIÓN: Funciones para normalizar y mostrar unidad de medida
+  const normalizarUnidadMedida = (unidad) => {
+    // Si es 'unidades' o está vacío, enviar vacío (el backend lo espera así)
+    if (!unidad || unidad === 'unidades' || unidad.trim() === '') {
+      return '';
+    }
+    return unidad;
+  };
+
+  const mostrarUnidadMedida = (unidad) => {
+    if (!unidad || unidad === '') {
+      return 'unidades';
+    }
+    return unidad;
+  };
+
   // Función mejorada para obtener nombre de almacén
   const getNombreAlmacen = (codigo) => {
     if (!codigo || codigo === 'undefined') return 'Almacén no disponible';
@@ -609,7 +625,7 @@ const TraspasosPage = () => {
       setPartida(ubicacionConMasStock.Partida || '');
       setTallaOrigen(ubicacionConMasStock.Talla || '');
       setColorOrigen(ubicacionConMasStock.CodigoColor_ || '');
-      setStockDisponibleInfo(`${ubicacionConMasStock.Cantidad} ${ubicacionConMasStock.UnidadMedida}`);
+      setStockDisponibleInfo(`${almacenConMasStock.Cantidad} ${almacenConMasStock.UnidadMedida}`);
     }
   };
 
@@ -659,10 +675,11 @@ const TraspasosPage = () => {
       return;
     }
 
-    if (!unidadMedida) {
-      alert('Debe seleccionar una unidad de medida');
-      return;
-    }
+    // 🔥 CORRECCIÓN: No validar que unidadMedida esté lleno, ya que puede ser vacío para "unidades"
+    // if (!unidadMedida) {
+    //   alert('Debe seleccionar una unidad de medida');
+    //   return;
+    // }
 
     if (!articuloSeleccionado || !almacenOrigen || !ubicacionOrigen || !almacenDestino || !ubicacionDestino || !cantidad) {
       alert('Complete todos los campos');
@@ -683,12 +700,16 @@ const TraspasosPage = () => {
       return;
     }
     
+    // 🔥 CORRECCIÓN: Normalizar unidad de medida para el backend
+    const unidadMedidaNormalizada = normalizarUnidadMedida(unidadMedida);
+    const tipoUnidadMedidaNormalizada = normalizarUnidadMedida(tipoUnidadMedida);
+    
     const nuevoTraspaso = {
       id: uuidv4(),
       articulo: {
         ...articuloSeleccionado,
-        unidadMedida: unidadMedida,
-        tipoUnidadMedida: tipoUnidadMedida,
+        unidadMedida: unidadMedidaNormalizada,
+        tipoUnidadMedida: tipoUnidadMedidaNormalizada,
         partida: partida,
         talla: tallaOrigen,
         color: colorOrigen
@@ -697,7 +718,7 @@ const TraspasosPage = () => {
         almacen: almacenOrigen,
         ubicacion: ubicacionOrigen,
         grupoUnico: grupoUnicoOrigen,
-        tipoUnidadMedida: tipoUnidadMedida,
+        tipoUnidadMedida: tipoUnidadMedidaNormalizada,
         esSinUbicacion: stockItem?.EsSinUbicacion || false
       },
       destino: {
@@ -705,8 +726,8 @@ const TraspasosPage = () => {
         ubicacion: ubicacionDestino
       },
       cantidad: cantidadNum,
-      unidadMedida: unidadMedida,
-      tipoUnidadMedida: tipoUnidadMedida,
+      unidadMedida: unidadMedidaNormalizada, // 🔥 Usar la versión normalizada
+      tipoUnidadMedida: tipoUnidadMedidaNormalizada, // 🔥 Usar la versión normalizada
       partida: partida,
       talla: tallaOrigen,
       color: colorOrigen
@@ -742,12 +763,16 @@ const TraspasosPage = () => {
       return;
     }
     
+    // 🔥 CORRECCIÓN: Normalizar unidad de medida
+    const unidadMedidaNormalizada = normalizarUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida);
+    const tipoUnidadMedidaNormalizada = normalizarUnidadMedida(articuloUbicacionSeleccionado.TipoUnidadMedida_);
+    
     const nuevoTraspaso = {
       id: uuidv4(),
       articulo: {
         ...articuloUbicacionSeleccionado,
-        unidadMedida: articuloUbicacionSeleccionado.UnidadMedida || 'unidades',
-        tipoUnidadMedida: articuloUbicacionSeleccionado.TipoUnidadMedida_ || articuloUbicacionSeleccionado.UnidadMedida || 'unidades',
+        unidadMedida: unidadMedidaNormalizada,
+        tipoUnidadMedida: tipoUnidadMedidaNormalizada,
         partida: articuloUbicacionSeleccionado.Partida || '',
         talla: articuloUbicacionSeleccionado.Talla || '',
         color: articuloUbicacionSeleccionado.CodigoColor_ || ''
@@ -755,7 +780,7 @@ const TraspasosPage = () => {
       origen: {
         almacen: ubicacionSeleccionada.almacen,
         ubicacion: ubicacionSeleccionada.ubicacion,
-        tipoUnidadMedida: articuloUbicacionSeleccionado.TipoUnidadMedida_ || articuloUbicacionSeleccionado.UnidadMedida || 'unidades',
+        tipoUnidadMedida: tipoUnidadMedidaNormalizada,
         esSinUbicacion: ubicacionSeleccionada.ubicacion === 'SIN-UBICACION'
       },
       destino: {
@@ -763,8 +788,8 @@ const TraspasosPage = () => {
         ubicacion: ubicacionDestino
       },
       cantidad: cantidadNum,
-      unidadMedida: articuloUbicacionSeleccionado.UnidadMedida || 'unidades',
-      tipoUnidadMedida: articuloUbicacionSeleccionado.TipoUnidadMedida_ || articuloUbicacionSeleccionado.UnidadMedida || 'unidades',
+      unidadMedida: unidadMedidaNormalizada, // 🔥 Usar versión normalizada
+      tipoUnidadMedida: tipoUnidadMedidaNormalizada, // 🔥 Usar versión normalizada
       partida: articuloUbicacionSeleccionado.Partida || '',
       talla: articuloUbicacionSeleccionado.Talla || '',
       color: articuloUbicacionSeleccionado.CodigoColor_ || ''
@@ -796,7 +821,10 @@ const TraspasosPage = () => {
         const partida = traspaso.partida || '';
         const talla = traspaso.talla || '';
         const color = traspaso.color || '';
-        const tipoUnidadMedida = traspaso.tipoUnidadMedida || traspaso.unidadMedida || 'unidades';
+        
+        // 🔥 CORRECCIÓN: El backend ya normaliza 'unidades' a vacío, pero por consistencia
+        // también normalizamos aquí
+        const tipoUnidadMedida = normalizarUnidadMedida(traspaso.tipoUnidadMedida);
         
         const ubicacionOrigenFinal = traspaso.origen.esSinUbicacion ? 'SIN-UBICACION' : traspaso.origen.ubicacion;
         
@@ -807,7 +835,7 @@ const TraspasosPage = () => {
           destinoAlmacen: traspaso.destino.almacen,
           destinoUbicacion: traspaso.destino.ubicacion,
           cantidad: cantidadEntera,
-          unidadMedida: traspaso.unidadMedida || 'unidades',
+          unidadMedida: tipoUnidadMedida, // 🔥 Ya normalizada
           partida: partida,
           grupoTalla: talla ? 1 : 0,
           codigoTalla: talla,
@@ -922,7 +950,7 @@ const TraspasosPage = () => {
   };
 
   const formatUnidadMedida = (unidad) => {
-    return unidad || 'unidades';
+    return mostrarUnidadMedida(unidad);
   };
 
   const getColorStyle = (colorCode) => {
@@ -1136,7 +1164,7 @@ const TraspasosPage = () => {
                     
                     {ubicacionOrigen && (
                       <div className="unidad-info">
-                        <strong>Unidad seleccionada:</strong> {formatUnidadMedida(unidadMedida)}
+                        <strong>Unidad seleccionada:</strong> {mostrarUnidadMedida(unidadMedida)}
                         {partida && <span>, <strong>Lote:</strong> {partida}</span>}
                         {(tallaOrigen || colorOrigen) && (
                           <span>, 
@@ -1394,7 +1422,7 @@ const TraspasosPage = () => {
                                       </span>
                                     )}
                                   </td>
-                                  <td>{articulo.UnidadMedida || 'unidades'}</td>
+                                  <td>{mostrarUnidadMedida(articulo.UnidadMedida)}</td>
                                   <td>
                                     {tallaColor && (
                                       <span 
@@ -1461,7 +1489,7 @@ const TraspasosPage = () => {
                       {articuloUbicacionSeleccionado.DescripcionArticulo} 
                       ({articuloUbicacionSeleccionado.CodigoArticulo})
                       <div className="unidad-info">
-                        <strong>Unidad:</strong> {formatUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida)}
+                        <strong>Unidad:</strong> {mostrarUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida)}
                         {articuloUbicacionSeleccionado.Partida && <span>, <strong>Lote:</strong> {articuloUbicacionSeleccionado.Partida}</span>}
                       </div>
                       
@@ -1605,7 +1633,7 @@ const TraspasosPage = () => {
                         </td>
                         <td className="cantidad-td">
                           {/* 🔥 USAR EL MISMO FORMATEO QUE INVENTARIO */}
-                          {formatearUnidad(traspaso.cantidad, traspaso.unidadMedida)}
+                          {formatearUnidad(traspaso.cantidad, mostrarUnidadMedida(traspaso.unidadMedida))}
                         </td>
                         <td>
                           <div className="variantes-info">
@@ -1703,7 +1731,7 @@ const TraspasosPage = () => {
                         </td>
                         <td>
                           {/* 🔥 USAR EL MISMO FORMATEO QUE INVENTARIO */}
-                          {formatearUnidad(item.Cantidad, item.UnidadMedida)}
+                          {formatearUnidad(item.Cantidad, mostrarUnidadMedida(item.UnidadMedida))}
                         </td>
                         <td>
                           <div className="variantes-info">

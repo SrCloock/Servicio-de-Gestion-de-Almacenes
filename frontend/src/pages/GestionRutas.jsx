@@ -66,6 +66,7 @@ function GestionRutas() {
       const searchLower = searchTerm.toLowerCase();
       return (
         albaran.albaran?.toLowerCase().includes(searchLower) ||
+        (albaran.nombreObra && albaran.nombreObra.toLowerCase().includes(searchLower)) ||
         (albaran.obra && albaran.obra.toLowerCase().includes(searchLower)) ||
         (albaran.cliente && albaran.cliente.toLowerCase().includes(searchLower)) ||
         (albaran.contacto && albaran.contacto.toLowerCase().includes(searchLower)) ||
@@ -229,9 +230,9 @@ function GestionRutas() {
                 <p className="cliente-info">
                   <strong>Cliente:</strong> {albaran.cliente}
                 </p>
-                {albaran.obra && (
+                {(albaran.nombreObra || albaran.obra) && (
                   <p className="obra-info">
-                    <strong>Obra:</strong> {albaran.obra}
+                    <strong>Obra:</strong> {albaran.nombreObra || albaran.obra}
                   </p>
                 )}
                 <p className="contacto-info">

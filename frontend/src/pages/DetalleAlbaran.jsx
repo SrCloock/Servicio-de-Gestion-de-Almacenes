@@ -313,7 +313,7 @@ function DetalleAlbaran() {
               </div>
               <div className="info-item">
                 <label>Obra:</label>
-                <span>{albaran.obra || 'No especificada'}</span>
+                <span>{albaran.nombreObra || albaran.obra || 'No especificada'}</span>
               </div>
               <div className="info-item">
                 <label>Fecha Albarán:</label>

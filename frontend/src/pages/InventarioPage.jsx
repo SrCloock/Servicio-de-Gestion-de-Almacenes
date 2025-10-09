@@ -755,7 +755,7 @@ const InventarioPage = () => {
       codigoAlmacen: editandoCantidad.codigoAlmacen,
       ubicacionStr: editandoCantidad.ubicacionStr,
       partida: editandoCantidad.partida || '',
-      unidadStock: unidadMedidaSeleccionada,
+      unidadStock: (unidadMedidaSeleccionada === 'unidades' ? '' : unidadMedidaSeleccionada),
       nuevaCantidad: cantidad,
       codigoColor: colorSeleccionado || '',
       codigoTalla01: tallaSeleccionada || ''
