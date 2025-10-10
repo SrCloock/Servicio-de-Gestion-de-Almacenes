@@ -43,9 +43,12 @@ export const PermissionsProvider = ({ children, user }) => {
       hasReceivingPermission);
 
     // 5. PERMISOS PARA PANTALLAS ESPECÍFICAS
-    // Pantalla de Pedidos
+    // Pantalla de Pedidos - MANTENIENDO LA LÓGICA ORIGINAL
     const canViewPedidosScreen = isAdmin || isAdvancedUser || isReadOnly || hasOrdersPermission;
     const canPerformActionsInPedidos = !isReadOnly && (isAdmin || isAdvancedUser || hasOrdersPermission);
+    
+    // CORRECCIÓN: Mantener la lógica original para canAssignOrders
+    // Solo admin y usuario avanzado pueden asignar pedidos
     const canAssignOrders = isAdmin || isAdvancedUser;
     
     // Pantalla de Gestión de Rutas
@@ -82,14 +85,18 @@ export const PermissionsProvider = ({ children, user }) => {
       // PERMISOS PARA PANTALLAS
       canViewPedidosScreen,
       canPerformActionsInPedidos,
-      canAssignOrders,
+      canAssignOrders, // ← ESTE ES EL QUE DEBÍA MANTENERSE IGUAL
       canViewGestionRutas,
       canPerformActionsInRutas,
       canViewAlbaranesAsignadosScreen,
       canAssignWaybills,
 
       // NUEVO PERMISO PARA GESTIÓN DOCUMENTAL
-      canViewDocumentManagement
+      canViewDocumentManagement,
+
+      // PERMISOS DIRECTOS (para debug)
+      _hasOrdersPermission: hasOrdersPermission,
+      _hasAssignedOrdersPermission: hasAssignedOrdersPermission
     };
   }, [user]);
 

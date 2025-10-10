@@ -438,7 +438,7 @@ const DetallesArticuloModal = React.memo(({
   );
 });
 
-// Componente Línea de Pedido
+// Componente Línea de Pedido - VERSIÓN CORREGIDA
 const LineaPedido = React.memo(({ 
   linea, 
   pedido, 
@@ -455,10 +455,10 @@ const LineaPedido = React.memo(({
   const ubicacionesConStock = useMemo(() => {
     const ubicacionesArticulo = ubicaciones[linea.codigoArticulo] || [];
     
-    console.log(`[DEBUG] Ubicaciones para artículo ${linea.codigoArticulo}:`, ubicacionesArticulo);
-    console.log(`[DEBUG] Buscando unidad: "${linea.unidadPedido}" en pedido`);
+    console.log(`[FRONTEND DEBUG] Ubicaciones para artículo ${linea.codigoArticulo}:`, ubicacionesArticulo);
+    console.log(`[FRONTEND DEBUG] Buscando unidad: "${linea.unidadPedido}" en pedido`);
 
-    // 🔥 CORRECCIÓN CRÍTICA: Filtrar considerando unidades normalizadas
+    // 🔥 CORRECCIÓN: Filtrar considerando unidades normalizadas
     let ubicacionesConStockReal = ubicacionesArticulo.filter(ubi => {
       const tieneStock = parseFloat(ubi.unidadSaldo) > 0;
       
@@ -474,7 +474,7 @@ const LineaPedido = React.memo(({
       
       const noEsZonaDescarga = ubi.ubicacion !== "Zona descarga";
       
-      console.log(`[DEBUG] Ubicación ${ubi.ubicacion}:`, {
+      console.log(`[FRONTEND DEBUG] Ubicación ${ubi.ubicacion}:`, {
         unidadMedida: ubi.unidadMedida,
         unidadUbicacionNormalizada,
         unidadPedido: linea.unidadPedido,
@@ -489,7 +489,7 @@ const LineaPedido = React.memo(({
       return tieneStock && unidadCoincide && noEsZonaDescarga;
     });
 
-    console.log(`[DEBUG] Ubicaciones con stock real para ${linea.codigoArticulo}:`, ubicacionesConStockReal);
+    console.log(`[FRONTEND DEBUG] Ubicaciones con stock real para ${linea.codigoArticulo}:`, ubicacionesConStockReal);
 
     // Si no hay ubicaciones con stock, mostrar todas las disponibles (incluyendo sin stock)
     if (ubicacionesConStockReal.length === 0) {
@@ -508,7 +508,7 @@ const LineaPedido = React.memo(({
         return unidadCoincide && noEsZonaDescarga;
       });
       
-      console.log(`[DEBUG] Ubicaciones sin stock pero con unidad correcta:`, ubicacionesConStockReal);
+      console.log(`[FRONTEND DEBUG] Ubicaciones sin stock pero con unidad correcta:`, ubicacionesConStockReal);
     }
 
     // Si aún no hay ubicaciones, usar zona descarga
@@ -530,7 +530,7 @@ const LineaPedido = React.memo(({
       return stockB - stockA;
     });
     
-    console.log(`[DEBUG] Ubicaciones finales ordenadas:`, ubicacionesOrdenadas);
+    console.log(`[FRONTEND DEBUG] Ubicaciones finales ordenadas:`, ubicacionesOrdenadas);
     
     return ubicacionesOrdenadas;
   }, [ubicaciones, linea.codigoArticulo, linea.unidadPedido, linea.codigoAlmacen, linea.unidadBase]);
@@ -544,6 +544,37 @@ const LineaPedido = React.memo(({
     cantidad: '0'
   };
   
+  // 🔥 CORRECCIÓN CRÍTICA: Verificar que la expedición actual coincide con las ubicaciones disponibles
+  useEffect(() => {
+    const ubicacionActual = ubicacionesConStock.find(
+      ubi => ubi.ubicacion === expedicion.ubicacion && ubi.codigoAlmacen === expedicion.almacen
+    );
+    
+    if (!ubicacionActual && ubicacionesConStock.length > 0) {
+      console.log(`[FRONTEND DEBUG] Corrigiendo expedición automáticamente para ${linea.codigoArticulo}`);
+      console.log(`[FRONTEND DEBUG] Expedición actual:`, expedicion);
+      console.log(`[FRONTEND DEBUG] Primera ubicación disponible:`, ubicacionesConStock[0]);
+      
+      // Corregir automáticamente la expedición si no coincide
+      handleExpedicionChange(key, 'ubicacion', ubicacionesConStock[0].ubicacion);
+      handleExpedicionChange(key, 'almacen', ubicacionesConStock[0].codigoAlmacen);
+      handleExpedicionChange(key, 'partida', ubicacionesConStock[0].partida || '');
+      handleExpedicionChange(key, 'unidadMedida', ubicacionesConStock[0].unidadMedida || linea.unidadPedido);
+      
+      const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
+      let nuevaCantidad = 0;
+      
+      if (ubicacionesConStock[0].ubicacion === "Zona descarga") {
+        nuevaCantidad = unidadesPendientes;
+      } else {
+        const stockDisponible = parseFloat(ubicacionesConStock[0].unidadSaldo) || 0;
+        nuevaCantidad = Math.min(unidadesPendientes, stockDisponible);
+      }
+      
+      handleExpedicionChange(key, 'cantidad', nuevaCantidad.toString());
+    }
+  }, [ubicacionesConStock, expedicion, key, linea.unidadesPendientes, linea.unidadPedido, handleExpedicionChange]);
+
   const formatted = useMemo(() => {
     const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
     const unidadVenta = linea.unidadBase || 'ud';
@@ -588,7 +619,7 @@ const LineaPedido = React.memo(({
     const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
     
     const ubicacionSeleccionada = ubicacionesConStock.find(
-      ubi => ubi.ubicacion === expedicion.ubicacion
+      ubi => ubi.ubicacion === expedicion.ubicacion && ubi.codigoAlmacen === expedicion.almacen
     );
     
     let maxPermitido = unidadesPendientes;
@@ -596,7 +627,6 @@ const LineaPedido = React.memo(({
     if (ubicacionSeleccionada && 
         ubicacionSeleccionada.ubicacion !== "Zona descarga" && 
         ubicacionSeleccionada.unidadSaldo !== Infinity) {
-      // ✅ USAR EL STOCK ACTUALIZADO para la validación
       const stockDisponible = parseFloat(ubicacionSeleccionada.unidadSaldo) || 0;
       maxPermitido = Math.min(unidadesPendientes, stockDisponible);
     }
@@ -606,7 +636,7 @@ const LineaPedido = React.memo(({
     }
     
     return newValue;
-  }, [expedicion.ubicacion, linea.unidadesPendientes, ubicacionesConStock]);
+  }, [expedicion.ubicacion, expedicion.almacen, linea.unidadesPendientes, ubicacionesConStock]);
   
   const handleCambioCantidad = useCallback((e) => {
     const nuevaCantidad = validarCantidad(e.target.value);
@@ -619,11 +649,18 @@ const LineaPedido = React.memo(({
   
   const handleCambioUbicacion = useCallback((e) => {
     const nuevaUbicacion = e.target.value;
+    console.log(`[FRONTEND DEBUG] Cambiando ubicación a: ${nuevaUbicacion}`);
+    
     const ubicacionSeleccionada = ubicacionesConStock.find(
       ubi => ubi.ubicacion === nuevaUbicacion
     );
     
-    if (!ubicacionSeleccionada) return;
+    if (!ubicacionSeleccionada) {
+      console.error('[FRONTEND ERROR] No se encontró la ubicación seleccionada:', nuevaUbicacion);
+      return;
+    }
+    
+    console.log(`[FRONTEND DEBUG] Ubicación seleccionada:`, ubicacionSeleccionada);
     
     let nuevaCantidad = 0;
     const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
@@ -631,16 +668,23 @@ const LineaPedido = React.memo(({
     if (ubicacionSeleccionada.ubicacion === "Zona descarga") {
       nuevaCantidad = unidadesPendientes;
     } else {
-      // ✅ USAR EL STOCK ACTUALIZADO para calcular la cantidad
       const stockDisponible = parseFloat(ubicacionSeleccionada.unidadSaldo) || 0;
       nuevaCantidad = Math.min(unidadesPendientes, stockDisponible);
     }
     
+    // 🔥 CORRECCIÓN: Actualizar TODOS los campos necesarios
     handleExpedicionChange(key, 'ubicacion', nuevaUbicacion);
     handleExpedicionChange(key, 'almacen', ubicacionSeleccionada.codigoAlmacen);
     handleExpedicionChange(key, 'partida', ubicacionSeleccionada.partida || '');
     handleExpedicionChange(key, 'unidadMedida', ubicacionSeleccionada.unidadMedida || linea.unidadPedido);
     handleExpedicionChange(key, 'cantidad', nuevaCantidad.toString());
+    
+    console.log(`[FRONTEND DEBUG] Expedición actualizada:`, {
+      ubicacion: nuevaUbicacion,
+      almacen: ubicacionSeleccionada.codigoAlmacen,
+      cantidad: nuevaCantidad,
+      unidadMedida: ubicacionSeleccionada.unidadMedida
+    });
   }, [handleExpedicionChange, key, linea.unidadesPendientes, linea.unidadPedido, ubicacionesConStock]);
   
   const formatearInfoStock = useCallback((ubicacion) => {
@@ -654,10 +698,12 @@ const LineaPedido = React.memo(({
     return formatearUnidad(stock, ubicacion.unidadMedida);
   }, [formatearUnidad]);
 
-  console.log(`[LINEA PEDIDO] ${linea.codigoArticulo} - Unidad pedido: "${linea.unidadPedido}"`);
-  console.log(`[LINEA PEDIDO] Ubicaciones disponibles:`, ubicacionesConStock);
+  // 🔥 DEBUG: Verificar qué se está enviando
+  console.log(`[FRONTEND DEBUG] ${linea.codigoArticulo} - Expedición actual:`, expedicion);
+  console.log(`[FRONTEND DEBUG] Ubicaciones disponibles:`, ubicacionesConStock);
 
-  return (<>
+  return (
+    <>
       <tr className="ps-desktop-view">
         <td className="ps-td-izquierda">
           <div className="ps-codigo-articulo">{linea.codigoArticulo}</div>
@@ -716,7 +762,7 @@ const LineaPedido = React.memo(({
             >
               {ubicacionesConStock.map((ubicacion, locIndex) => (
                 <option 
-                  key={`${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
+                  key={`${ubicacion.codigoAlmacen}-${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
                   value={ubicacion.ubicacion}
                   className={ubicacion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-option' : ''}
                 >
@@ -747,6 +793,11 @@ const LineaPedido = React.memo(({
             className="ps-btn-expedir"
             onClick={(e) => {
               e.stopPropagation();
+              console.log(`[FRONTEND DEBUG] Iniciando escaneo para:`, {
+                articulo: linea.codigoArticulo,
+                expedicion: expedicion,
+                ubicacionesDisponibles: ubicacionesConStock
+              });
               if (canPerformActions) iniciarEscaneo(linea, pedido);
             }}
             disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning}
@@ -807,7 +858,7 @@ const LineaPedido = React.memo(({
                   >
                     {ubicacionesConStock.map((ubicacion, locIndex) => (
                       <option 
-                        key={`${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
+                        key={`${ubicacion.codigoAlmacen}-${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
                         value={ubicacion.ubicacion}
                       >
                         {ubicacion.codigoAlmacen} - {ubicacion.ubicacion} 
@@ -838,6 +889,11 @@ const LineaPedido = React.memo(({
                   className="ps-btn-expedir"
                   onClick={(e) => {
                     e.stopPropagation();
+                    console.log(`[FRONTEND DEBUG] Iniciando escaneo para:`, {
+                      articulo: linea.codigoArticulo,
+                      expedicion: expedicion,
+                      ubicacionesDisponibles: ubicacionesConStock
+                    });
                     if (canPerformActions) iniciarEscaneo(linea, pedido);
                   }}
                   disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning}
@@ -850,7 +906,8 @@ const LineaPedido = React.memo(({
           </div>
         </td>
       </tr>
-    </>);
+    </>
+  );
 });
 
 // Componente Tarjeta de Pedido
@@ -1347,7 +1404,7 @@ const PedidosScreen = () => {
     }
   }, [canPerformActionsInPedidos]);
 
-  // Función para cargar pedidos con cancelación
+  // Función para cargar pedidos con cancelación - MODIFICADA
   const cargarPedidos = useCallback(async (forzarRecarga = false) => {
     if (abortControllerRef.current && !forzarRecarga) {
       abortControllerRef.current.abort();
@@ -1360,8 +1417,8 @@ const PedidosScreen = () => {
       setLoading(true);
       setError('');
       
-      // ✅ LIMPIAR ESTADOS ANTES DE RECARGAR
-      if (forzarRecarga) {
+      // ✅ SOLO LIMPIAR ESTADOS SI ES UNA RECARGA MANUAL, NO DESPUÉS DE EXPEDIR
+      if (forzarRecarga && !isScanning) {
         setUbicaciones({});
         setExpediciones({});
       }
@@ -1505,33 +1562,29 @@ const PedidosScreen = () => {
         setLoading(false);
       }
     }
-  }, []);
+  }, [isScanning]); // 🔥 Añadimos isScanning como dependencia
 
-  // 🔥 FUNCIÓN handleExpedir COMPLETAMENTE CORREGIDA - CON ACTUALIZACIÓN LOCAL
+  // 🔥 FUNCIÓN handleExpedir COMPLETAMENTE CORREGIDA - SIN REINICIO COMPLETO
   const handleExpedir = useCallback(async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea, detalle = null) => {
     if (!canPerformActions || isScanning) return;
     
     setIsScanning(true);
     const key = linea.movPosicionLinea;
     
-    console.log('[FRONTEND DEBUG EXPEDICIÓN] Iniciando expedición:', {
-      articulo: codigoArticulo,
-      unidad: linea.unidadPedido,
-      movPosicionLinea: key,
-      cantidad: expediciones[key]?.cantidad,
-      ubicacion: expediciones[key]?.ubicacion,
-      almacen: expediciones[key]?.almacen,
-      unidadMedida: expediciones[key]?.unidadMedida,
-      lineaCompleta: linea
-    });
-
     const expedicion = expediciones[key];
     
+    // 🔥 VERIFICACIÓN CRÍTICA: Asegurar que tenemos los datos correctos
     if (!expedicion) {
-      console.error('[ERROR] No se encontró expedición para la línea:', key);
+      console.error('[FRONTEND ERROR] No se encontró expedición para la línea:', key);
       setIsScanning(false);
       return;
     }
+
+    console.log('[FRONTEND DEBUG EXPEDICIÓN] Datos a enviar al backend:', {
+      articulo: codigoArticulo,
+      expedicion: expedicion,
+      linea: linea
+    });
 
     let cantidadExpedida = parseFloat(expedicion.cantidad);
     if (isNaN(cantidadExpedida) || cantidadExpedida <= 0) {
@@ -1542,36 +1595,7 @@ const PedidosScreen = () => {
 
     try {
       const headers = getAuthHeader();
-
-      // VERIFICACIÓN DE STOCK (mantenemos esta parte igual)
-      if (expedicion.ubicacion !== "Zona descarga") {
-        const ubicacionesArticulo = ubicaciones[linea.codigoArticulo] || [];
-        const ubicacionActual = ubicacionesArticulo.find(ubi => 
-          ubi.ubicacion === expedicion.ubicacion && 
-          ubi.codigoAlmacen === expedicion.almacen &&
-          normalizarUnidad(ubi.unidadMedida) === normalizarUnidad(expedicion.unidadMedida)
-        );
-        
-        if (!ubicacionActual) {
-          alert("❌ La ubicación seleccionada ya no está disponible. Por favor, selecciona otra ubicación.");
-          setIsScanning(false);
-          return;
-        }
-        
-        const stockActual = ubicacionActual.unidadSaldo;
-        if (stockActual < cantidadExpedida) {
-          alert(`❌ Stock insuficiente. Solo hay ${stockActual} unidades disponibles en ${expedicion.ubicacion}`);
-          setIsScanning(false);
-          return;
-        }
-      }
-
-      if (expedicion.ubicacion !== "Zona descarga" && cantidadExpedida > unidadesPendientes) {
-        alert(`No puedes expedir más de ${unidadesPendientes} unidades (pendientes)`);
-        setIsScanning(false);
-        return;
-      }
-
+      
       const datosExpedicion = {
         codigoEmpresa,
         ejercicio,
@@ -1591,11 +1615,6 @@ const PedidosScreen = () => {
 
       console.log('[FRONTEND DEBUG] Enviando datos al backend:', datosExpedicion);
 
-      if (detalle) {
-        datosExpedicion.codigoColor = detalle.color;
-        datosExpedicion.codigoTalla = detalle.talla;
-      }
-
       const response = await axios.post(
         'http://localhost:3000/actualizarLineaPedido',
         datosExpedicion,
@@ -1605,9 +1624,9 @@ const PedidosScreen = () => {
       if (response.data.success) {
         console.log('[FRONTEND DEBUG] Expedición exitosa:', response.data);
         
-        // ✅✅✅ CORRECCIÓN: ACTUALIZACIÓN LOCAL SIN RECARGAR TODA LA PÁGINA
+        // ✅ CORRECCIÓN CRÍTICA: ACTUALIZACIÓN LOCAL SIN RECARGAR TODO
         
-        // 1. Actualizar el estado local de EXPEDICIONES - Resetear a 0
+        // 1. Actualizar expediciones (resetear cantidad a 0)
         setExpediciones(prev => ({
           ...prev,
           [key]: {
@@ -1616,45 +1635,23 @@ const PedidosScreen = () => {
           }
         }));
 
-        // 2. Actualizar el estado local de PEDIDOS - Reducir unidades pendientes
-        setPedidos(prevPedidos => 
-          prevPedidos.map(pedido => {
-            if (pedido.numeroPedido === numeroPedido) {
-              const articulosActualizados = pedido.articulos.map(articulo => {
-                if (articulo.movPosicionLinea === key) {
-                  const nuevasUnidadesPendientes = parseFloat(articulo.unidadesPendientes) - cantidadExpedida;
-                  return {
-                    ...articulo,
-                    unidadesPendientes: nuevasUnidadesPendientes
-                  };
-                }
-                return articulo;
-              });
-              
-              return {
-                ...pedido,
-                articulos: articulosActualizados
-              };
-            }
-            return pedido;
-          })
-        );
-
-        // 3. Actualizar el estado local de UBICACIONES - Reducir stock
+        // 2. Actualizar ubicaciones (reducir stock)
         if (expedicion.ubicacion !== "Zona descarga") {
           setUbicaciones(prev => {
             const nuevasUbicaciones = { ...prev };
             const ubicacionesArticulo = nuevasUbicaciones[linea.codigoArticulo] || [];
             
             const ubicacionesActualizadas = ubicacionesArticulo.map(ubic => {
+              // 🔥 CORRECCIÓN: Comparación más estricta incluyendo unidad de medida normalizada
               if (ubic.ubicacion === expedicion.ubicacion && 
                   ubic.codigoAlmacen === expedicion.almacen &&
                   normalizarUnidad(ubic.unidadMedida) === normalizarUnidad(expedicion.unidadMedida)) {
                 
+                // Restar la cantidad expedida del stock
                 const stockActual = parseFloat(ubic.unidadSaldo) || 0;
                 const nuevoStock = Math.max(0, stockActual - cantidadExpedida);
                 
-                console.log(`[DEBUG STOCK] Actualizando stock local de ${ubic.ubicacion}: ${stockActual} -> ${nuevoStock} ${ubic.unidadMedida}`);
+                console.log(`[DEBUG STOCK] Actualizando stock de ${ubic.ubicacion}: ${stockActual} -> ${nuevoStock} ${ubic.unidadMedida}`);
                 
                 return {
                   ...ubic,
@@ -1669,37 +1666,30 @@ const PedidosScreen = () => {
           });
         }
 
-        alert(`✅ Se expedieron ${cantidadExpedida} unidades correctamente. ${expedicion.ubicacion !== "Zona descarga" ? `Stock restante: ${response.data.detalles.stockRestante}` : 'Desde Zona de descarga'}`);
-        
-        // ✅ OPCIÓN: Recargar solo las ubicaciones para este artículo (más rápido que recargar todo)
-        // Esto asegura que tengamos los datos más actualizados sin recargar toda la página
-        try {
-          const ubicacionesResponse = await axios.get(
-            'http://localhost:3000/traspasos/stock-por-articulo',
-            {
-              headers,
-              params: { codigoArticulo: linea.codigoArticulo }
-            }
-          );
-          
-          // Actualizar solo las ubicaciones de este artículo
-          setUbicaciones(prev => ({
-            ...prev,
-            [linea.codigoArticulo]: ubicacionesResponse.data.map(item => ({
-              codigoAlmacen: item.CodigoAlmacen,
-              ubicacion: item.Ubicacion,
-              partida: item.Partida || null,
-              unidadSaldo: item.Cantidad,
-              unidadMedida: item.UnidadStock || 'unidades',
-              descripcionUbicacion: item.DescripcionUbicacion
-            }))
-          }));
-          
-          console.log(`[DEBUG] Ubicaciones actualizadas para ${linea.codigoArticulo}:`, ubicacionesResponse.data.length);
-        } catch (error) {
-          console.error('[ERROR] Al actualizar ubicaciones:', error);
-          // No mostramos error al usuario, solo usamos la actualización local
-        }
+        // 3. Actualizar pedidos localmente (solo la línea afectada)
+        setPedidos(prev => prev.map(pedido => {
+          if (pedido.numeroPedido === numeroPedido) {
+            const articulosActualizados = pedido.articulos.map(articulo => {
+              if (articulo.movPosicionLinea === key) {
+                const nuevasUnidadesPendientes = Math.max(0, parseFloat(articulo.unidadesPendientes) - cantidadExpedida);
+                
+                return {
+                  ...articulo,
+                  unidadesPendientes: nuevasUnidadesPendientes
+                };
+              }
+              return articulo;
+            });
+            
+            return {
+              ...pedido,
+              articulos: articulosActualizados
+            };
+          }
+          return pedido;
+        }));
+
+        alert(`✅ Se expedieron ${cantidadExpedida} unidades correctamente.`);
       }
     } catch (error) {
       console.error('[FRONTEND ERROR] Error al expedir artículo:', error);
@@ -1714,6 +1704,103 @@ const PedidosScreen = () => {
       setIsScanning(false);
     }
   }, [canPerformActions, isScanning, expediciones, ubicaciones]);
+  // 🔥 QUITAMOS cargarPedidos DE LAS DEPENDENCIAS
+
+  // 🔥 FUNCIÓN handleExpedirVariante CORREGIDA - SIN REINICIO COMPLETO
+  const handleExpedirVariante = useCallback(async (datosVariante) => {
+    const { articulo, color, talla, cantidad, ubicacion, almacen, partida, unidadMedida, movPosicionLinea } = datosVariante;
+    const { pedido, linea } = detallesModal;
+
+    try {
+      const headers = getAuthHeader();
+      
+      const response = await axios.post(
+        'http://localhost:3000/actualizarLineaPedido',
+        {
+          codigoEmpresa: pedido.codigoEmpresa,
+          ejercicio: pedido.ejercicioPedido,
+          serie: pedido.seriePedido || '',
+          numeroPedido: pedido.numeroPedido,
+          codigoArticulo: articulo,
+          cantidadExpedida: cantidad,
+          almacen: almacen,
+          ubicacion: ubicacion,
+          partida: partida,
+          unidadMedida: unidadMedida,
+          codigoColor: color,
+          codigoTalla: talla,
+          esZonaDescarga: ubicacion === "Zona descarga",
+          movPosicionLinea: movPosicionLinea
+        },
+        { headers }
+      );
+
+      if (response.data.success) {
+        // ✅ ACTUALIZACIÓN LOCAL SIN RECARGAR TODO
+        
+        // 1. Actualizar pedidos localmente
+        setPedidos(prev => prev.map(p => {
+          if (p.numeroPedido === pedido.numeroPedido) {
+            const articulosActualizados = p.articulos.map(art => {
+              if (art.movPosicionLinea === movPosicionLinea) {
+                // Buscar en los detalles para actualizar la variante específica
+                if (art.detalles && Array.isArray(art.detalles)) {
+                  const detallesActualizados = art.detalles.map(variante => {
+                    if (variante.color?.codigo === color) {
+                      const tallasActualizadas = { ...variante.tallas };
+                      if (tallasActualizadas[talla]) {
+                        const nuevasUnidades = Math.max(0, parseFloat(tallasActualizadas[talla].unidades) - cantidad);
+                        tallasActualizadas[talla] = {
+                          ...tallasActualizadas[talla],
+                          unidades: nuevasUnidades
+                        };
+                      }
+                      return {
+                        ...variante,
+                        tallas: tallasActualizadas
+                      };
+                    }
+                    return variante;
+                  });
+                  
+                  // Recalcular unidades pendientes totales
+                  let nuevasUnidadesPendientes = 0;
+                  detallesActualizados.forEach(variante => {
+                    Object.values(variante.tallas || {}).forEach(tallaInfo => {
+                      nuevasUnidadesPendientes += parseFloat(tallaInfo.unidades) || 0;
+                    });
+                  });
+                  
+                  return {
+                    ...art,
+                    detalles: detallesActualizados,
+                    unidadesPendientes: nuevasUnidadesPendientes
+                  };
+                }
+              }
+              return art;
+            });
+            
+            return {
+              ...p,
+              articulos: articulosActualizados
+            };
+          }
+          return p;
+        }));
+
+        // 2. Cerrar modal
+        setDetallesModal(null);
+        alert(`Expedición realizada: ${cantidad} unidades de la variante`);
+        return Promise.resolve();
+      }
+    } catch (error) {
+      console.error('Error al expedir variante:', error);
+      alert('Error al expedir: ' + (error.response?.data?.mensaje || error.message));
+      return Promise.reject(error);
+    }
+  }, [detallesModal]);
+  // 🔥 QUITAMOS cargarPedidos DE LAS DEPENDENCIAS
 
   useEffect(() => {
     cargarPedidos();
@@ -1813,123 +1900,6 @@ const PedidosScreen = () => {
       alert('Error al obtener información para este artículo');
     }
   }, []);
-
-  const handleExpedirVariante = useCallback(async (datosVariante) => {
-    const { articulo, color, talla, cantidad, ubicacion, almacen, partida, unidadMedida, movPosicionLinea } = datosVariante;
-    const { pedido, linea } = detallesModal;
-
-    try {
-      const headers = getAuthHeader();
-      
-      const response = await axios.post(
-        'http://localhost:3000/actualizarLineaPedido',
-        {
-          codigoEmpresa: pedido.codigoEmpresa,
-          ejercicio: pedido.ejercicioPedido,
-          serie: pedido.seriePedido || '',
-          numeroPedido: pedido.numeroPedido,
-          codigoArticulo: articulo,
-          cantidadExpedida: cantidad,
-          almacen: almacen,
-          ubicacion: ubicacion,
-          partida: partida,
-          unidadMedida: unidadMedida,
-          codigoColor: color,
-          codigoTalla: talla,
-          esZonaDescarga: ubicacion === "Zona descarga",
-          movPosicionLinea: movPosicionLinea
-        },
-        { headers }
-      );
-
-      if (response.data.success) {
-        // ✅ ACTUALIZACIÓN LOCAL SIN RECARGAR TODA LA PÁGINA
-        
-        // 1. Actualizar pedidos localmente
-        setPedidos(prevPedidos => 
-          prevPedidos.map(p => {
-            if (p.numeroPedido === pedido.numeroPedido) {
-              const articulosActualizados = p.articulos.map(a => {
-                if (a.movPosicionLinea === movPosicionLinea) {
-                  // En variantes, necesitamos lógica más compleja para actualizar los detalles
-                  // Por ahora, recargamos solo este pedido más tarde
-                  return a;
-                }
-                return a;
-              });
-              
-              return {
-                ...p,
-                articulos: articulosActualizados
-              };
-            }
-            return p;
-          })
-        );
-
-        // 2. Actualizar ubicaciones localmente
-        if (ubicacion !== "Zona descarga") {
-          setUbicaciones(prev => {
-            const nuevasUbicaciones = { ...prev };
-            const ubicacionesArticulo = nuevasUbicaciones[linea.codigoArticulo] || [];
-            
-            const ubicacionesActualizadas = ubicacionesArticulo.map(ubic => {
-              if (ubic.ubicacion === ubicacion && 
-                  ubic.codigoAlmacen === almacen) {
-                
-                const stockActual = parseFloat(ubic.unidadSaldo) || 0;
-                const nuevoStock = Math.max(0, stockActual - cantidad);
-                
-                return {
-                  ...ubic,
-                  unidadSaldo: nuevoStock
-                };
-              }
-              return ubic;
-            });
-            
-            nuevasUbicaciones[linea.codigoArticulo] = ubicacionesActualizadas;
-            return nuevasUbicaciones;
-          });
-        }
-
-        // 3. Recargar solo las ubicaciones para este artículo
-        try {
-          const ubicacionesResponse = await axios.get(
-            'http://localhost:3000/traspasos/stock-por-articulo',
-            {
-              headers,
-              params: { codigoArticulo: linea.codigoArticulo }
-            }
-          );
-          
-          setUbicaciones(prev => ({
-            ...prev,
-            [linea.codigoArticulo]: ubicacionesResponse.data.map(item => ({
-              codigoAlmacen: item.CodigoAlmacen,
-              ubicacion: item.Ubicacion,
-              partida: item.Partida || null,
-              unidadSaldo: item.Cantidad,
-              unidadMedida: item.UnidadStock || 'unidades',
-              descripcionUbicacion: item.DescripcionUbicacion
-            }))
-          }));
-        } catch (error) {
-          console.error('[ERROR] Al actualizar ubicaciones:', error);
-        }
-
-        // 4. Cerrar el modal
-        setDetallesModal(null);
-        
-        alert(`Expedición realizada: ${cantidad} unidades de la variante`);
-        return Promise.resolve();
-      }
-    } catch (error) {
-      console.error('Error al expedir variante:', error);
-      alert('Error al expedir: ' + (error.response?.data?.mensaje || error.message));
-      return Promise.reject(error);
-    }
-  }, [detallesModal]);
 
   const iniciarEscaneo = useCallback((linea, pedido, detalle = null) => {
     if (!canPerformActions) return;

@@ -36,6 +36,7 @@ body {
 
 .inventario-container {
   padding: 25px;
+  padding-top: 100px; /* 🔥 AUMENTADO para compensar la navbar fija */
   max-width: 1400px;
   margin: 0 auto;
   font-size: var(--inventario-base-font-size);
@@ -49,45 +50,66 @@ body {
   max-width: 100vw;
 }
 
-.inventario-search-and-refresh {
+/* 🔥 NUEVA BARRA DE HERRAMIENTAS */
+.inventario-toolbar {
   display: flex;
-  gap: 15px;
+  justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
-}
-
-.inventario-search-container {
-  flex: 1;
-  max-width: 600px;
-  position: relative;
-}
-
-.inventario-search-input {
-  width: 100%;
-  padding: 14px 20px 14px 45px;
-  border: 1px solid var(--inventario-border-color);
-  border-radius: var(--inventario-radius);
-  font-size: 1rem;
-  transition: var(--inventario-transition);
+  flex-wrap: wrap;
+  gap: 15px;
+  margin-bottom: 20px;
+  padding: 15px;
   background: white;
+  border-radius: var(--inventario-radius);
   box-shadow: var(--inventario-shadow);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%237f8c8d' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: 15px center;
-  background-size: 18px;
+  border: 1px solid var(--inventario-border-color);
 }
 
-.inventario-search-input:focus {
-  border-color: var(--inventario-secondary-color);
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+.inventario-page-title {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--inventario-primary-color);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
+.inventario-toolbar-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* 🔥 BOTÓN NUEVO AJUSTE */
+.inventario-btn-nuevo-ajuste {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(to bottom, #28a745, #218838);
+  color: white;
+  border: none;
+  border-radius: var(--inventario-radius);
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--inventario-transition);
+  box-shadow: var(--inventario-shadow);
+  white-space: nowrap;
+}
+
+.inventario-btn-nuevo-ajuste:hover {
+  background: linear-gradient(to bottom, #218838, #1e7e34);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+}
+
+/* 🔥 BOTÓN ACTUALIZAR */
 .inventario-refresh-btn {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 25px;
+  padding: 12px 20px;
   background: linear-gradient(to bottom, var(--inventario-secondary-color), #2980b9);
   color: white;
   border: none;
@@ -102,7 +124,7 @@ body {
 .inventario-refresh-btn:hover {
   background: linear-gradient(to bottom, #2980b9, #1a6da8);
   transform: translateY(-2px);
-  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
 }
 
 .inventario-tabs-container {
@@ -112,6 +134,7 @@ body {
   box-shadow: var(--inventario-shadow);
   overflow: hidden;
   border: 1px solid var(--inventario-border-color);
+  flex-wrap: wrap;
 }
 
 .inventario-tab-btn {
@@ -129,6 +152,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 10px;
+  min-width: 200px;
 }
 
 .inventario-tab-btn.inventario-active {
@@ -554,12 +578,76 @@ body {
   color: var(--inventario-secondary-color);
 }
 
+/* 🔥 ESTILOS PARA STOCK CERO Y NEGATIVO */
 .inventario-estado-agotado .inventario-total-unidades {
   color: #c0392b;
 }
 
 .inventario-estado-negativo .inventario-total-unidades {
   color: #d35400;
+}
+
+.inventario-estado-cero {
+  background: linear-gradient(to right, #fffaf0, white) !important;
+  border-left: 5px solid #ff9800 !important;
+}
+
+.inventario-estado-negativo {
+  background: linear-gradient(to right, #fef9e7, white) !important;
+  border-left: 5px solid #e67e22 !important;
+}
+
+.badge-negativo, .badge-negativo-item {
+  background: #e67e22;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge-cero, .badge-cero-item {
+  background: #ff9800;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stock-negativo {
+  background: #fef9e7 !important;
+  border-left: 3px solid #e67e22 !important;
+}
+
+.stock-cero {
+  background: #fffaf0 !important;
+  border-left: 3px solid #ff9800 !important;
+}
+
+/* 🔥 ESTADÍSTICAS PARA STOCK CERO Y NEGATIVO */
+.inventario-stat-negativo {
+  border-left: 4px solid #e67e22 !important;
+}
+
+.inventario-stat-cero {
+  border-left: 4px solid #ff9800 !important;
+}
+
+.inventario-stat-negativo .inventario-stat-icon {
+  background: linear-gradient(135deg, #e67e22, #d35400) !important;
+}
+
+.inventario-stat-cero .inventario-stat-icon {
+  background: linear-gradient(135deg, #ff9800, #f57c00) !important;
 }
 
 /* ============================================
@@ -930,6 +1018,11 @@ body {
   border-top: 5px solid var(--inventario-secondary-color);
 }
 
+.inventario-modal-grande {
+  max-width: 600px !important;
+  width: 95% !important;
+}
+
 .inventario-cerrar-modal {
   position: absolute;
   top: 15px;
@@ -1069,6 +1162,81 @@ body {
   background: linear-gradient(to bottom, #219653, #1a7a3e);
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* 🔥 NUEVOS ESTILOS PARA MODAL DE NUEVO AJUSTE */
+.inventario-input, .inventario-select {
+  width: 100%;
+  padding: 12px 15px;
+  border: 1px solid var(--inventario-border-color);
+  border-radius: var(--inventario-radius);
+  font-size: 1rem;
+  transition: var(--inventario-transition);
+  background: white;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.inventario-input:focus, .inventario-select:focus {
+  border-color: var(--inventario-secondary-color);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+.inventario-resultados-busqueda {
+  border: 1px solid var(--inventario-border-color);
+  border-radius: var(--inventario-radius);
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 5px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.inventario-resultado-item {
+  padding: 12px 15px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  transition: var(--inventario-transition);
+}
+
+.inventario-resultado-item:hover {
+  background-color: #f8f9fa;
+  border-left: 3px solid var(--inventario-secondary-color);
+}
+
+.inventario-resultado-item:last-child {
+  border-bottom: none;
+}
+
+.inventario-articulo-seleccionado {
+  background-color: #e8f5e8;
+  padding: 15px;
+  border-radius: var(--inventario-radius);
+  margin-bottom: 20px;
+  border-left: 4px solid #28a745;
+  border: 1px solid #d4edda;
+}
+
+.inventario-articulo-seleccionado h4 {
+  margin: 0 0 8px 0;
+  color: #155724;
+  font-size: 1rem;
+}
+
+.inventario-articulo-info {
+  font-weight: 600;
+  color: #155724;
+  font-size: 1.1rem;
+}
+
+.inventario-modal-warning {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  color: #856404;
+  padding: 10px 15px;
+  border-radius: var(--inventario-radius);
+  font-size: 0.9rem;
+  margin: 10px 0;
 }
 
 .inventario-error-container, 
@@ -1249,6 +1417,15 @@ body {
   color: var(--inventario-primary-color);
 }
 
+.talla-color-display {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+}
+
 /* MEDIA QUERIES PARA RESPONSIVE */
 @media (max-width: 1024px) {
   .inventario-ubicaciones-header,
@@ -1263,6 +1440,26 @@ body {
 }
 
 @media (max-width: 768px) {
+  .inventario-container {
+    padding-top: 90px; /* 🔥 Ajuste específico para tablets */
+  }
+
+  .inventario-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .inventario-toolbar-actions {
+    justify-content: center;
+  }
+  
+  .inventario-btn-nuevo-ajuste,
+  .inventario-refresh-btn {
+    flex: 1;
+    min-width: 150px;
+    justify-content: center;
+  }
+
   .inventario-ubicaciones-header {
     display: none;
   }
@@ -1358,11 +1555,30 @@ body {
     flex-direction: column;
     align-items: flex-end;
   }
+
+  .inventario-tabs-container {
+    flex-direction: column;
+  }
+  
+  .inventario-tab-btn {
+    min-width: 100%;
+    margin-bottom: 5px;
+  }
 }
 
 @media (max-width: 480px) {
   .inventario-container {
     padding: 10px;
+    padding-top: 85px; /* 🔂 Ajuste fino para móviles pequeños */
+  }
+
+  .inventario-toolbar-actions {
+    flex-direction: column;
+  }
+  
+  .inventario-btn-nuevo-ajuste,
+  .inventario-refresh-btn {
+    width: 100%;
   }
   
   .inventario-tabs-container {
@@ -1372,15 +1588,6 @@ body {
   .inventario-tab-btn {
     width: 100%;
     padding: 12px;
-  }
-  
-  .inventario-search-and-refresh {
-    flex-direction: column;
-  }
-  
-  .inventario-refresh-btn {
-    width: 100%;
-    margin-top: 10px;
   }
   
   .inventario-filters-panel {

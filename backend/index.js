@@ -5,31 +5,38 @@ const multer = require('multer');
 const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
-const cron = require('node-cron');
-const fetch = require('node-fetch');
-const os = require('os');
-const { v4: uuidv4 } = require('uuid');
 
 // Inicialización de Express
 const upload = multer();
 const app = express();
-const PORT = 3000;
 
-app.use(cors());
+// ✅ CONFIGURACIÓN PARA PRODUCCIÓN
+const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0'; // Escucha en todas las interfaces
+
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://tu-ip-publica'], // Agrega tu IP pública
+  credentials: true
+}));
 app.use(express.json());
 
-// 🔥 Configuración de conexión a SQL Server
+// 🔥 Configuración de conexión a SQL Server (MEJOR CON VARIABLES DE ENTORNO)
 const dbConfig = {
-  user: 'logic',
-  password: 'Sage2024+',
-  server: 'SVRALANDALUS',
-  database: 'DEMOS',
+  user: process.env.DB_USER || 'logic',
+  password: process.env.DB_PASSWORD || 'Sage2024+',
+  server: process.env.DB_SERVER || 'SVRALANDALUS',
+  database: process.env.DB_NAME || 'DEMOS',
   options: {
     trustServerCertificate: true,
     useUTC: false,
     dateStrings: true,
     enableArithAbort: true,
-    requestTimeout: 60000
+    requestTimeout: 60000,
+    pool: {
+      max: 10,
+      min: 0,
+      idleTimeoutMillis: 30000
+    }
   }
 };
 
@@ -37,12 +44,18 @@ const dbConfig = {
 let poolGlobal;
 
 // ============================================
-// ✅ 1. CONEXIÓN A LA BASE DE DATOS
+// ✅ CONEXIÓN A LA BASE DE DATOS
 // ============================================
 async function conectarDB() {
-  if (!poolGlobal) {
-    poolGlobal = await sql.connect(dbConfig);
-    console.log('✅ Conexión a SQL Server establecida.');
+  try {
+    if (!poolGlobal) {
+      poolGlobal = await sql.connect(dbConfig);
+      console.log('✅ Conexión a SQL Server establecida.');
+    }
+    return poolGlobal;
+  } catch (err) {
+    console.error('❌ Error de conexión a BD:', err);
+    throw err;
   }
 }
 
@@ -53,7 +66,11 @@ app.use(async (req, res, next) => {
     next();
   } catch (err) {
     console.error('Error de conexión:', err);
-    res.status(500).send('Error conectando a la base de datos.');
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error conectando a la base de datos.',
+      error: err.message 
+    });
   }
 });
 
@@ -161,19 +178,16 @@ app.get('/empresas', async (req, res) => {
   }
 });
 // ============================================
-// ✅ INICIAR SERVIDOR
+// ✅ INICIAR SERVIDOR PARA PRODUCCIÓN
 // ============================================
-
-// Conexión a BD e inicio del servidor
 async function iniciarServidor() {
   try {
     await conectarDB();
     
-    app.listen(PORT, () => {
-      console.log(`✅Servidor backend corriendo en http://localhost:${PORT}✅`);
-      
-      // 🔥 INICIAR SISTEMA DE SINCRONIZACIÓN DESPUÉS DE CONECTAR A BD
-      iniciarSincronizacionAutomatica();
+    app.listen(PORT, HOST, () => {
+      console.log(`🚀 Servidor backend corriendo en http://${HOST}:${PORT}`);
+      console.log(`📱 Accesible desde: http://tu-ip-publica:${PORT}`);
+      console.log(`🔧 Entorno: ${process.env.NODE_ENV || 'development'}`);
     });
     
   } catch (error) {
@@ -182,7 +196,15 @@ async function iniciarServidor() {
   }
 }
 
-// Iniciar la aplicación
+// Manejo de cierre graceful
+process.on('SIGINT', async () => {
+  console.log('🛑 Cerrando servidor...');
+  if (poolGlobal) {
+    await poolGlobal.close();
+  }
+  process.exit(0);
+});
+
 iniciarServidor();
 // ============================================
 // ✅ 6. ASIGNAR PEDIDOS SCREEN
@@ -4214,7 +4236,7 @@ app.get('/inventario/stock-total-completo', async (req, res) => {
   }
 });
 
-// ✅ 9.15 AJUSTAR INVENTARIO (VERSIÓN CORREGIDA - AJUSTES INDIVIDUALES POR UBICACIÓN)
+// ✅ 9.15 AJUSTAR INVENTARIO (VERSIÓN MEJORADA - INSERCIÓN EN AMBAS TABLAS)
 app.post('/inventario/ajustar-completo', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -4256,28 +4278,31 @@ app.post('/inventario/ajustar-completo', async (req, res) => {
 
       console.log(`[AJUSTE MANUAL] Procesando: ${articulo} | ${codigoAlmacen} | ${ubicacionNormalizada} | ${nuevaCantidad}`);
 
-      // 🔥 NUEVA LÓGICA: Determinar si es ubicación principal
-      const esUbicacionPrincipal = await esUbicacionPrincipalEnAcumuladoStock(
+      // 🔥 NUEVA LÓGICA: Verificar si ya existe en AcumuladoStock
+      const existeEnAcumuladoStock = await verificarExistenciaEnAcumuladoStock(
         codigoEmpresa, ejercicio, articulo, codigoAlmacen, 
         unidadStockNormalizada, partida, codigoColor, codigoTalla01, 
-        ubicacionNormalizada, transaction
+        transaction
       );
 
-      console.log(`[AJUSTE MANUAL] ${articulo} | ${ubicacionNormalizada} - ¿Es principal?: ${esUbicacionPrincipal}`);
+      console.log(`[AJUSTE MANUAL] ${articulo} | ¿Existe en AcumuladoStock?: ${existeEnAcumuladoStock}`);
 
       // 2. ACTUALIZAR AcumuladoStockUbicacion (SIEMPRE se actualiza)
       await actualizarAcumuladoStockUbicacion(
         ajuste, codigoEmpresa, ejercicio, transaction
       );
 
-      // 3. ACTUALIZAR AcumuladoStock (SOLO si es ubicación principal)
-      if (esUbicacionPrincipal) {
-        console.log(`[AJUSTE MANUAL] Actualizando AcumuladoStock (ubicación principal): ${articulo}`);
-        await actualizarAcumuladoStockPrincipal(
+      // 3. ACTUALIZAR O INSERTAR en AcumuladoStock
+      if (existeEnAcumuladoStock) {
+        console.log(`[AJUSTE MANUAL] Actualizando AcumuladoStock (existente): ${articulo}`);
+        await actualizarAcumuladoStock(
           ajuste, codigoEmpresa, ejercicio, transaction
         );
       } else {
-        console.log(`[AJUSTE MANUAL] NO se actualiza AcumuladoStock (ubicación secundaria): ${articulo}`);
+        console.log(`[AJUSTE MANUAL] Insertando nuevo registro en AcumuladoStock (principal): ${articulo}`);
+        await insertarAcumuladoStock(
+          ajuste, codigoEmpresa, ejercicio, transaction
+        );
       }
     }
 
@@ -4285,7 +4310,7 @@ app.post('/inventario/ajustar-completo', async (req, res) => {
 
     res.json({ 
       success: true, 
-      mensaje: `Ajustes realizados correctamente. ${ajustes.length} ubicaciones actualizadas.` 
+      mensaje: `Ajustes realizados correctamente. ${ajustes.length} ubicaciones actualizadas en ambas tablas.` 
     });
 
   } catch (error) {
@@ -4298,6 +4323,212 @@ app.post('/inventario/ajustar-completo', async (req, res) => {
     });
   }
 });
+
+// 🔥 NUEVA FUNCIÓN: Verificar si existe en AcumuladoStock
+async function verificarExistenciaEnAcumuladoStock(
+  codigoEmpresa, ejercicio, articulo, codigoAlmacen, 
+  unidadStock, partida, codigoColor, codigoTalla01, 
+  transaction
+) {
+  try {
+    const result = await new sql.Request(transaction)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+      .input('codigoArticulo', sql.VarChar, articulo)
+      .input('tipoUnidad', sql.VarChar, unidadStock)
+      .input('partida', sql.VarChar, partida || '')
+      .input('codigoColor', sql.VarChar, codigoColor || '')
+      .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+      .query(`
+        SELECT COUNT(*) as Existe
+        FROM AcumuladoStock
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND Ejercicio = @ejercicio
+          AND CodigoAlmacen = @codigoAlmacen
+          AND CodigoArticulo = @codigoArticulo
+          AND (
+            (TipoUnidadMedida_ = @tipoUnidad)
+            OR 
+            (TipoUnidadMedida_ = '' AND @tipoUnidad = '')
+          )
+          AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+          AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+          AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+          AND Periodo = 99
+      `);
+
+    return result.recordset[0].Existe > 0;
+  } catch (error) {
+    console.error('[ERROR VERIFICANDO EXISTENCIA EN ACUMULADOSTOCK]', error);
+    return false;
+  }
+}
+
+// 🔥 NUEVA FUNCIÓN: Insertar en AcumuladoStock (para nuevos registros)
+async function insertarAcumuladoStock(ajuste, codigoEmpresa, ejercicio, transaction) {
+  const { 
+    articulo, 
+    codigoAlmacen, 
+    ubicacionStr, 
+    partida, 
+    unidadStock, 
+    nuevaCantidad,
+    codigoColor, 
+    codigoTalla01 
+  } = ajuste;
+
+  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+  const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
+
+  await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicio', sql.Int, ejercicio)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada)
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .input('unidadSaldo', sql.Decimal(18, 4), parseFloat(nuevaCantidad))
+    .input('unidadSaldoTipo', sql.Decimal(18, 4), parseFloat(nuevaCantidad))
+    .query(`
+      INSERT INTO AcumuladoStock (
+        CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
+        CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
+        UnidadSaldo, UnidadSaldoTipo_, Periodo
+      ) VALUES (
+        @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
+        @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
+        @unidadSaldo, @unidadSaldoTipo, 99
+      )
+    `);
+
+  console.log(`[AJUSTE MANUAL] AcumuladoStock INSERTADO (nuevo): ${articulo} | ${ubicacionNormalizada} -> ${nuevaCantidad}`);
+}
+
+// 🔥 FUNCIÓN MODIFICADA: Actualizar AcumuladoStock (para registros existentes)
+async function actualizarAcumuladoStock(ajuste, codigoEmpresa, ejercicio, transaction) {
+  const { 
+    articulo, 
+    codigoAlmacen, 
+    ubicacionStr, 
+    partida, 
+    unidadStock, 
+    nuevaCantidad,
+    codigoColor, 
+    codigoTalla01 
+  } = ajuste;
+
+  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+  const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
+
+  await new sql.Request(transaction)
+    .input('nuevaCantidad', sql.Decimal(18, 4), parseFloat(nuevaCantidad))
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicio', sql.SmallInt, ejercicio)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('tipoUnidad', sql.VarChar, unidadStockNormalizada)
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
+    .query(`
+      UPDATE AcumuladoStock
+      SET 
+        UnidadSaldoTipo_ = @nuevaCantidad,
+        UnidadSaldo = @nuevaCantidad,
+        Ubicacion = @ubicacion
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND Ejercicio = @ejercicio
+        AND CodigoAlmacen = @codigoAlmacen
+        AND CodigoArticulo = @codigoArticulo
+        AND (
+          (TipoUnidadMedida_ = @tipoUnidad)
+          OR 
+          (TipoUnidadMedida_ = '' AND @tipoUnidad = '')
+        )
+        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+        AND Periodo = 99
+    `);
+
+  console.log(`[AJUSTE MANUAL] AcumuladoStock ACTUALIZADO (existente): ${articulo} | ${ubicacionNormalizada} -> ${nuevaCantidad}`);
+}
+
+// 🔥 FUNCIÓN MODIFICADA: Actualizar AcumuladoStockUbicacion
+async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercicio, transaction) {
+  const { 
+    articulo, 
+    codigoAlmacen, 
+    ubicacionStr, 
+    partida, 
+    unidadStock, 
+    nuevaCantidad,
+    codigoColor, 
+    codigoTalla01 
+  } = ajuste;
+
+  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+  const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
+
+  // 1. ELIMINAR registro existente en AcumuladoStockUbicacion
+  await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicio', sql.Int, ejercicio)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
+    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada)
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .query(`
+      DELETE FROM AcumuladoStockUbicacion
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND Ejercicio = @ejercicio
+        AND CodigoAlmacen = @codigoAlmacen
+        AND CodigoArticulo = @codigoArticulo
+        AND Ubicacion = @ubicacion
+        AND (TipoUnidadMedida_ = @tipoUnidadMedida OR (TipoUnidadMedida_ IS NULL AND @tipoUnidadMedida = ''))
+        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+        AND Periodo = 99
+    `);
+
+  // 2. INSERTAR nuevo registro solo si la cantidad no es cero
+  if (parseFloat(nuevaCantidad) !== 0) {
+    await new sql.Request(transaction)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.Int, ejercicio)
+      .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+      .input('ubicacion', sql.VarChar, ubicacionNormalizada)
+      .input('codigoArticulo', sql.VarChar, articulo)
+      .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada)
+      .input('partida', sql.VarChar, partida || '')
+      .input('codigoColor', sql.VarChar, codigoColor || '')
+      .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+      .input('unidadSaldo', sql.Decimal(18, 4), parseFloat(nuevaCantidad))
+      .input('unidadSaldoTipo', sql.Decimal(18, 4), parseFloat(nuevaCantidad))
+      .query(`
+        INSERT INTO AcumuladoStockUbicacion (
+          CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
+          CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
+          UnidadSaldo, UnidadSaldoTipo_, Periodo
+        ) VALUES (
+          @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
+          @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
+          @unidadSaldo, @unidadSaldoTipo, 99
+        )
+      `);
+  }
+
+  console.log(`[AJUSTE MANUAL] AcumuladoStockUbicacion actualizado: ${articulo} | ${ubicacionNormalizada} -> ${nuevaCantidad}`);
+}
 
 // 🔥 NUEVA FUNCIÓN: Verificar si es ubicación principal en AcumuladoStock
 async function esUbicacionPrincipalEnAcumuladoStock(
@@ -4938,7 +5169,7 @@ app.post('/asignarEmpleado', async (req, res) => {
   }
 });
 
-// ✅ 5.3 ACTUALIZAR LÍNEA DE PEDIDO (VERSIÓN COMPLETA CORREGIDA)
+// ✅ 5.3 ACTUALIZAR LÍNEA DE PEDIDO (VERSIÓN COMPLETA - ACTUALIZA AMBAS TABLAS)
 app.post('/actualizarLineaPedido', async (req, res) => {
   const datosLinea = req.body;
 
@@ -5078,7 +5309,7 @@ app.post('/actualizarLineaPedido', async (req, res) => {
         .input('codigoColor', sql.VarChar(10), codigoColor)
         .input('codigoTalla', sql.VarChar(10), codigoTalla)
         .query(`
-          SELECT UnidadSaldo, UnidadSaldoTipo_
+          SELECT UnidadSaldoTipo_
           FROM AcumuladoStockUbicacion
           WHERE 
             CodigoEmpresa = @codigoEmpresa
@@ -5099,8 +5330,7 @@ app.post('/actualizarLineaPedido', async (req, res) => {
         // ✅✅✅ CORRECCIÓN CRÍTICA: Usar UnidadSaldoTipo_ para el stock disponible
         stockDisponible = parseFloat(stockData.UnidadSaldoTipo_) || 0;
         
-        console.log('[BACKEND DEBUG] Stock disponible:', {
-          UnidadSaldo: stockData.UnidadSaldo,
+        console.log('[BACKEND DEBUG] Stock disponible (UnidadSaldoTipo_):', {
           UnidadSaldoTipo_: stockData.UnidadSaldoTipo_,
           StockUsado: stockDisponible,
           UnidadMedida: unidadMedida
@@ -5119,7 +5349,7 @@ app.post('/actualizarLineaPedido', async (req, res) => {
           .input('codigoColor', sql.VarChar(10), codigoColor)
           .input('codigoTalla', sql.VarChar(10), codigoTalla)
           .query(`
-            SELECT TOP 1 Ubicacion, UnidadSaldo, UnidadSaldoTipo_, Partida
+            SELECT TOP 1 Ubicacion, UnidadSaldoTipo_, Partida
             FROM AcumuladoStockUbicacion
             WHERE 
               CodigoEmpresa = @codigoEmpresa
@@ -5170,11 +5400,11 @@ app.post('/actualizarLineaPedido', async (req, res) => {
 
     console.log('[BACKEND DEBUG] Línea actualizada - Unidades pendientes reducidas');
 
-    // ✅✅✅ CORRECCIÓN CRÍTICA: ACTUALIZAR STOCK EN UBICACIÓN - ACTUALIZAR AMBAS COLUMNAS
+    // ✅✅✅ CORRECCIÓN CRÍTICA: ACTUALIZAR STOCK EN AMBAS TABLAS
     if (!esZonaDescarga) {
       console.log('[BACKEND DEBUG] Actualizando stock en ubicación:', ubicacionFinal);
       
-      // Primero obtener el stock actual CORREGIDO
+      // 1. PRIMERO: Obtener el stock actual de la ubicación específica
       const requestStockActual = new sql.Request(transaction);
       const stockActualResult = await requestStockActual
         .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
@@ -5221,9 +5451,9 @@ app.post('/actualizarLineaPedido', async (req, res) => {
           unidadMedida: unidadMedida
         });
 
-        // Actualizar el stock - AMBAS COLUMNAS
-        const requestUpdateStock = new sql.Request(transaction);
-        await requestUpdateStock
+        // 2. ACTUALIZAR AcumuladoStockUbicacion - AMBAS COLUMNAS
+        const requestUpdateStockUbicacion = new sql.Request(transaction);
+        await requestUpdateStockUbicacion
           .input('nuevoStockUnidadSaldo', sql.Decimal(18, 4), nuevoStockUnidadSaldo)
           .input('nuevoStockUnidadSaldoTipo', sql.Decimal(18, 4), nuevoStockUnidadSaldoTipo)
           .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
@@ -5251,14 +5481,58 @@ app.post('/actualizarLineaPedido', async (req, res) => {
               AND Periodo = 99
           `);
 
-        console.log('[BACKEND DEBUG] Stock en ubicación actualizado correctamente en AMBAS columnas');
-        
-        // ✅ ACTUALIZAR TAMBIÉN AcumuladoStock (stock total por almacén) - AMBAS COLUMNAS
-        try {
-          const requestUpdateStockTotal = new sql.Request(transaction);
-          await requestUpdateStockTotal
-            .input('nuevoStockUnidadSaldo', sql.Decimal(18, 4), nuevoStockUnidadSaldo)
-            .input('nuevoStockUnidadSaldoTipo', sql.Decimal(18, 4), nuevoStockUnidadSaldoTipo)
+        console.log('[BACKEND DEBUG] Stock en AcumuladoStockUbicacion actualizado correctamente');
+
+        // 3. VERIFICAR SI LA UBICACIÓN EXISTE EN AcumuladoStock (UBICACIÓN PRINCIPAL)
+        const requestStockPrincipal = new sql.Request(transaction);
+        const stockPrincipalResult = await requestStockPrincipal
+          .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
+          .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
+          .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
+          .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
+          .input('partida', sql.VarChar(20), truncarString(partidaFinal, 20))
+          .input('codigoColor', sql.VarChar(10), codigoColor)
+          .input('codigoTalla', sql.VarChar(10), codigoTalla)
+          .input('ubicacion', sql.VarChar(20), truncarString(ubicacionFinal, 20))
+          .query(`
+            SELECT UnidadSaldo, UnidadSaldoTipo_
+            FROM AcumuladoStock
+            WHERE 
+              CodigoEmpresa = @codigoEmpresa
+              AND CodigoAlmacen = @almacen
+              AND CodigoArticulo = @codigoArticulo
+              AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+              AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
+              AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+              AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+              AND Ubicacion = @ubicacion
+              AND Periodo = 99
+          `);
+
+        // 4. SI LA UBICACIÓN EXISTE EN AcumuladoStock, ACTUALIZAR AMBAS TABLAS
+        if (stockPrincipalResult.recordset.length > 0) {
+          const stockPrincipalData = stockPrincipalResult.recordset[0];
+          
+          const stockPrincipalUnidadSaldo = parseFloat(stockPrincipalData.UnidadSaldo) || 0;
+          const stockPrincipalUnidadSaldoTipo = parseFloat(stockPrincipalData.UnidadSaldoTipo_) || 0;
+          
+          const nuevoStockPrincipalUnidadSaldo = Math.max(0, stockPrincipalUnidadSaldo - cantidadExpedidaStock);
+          const nuevoStockPrincipalUnidadSaldoTipo = Math.max(0, stockPrincipalUnidadSaldoTipo - cantidadExpedidaStock);
+          
+          console.log('[BACKEND DEBUG] Actualizando stock principal - AMBAS COLUMNAS:', {
+            stockPrincipalUnidadSaldo: stockPrincipalUnidadSaldo,
+            stockPrincipalUnidadSaldoTipo: stockPrincipalUnidadSaldoTipo,
+            cantidadExpedida: cantidadExpedidaStock,
+            nuevoStockPrincipalUnidadSaldo: nuevoStockPrincipalUnidadSaldo,
+            nuevoStockPrincipalUnidadSaldoTipo: nuevoStockPrincipalUnidadSaldoTipo,
+            ubicacion: ubicacionFinal,
+            articulo: datosLinea.codigoArticulo
+          });
+
+          const requestUpdateStockPrincipal = new sql.Request(transaction);
+          await requestUpdateStockPrincipal
+            .input('nuevoStockUnidadSaldo', sql.Decimal(18, 4), nuevoStockPrincipalUnidadSaldo)
+            .input('nuevoStockUnidadSaldoTipo', sql.Decimal(18, 4), nuevoStockPrincipalUnidadSaldoTipo)
             .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
             .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
             .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
@@ -5284,10 +5558,9 @@ app.post('/actualizarLineaPedido', async (req, res) => {
                 AND Periodo = 99
             `);
             
-          console.log('[BACKEND DEBUG] Stock total en AcumuladoStock actualizado en AMBAS columnas');
-        } catch (stockTotalError) {
-          console.error('[ERROR] Al actualizar AcumuladoStock:', stockTotalError);
-          // No hacemos rollback por este error
+          console.log('[BACKEND DEBUG] Stock principal actualizado en AMBAS tablas y columnas');
+        } else {
+          console.log('[BACKEND DEBUG] La ubicación no es principal - solo se actualiza AcumuladoStockUbicacion');
         }
         
       } else {
@@ -5387,7 +5660,7 @@ app.post('/actualizarLineaPedido', async (req, res) => {
         cantidadExpedidaVenta: datosLinea.cantidadExpedida,
         cantidadExpedidaStock: cantidadExpedidaStock,
         unidadesPendientesRestantes: unidadesPendientes - datosLinea.cantidadExpedida,
-        stockRestante: esZonaDescarga ? 'N/A (Zona Descarga)' : 'Actualizado en ambas columnas',
+        stockRestante: esZonaDescarga ? 'N/A (Zona Descarga)' : 'Actualizado en ambas tablas y columnas',
         ubicacionUtilizada: ubicacionFinal,
         tallasActualizadas: !!(codigoColor && grupoTalla && codigoTalla),
         unidadMedida: unidadMedida

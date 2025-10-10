@@ -2,14 +2,13 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
-import { FaSync } from "react-icons/fa";
 
 import { 
-  FiSearch, FiChevronDown, FiChevronUp, 
+  FiChevronDown, FiChevronUp, 
   FiFilter, FiEdit, FiX, 
   FiCheck, FiClock, FiList, FiRefreshCw, FiPlus, FiMinus,
-  FiMapPin, FiPackage, FiDatabase, FiLayers, FiBox,
-  FiAlertTriangle, FiRefreshCcw
+  FiMapPin, FiPackage, FiDatabase, FiLayers,
+  FiAlertTriangle, FiPlusCircle
 } from 'react-icons/fi';
 import '../styles/InventarioPage.css';
 
@@ -39,106 +38,231 @@ const InventarioPage = () => {
   const [cargandoDetalles, setCargandoDetalles] = useState(false);
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   
-  // Nuevos estados para sincronización
-  const [sincronizando, setSincronizando] = useState(false);
-  const [modalSincronizarArticulo, setModalSincronizarArticulo] = useState(false);
-  const [codigoArticuloSincronizar, setCodigoArticuloSincronizar] = useState('');
-  const [resultadoSincronizacion, setResultadoSincronizacion] = useState(null);
-  
-  // Estados para edición de cantidad
-  const [unidadesDisponibles, setUnidadesDisponibles] = useState(['unidades']);
-  const [tallasDisponibles, setTallasDisponibles] = useState([]);
-  const [coloresDisponibles, setColoresDisponibles] = useState([]);
-  const [unidadMedidaSeleccionada, setUnidadMedidaSeleccionada] = useState('unidades');
+  // Estados para el nuevo modal de ajuste
+  const [modalNuevoAjuste, setModalNuevoAjuste] = useState(false);
+  const [articuloBusqueda, setArticuloBusqueda] = useState('');
+  const [resultadosBusqueda, setResultadosBusqueda] = useState([]);
+  const [articuloSeleccionado, setArticuloSeleccionado] = useState(null);
+  const [almacenSeleccionado, setAlmacenSeleccionado] = useState('');
+  const [ubicacionSeleccionada, setUbicacionSeleccionada] = useState('');
+  const [ubicacionesDisponibles, setUbicacionesDisponibles] = useState([]);
+  const [unidadMedidaSeleccionada, setUnidadMedidaSeleccionada] = useState('');
   const [tallaSeleccionada, setTallaSeleccionada] = useState('');
   const [colorSeleccionado, setColorSeleccionado] = useState('');
+  const [cantidadNuevoAjuste, setCantidadNuevoAjuste] = useState('');
 
-  // 🔥 NUEVAS FUNCIONES DE SINCRONIZACIÓN
-  const sincronizarTodoElStock = async () => {
-    if (!window.confirm('¿Estás seguro de que quieres sincronizar TODO el stock? Esto puede tomar varios minutos.')) {
+  // Estados para unidades, tallas y colores disponibles
+  const [unidadesDisponibles, setUnidadesDisponibles] = useState([]);
+  const [tallasDisponibles, setTallasDisponibles] = useState([]);
+  const [coloresDisponibles, setColoresDisponibles] = useState([]);
+
+  // Estados para edición de cantidad existente
+  const [unidadesDisponiblesEdit, setUnidadesDisponiblesEdit] = useState(['unidades']);
+  const [tallasDisponiblesEdit, setTallasDisponiblesEdit] = useState([]);
+  const [coloresDisponiblesEdit, setColoresDisponiblesEdit] = useState([]);
+  const [unidadMedidaSeleccionadaEdit, setUnidadMedidaSeleccionadaEdit] = useState('unidades');
+  const [tallaSeleccionadaEdit, setTallaSeleccionadaEdit] = useState('');
+  const [colorSeleccionadoEdit, setColorSeleccionadoEdit] = useState('');
+
+  // 🔥 NUEVA FUNCIÓN: Buscar artículos para el nuevo ajuste
+  const buscarArticulos = async (termino) => {
+    if (!termino || termino.trim().length < 2) {
+      setResultadosBusqueda([]);
       return;
     }
 
-    setSincronizando(true);
-    setResultadoSincronizacion(null);
-    
-    try {
-      const headers = getAuthHeader();
-      const response = await axios.post(
-        'http://localhost:3000/inventario/sincronizar-stock',
-        { forzarTodo: true },
-        { headers }
-      );
-
-      setResultadoSincronizacion(response.data);
-      
-      if (response.data.success) {
-        alert(`✅ Sincronización completada\n\nCorrecciones aplicadas: ${response.data.resumen.correccionesAplicadas}\nErrores: ${response.data.resumen.errores}`);
-        // Recargar el inventario para reflejar los cambios
-        cargarInventario();
-      } else {
-        alert('❌ Error en la sincronización');
-      }
-    } catch (error) {
-      console.error('Error sincronizando todo el stock:', error);
-      alert('❌ Error al sincronizar el stock');
-    } finally {
-      setSincronizando(false);
-    }
-  };
-
-  const sincronizarArticuloEspecifico = async () => {
-    if (!codigoArticuloSincronizar.trim()) {
-      alert('Por favor, ingresa un código de artículo');
-      return;
-    }
-
-    setSincronizando(true);
-    setResultadoSincronizacion(null);
-    
-    try {
-      const headers = getAuthHeader();
-      const response = await axios.post(
-        `http://localhost:3000/inventario/sincronizar-articulo/${codigoArticuloSincronizar}`,
-        {},
-        { headers }
-      );
-
-      setResultadoSincronizacion(response.data);
-      
-      if (response.data.success) {
-        alert(`✅ Artículo ${codigoArticuloSincronizar} sincronizado correctamente`);
-        setModalSincronizarArticulo(false);
-        setCodigoArticuloSincronizar('');
-        // Recargar el inventario para reflejar los cambios
-        cargarInventario();
-      } else {
-        alert(`❌ Error sincronizando artículo: ${response.data.mensaje}`);
-      }
-    } catch (error) {
-      console.error('Error sincronizando artículo:', error);
-      alert('❌ Error al sincronizar el artículo');
-    } finally {
-      setSincronizando(false);
-    }
-  };
-
-  const verificarDiscrepancias = async () => {
     try {
       const headers = getAuthHeader();
       const response = await axios.get(
-        'http://localhost:3000/inventario/verificar-discrepancias',
+        `http://localhost:3000/buscar-articulos?termino=${termino}`,
         { headers }
       );
-
-      if (response.data.success) {
-        alert(`📊 Discrepancias encontradas:\n\nTotal registros: ${response.data.totalRegistros}\nDiscrepancias: ${response.data.totalDiscrepancias}\nDiferencia total: ${response.data.diferenciaTotal}`);
-      }
+      setResultadosBusqueda(response.data);
     } catch (error) {
-      console.error('Error verificando discrepancias:', error);
-      alert('❌ Error al verificar discrepancias');
+      console.error('Error buscando artículos:', error);
+      setResultadosBusqueda([]);
     }
   };
+
+  // 🔥 NUEVA FUNCIÓN: Cargar ubicaciones por almacén
+  const cargarUbicacionesPorAlmacen = async (codigoAlmacen) => {
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.get(
+        `http://localhost:3000/ubicaciones-por-almacen/${codigoAlmacen}`,
+        { headers }
+      );
+      setUbicacionesDisponibles(response.data);
+    } catch (error) {
+      console.error('Error cargando ubicaciones:', error);
+      setUbicacionesDisponibles([]);
+    }
+  };
+
+  // 🔥 NUEVA FUNCIÓN: Cargar información completa del artículo seleccionado
+  const seleccionarArticulo = async (articulo) => {
+    try {
+      const headers = getAuthHeader();
+      
+      // Obtener información básica del artículo
+      const response = await axios.get(
+        `http://localhost:3000/articulos/${articulo.CodigoArticulo}`,
+        { headers }
+      );
+      
+      setArticuloSeleccionado({
+        ...articulo,
+        ...response.data
+      });
+
+      // Cargar unidades de medida disponibles
+      const unidades = [
+        response.data.UnidadMedida2_,
+        response.data.UnidadMedidaAlternativa_
+      ].filter((unidad, index, self) => 
+        unidad && 
+        unidad.trim() !== '' && 
+        self.indexOf(unidad) === index
+      );
+      
+      if (unidades.length === 0) {
+        unidades.push('unidades');
+      }
+      
+      setUnidadesDisponibles(unidades);
+      setUnidadMedidaSeleccionada(unidades[0]);
+
+      // Cargar stock existente para extraer tallas y colores
+      const stockResponse = await axios.get(
+        `http://localhost:3000/stock/por-articulo?codigoArticulo=${articulo.CodigoArticulo}&incluirSinUbicacion=true`,
+        { headers }
+      );
+      
+      const stockData = Array.isArray(stockResponse.data) ? stockResponse.data : [];
+      
+      // Extraer tallas únicas
+      const tallasUnicas = [...new Set(stockData
+        .filter(item => item.CodigoTalla01_ && item.CodigoTalla01_.trim() !== '')
+        .map(item => item.CodigoTalla01_)
+      )].sort();
+      
+      // Extraer colores únicos
+      const coloresUnicos = [...new Set(stockData
+        .filter(item => item.CodigoColor_ && item.CodigoColor_.trim() !== '')
+        .map(item => item.CodigoColor_)
+      )].sort();
+      
+      setTallasDisponibles(tallasUnicas);
+      setColoresDisponibles(coloresUnicos);
+      
+      // Seleccionar primera talla y color por defecto si existen
+      if (tallasUnicas.length > 0) {
+        setTallaSeleccionada(tallasUnicas[0]);
+      } else {
+        setTallaSeleccionada('');
+      }
+      
+      if (coloresUnicos.length > 0) {
+        setColorSeleccionado(coloresUnicos[0]);
+      } else {
+        setColorSeleccionado('');
+      }
+
+      setResultadosBusqueda([]);
+      setArticuloBusqueda(articulo.CodigoArticulo);
+      
+    } catch (error) {
+      console.error('Error cargando artículo:', error);
+      alert('Error al cargar la información del artículo');
+    }
+  };
+
+  // 🔥 NUEVA FUNCIÓN: Guardar nuevo ajuste
+  const guardarNuevoAjuste = async () => {
+    if (!articuloSeleccionado || !almacenSeleccionado || !ubicacionSeleccionada || !cantidadNuevoAjuste) {
+      alert('Por favor complete todos los campos obligatorios');
+      return;
+    }
+
+    const cantidad = parseFloat(cantidadNuevoAjuste);
+    if (isNaN(cantidad)) {
+      alert("Por favor ingrese un número válido");
+      return;
+    }
+
+    const nuevoAjuste = {
+      articulo: articuloSeleccionado.CodigoArticulo,
+      descripcionArticulo: articuloSeleccionado.DescripcionArticulo,
+      codigoAlmacen: almacenSeleccionado,
+      ubicacionStr: ubicacionSeleccionada,
+      partida: '',
+      unidadStock: (unidadMedidaSeleccionada === 'unidades' ? '' : unidadMedidaSeleccionada),
+      nuevaCantidad: cantidad,
+      codigoColor: colorSeleccionado || '',
+      codigoTalla01: tallaSeleccionada || ''
+    };
+
+    try {
+      const headers = getAuthHeader();
+      const response = await axios.post(
+        'http://localhost:3000/inventario/ajustar-completo',
+        { ajustes: [nuevoAjuste] },
+        { headers }
+      );
+      
+      if (response.data.success) {
+        alert('Nuevo ajuste creado correctamente');
+        setModalNuevoAjuste(false);
+        resetearModalNuevoAjuste();
+        cargarInventario();
+      }
+    } catch (error) {
+      console.error('Error guardando nuevo ajuste:', error);
+      const errorMessage = error.response?.data?.error || 
+                          error.response?.data?.mensaje || 
+                          error.message;
+      alert(`Error al guardar el ajuste: ${errorMessage}`);
+    }
+  };
+
+  // 🔥 NUEVA FUNCIÓN: Resetear modal de nuevo ajuste
+  const resetearModalNuevoAjuste = () => {
+    setArticuloBusqueda('');
+    setResultadosBusqueda([]);
+    setArticuloSeleccionado(null);
+    setAlmacenSeleccionado('');
+    setUbicacionSeleccionada('');
+    setUbicacionesDisponibles([]);
+    setUnidadMedidaSeleccionada('');
+    setTallaSeleccionada('');
+    setColorSeleccionado('');
+    setCantidadNuevoAjuste('');
+    setUnidadesDisponibles([]);
+    setTallasDisponibles([]);
+    setColoresDisponibles([]);
+  };
+
+  // Efecto para buscar artículos cuando cambia el término de búsqueda
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (articuloBusqueda.trim().length >= 2) {
+        buscarArticulos(articuloBusqueda);
+      } else {
+        setResultadosBusqueda([]);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [articuloBusqueda]);
+
+  // Efecto para cargar ubicaciones cuando cambia el almacén seleccionado
+  useEffect(() => {
+    if (almacenSeleccionado) {
+      cargarUbicacionesPorAlmacen(almacenSeleccionado);
+    } else {
+      setUbicacionesDisponibles([]);
+    }
+  }, [almacenSeleccionado]);
 
   // 🔥 CORRECCIÓN: Función mejorada para manejar números negativos y cero
   const formatearUnidad = (cantidad, unidad) => {
@@ -319,12 +443,12 @@ const InventarioPage = () => {
           unidades.push('unidades');
         }
         
-        setUnidadesDisponibles(unidades);
+        setUnidadesDisponiblesEdit(unidades);
         
         if (!unidadActual) {
-          setUnidadMedidaSeleccionada(unidades[0]);
+          setUnidadMedidaSeleccionadaEdit(unidades[0]);
         } else {
-          setUnidadMedidaSeleccionada(unidadActual);
+          setUnidadMedidaSeleccionadaEdit(unidadActual);
         }
       }
 
@@ -334,8 +458,7 @@ const InventarioPage = () => {
         { headers }
       );
       
-      const stockData = Array.isArray(response.data) ? response.data : 
-                       (response.data.detalleUbicaciones || response.data.recordset || []);
+      const stockData = Array.isArray(response.data) ? response.data : [];
       
       // Extraer tallas únicas
       const tallasUnicas = [...new Set(stockData
@@ -349,22 +472,22 @@ const InventarioPage = () => {
         .map(item => item.CodigoColor_)
       )].sort();
       
-      setTallasDisponibles(tallasUnicas);
-      setColoresDisponibles(coloresUnicos);
+      setTallasDisponiblesEdit(tallasUnicas);
+      setColoresDisponiblesEdit(coloresUnicos);
       
       // Seleccionar primera talla y color por defecto si existen
       if (tallasUnicas.length > 0) {
-        setTallaSeleccionada(tallasUnicas[0]);
+        setTallaSeleccionadaEdit(tallasUnicas[0]);
       }
       if (coloresUnicos.length > 0) {
-        setColorSeleccionado(coloresUnicos[0]);
+        setColorSeleccionadoEdit(coloresUnicos[0]);
       }
       
     } catch (error) {
       console.error('Error cargando variantes del artículo:', error);
-      setUnidadesDisponibles(['unidades']);
-      setTallasDisponibles([]);
-      setColoresDisponibles([]);
+      setUnidadesDisponiblesEdit(['unidades']);
+      setTallasDisponiblesEdit([]);
+      setColoresDisponiblesEdit([]);
     }
   }, []);
 
@@ -734,9 +857,9 @@ const InventarioPage = () => {
     });
     
     // Establecer valores actuales en los selects
-    setUnidadMedidaSeleccionada(unidadStock || 'unidades');
-    setTallaSeleccionada(codigoTalla01 || '');
-    setColorSeleccionado(codigoColor || '');
+    setUnidadMedidaSeleccionadaEdit(unidadStock || 'unidades');
+    setTallaSeleccionadaEdit(codigoTalla01 || '');
+    setColorSeleccionadoEdit(codigoColor || '');
     setNuevaCantidad(cantidadActual.toString());
   };
 
@@ -755,10 +878,10 @@ const InventarioPage = () => {
       codigoAlmacen: editandoCantidad.codigoAlmacen,
       ubicacionStr: editandoCantidad.ubicacionStr,
       partida: editandoCantidad.partida || '',
-      unidadStock: (unidadMedidaSeleccionada === 'unidades' ? '' : unidadMedidaSeleccionada),
+      unidadStock: (unidadMedidaSeleccionadaEdit === 'unidades' ? '' : unidadMedidaSeleccionadaEdit),
       nuevaCantidad: cantidad,
-      codigoColor: colorSeleccionado || '',
-      codigoTalla01: tallaSeleccionada || ''
+      codigoColor: colorSeleccionadoEdit || '',
+      codigoTalla01: tallaSeleccionadaEdit || ''
     };
     
     setAjustesPendientes(prev => [...prev, nuevoAjuste]);
@@ -824,73 +947,39 @@ const InventarioPage = () => {
       <Navbar />
       
       <div className="inventario-content">
-        <div className="inventario-search-and-refresh">
-          <div className="inventario-search-container">
-            <input
-              type="text"
-              placeholder={activeTab === 'inventario' ? "Buscar artículo..." : "Buscar en historial..."}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="inventario-search-input"
-              aria-label="Buscar"
-            />
-          </div>
-          <div className="inventario-action-buttons">
+        {/* 🔥 NUEVA BARRA DE HERRAMIENTAS MEJORADA */}
+        <div className="inventario-toolbar">
+          <h1 className="inventario-page-title">
+            <FiPackage /> Gestión de Inventario
+          </h1>
+          <div className="inventario-toolbar-actions">
+            <button 
+              className="inventario-btn-nuevo-ajuste"
+              onClick={() => setModalNuevoAjuste(true)}
+              aria-label="Crear nuevo ajuste"
+            >
+              <FiPlusCircle /> Nuevo Ajuste
+            </button>
             <button 
               className="inventario-refresh-btn" 
               onClick={refreshInventario} 
               aria-label="Actualizar"
-              disabled={sincronizando}
             >
               <FiRefreshCw /> Actualizar
             </button>
-            
-            {/* 🔥 NUEVO: Botones de sincronización */}
-            {activeTab === 'inventario' && (
-              <>
-                <button 
-                  className="inventario-sync-articulo-btn"
-                  onClick={() => setModalSincronizarArticulo(true)}
-                  disabled={sincronizando}
-                  title="Sincronizar un artículo específico"
-                >
-                  <FaSync /> Sincronizar Artículo
-                </button>
-                
-                <button 
-                  className="inventario-sync-all-btn"
-                  onClick={sincronizarTodoElStock}
-                  disabled={sincronizando}
-                  title="Sincronizar todo el stock"
-                >
-                  <FiRefreshCcw /> Sincronizar Todo
-                </button>
-                
-                <button 
-                  className="inventario-verificar-btn"
-                  onClick={verificarDiscrepancias}
-                  disabled={sincronizando}
-                  title="Verificar discrepancias"
-                >
-                  <FiAlertTriangle /> Verificar
-                </button>
-              </>
-            )}
           </div>
         </div>
-
+        
         <div className="inventario-tabs-container">
           <button 
             className={`inventario-tab-btn ${activeTab === 'inventario' ? 'inventario-active' : ''}`}
             onClick={() => setActiveTab('inventario')}
-            aria-label="Ver inventario actual"
           >
             <FiList /> Inventario Actual
           </button>
           <button 
             className={`inventario-tab-btn ${activeTab === 'historial' ? 'inventario-active' : ''}`}
             onClick={() => setActiveTab('historial')}
-            aria-label="Ver historial de ajustes"
           >
             <FiClock /> Historial de Ajustes
           </button>
@@ -1108,17 +1197,6 @@ const InventarioPage = () => {
           <div className="inventario-cargando-detalles">
             <div className="inventario-spinner"></div>
             <p>Cargando detalles...</p>
-          </div>
-        )}
-        
-        {/* 🔥 NUEVO: Overlay de sincronización */}
-        {sincronizando && (
-          <div className="inventario-sincronizando-overlay">
-            <div className="inventario-sincronizando-content">
-              <div className="inventario-spinner-large"></div>
-              <p>Sincronizando stock...</p>
-              <p className="inventario-sincronizando-subtitle">Esto puede tomar varios minutos</p>
-            </div>
           </div>
         )}
         
@@ -1468,66 +1546,197 @@ const InventarioPage = () => {
           )}
         </div>
       </div>
-      
-      {/* 🔥 NUEVO: Modal para sincronizar artículo específico */}
-      {modalSincronizarArticulo && (
+
+      {/* 🔥 NUEVO: Modal para Nuevo Ajuste */}
+      {modalNuevoAjuste && (
         <div className="inventario-modal-edicion">
-          <div className="inventario-modal-contenido">
+          <div className="inventario-modal-contenido inventario-modal-grande">
+            <button 
+              className="inventario-cerrar-modal" 
+              onClick={() => {
+                setModalNuevoAjuste(false);
+                resetearModalNuevoAjuste();
+              }}
+            >
+              &times;
+            </button>
+            
             <h3>
-              <FaSync /> Sincronizar Artículo Específico
+              <FiPlusCircle /> Nuevo Ajuste de Inventario
             </h3>
             
             <div className="inventario-modal-details">
-              <p>Ingresa el código del artículo que deseas sincronizar entre las tablas de stock.</p>
-              <p className="inventario-modal-warning">
-                ⚠️ Esto corregirá las discrepancias entre AcumuladoStock y AcumuladoStockUbicacion
-              </p>
+              <p>Complete los siguientes campos para crear un nuevo ajuste de inventario:</p>
             </div>
             
+            {/* Búsqueda de artículo */}
             <div className="inventario-form-group">
-              <label>Código de Artículo:</label>
+              <label>Buscar Artículo *:</label>
               <input 
                 type="text" 
-                value={codigoArticuloSincronizar}
-                onChange={(e) => setCodigoArticuloSincronizar(e.target.value.toUpperCase())}
+                value={articuloBusqueda}
+                onChange={(e) => setArticuloBusqueda(e.target.value)}
                 className="inventario-input"
-                placeholder="Ej: 011439"
+                placeholder="Ingrese código o descripción del artículo..."
                 autoFocus
               />
+              
+              {resultadosBusqueda.length > 0 && (
+                <div className="inventario-resultados-busqueda">
+                  {resultadosBusqueda.map(articulo => (
+                    <div 
+                      key={articulo.CodigoArticulo}
+                      className="inventario-resultado-item"
+                      onClick={() => seleccionarArticulo(articulo)}
+                    >
+                      <div className="inventario-articulo-codigo">{articulo.CodigoArticulo}</div>
+                      <div className="inventario-articulo-descripcion">{articulo.DescripcionArticulo}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            
+
+            {/* Información del artículo seleccionado */}
+            {articuloSeleccionado && (
+              <div className="inventario-articulo-seleccionado">
+                <h4>Artículo Seleccionado:</h4>
+                <div className="inventario-articulo-info">
+                  <strong>{articuloSeleccionado.CodigoArticulo}</strong> - {articuloSeleccionado.DescripcionArticulo}
+                </div>
+              </div>
+            )}
+
+            {/* Selector de almacén */}
+            <div className="inventario-form-group">
+              <label>Almacén *:</label>
+              <select 
+                value={almacenSeleccionado}
+                onChange={(e) => setAlmacenSeleccionado(e.target.value)}
+                className="inventario-select"
+              >
+                <option value="">Seleccionar almacén</option>
+                <option value="CEN">CEN - Almacén Central</option>
+                <option value="BCN">BCN - Almacén Barcelona</option>
+                <option value="N5">N5 - Almacén N5</option>
+                <option value="N1">N1 - Almacén N1</option>
+                <option value="PK">PK - Almacén PK</option>
+                <option value="5">5 - Almacén 5</option>
+              </select>
+            </div>
+
+            {/* Selector de ubicación */}
+            {almacenSeleccionado && (
+              <div className="inventario-form-group">
+                <label>Ubicación *:</label>
+                <select 
+                  value={ubicacionSeleccionada}
+                  onChange={(e) => setUbicacionSeleccionada(e.target.value)}
+                  className="inventario-select"
+                >
+                  <option value="">Seleccionar ubicación</option>
+                  {ubicacionesDisponibles.map(ubicacion => (
+                    <option key={ubicacion.Ubicacion} value={ubicacion.Ubicacion}>
+                      {ubicacion.Ubicacion} - {ubicacion.DescripcionUbicacion}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Selector de unidad de medida */}
+            {articuloSeleccionado && (
+              <div className="inventario-form-group">
+                <label>Unidad de Medida:</label>
+                <select 
+                  value={unidadMedidaSeleccionada}
+                  onChange={(e) => setUnidadMedidaSeleccionada(e.target.value)}
+                  className="inventario-select"
+                >
+                  {unidadesDisponibles.map(unidad => (
+                    <option key={unidad} value={unidad}>
+                      {unidad}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Selector de talla (si hay tallas disponibles) */}
+            {tallasDisponibles.length > 0 && (
+              <div className="inventario-form-group">
+                <label>Talla:</label>
+                <select 
+                  value={tallaSeleccionada}
+                  onChange={(e) => setTallaSeleccionada(e.target.value)}
+                  className="inventario-select"
+                >
+                  <option value="">Seleccionar talla</option>
+                  {tallasDisponibles.map(talla => (
+                    <option key={talla} value={talla}>
+                      {talla}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Selector de color (si hay colores disponibles) */}
+            {coloresDisponibles.length > 0 && (
+              <div className="inventario-form-group">
+                <label>Color:</label>
+                <select 
+                  value={colorSeleccionado}
+                  onChange={(e) => setColorSeleccionado(e.target.value)}
+                  className="inventario-select"
+                >
+                  <option value="">Seleccionar color</option>
+                  {coloresDisponibles.map(color => (
+                    <option key={color} value={color}>
+                      {color}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Campo para cantidad */}
+            <div className="inventario-form-group">
+              <label>Cantidad *:</label>
+              <input 
+                type="number" 
+                value={cantidadNuevoAjuste}
+                onChange={(e) => setCantidadNuevoAjuste(e.target.value)}
+                className="inventario-input"
+                placeholder="Ingrese la cantidad..."
+                step="any"
+                min="0"
+              />
+            </div>
+
             <div className="inventario-modal-acciones">
               <button 
                 className="inventario-btn-cancelar"
                 onClick={() => {
-                  setModalSincronizarArticulo(false);
-                  setCodigoArticuloSincronizar('');
+                  setModalNuevoAjuste(false);
+                  resetearModalNuevoAjuste();
                 }}
-                disabled={sincronizando}
               >
                 Cancelar
               </button>
               <button 
-                className="inventario-btn-sincronizar"
-                onClick={sincronizarArticuloEspecifico}
-                disabled={sincronizando || !codigoArticuloSincronizar.trim()}
+                className="inventario-btn-guardar"
+                onClick={guardarNuevoAjuste}
+                disabled={!articuloSeleccionado || !almacenSeleccionado || !ubicacionSeleccionada || !cantidadNuevoAjuste}
               >
-                {sincronizando ? (
-                  <>
-                    <div className="inventario-spinner-small"></div>
-                    Sincronizando...
-                  </>
-                ) : (
-                  <>
-                    <FaSync /> Sincronizar
-                  </>
-                )}
+                <FiPlusCircle /> Crear Ajuste
               </button>
             </div>
           </div>
         </div>
       )}
-      
+
+      {/* Modal para edición de cantidad existente */}
       {editandoCantidad && (
         <div className="inventario-modal-edicion">
           <div className="inventario-modal-contenido">
@@ -1556,11 +1765,11 @@ const InventarioPage = () => {
             <div className="inventario-form-group">
               <label>Unidad de Medida:</label>
               <select 
-                value={unidadMedidaSeleccionada}
-                onChange={(e) => setUnidadMedidaSeleccionada(e.target.value)}
+                value={unidadMedidaSeleccionadaEdit}
+                onChange={(e) => setUnidadMedidaSeleccionadaEdit(e.target.value)}
                 className="inventario-select"
               >
-                {unidadesDisponibles.map(unidad => (
+                {unidadesDisponiblesEdit.map(unidad => (
                   <option key={unidad} value={unidad}>
                     {unidad}
                   </option>
@@ -1568,16 +1777,16 @@ const InventarioPage = () => {
               </select>
             </div>
 
-            {tallasDisponibles.length > 0 && (
+            {tallasDisponiblesEdit.length > 0 && (
               <div className="inventario-form-group">
                 <label>Talla:</label>
                 <select 
-                  value={tallaSeleccionada}
-                  onChange={(e) => setTallaSeleccionada(e.target.value)}
+                  value={tallaSeleccionadaEdit}
+                  onChange={(e) => setTallaSeleccionadaEdit(e.target.value)}
                   className="inventario-select"
                 >
                   <option value="">Seleccionar talla</option>
-                  {tallasDisponibles.map(talla => (
+                  {tallasDisponiblesEdit.map(talla => (
                     <option key={talla} value={talla}>
                       {talla}
                     </option>
@@ -1586,16 +1795,16 @@ const InventarioPage = () => {
               </div>
             )}
 
-            {coloresDisponibles.length > 0 && (
+            {coloresDisponiblesEdit.length > 0 && (
               <div className="inventario-form-group">
                 <label>Color:</label>
                 <select 
-                  value={colorSeleccionado}
-                  onChange={(e) => setColorSeleccionado(e.target.value)}
+                  value={colorSeleccionadoEdit}
+                  onChange={(e) => setColorSeleccionadoEdit(e.target.value)}
                   className="inventario-select"
                 >
                   <option value="">Seleccionar color</option>
-                  {coloresDisponibles.map(color => (
+                  {coloresDisponiblesEdit.map(color => (
                     <option key={color} value={color}>
                       {color}
                     </option>
@@ -1633,9 +1842,9 @@ const InventarioPage = () => {
                 className="inventario-btn-cancelar"
                 onClick={() => {
                   setEditandoCantidad(null);
-                  setUnidadMedidaSeleccionada('unidades');
-                  setTallaSeleccionada('');
-                  setColorSeleccionado('');
+                  setUnidadMedidaSeleccionadaEdit('unidades');
+                  setTallaSeleccionadaEdit('');
+                  setColorSeleccionadoEdit('');
                 }}
               >
                 Cancelar
