@@ -177,35 +177,7 @@ app.get('/empresas', async (req, res) => {
     res.status(500).json({ success: false, mensaje: 'Error al obtener empresas' });
   }
 });
-// ============================================
-// ✅ INICIAR SERVIDOR PARA PRODUCCIÓN
-// ============================================
-async function iniciarServidor() {
-  try {
-    await conectarDB();
-    
-    app.listen(PORT, HOST, () => {
-      console.log(`🚀 Servidor backend corriendo en http://${HOST}:${PORT}`);
-      console.log(`📱 Accesible desde: http://tu-ip-publica:${PORT}`);
-      console.log(`🔧 Entorno: ${process.env.NODE_ENV || 'development'}`);
-    });
-    
-  } catch (error) {
-    console.error('❌ Error al iniciar servidor:', error);
-    process.exit(1);
-  }
-}
 
-// Manejo de cierre graceful
-process.on('SIGINT', async () => {
-  console.log('🛑 Cerrando servidor...');
-  if (poolGlobal) {
-    await poolGlobal.close();
-  }
-  process.exit(0);
-});
-
-iniciarServidor();
 // ============================================
 // ✅ 6. ASIGNAR PEDIDOS SCREEN
 // ============================================
