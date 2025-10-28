@@ -22,10 +22,10 @@ app.use(express.json());
 
 // 🔥 Configuración de conexión a SQL Server (MEJOR CON VARIABLES DE ENTORNO)
 const dbConfig = {
-  user: process.env.DB_USER || 'logic',
-  password: process.env.DB_PASSWORD || 'Sage2024+',
-  server: process.env.DB_SERVER || 'SVRALANDALUS',
-  database: process.env.DB_NAME || 'DEMOS',
+  user: process.env.SAGE200_USER || 'Logic',
+  password: process.env.SAGE200_PASSWORD || '12345',
+  server: process.env.SAGE200_SERVER || 'DESKTOP-N86U7H1',
+  database: process.env.SAGE200_DATABASE || 'DEMOS',
   options: {
     trustServerCertificate: true,
     useUTC: false,
@@ -105,6 +105,57 @@ app.use((req, res, next) => {
   console.log(`🔒 Usuario autenticado: ${usuario}, Empresa: ${codigoempresa}`);
   next();
 });
+
+// ------------------ BLOQUE CORREGIDO PARA backend/dist Y EXPRESS 5 ------------------
+
+// Ruta del frontend build (dentro del backend)
+const staticPath = path.join(__dirname, 'dist');
+
+if (fs.existsSync(staticPath)) {
+  // Servir archivos estáticos (JS, CSS, imágenes)
+  app.use(express.static(staticPath, { maxAge: '1d' }));
+
+  // Cualquier ruta que no empiece por /api devuelve index.html
+  app.get(/^(?!\/api).*/, (req, res) => {
+    res.sendFile(path.join(staticPath, 'index.html'));
+  });
+
+  console.log('✅ Frontend estático servido desde:', staticPath);
+} else {
+  console.warn('⚠️ No se encontró carpeta dist en:', staticPath);
+}
+// ------------------ FIN DEL BLOQUE CORREGIDO ------------------
+
+// ============================================
+// ✅ INICIAR SERVIDOR PARA PRODUCCIÓN
+// ============================================
+async function iniciarServidor() {
+  try {
+    await conectarDB();
+    
+    app.listen(PORT, HOST, () => {
+      console.log(`🚀 Servidor backend corriendo en http://${HOST}:${PORT}`);
+      console.log(`📱 Accesible desde: http://tu-ip-publica:${PORT}`);
+      console.log(`🔧 Entorno: ${process.env.NODE_ENV || 'development'}`);
+    });
+    
+  } catch (error) {
+    console.error('❌ Error al iniciar servidor:', error);
+    process.exit(1);
+  }
+}
+
+// Manejo de cierre graceful
+process.on('SIGINT', async () => {
+  console.log('🛑 Cerrando servidor...');
+  if (poolGlobal) {
+    await poolGlobal.close();
+  }
+  process.exit(0);
+});
+
+iniciarServidor();
+
 
 // ============================================
 // ✅ 3. LOGIN (SIN PERMISOS)
