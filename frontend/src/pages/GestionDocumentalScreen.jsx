@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
 import { usePermissions } from '../PermissionsManager';
@@ -26,7 +26,7 @@ function GestionDocumentalScreen() {
     try {
       setLoading(true);
       const headers = getAuthHeader();
-      const response = await axios.get('http://localhost:3000/albaranesCompletados', { headers });
+      const response = await API.get('/albaranesCompletados', { headers });
       setAlbaranes(response.data);
       setLoading(false);
     } catch (err) {
@@ -47,7 +47,7 @@ function GestionDocumentalScreen() {
 
     try {
       const headers = getAuthHeader();
-      const response = await axios.post('http://localhost:3000/revertirAlbaran', {
+      const response = await API.post('/revertirAlbaran', {
         codigoEmpresa: albaran.codigoEmpresa,
         ejercicio: albaran.ejercicio,
         serie: albaran.serie,

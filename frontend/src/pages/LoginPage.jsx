@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import API from '../helpers/api';
 import '../styles/LoginPage.css';
 
 function LoginPage() {
@@ -14,7 +14,7 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await axios.post("http://localhost:3000/login", { usuario, contrasena });
+      const res = await API.post("/login", { usuario, contrasena });
       if (res.data.success) {
         localStorage.setItem('user', JSON.stringify(res.data.datos));
         navigate('/PedidosScreen');

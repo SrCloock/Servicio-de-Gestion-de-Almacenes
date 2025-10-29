@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import axios from 'axios';
+import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
 
@@ -73,8 +73,8 @@ const InventarioPage = () => {
 
     try {
       const headers = getAuthHeader();
-      const response = await axios.get(
-        `http://localhost:3000/buscar-articulos?termino=${termino}`,
+      const response = await API.get(
+        `/buscar-articulos?termino=${termino}`,
         { headers }
       );
       setResultadosBusqueda(response.data);
@@ -88,8 +88,8 @@ const InventarioPage = () => {
   const cargarUbicacionesPorAlmacen = async (codigoAlmacen) => {
     try {
       const headers = getAuthHeader();
-      const response = await axios.get(
-        `http://localhost:3000/ubicaciones-por-almacen/${codigoAlmacen}`,
+      const response = await API.get(
+        `/ubicaciones-por-almacen/${codigoAlmacen}`,
         { headers }
       );
       setUbicacionesDisponibles(response.data);
@@ -105,8 +105,8 @@ const InventarioPage = () => {
       const headers = getAuthHeader();
       
       // Obtener información básica del artículo
-      const response = await axios.get(
-        `http://localhost:3000/articulos/${articulo.CodigoArticulo}`,
+      const response = await API.get(
+        `/articulos/${articulo.CodigoArticulo}`,
         { headers }
       );
       
@@ -133,8 +133,8 @@ const InventarioPage = () => {
       setUnidadMedidaSeleccionada(unidades[0]);
 
       // Cargar stock existente para extraer tallas y colores
-      const stockResponse = await axios.get(
-        `http://localhost:3000/stock/por-articulo?codigoArticulo=${articulo.CodigoArticulo}&incluirSinUbicacion=true`,
+      const stockResponse = await API.get(
+        `/stock/por-articulo?codigoArticulo=${articulo.CodigoArticulo}&incluirSinUbicacion=true`,
         { headers }
       );
       
@@ -204,8 +204,8 @@ const InventarioPage = () => {
 
     try {
       const headers = getAuthHeader();
-      const response = await axios.post(
-        'http://localhost:3000/inventario/ajustar-completo',
+      const response = await API.post(
+        '/inventario/ajustar-completo',
         { ajustes: [nuevoAjuste] },
         { headers }
       );
@@ -453,8 +453,8 @@ const InventarioPage = () => {
       }
 
       // Obtener stock para extraer tallas y colores disponibles
-      const response = await axios.get(
-        `http://localhost:3000/stock/por-articulo?codigoArticulo=${codigoArticulo}&incluirSinUbicacion=true`,
+      const response = await API.get(
+        `/stock/por-articulo?codigoArticulo=${codigoArticulo}&incluirSinUbicacion=true`,
         { headers }
       );
       
@@ -604,8 +604,8 @@ const InventarioPage = () => {
       setLoading(prev => ({ ...prev, inventario: true }));
       setError('');
       const headers = getAuthHeader();
-      const response = await axios.get(
-        'http://localhost:3000/inventario/stock-total-completo',
+      const response = await API.get(
+        '/inventario/stock-total-completo',
         { headers }
       );
       
@@ -623,8 +623,8 @@ const InventarioPage = () => {
       setLoading(prev => ({ ...prev, historial: true }));
       setError('');
       const headers = getAuthHeader();
-      const response = await axios.get(
-        'http://localhost:3000/inventario/historial-ajustes',
+      const response = await API.get(
+        '/inventario/historial-ajustes',
         { headers }
       );
       
@@ -640,8 +640,8 @@ const InventarioPage = () => {
   const obtenerInfoArticulo = async (codigoArticulo) => {
     try {
       const headers = getAuthHeader();
-      const response = await axios.get(
-        `http://localhost:3000/articulos/${codigoArticulo}`,
+      const response = await API.get(
+        `/articulos/${codigoArticulo}`,
         { headers }
       );
       return response.data;
@@ -899,8 +899,8 @@ const InventarioPage = () => {
     try {
       setCargandoDetalles(true);
       const headers = getAuthHeader();
-      const response = await axios.get(
-        `http://localhost:3000/stock/detalles?movPosicionLinea=${movPosicionLinea}`,
+      const response = await API.get(
+        `/stock/detalles?movPosicionLinea=${movPosicionLinea}`,
         { headers }
       );
       
@@ -921,8 +921,8 @@ const InventarioPage = () => {
     
     try {
       const headers = getAuthHeader();
-      const response = await axios.post(
-        'http://localhost:3000/inventario/ajustar-completo',
+      const response = await API.post(
+        '/inventario/ajustar-completo',
         { ajustes: ajustesPendientes },
         { headers }
       );

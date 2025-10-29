@@ -857,8 +857,8 @@ app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
   }
 });
 
-// ✅ 7.2 ALBARANES PENDIENTES (ACTUALIZADO SOLO CON NOMBRE OBRA)
-app.get('/albaranesPendientes', async (req, res) => {
+// ✅ 7.2 ALBARANES PENDIENTES (VERSIÓN SIN JOIN - MÁS SEGURA)
+app.get('/api/albaranesPendientes', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
   }
@@ -868,35 +868,32 @@ app.get('/albaranesPendientes', async (req, res) => {
   try {
     const query = `
       SELECT 
-        cac.NumeroAlbaran, 
-        cac.SerieAlbaran, 
-        cac.EjercicioAlbaran,
-        cac.CodigoEmpresa,
-        cac.FechaAlbaran, 
-        cac.CodigoCliente, 
-        cac.RazonSocial, 
-        cac.Domicilio, 
-        cac.Municipio, 
-        cac.ImporteLiquido,
-        cac.StatusFacturado,
-        cac.EmpleadoAsignado,
-        cac.NombreObra, -- ✅ SOLO NOMBRE OBRA
-        cac.Contacto,
-        cac.Telefono AS TelefonoContacto,
-        cac.FormaEntrega,
-        cac.EsVoluminoso,
-        cpc.Estado as EstadoPedido
-      FROM CabeceraAlbaranCliente cac
-      LEFT JOIN CabeceraPedidoCliente cpc ON 
-        cac.CodigoEmpresa = cpc.CodigoEmpresa 
-        AND cac.EjercicioPedido = cpc.EjercicioPedido
-        AND cac.SeriePedido = cpc.SeriePedido
-        AND cac.NumeroPedido = cpc.NumeroPedido
-      WHERE cac.CodigoEmpresa = @codigoEmpresa
-        AND cac.StatusFacturado = 0
-        AND cac.FechaAlbaran >= DATEADD(DAY, -7, GETDATE())
-        AND cac.FormaEntrega = 3  -- Solo nuestros medios
-      ORDER BY cac.FechaAlbaran DESC
+        NumeroAlbaran, 
+        SerieAlbaran, 
+        EjercicioAlbaran,
+        CodigoEmpresa,
+        FechaAlbaran, 
+        CodigoCliente, 
+        RazonSocial, 
+        Domicilio, 
+        Municipio, 
+        ImporteLiquido,
+        StatusFacturado,
+        EmpleadoAsignado,
+        NombreObra,
+        Contacto,
+        Telefono,
+        formaentrega,
+        EsVoluminoso,
+        EjercicioPedido,
+        SeriePedido,
+        NumeroPedido
+      FROM CabeceraAlbaranCliente
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND StatusFacturado = 0
+        AND FechaAlbaran >= DATEADD(DAY, -30, GETDATE())
+        AND formaentrega = 3  -- Solo nuestros medios
+      ORDER BY FechaAlbaran DESC
     `;
     
     const cabeceras = await poolGlobal.request()
@@ -911,22 +908,16 @@ app.get('/albaranesPendientes', async (req, res) => {
         .input('numeroAlbaran', sql.Int, cabecera.NumeroAlbaran)
         .query(`
           SELECT 
-            lac.Orden AS orden,
-            lac.CodigoArticulo AS codigo,
-            lac.DescripcionArticulo AS nombre,
-            lac.Unidades AS cantidad,
-            lpc.UnidadesPedidas AS cantidadOriginal
-          FROM LineasAlbaranCliente lac
-          LEFT JOIN LineasPedidoCliente lpc 
-            ON lac.CodigoEmpresa = lpc.CodigoEmpresa
-            AND lac.EjercicioPedido = lpc.EjercicioPedido
-            AND lac.SeriePedido = lpc.SeriePedido
-            AND lac.NumeroPedido = lpc.NumeroPedido
-            AND lac.Orden = lpc.Orden
-          WHERE lac.CodigoEmpresa = @codigoEmpresa
-            AND lac.EjercicioAlbaran = @ejercicio
-            AND lac.SerieAlbaran = @serie
-            AND lac.NumeroAlbaran = @numeroAlbaran
+            Orden AS orden,
+            CodigoArticulo AS codigo,
+            DescripcionArticulo AS nombre,
+            Unidades AS cantidad,
+            Unidades AS cantidadEntregada
+          FROM LineasAlbaranCliente
+          WHERE CodigoEmpresa = @codigoEmpresa
+            AND EjercicioAlbaran = @ejercicio
+            AND SerieAlbaran = @serie
+            AND NumeroAlbaran = @numeroAlbaran
         `);
 
       return {
@@ -941,15 +932,15 @@ app.get('/albaranesPendientes', async (req, res) => {
         FechaAlbaran: cabecera.FechaAlbaran,
         importeLiquido: cabecera.ImporteLiquido,
         empleadoAsignado: cabecera.EmpleadoAsignado,
-        nombreObra: cabecera.NombreObra, // ✅ SOLO NOMBRE OBRA
+        nombreObra: cabecera.NombreObra,
         contacto: cabecera.Contacto,
-        telefonoContacto: cabecera.TelefonoContacto,
-        FormaEntrega: cabecera.FormaEntrega,
-        EstadoPedido: cabecera.EstadoPedido,
+        telefonoContacto: cabecera.Telefono,
+        formaentrega: cabecera.formaentrega,
         EsVoluminoso: cabecera.EsVoluminoso,
+        NumeroPedido: cabecera.NumeroPedido,
         articulos: lineas.recordset.map(art => ({
           ...art,
-          cantidadOriginal: art.cantidadOriginal || art.cantidad,
+          cantidadOriginal: art.cantidad,
           cantidadEntregada: art.cantidad
         }))
       };

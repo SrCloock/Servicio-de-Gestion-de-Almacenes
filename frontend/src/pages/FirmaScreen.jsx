@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import SignatureCanvas from 'react-signature-canvas';
 import { useLocation, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import { usePermissions } from '../PermissionsManager';
 import Navbar from '../components/Navbar';
@@ -79,8 +79,8 @@ function FirmaScreen() {
     setLoading(true);
     
     try {
-      const response = await axios.post(
-        'http://localhost:3000/completarAlbaranConFirmas',
+      const response = await API.post(
+        '/completarAlbaranConFirmas',
         {
           codigoEmpresa: albaran.codigoEmpresa,
           ejercicio: albaran.ejercicio,
@@ -89,9 +89,7 @@ function FirmaScreen() {
           firmaCliente: firmaCliente,
           firmaRepartidor: firmaRepartidor,
           observaciones: observaciones
-        },
-        { headers: getAuthHeader() }
-      );
+        });
 
       if (response.data.success) {
         alert(`Albarán ${albaran.albaran} completado correctamente con firmas`);

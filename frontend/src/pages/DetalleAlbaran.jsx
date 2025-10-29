@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
 import { usePermissions } from '../PermissionsManager';
@@ -120,8 +120,8 @@ function DetalleAlbaran() {
         unidades: parseFloat(unidades) || 0
       }));
 
-      const response = await axios.put(
-        'http://localhost:3000/actualizarCantidadesAlbaran',
+      const response = await API.put(
+        '/actualizarCantidadesAlbaran',
         {
           codigoEmpresa: albaran.codigoEmpresa,
           ejercicio: albaran.ejercicio,
@@ -129,9 +129,7 @@ function DetalleAlbaran() {
           numeroAlbaran: albaran.numero,
           lineas: lineas,
           observaciones: observaciones
-        },
-        { headers: getAuthHeader() }
-      );
+        });
 
       if (response.data.success) {
         alert('Cantidades actualizadas correctamente');
@@ -203,8 +201,8 @@ function DetalleAlbaran() {
           unidades: parseFloat(unidades) || 0
         }));
 
-        await axios.put(
-          'http://localhost:3000/actualizarCantidadesAlbaran',
+        await API.put(
+          '/actualizarCantidadesAlbaran',
           {
             codigoEmpresa: albaran.codigoEmpresa,
             ejercicio: albaran.ejercicio,
@@ -212,14 +210,12 @@ function DetalleAlbaran() {
             numeroAlbaran: albaran.numero,
             lineas: lineas,
             observaciones: observaciones
-          },
-          { headers: getAuthHeader() }
-        );
+          });
       }
 
       // 2. Luego completar el albarán con las firmas
-      const response = await axios.post(
-        'http://localhost:3000/completarAlbaranConFirmas',
+      const response = await API.post(
+        '/completarAlbaranConFirmas',
         {
           codigoEmpresa: albaran.codigoEmpresa,
           ejercicio: albaran.ejercicio,
@@ -228,9 +224,7 @@ function DetalleAlbaran() {
           firmaCliente: firmaCliente,
           firmaRepartidor: firmaRepartidor,
           observaciones: observaciones
-        },
-        { headers: getAuthHeader() }
-      );
+        });
 
       if (response.data.success) {
         alert(`Albarán ${albaran.albaran} completado correctamente con firmas`);

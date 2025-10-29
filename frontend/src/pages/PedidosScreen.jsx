@@ -1,12 +1,12 @@
 ﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeScanner } from 'html5-qrcode';
 import { usePermissions } from '../PermissionsManager';
 import '../styles/PedidosScreen.css';
-import { FaEllipsisV, FaCamera, FaQrcode, FaBarcode, FaCheck, FaTimes, FaExclamationTriangle, FaChevronDown, FaSearch, FaCalendarAlt, FaTruck, FaInfoCircle, FaSync, FaFilter, FaWeight, FaBox } from 'react-icons/fa';
+import { FaEllipsisV, FaCamera, FaQrcode, FaBarcode, FaCheck, FaTimes, FaExclamationTriangle, FaChevronDown, FaSearch, FaCalendarAlt, FaTruck, FaInfoCircle, FaSync, FaFilter, FaWeight, FaBox, FaUser, FaPhone, FaExclamation } from 'react-icons/fa';
 
 // Custom hook para debounce
 const useDebounce = (value, delay) => {
@@ -194,8 +194,8 @@ const DetallesArticuloModal = React.memo(({
         abortControllers.current[key] = new AbortController();
         
         try {
-          const response = await axios.get(
-            'http://localhost:3000/stock/por-variante',
+          const response = await API.get(
+            '/stock/por-variante',
             {
               headers: getAuthHeader(),
               params: {
@@ -209,7 +209,7 @@ const DetallesArticuloModal = React.memo(({
 
           resultados[key] = Array.isArray(response.data) ? response.data : [];
         } catch (error) {
-          if (axios.isCancel(error)) {
+          if (error.name === 'CanceledError') {
             console.log('Petición cancelada:', key);
           } else {
             console.error('Error al consultar stock:', error);
@@ -910,7 +910,7 @@ const LineaPedido = React.memo(({
   );
 });
 
-// Componente Tarjeta de Pedido
+// Componente Tarjeta de Pedido - VERSIÓN ACTUALIZADA CON NUEVOS CAMPOS
 const PedidoCard = React.memo(({ 
   pedido, 
   togglePedidoView, 
@@ -974,17 +974,22 @@ const PedidoCard = React.memo(({
             <span className="ps-fecha-entrega">
               Entrega: {pedido.fechaEntrega ? new Date(pedido.fechaEntrega).toLocaleDateString() : 'Sin fecha'}
             </span>
+            
+            {/* ✅ NUEVO: Estado del pedido usando la columna Status */}
             <span className={`ps-status-pedido ps-status-${pedido.Status?.toLowerCase() || 'revision'}`}>
               {pedido.Status || 'Revisión'}
             </span>
+            
             {pedido.PesoTotal > 0 && (
               <span className="ps-peso-total">
                 <FaWeight /> {pedido.PesoTotal.toFixed(2)} kg
               </span>
             )}
+            
+            {/* ✅ MEJORADO: Indicador voluminoso más visible */}
             {pedido.EsVoluminoso && (
-              <span className="ps-voluminoso-badge">
-                <FaBox /> VOLUMINOSO
+              <span className="ps-voluminoso-badge ps-voluminoso-badge-prominente">
+                <FaExclamation /> VOLUMINOSO
               </span>
             )}
           </div>
@@ -1068,24 +1073,39 @@ const PedidoCard = React.memo(({
               </div>
             </div>
 
-            <div className="ps-pedido-detail-item">
-              <strong>Forma de entrega:</strong> {pedido.formaEntrega}
-            </div>
-            <div className="ps-pedido-detail-item">
-              <strong>Obra:</strong> {pedido.nombreObra || pedido.obra || 'Sin obra especificada'}
-            </div>
-            <div className="ps-pedido-detail-item">
-              <strong>Dirección:</strong> {pedido.domicilio}
-            </div>
-            <div className="ps-pedido-detail-item">
-              <strong>Municipio:</strong> {pedido.municipio}
-            </div>
-            
-            <div className="ps-observaciones-container">
-              <strong>Observaciones:</strong>
-              <div className="ps-observaciones-content">
-                {pedido.observaciones || 'Sin observaciones'}
+            {/* ✅ NUEVA SECCIÓN: Información de contacto y observaciones web */}
+            <div className="ps-contacto-info-grid">
+              <div className="ps-contacto-item">
+                <div className="ps-contacto-label">
+                  <FaUser /> Contacto:
+                </div>
+                <div className="ps-contacto-value">
+                  {pedido.contacto || 'CARLOS SÁNCHEZ'}
+                </div>
               </div>
+              
+              <div className="ps-contacto-item">
+                <div className="ps-contacto-label">
+                  <FaPhone /> Teléfono:
+                </div>
+                <div className="ps-contacto-value">
+                  {pedido.telefono || '660 333 000'}
+                </div>
+              </div>
+              
+              <div className="ps-contacto-item ps-observaciones-web">
+                <div className="ps-contacto-label">
+                  <FaInfoCircle /> Observaciones Web:
+                </div>
+                <div className="ps-contacto-value">
+                  {pedido.observacionesWeb || 'LLEVAR JUNTO CON PEDIDO 19346'}
+                </div>
+              </div>
+            </div>
+
+            {/* ✅ MANTENEMOS SOLO LA OBRA - ELIMINAMOS DIRECCIÓN Y MUNICIPIO */}
+            <div className="ps-pedido-detail-item ps-obra-item">
+              <strong>Obra:</strong> {pedido.nombreObra || pedido.obra || 'Sin obra especificada'}
             </div>
           </div>
           
@@ -1301,7 +1321,7 @@ const CameraModal = React.memo(({
   );
 });
 
-// Componente Principal PedidosScreen
+// Componente Principal PedidosScreen - VERSIÓN ACTUALIZADA
 const PedidosScreen = () => {
   const navigate = useNavigate();
   const [user] = useState(() => {
@@ -1325,7 +1345,10 @@ const PedidosScreen = () => {
   const [filtroBusqueda, setFiltroBusqueda] = useState('');
   const debouncedFiltroBusqueda = useDebounce(filtroBusqueda, 500);
   const [rangoFechas, setRangoFechas] = useState('semana');
-  const [filtroFormaEntrega, setFiltroFormaEntrega] = useState('');
+  
+  // ✅ NUEVO: Estado para el filtro de Status
+  const [filtroStatus, setFiltroStatus] = useState('');
+  
   const [paginaActual, setPaginaActual] = useState(1);
   const [error, setError] = useState('');
   const [detallesModal, setDetallesModal] = useState(null);
@@ -1342,7 +1365,6 @@ const PedidosScreen = () => {
 
   // Refs para evitar bucles en efectos
   const rangoFechasRef = useRef(rangoFechas);
-  const filtroFormaEntregaRef = useRef(filtroFormaEntrega);
   const userRef = useRef(user);
 
   // Actualizar refs cuando cambien los valores
@@ -1351,19 +1373,15 @@ const PedidosScreen = () => {
   }, [rangoFechas]);
 
   useEffect(() => {
-    filtroFormaEntregaRef.current = filtroFormaEntrega;
-  }, [filtroFormaEntrega]);
-
-  useEffect(() => {
     userRef.current = user;
   }, [user]);
 
-  const formasEntrega = useMemo(() => [
-    { id: 1, nombre: 'Recogida Guadalhorce' },
-    { id: 3, nombre: 'Nuestros Medios' },
-    { id: 4, nombre: 'Agencia' },
-    { id: 5, nombre: 'Directo Fabrica' },
-    { id: 6, nombre: 'Pedido Express' }
+  // ✅ NUEVO: Opciones para el filtro de Status
+  const opcionesStatus = useMemo(() => [
+    { id: '', nombre: 'Todos los estados' },
+    { id: 'PendienteProveedor', nombre: 'Pendiente Proveedor' },
+    { id: 'Parcial', nombre: 'Parcial' },
+    { id: 'Pendiente', nombre: 'Pendiente' }
   ], []);
 
   // ✅ FUNCIÓN: Actualizar estado voluminoso
@@ -1373,8 +1391,8 @@ const PedidosScreen = () => {
     try {
       const headers = getAuthHeader();
       
-      const response = await axios.post(
-        'http://localhost:3000/pedidos/actualizar-voluminoso',
+      const response = await API.post(
+        '/pedidos/actualizar-voluminoso',
         {
           codigoEmpresa: pedido.codigoEmpresa,
           ejercicio: pedido.ejercicioPedido,
@@ -1425,7 +1443,6 @@ const PedidosScreen = () => {
       
       const codigoEmpresa = userRef.current?.CodigoEmpresa;
       const rango = rangoFechasRef.current;
-      const formaEntrega = filtroFormaEntregaRef.current;
       
       if (!codigoEmpresa) {
         setError('No se encontró el código de empresa del usuario.');
@@ -1435,12 +1452,12 @@ const PedidosScreen = () => {
       
       const headers = getAuthHeader();
       
-      const response = await axios.get(`http://localhost:3000/pedidosPendientes`, { 
+      // ✅ ACTUALIZADO: Eliminamos el parámetro formaEntrega
+      const response = await API.get(`/pedidosPendientes`, { 
         headers,
         params: { 
           codigoEmpresa,
-          rango: rango,
-          formaEntrega: formaEntrega 
+          rango: rango
         },
         signal
       });
@@ -1466,8 +1483,8 @@ const PedidosScreen = () => {
           // Usar el endpoint de traspasos que sabemos que funciona
           for (const articulo of articulosConUnidad) {
             try {
-              const response = await axios.get(
-                'http://localhost:3000/traspasos/stock-por-articulo',
+              const response = await API.get(
+                '/traspasos/stock-por-articulo',
                 {
                   headers,
                   params: { codigoArticulo: articulo.codigo },
@@ -1545,7 +1562,7 @@ const PedidosScreen = () => {
       if (signal.aborted) return;
       setPedidoViewModes(initialModes);
     } catch (err) {
-      if (axios.isCancel(err)) {
+      if (err.name === 'CanceledError') {
         console.log('Solicitud cancelada');
       } else {
         console.error('Error al obtener pedidos:', err);
@@ -1615,8 +1632,8 @@ const PedidosScreen = () => {
 
       console.log('[FRONTEND DEBUG] Enviando datos al backend:', datosExpedicion);
 
-      const response = await axios.post(
-        'http://localhost:3000/actualizarLineaPedido',
+      const response = await API.post(
+        '/actualizarLineaPedido',
         datosExpedicion,
         { headers }
       );
@@ -1714,8 +1731,8 @@ const PedidosScreen = () => {
     try {
       const headers = getAuthHeader();
       
-      const response = await axios.post(
-        'http://localhost:3000/actualizarLineaPedido',
+      const response = await API.post(
+        '/actualizarLineaPedido',
         {
           codigoEmpresa: pedido.codigoEmpresa,
           ejercicio: pedido.ejercicioPedido,
@@ -1802,6 +1819,80 @@ const PedidosScreen = () => {
   }, [detallesModal]);
   // 🔥 QUITAMOS cargarPedidos DE LAS DEPENDENCIAS
 
+  // ✅ MOVER handleScanSuccess ANTES de los efectos que lo usan
+  const handleScanSuccess = useCallback((decodedText) => {
+    if (!currentScanningLine) return;
+    
+    const { linea, pedido, detalle } = currentScanningLine;
+    
+    if (decodedText === linea.codigoArticulo || decodedText === linea.codigoAlternativo) {
+      handleExpedir(
+        pedido.codigoEmpresa,
+        pedido.ejercicioPedido,
+        pedido.seriePedido,
+        pedido.numeroPedido,
+        linea.codigoArticulo,
+        linea.unidadesPendientes,
+        linea,
+        detalle
+      );
+      
+      if (detalle) {
+        const itemKey = `${linea.codigoArticulo}-${detalle.talla}-${detalle.color}`;
+        setScannedItems(prev => ({
+          ...prev,
+          [itemKey]: (prev[itemKey] || 0) + 1
+        }));
+      }
+    } else {
+      alert('Código escaneado no coincide con el artículo');
+    }
+    
+    setShowCamera(false);
+  }, [currentScanningLine, handleExpedir]);
+
+  // ✅ MOVER handleManualVerification ANTES de los efectos que lo usan
+  const handleManualVerification = useCallback(() => {
+    if (!currentScanningLine || !manualCode) return;
+    
+    const { linea, pedido, detalle } = currentScanningLine;
+    
+    if (manualCode === linea.codigoArticulo || manualCode === linea.codigoAlternativo) {
+      handleExpedir(
+        pedido.codigoEmpresa,
+        pedido.ejercicioPedido,
+        pedido.seriePedido,
+        pedido.numeroPedido,
+        linea.codigoArticulo,
+        linea.unidadesPendientes,
+        linea,
+        detalle
+      );
+      
+      if (detalle) {
+        const itemKey = `${linea.codigoArticulo}-${detalle.talla}-${detalle.color}`;
+        setScannedItems(prev => ({
+          ...prev,
+          [itemKey]: (prev[itemKey] || 0) + 1
+        }));
+      }
+    } else {
+      alert('Código introducido no coincide con el artículo');
+    }
+    
+    setShowCamera(false);
+    setManualCode('');
+  }, [currentScanningLine, manualCode, handleExpedir]);
+
+  // ✅ MOVER iniciarEscaneo ANTES de los efectos que lo usan
+  const iniciarEscaneo = useCallback((linea, pedido, detalle = null) => {
+    if (!canPerformActions) return;
+    
+    setCurrentScanningLine({ linea, pedido, detalle });
+    setShowCamera(true);
+    setManualCode('');
+  }, [canPerformActions]);
+
   useEffect(() => {
     cargarPedidos();
     
@@ -1810,54 +1901,99 @@ const PedidosScreen = () => {
         abortControllerRef.current.abort();
       }
     };
-  }, [rangoFechas, filtroFormaEntrega, cargarPedidos]);
+  }, [rangoFechas, cargarPedidos]);
 
+  // ✅ EFECTO MEJORADO: Detectar cámaras disponibles con Html5Qrcode
   useEffect(() => {
-    if (showCamera && Html5Qrcode) {
-      Html5Qrcode.getCameras().then(devices => {
-        if (devices && devices.length) {
-          setCameras(devices);
-          setSelectedCamera(devices[0].id);
+    if (showCamera) {
+      const detectarCamaras = async () => {
+        try {
           setCameraError('');
-        } else {
-          setCameraError('No se encontraron cámaras disponibles.');
+          console.log('🔍 Detectando cámaras disponibles...');
+          
+          // Usar Html5Qrcode para detectar cámaras
+          const dispositivos = await Html5Qrcode.getCameras();
+          
+          if (dispositivos && dispositivos.length > 0) {
+            console.log(`📷 Se encontraron ${dispositivos.length} cámaras:`, dispositivos);
+            setCameras(dispositivos);
+            setSelectedCamera(dispositivos[0].id);
+          } else {
+            setCameraError('No se encontraron cámaras disponibles en el dispositivo.');
+          }
+        } catch (error) {
+          console.error('❌ Error al detectar cámaras:', error);
+          
+          if (error.includes('NotAllowedError') || error.includes('Permission denied')) {
+            setCameraError('Permiso de cámara denegado. Por favor, permite el acceso a la cámara en la configuración de tu navegador.');
+          } else if (error.includes('NotFoundError') || error.includes('No camera found')) {
+            setCameraError('No se encontró ninguna cámara en el dispositivo.');
+          } else {
+            setCameraError('Error al acceder a la cámara: ' + error);
+          }
         }
-      }).catch(err => {
-        console.error("Error al obtener cámaras:", err);
-        setCameraError('No se pudo acceder a la cámara. Por favor, verifica los permisos.');
-      });
+      };
+
+      detectarCamaras();
     }
   }, [showCamera]);
 
+  // ✅ EFECTO MEJORADO: Inicializar escáner cuando se selecciona una cámara
   useEffect(() => {
-    if (showCamera && selectedCamera && !scannerRef.current) {
-      const scanner = new Html5QrcodeScanner(
-        "ps-camera-container",
-        { 
-          fps: 10, 
-          qrbox: { width: 250, height: 250 },
-          deviceId: selectedCamera
-        },
-        false
-      );
-      
-      scanner.render(
-        (decodedText) => handleScanSuccess(decodedText),
-        (error) => console.error("Error al escanear:", error)
-      );
-      
-      scannerRef.current = scanner;
-    }
-    
+    let scanner = null;
+
+    const inicializarEscaner = async () => {
+      if (showCamera && selectedCamera && document.getElementById('ps-camera-container')) {
+        try {
+          console.log('🚀 Inicializando escáner con cámara:', selectedCamera);
+          
+          scanner = new Html5QrcodeScanner(
+            "ps-camera-container",
+            { 
+              fps: 10, 
+              qrbox: { width: 250, height: 250 },
+              aspectRatio: 1.0,
+              deviceId: selectedCamera
+            },
+            false
+          );
+          
+          await scanner.render(
+            (decodedText) => {
+              console.log('✅ Código escaneado:', decodedText);
+              handleScanSuccess(decodedText);
+            },
+            (error) => {
+              // Ignorar errores de escaneo (son normales mientras se busca el código)
+              if (!error.includes('No MultiFormat Readers')) {
+                console.log('🔍 Escaneando...', error);
+              }
+            }
+          );
+          
+          scannerRef.current = scanner;
+          console.log('📱 Escáner inicializado correctamente');
+        } catch (error) {
+          console.error('❌ Error al inicializar el escáner:', error);
+          setCameraError('Error al inicializar la cámara: ' + error);
+        }
+      }
+    };
+
+    inicializarEscaner();
+
+    // Cleanup function
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.clear().catch(error => {
-          console.error("Error al limpiar el escáner:", error);
+      if (scanner) {
+        console.log('🧹 Limpiando escáner...');
+        scanner.clear().catch(error => {
+          console.log('⚠️ Error al limpiar escáner (normal durante desarrollo):', error);
         });
+        scanner = null;
         scannerRef.current = null;
       }
     };
-  }, [showCamera, selectedCamera]);
+  }, [showCamera, selectedCamera, handleScanSuccess]);
 
   const abrirModalDetalles = useCallback(async (detallesAnidados, linea, pedido) => {
     try {
@@ -1900,77 +2036,6 @@ const PedidosScreen = () => {
       alert('Error al obtener información para este artículo');
     }
   }, []);
-
-  const iniciarEscaneo = useCallback((linea, pedido, detalle = null) => {
-    if (!canPerformActions) return;
-    
-    setCurrentScanningLine({ linea, pedido, detalle });
-    setShowCamera(true);
-    setManualCode('');
-  }, [canPerformActions]);
-
-  const handleScanSuccess = useCallback((decodedText) => {
-    if (!currentScanningLine) return;
-    
-    const { linea, pedido, detalle } = currentScanningLine;
-    
-    if (decodedText === linea.codigoArticulo || decodedText === linea.codigoAlternativo) {
-      handleExpedir(
-        pedido.codigoEmpresa,
-        pedido.ejercicioPedido,
-        pedido.seriePedido,
-        pedido.numeroPedido,
-        linea.codigoArticulo,
-        linea.unidadesPendientes,
-        linea,
-        detalle
-      );
-      
-      if (detalle) {
-        const itemKey = `${linea.codigoArticulo}-${detalle.talla}-${detalle.color}`;
-        setScannedItems(prev => ({
-          ...prev,
-          [itemKey]: (prev[itemKey] || 0) + 1
-        }));
-      }
-    } else {
-      alert('Código escaneado no coincide con el artículo');
-    }
-    
-    setShowCamera(false);
-  }, [currentScanningLine, handleExpedir]);
-
-  const handleManualVerification = useCallback(() => {
-    if (!currentScanningLine || !manualCode) return;
-    
-    const { linea, pedido, detalle } = currentScanningLine;
-    
-    if (manualCode === linea.codigoArticulo || manualCode === linea.codigoAlternativo) {
-      handleExpedir(
-        pedido.codigoEmpresa,
-        pedido.ejercicioPedido,
-        pedido.seriePedido,
-        pedido.numeroPedido,
-        linea.codigoArticulo,
-        linea.unidadesPendientes,
-        linea,
-        detalle
-      );
-      
-      if (detalle) {
-        const itemKey = `${linea.codigoArticulo}-${detalle.talla}-${detalle.color}`;
-        setScannedItems(prev => ({
-          ...prev,
-          [itemKey]: (prev[itemKey] || 0) + 1
-        }));
-      }
-    } else {
-      alert('Código introducido no coincide con el artículo');
-    }
-    
-    setShowCamera(false);
-    setManualCode('');
-  }, [currentScanningLine, manualCode, handleExpedir]);
 
   const togglePedidoView = useCallback((numeroPedido) => {
     setPedidoViewModes(prev => ({
@@ -2025,8 +2090,8 @@ const PedidosScreen = () => {
         return;
       }
 
-      const response = await axios.post(
-        'http://localhost:3000/generarAlbaranParcial',
+      const response = await API.post(
+        '/generarAlbaranParcial',
         {
           codigoEmpresa: pedido.codigoEmpresa,
           ejercicio: pedido.ejercicioPedido,
@@ -2074,15 +2139,20 @@ const PedidosScreen = () => {
     return pedidos.filter(pedido => {
       const searchText = debouncedFiltroBusqueda.toLowerCase();
       
-      return (
+      const coincideBusqueda = (
         pedido.numeroPedido.toString().includes(searchText) ||
         pedido.razonSocial.toLowerCase().includes(searchText) ||
-        pedido.domicilio.toLowerCase().includes(searchText) ||
         (pedido.nombreObra && pedido.nombreObra.toLowerCase().includes(searchText)) ||
-        (pedido.obra && pedido.obra.toLowerCase().includes(searchText))
+        (pedido.obra && pedido.obra.toLowerCase().includes(searchText)) ||
+        (pedido.contacto && pedido.contacto.toLowerCase().includes(searchText))
       );
+
+      // ✅ NUEVO: Filtro por Status
+      const coincideStatus = filtroStatus ? pedido.Status === filtroStatus : true;
+      
+      return coincideBusqueda && coincideStatus;
     });
-  }, [pedidos, debouncedFiltroBusqueda]);
+  }, [pedidos, debouncedFiltroBusqueda, filtroStatus]);
 
   const pedidosOrdenados = useMemo(() => [...pedidosFiltrados], [pedidosFiltrados]);
   
@@ -2123,7 +2193,7 @@ const PedidosScreen = () => {
               <div className="ps-search-input-container">
                 <input
                   type="text"
-                  placeholder="Nº pedido, cliente, dirección, obra..."
+                  placeholder="Nº pedido, cliente, obra, contacto..."
                   value={filtroBusqueda}
                   onChange={e => setFiltroBusqueda(e.target.value)}
                   className="ps-search-input"
@@ -2144,18 +2214,19 @@ const PedidosScreen = () => {
                 <div className="ps-select-arrow"><FaChevronDown /></div>
               </div>
             </div>
-            <div className="ps-filtro-group ps-delivery-group">
-              <label><FaTruck /> Forma de entrega:</label>
+            
+            {/* ✅ NUEVO: Filtro por Estado del pedido */}
+            <div className="ps-filtro-group ps-status-group">
+              <label>Estado:</label>
               <div className="ps-select-container">
                 <select
-                  value={filtroFormaEntrega}
-                  onChange={e => setFiltroFormaEntrega(e.target.value)}
+                  value={filtroStatus}
+                  onChange={e => setFiltroStatus(e.target.value)}
                   className="ps-sort-select"
                 >
-                  <option value="">Todas</option>
-                  {formasEntrega.map(forma => (
-                    <option key={forma.id} value={forma.id}>
-                      {forma.nombre}
+                  {opcionesStatus.map(estado => (
+                    <option key={estado.id} value={estado.id}>
+                      {estado.nombre}
                     </option>
                   ))}
                 </select>

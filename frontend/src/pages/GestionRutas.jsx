@@ -1,6 +1,6 @@
 ﻿﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
 import { usePermissions } from '../PermissionsManager';
@@ -29,7 +29,9 @@ function GestionRutas() {
       setError(null);
       
       const headers = getAuthHeader();
-      const response = await axios.get('http://localhost:3000/albaranesPendientes', { 
+      
+      // ✅ CORREGIDO: Agregar /api/ al inicio de la URL
+      const response = await API.get('/api/albaranesPendientes', { 
         headers
       });
 
@@ -60,8 +62,8 @@ function GestionRutas() {
 
   // Filtrar albaranes por búsqueda y por usuario (si es repartidor)
   const albaranesFiltrados = albaranes
-    .filter(albaran => isDelivery ? albaran.empleadoAsignado === user.UsuarioLogicNet : true)
-    .filter(albaran => albaran.FormaEntrega === 3)  // Solo nuestros medios
+    .filter(albaran => isDelivery ? albaran.empleadoAsignado === user?.UsuarioLogicNet : true)
+    .filter(albaran => albaran.formaentrega === 3)  // ✅ CORREGIDO: usar formaentrega en minúscula
     .filter(albaran => {
       const searchLower = searchTerm.toLowerCase();
       return (
@@ -91,17 +93,16 @@ function GestionRutas() {
     }
     
     try {
-      const response = await axios.post(
-        'http://localhost:3000/completar-albaran',
+      // ✅ CORREGIDO: Agregar /api/ al inicio de la URL
+      const response = await API.post(
+        '/api/completar-albaran',
         {
           codigoEmpresa: albaran.codigoEmpresa,
           ejercicio: albaran.ejercicio,
           serie: albaran.serie,
           numeroAlbaran: albaran.numero,
           observaciones: observaciones
-        },
-        { headers: getAuthHeader() }
-      );
+        });
 
       if (response.data.success) {
         // Actualizar la lista
@@ -136,6 +137,22 @@ function GestionRutas() {
     setLoading(true);
     fetchAlbaranes();
   };
+
+  // Si no tiene permiso, mostrar mensaje
+  if (!canViewGestionRutas) {
+    return (
+      <div className="gestion-rutas-screen">
+        <div className="no-permission">
+          <h2>Acceso restringido</h2>
+          <p>No tienes permiso para acceder a esta sección.</p>
+          <button onClick={() => navigate('/')} className="btn-volver">
+            Volver al inicio
+          </button>
+        </div>
+        <Navbar />
+      </div>
+    );
+  }
 
   return (
     <div className="gestion-rutas-screen">
@@ -280,6 +297,18 @@ function GestionRutas() {
                     }}
                   >
                     <FaCheck /> Marcar como entregado
+                  </button>
+                )}
+                
+                {canPerformActionsInRutas && (
+                  <button 
+                    className="detalle-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate('/detalle-albaran', { state: { albaran } });
+                    }}
+                  >
+                    Ver detalle
                   </button>
                 )}
               </div>

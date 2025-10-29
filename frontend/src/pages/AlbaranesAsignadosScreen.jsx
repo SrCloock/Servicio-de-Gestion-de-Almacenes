@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
 import { usePermissions } from '../PermissionsManager';
@@ -24,8 +24,8 @@ function AlbaranesAsignadosScreen() {
         const headers = getAuthHeader();
         
         const [albaranesResponse, repartidoresResponse] = await Promise.all([
-          axios.get('http://localhost:3000/albaranes-asignacion', { headers }),
-          axios.get('http://localhost:3000/repartidores', { headers })
+          API.get('/albaranes-asignacion', { headers }),
+          API.get('/repartidores', { headers })
         ]);
         
         // Procesar para incluir albaranes parciales
@@ -67,8 +67,8 @@ function AlbaranesAsignadosScreen() {
 
     try {
       const headers = getAuthHeader();
-      const response = await axios.post(
-        'http://localhost:3000/asignarAlbaranExistente',
+      const response = await API.post(
+        '/asignarAlbaranExistente',
         {
           codigoEmpresa: albaran.CodigoEmpresa,
           ejercicio: albaran.EjercicioAlbaran,

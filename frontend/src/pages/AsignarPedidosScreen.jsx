@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
 import { usePermissions } from '../PermissionsManager';
@@ -24,7 +24,7 @@ const AsignarPedidosScreen = () => {
         const headers = getAuthHeader();
 
         // Obtener TODOS los pedidos pendientes
-        const pedidosResponse = await axios.get('http://localhost:3000/pedidosPendientes', { 
+        const pedidosResponse = await API.get('/pedidosPendientes', { 
           headers,
           params: { 
             soloAprobados: false,
@@ -34,7 +34,7 @@ const AsignarPedidosScreen = () => {
         setPedidos(pedidosResponse.data);
 
         // Obtener preparadores
-        const prepResponse = await axios.get('http://localhost:3000/empleados/preparadores', { headers });
+        const prepResponse = await API.get('/empleados/preparadores', { headers });
         setPreparadores(prepResponse.data);
 
         // Inicializar asignaciones con valores actuales
@@ -111,7 +111,7 @@ const AsignarPedidosScreen = () => {
           codigoEmpleado: empleadoId === '' ? null : empleadoId
         };
 
-        await axios.post('http://localhost:3000/asignarPedidosAEmpleado', payload, { headers });
+        await API.post('/asignarPedidosAEmpleado', payload, { headers });
       }
 
       // Actualizar estado local

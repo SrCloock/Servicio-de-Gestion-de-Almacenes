@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
-import axios from 'axios';
+import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import { v4 as uuidv4 } from 'uuid';
 import '../styles/TraspasosPage.css';
@@ -177,7 +177,7 @@ const TraspasosPage = () => {
   const cargarHistorial = useCallback(async () => {
     try {
       const headers = getAuthHeader();
-      const response = await axios.get('http://localhost:3000/historial-traspasos', { 
+      const response = await API.get('/historial-traspasos', { 
         headers,
         params: { page: 1, pageSize: 50 }
       });
@@ -217,7 +217,7 @@ const TraspasosPage = () => {
   const buscarArticulos = async (termino) => {
     try {
       const headers = getAuthHeader();
-      const response = await axios.get('http://localhost:3000/buscar-articulos', {
+      const response = await API.get('/buscar-articulos', {
         headers,
         params: { termino }
       });
@@ -231,7 +231,7 @@ const TraspasosPage = () => {
     const cargarDatosIniciales = async () => {
       try {
         const headers = getAuthHeader();
-        const resAlmacenes = await axios.get('http://localhost:3000/almacenes', { headers });
+        const resAlmacenes = await API.get('/almacenes', { headers });
         setAlmacenes(resAlmacenes.data);
       } catch (error) {
         console.error('Error cargando datos iniciales:', error);
@@ -262,8 +262,8 @@ const TraspasosPage = () => {
       setCargandoBusquedaUbicacion(true);
       try {
         const headers = getAuthHeader();
-        const response = await axios.get(
-          'http://localhost:3000/buscar-ubicaciones',
+        const response = await API.get(
+          '/buscar-ubicaciones',
           {
             headers,
             params: { termino: busquedaUbicacion }
@@ -299,7 +299,7 @@ const TraspasosPage = () => {
     setLoadingArticulos(true);
     try {
       const headers = getAuthHeader();
-      const response = await axios.get('http://localhost:3000/stock/articulos-con-stock', {
+      const response = await API.get('/stock/articulos-con-stock', {
         headers,
         params: {
           page,
@@ -353,8 +353,8 @@ const TraspasosPage = () => {
       const headers = getAuthHeader();
       
       // 🔥 USAR EL NUEVO ENDPOINT ESPECÍFICO PARA TRASPASOS
-      const response = await axios.get(
-        `http://localhost:3000/traspasos/stock-por-articulo`,
+      const response = await API.get(
+        `/traspasos/stock-por-articulo`,
         { 
           headers,
           params: { codigoArticulo: articuloSeleccionado.CodigoArticulo }
@@ -409,8 +409,8 @@ const TraspasosPage = () => {
         console.log('🔄 [TRASPASOS] Intentando fallback con ubicacionesMultiples...');
         const headers = getAuthHeader();
         
-        const response = await axios.post(
-          'http://localhost:3000/ubicacionesMultiples',
+        const response = await API.post(
+          '/ubicacionesMultiples',
           {
             articulos: [{ codigo: articuloSeleccionado.CodigoArticulo }]
           },
@@ -466,8 +466,8 @@ const TraspasosPage = () => {
   const cargarUbicacionesConResiliencia = async (codigoAlmacen) => {
     try {
       const headers = getAuthHeader();
-      const response = await axios.get(
-        `http://localhost:3000/ubicaciones-por-almacen/${codigoAlmacen}`,
+      const response = await API.get(
+        `/ubicaciones-por-almacen/${codigoAlmacen}`,
         { headers, timeout: 10000 }
       );
       return response.data;
@@ -486,8 +486,8 @@ const TraspasosPage = () => {
   const cargarArticulosUbicacion = useCallback(async (almacen, ubicacion, page = 1) => {
     try {
       const headers = getAuthHeader();
-      const response = await axios.get(
-        `http://localhost:3000/stock/por-ubicacion`,
+      const response = await API.get(
+        `/stock/por-ubicacion`,
         { 
           headers,
           params: {
@@ -525,8 +525,8 @@ const TraspasosPage = () => {
     
     try {
       const headers = getAuthHeader();
-      const response = await axios.get(
-        'http://localhost:3000/ubicaciones-completas',
+      const response = await API.get(
+        '/ubicaciones-completas',
         { 
           headers,
           params: {
@@ -854,7 +854,7 @@ const TraspasosPage = () => {
       const resultados = [];
       for (const [index, traspaso] of traspasosValidados.entries()) {
         try {
-          const response = await axios.post('http://localhost:3000/traspaso', traspaso, { headers });
+          const response = await API.post('/traspaso', traspaso, { headers });
           resultados.push({ success: true, data: response.data });
           console.log('Traspaso realizado:', response.data);
         } catch (err) {

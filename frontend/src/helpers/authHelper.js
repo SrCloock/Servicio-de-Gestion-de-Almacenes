@@ -1,4 +1,4 @@
-// src/helpers/authHelper.js
+// src/helpers/authHelper.js - SE MANTIENE EXACTAMENTE IGUAL
 export const getAuthHeader = () => {
   const userData = JSON.parse(localStorage.getItem('user'));
   

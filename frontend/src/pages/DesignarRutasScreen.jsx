@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import API from '../helpers/api';
 import { useNavigate } from 'react-router-dom';
 import { usePermissions } from '../PermissionsManager';
 import { getAuthHeader } from '../helpers/authHelper';
@@ -41,14 +41,14 @@ const DesignarRutasScreen = () => {
         const headers = getAuthHeader();
         
         // Obtener repartidores
-        const repResponse = await axios.get(
-          'http://localhost:3000/repartidores',
+        const repResponse = await API.get(
+          '/repartidores',
           { headers }
         );
         
         // Obtener albaranes pendientes con IDs únicos
-        const albResponse = await axios.get(
-          'http://localhost:3000/albaranesPendientesUnicos',
+        const albResponse = await API.get(
+          '/albaranesPendientesUnicos',
           { headers }
         );
         
@@ -94,8 +94,8 @@ const DesignarRutasScreen = () => {
         return;
       }
       
-      await axios.post(
-        'http://localhost:3000/designar-rutas',
+      await API.post(
+        '/designar-rutas',
         { asignaciones: asignacionesParaEnviar },
         { headers }
       );
@@ -104,8 +104,8 @@ const DesignarRutasScreen = () => {
       setAsignaciones({});
       
       // Recargar datos
-      const albResponse = await axios.get(
-        'http://localhost:3000/albaranesPendientesUnicos',
+      const albResponse = await API.get(
+        '/albaranesPendientesUnicos',
         { headers }
       );
       setAlbaranes(albResponse.data);
