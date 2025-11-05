@@ -62,8 +62,8 @@ app.use(express.json());
 // 🔥 Configuración de conexión a SQL Server (MEJOR CON VARIABLES DE ENTORNO)
 const dbConfig = {
   user: process.env.SAGE200_USER || 'Logic',
-  password: process.env.SAGE200_PASSWORD || '12345',
-  server: process.env.SAGE200_SERVER || 'DESKTOP-N86U7H1',
+  password: process.env.SAGE200_PASSWORD || 'Sage2024+',
+  server: process.env.SAGE200_SERVER || 'SVRALANDALUS',
   database: process.env.SAGE200_DATABASE || 'DEMOS',
   options: {
     trustServerCertificate: true,
