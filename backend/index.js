@@ -10,14 +10,53 @@ const fs = require('fs');
 const upload = multer();
 const app = express();
 
-// ✅ CONFIGURACIÓN PARA PRODUCCIÓN
-const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '0.0.0.0'; // Escucha en todas las interfaces
+// ✅ CONFIGURACIÓN MULTI-ENTORNO MEJORADA
+const isProduction = process.env.NODE_ENV === 'production';
+const PUBLIC_IP = process.env.PUBLIC_IP || '84.120.61.159'; // Tu IP pública
+const PUBLIC_PORT = process.env.PORT || 3000;
+
+// Configuración CORS dinámica
+const allowedOrigins = isProduction 
+  ? [
+      `http://${PUBLIC_IP}:${PUBLIC_PORT}`,
+      `http://${PUBLIC_IP}:5173`,
+      'http://localhost:5173',
+      'http://localhost:3000'
+    ]
+  : [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      `http://${PUBLIC_IP}:${PUBLIC_PORT}`
+    ];
+
+console.log('🌍 Entorno:', isProduction ? 'PRODUCCIÓN' : 'DESARROLLO');
+console.log('🎯 Orígenes permitidos:', allowedOrigins);
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://tu-ip-publica'], // Agrega tu IP pública
+  origin: function (origin, callback) {
+    // Permitir requests sin origin (como mobile apps o curl)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = `Origen ${origin} no permitido por CORS`;
+      console.warn('🚨 CORS Blocked:', origin);
+      return callback(new Error(msg), false);
+    }
+    console.log('✅ CORS Permitido:', origin);
+    return callback(null, true);
+  },
   credentials: true
 }));
+
+// ✅ MIDDLEWARE PARA LOGS DE DEPURACIÓN
+app.use((req, res, next) => {
+  console.log(`🌐 [${isProduction ? 'PROD' : 'DEV'}] ${req.method} ${req.url}`);
+  console.log(`   Origin: ${req.headers.origin}`);
+  console.log(`   Host: ${req.headers.host}`);
+  console.log(`   User-Agent: ${req.headers['user-agent']}`);
+  next();
+});
+
 app.use(express.json());
 
 // 🔥 Configuración de conexión a SQL Server (MEJOR CON VARIABLES DE ENTORNO)
@@ -75,11 +114,33 @@ app.use(async (req, res, next) => {
 });
 
 // ============================================
-// ✅ 2. MIDDLEWARE DE AUTENTICACIÓN
+// ✅ 2. MIDDLEWARE DE AUTENTICACIÓN MEJORADO
 // ============================================
 app.use((req, res, next) => {
-  const publicPaths = ['/login', '/'];
-  if (publicPaths.includes(req.path)) {
+  // ✅ EXCLUIR RECURSOS ESTÁTICOS Y RUTAS PÚBLICAS
+  const publicPaths = [
+    '/login', 
+    '/', 
+    '/api/diagnostic', 
+    '/diagnostic',
+    '/favicon.ico'
+  ];
+  
+  // Excluir archivos estáticos (JS, CSS, imágenes, etc.)
+  const isStaticFile = req.path.startsWith('/assets/') || 
+                      req.path.startsWith('/static/') ||
+                      req.path.endsWith('.js') ||
+                      req.path.endsWith('.css') ||
+                      req.path.endsWith('.ico') ||
+                      req.path.endsWith('.png') ||
+                      req.path.endsWith('.jpg') ||
+                      req.path.endsWith('.svg') ||
+                      req.path.endsWith('.woff') ||
+                      req.path.endsWith('.woff2') ||
+                      req.path.endsWith('.ttf');
+
+  if (publicPaths.includes(req.path) || isStaticFile) {
+    console.log(`✅ Ruta pública: ${req.path}`);
     return next();
   }
 
@@ -89,7 +150,8 @@ app.use((req, res, next) => {
   if (!usuario || !codigoempresa) {
     console.error('🚨 Faltan cabeceras de autenticación:', {
       path: req.path,
-      headers: req.headers
+      method: req.method,
+      origin: req.headers.origin
     });
     return res.status(401).json({ 
       success: false, 
@@ -106,59 +168,46 @@ app.use((req, res, next) => {
   next();
 });
 
-// ------------------ BLOQUE CORREGIDO PARA backend/dist Y EXPRESS 5 ------------------
-
-// Ruta del frontend build (dentro del backend)
-const staticPath = path.join(__dirname, 'dist');
-
-if (fs.existsSync(staticPath)) {
-  // Servir archivos estáticos (JS, CSS, imágenes)
-  app.use(express.static(staticPath, { maxAge: '1d' }));
-
-  // Cualquier ruta que no empiece por /api devuelve index.html
-  app.get(/^(?!\/api).*/, (req, res) => {
-    res.sendFile(path.join(staticPath, 'index.html'));
+// ============================================
+// ✅ ENDPOINT DE DIAGNÓSTICO MEJORADO
+// ============================================
+app.get('/api/diagnostic', (req, res) => {
+  res.json({
+    success: true,
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString(),
+    baseUrl: `${req.protocol}://${req.get('host')}`,
+    publicIp: PUBLIC_IP,
+    port: PUBLIC_PORT,
+    isProduction: isProduction,
+    headers: {
+      origin: req.headers.origin,
+      host: req.headers.host,
+      usuario: req.headers.usuario,
+      codigoempresa: req.headers.codigoempresa
+    },
+    database: {
+      connected: !!poolGlobal,
+      server: dbConfig.server
+    },
+    cors: {
+      allowedOrigins: allowedOrigins
+    }
   });
-
-  console.log('✅ Frontend estático servido desde:', staticPath);
-} else {
-  console.warn('⚠️ No se encontró carpeta dist en:', staticPath);
-}
-// ------------------ FIN DEL BLOQUE CORREGIDO ------------------
-
-// ============================================
-// ✅ INICIAR SERVIDOR PARA PRODUCCIÓN
-// ============================================
-async function iniciarServidor() {
-  try {
-    await conectarDB();
-    
-    app.listen(PORT, HOST, () => {
-      console.log(`🚀 Servidor backend corriendo en http://${HOST}:${PORT}`);
-      console.log(`📱 Accesible desde: http://tu-ip-publica:${PORT}`);
-      console.log(`🔧 Entorno: ${process.env.NODE_ENV || 'development'}`);
-    });
-    
-  } catch (error) {
-    console.error('❌ Error al iniciar servidor:', error);
-    process.exit(1);
-  }
-}
-
-// Manejo de cierre graceful
-process.on('SIGINT', async () => {
-  console.log('🛑 Cerrando servidor...');
-  if (poolGlobal) {
-    await poolGlobal.close();
-  }
-  process.exit(0);
 });
 
-iniciarServidor();
+app.get('/diagnostic', (req, res) => {
+  res.json({
+    message: '✅ Backend funcionando correctamente',
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString()
+  });
+});
+
 
 
 // ============================================
-// ✅ 3. LOGIN (SIN PERMISOS)
+// ✅ 3. LOGIN (SIN PERMISOS) - MANTENER ORIGINAL
 // ============================================
 app.post('/login', async (req, res) => {
   const { usuario, contrasena } = req.body;
@@ -188,7 +237,8 @@ app.post('/login', async (req, res) => {
     console.error('[ERROR SQL LOGIN]', err);
     res.status(500).json({ success: false, mensaje: 'Error de conexión a la base de datos' });
   }
-}); 
+});
+
 
 // ============================================
 // ✅ 4. OBTENER EMPRESAS (DASHBOARD)
@@ -6358,3 +6408,56 @@ app.post('/generarAlbaranParcial', async (req, res) => {
     });
   }
 });
+
+
+// ------------------ BLOQUE CORREGIDO PARA backend/dist Y EXPRESS 5 ------------------
+
+// Ruta del frontend build (dentro del backend)
+const staticPath = path.join(__dirname, 'dist');
+
+if (fs.existsSync(staticPath)) {
+  // Servir archivos estáticos (JS, CSS, imágenes)
+  app.use(express.static(staticPath, { maxAge: '1d' }));
+
+  // Cualquier ruta que no empiece por /api devuelve index.html
+  app.get(/^(?!\/api).*/, (req, res) => {
+    res.sendFile(path.join(staticPath, 'index.html'));
+  });
+
+  console.log('✅ Frontend estático servido desde:', staticPath);
+} else {
+  console.warn('⚠️ No se encontró carpeta dist en:', staticPath);
+}
+// ------------------ FIN DEL BLOQUE CORREGIDO ------------------
+
+
+// ============================================
+// ✅ INICIAR SERVIDOR PARA PRODUCCIÓN
+// ============================================
+async function iniciarServidor() {
+  try {
+    await conectarDB();
+    
+    app.listen(PUBLIC_PORT, '0.0.0.0', () => {
+      console.log(`🚀 Servidor backend corriendo en http://0.0.0.0:${PUBLIC_PORT}`);
+      console.log(`📱 Accesible desde: http://${PUBLIC_IP}:${PUBLIC_PORT}`);
+      console.log(`🔧 Entorno: ${process.env.NODE_ENV || 'development'}`);
+      console.log('🎯 Orígenes CORS permitidos:', allowedOrigins);
+    });
+    
+  } catch (error) {
+    console.error('❌ Error al iniciar servidor:', error);
+    process.exit(1);
+  }
+}
+
+// Manejo de cierre graceful
+process.on('SIGINT', async () => {
+  console.log('🛑 Cerrando servidor...');
+  if (poolGlobal) {
+    await poolGlobal.close();
+  }
+  process.exit(0);
+});
+
+iniciarServidor();
