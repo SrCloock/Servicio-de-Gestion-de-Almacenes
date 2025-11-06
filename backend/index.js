@@ -1,20 +1,18 @@
-﻿// ============================================
-// ✅ 1. CARGA DE VARIABLES DE ENTORNO 
-// ============================================
-const express = require('express');
+﻿const express = require('express');
 const cors = require('cors');
 const sql = require('mssql');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
+
+// Inicialización de Express
 const upload = multer();
 const app = express();
-// ============================================
-// ✅ 2. CONFIGURACIÓN MULTI-ENTORNO MEJORADA
-// ============================================
+
+// ✅ CONFIGURACIÓN MULTI-ENTORNO MEJORADA
 const isProduction = process.env.NODE_ENV === 'production';
-const PUBLIC_IP = process.env.PUBLIC_IP || '99.999.99.999'; // Esta ip la cambiamos segun el entorno que tengamos
+const PUBLIC_IP = process.env.PUBLIC_IP || '84.120.61.159'; // Tu IP pública
 const PUBLIC_PORT = process.env.PORT || 3000;
 
 // Configuración CORS dinámica
@@ -36,6 +34,7 @@ console.log('🎯 Orígenes permitidos:', allowedOrigins);
 
 app.use(cors({
   origin: function (origin, callback) {
+    // Permitir requests sin origin (como mobile apps o curl)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.indexOf(origin) === -1) {
@@ -48,9 +47,8 @@ app.use(cors({
   },
   credentials: true
 }));
-// ============================================
-// ✅ 3. MIDDLEWARE PARA LOGS DE DEPURACIÓN
-// ============================================
+
+// ✅ MIDDLEWARE PARA LOGS DE DEPURACIÓN
 app.use((req, res, next) => {
   console.log(`🌐 [${isProduction ? 'PROD' : 'DEV'}] ${req.method} ${req.url}`);
   console.log(`   Origin: ${req.headers.origin}`);
@@ -60,10 +58,12 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+
+// 🔥 Configuración de conexión a SQL Server (MEJOR CON VARIABLES DE ENTORNO)
 const dbConfig = {
   user: process.env.SAGE200_USER || 'Logic',
-  password: process.env.SAGE200_PASSWORD || 'Sage2024+',
-  server: process.env.SAGE200_SERVER || 'SVRALANDALUS',
+  password: process.env.SAGE200_PASSWORD || '12345',
+  server: process.env.SAGE200_SERVER || 'DESKTOP-N86U7H1',
   database: process.env.SAGE200_DATABASE || 'DEMOS',
   options: {
     trustServerCertificate: true,
@@ -78,10 +78,12 @@ const dbConfig = {
     }
   }
 };
+
+// 🔥 Pool de conexión global
 let poolGlobal;
 
 // ============================================
-// ✅ 4. CONEXIÓN A LA BASE DE DATOS
+// ✅ CONEXIÓN A LA BASE DE DATOS
 // ============================================
 async function conectarDB() {
   try {
@@ -95,6 +97,8 @@ async function conectarDB() {
     throw err;
   }
 }
+
+// Middleware de conexión a base de datos
 app.use(async (req, res, next) => {
   try {
     await conectarDB();
@@ -110,9 +114,11 @@ app.use(async (req, res, next) => {
 });
 
 // ============================================
-// ✅ 5. MIDDLEWARE DE AUTENTICACIÓN MEJORADO
+// ✅ 2. MIDDLEWARE DE AUTENTICACIÓN MEJORADO
 // ============================================
-app.use((req, res, next) => {  const publicPaths = [
+app.use((req, res, next) => {
+  // ✅ EXCLUIR RECURSOS ESTÁTICOS Y RUTAS PÚBLICAS
+  const publicPaths = [
     '/login', 
     '/', 
     '/api/diagnostic', 
@@ -120,6 +126,7 @@ app.use((req, res, next) => {  const publicPaths = [
     '/favicon.ico'
   ];
   
+  // Excluir archivos estáticos (JS, CSS, imágenes, etc.)
   const isStaticFile = req.path.startsWith('/assets/') || 
                       req.path.startsWith('/static/') ||
                       req.path.endsWith('.js') ||
@@ -162,7 +169,7 @@ app.use((req, res, next) => {  const publicPaths = [
 });
 
 // ============================================
-// ✅ 6. ENDPOINT DE DIAGNÓSTICO MEJORADO
+// ✅ ENDPOINT DE DIAGNÓSTICO MEJORADO
 // ============================================
 app.get('/api/diagnostic', (req, res) => {
   res.json({
@@ -200,7 +207,7 @@ app.get('/diagnostic', (req, res) => {
 
 
 // ============================================
-// ✅ 7. LOGIN (SIN PERMISOS) - MANTENER ORIGINAL
+// ✅ 3. LOGIN (SIN PERMISOS) - MANTENER ORIGINAL
 // ============================================
 app.post('/login', async (req, res) => {
   const { usuario, contrasena } = req.body;
@@ -234,7 +241,7 @@ app.post('/login', async (req, res) => {
 
 
 // ============================================
-// ✅ 8. OBTENER EMPRESAS (DASHBOARD)
+// ✅ 4. OBTENER EMPRESAS (DASHBOARD)
 // ============================================
 app.get('/dashboard', async (req, res) => {
   try {
@@ -249,7 +256,7 @@ app.get('/dashboard', async (req, res) => {
 });
 
 // ============================================
-// ✅ 9. OBTENER EMPRESAS
+// ✅ 5. OBTENER EMPRESAS
 // ============================================
 
 app.get('/empresas', async (req, res) => {
@@ -273,10 +280,10 @@ app.get('/empresas', async (req, res) => {
 });
 
 // ============================================
-// ✅ 10. ASIGNAR PEDIDOS SCREEN
+// ✅ 6. ASIGNAR PEDIDOS SCREEN
 // ============================================
 
-// ✅ 10.1 MARCAR PEDIDO COMO COMPLETADO
+// ✅ 6.1 MARCAR PEDIDO COMO COMPLETADO
 app.post('/marcarPedidoCompletado', async (req, res) => {
   const { codigoEmpresa, ejercicio, numeroPedido, serie } = req.body;
 
@@ -314,7 +321,7 @@ app.post('/marcarPedidoCompletado', async (req, res) => {
   }
 });
 
-// ✅ 10.2 OBTENER PEDIDOS COMPLETADOS (CORREGIDO)
+// ✅ 6.2 OBTENER PEDIDOS COMPLETADOS (CORREGIDO)
 app.get('/pedidosCompletados', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ 
@@ -344,6 +351,7 @@ app.get('/pedidosCompletados', async (req, res) => {
         ORDER BY p.FechaPedido DESC
       `);
 
+    // Obtener detalles de los artículos para cada pedido
     const pedidosConArticulos = await Promise.all(result.recordset.map(async pedido => {
       const lineas = await poolGlobal.request()
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -379,7 +387,7 @@ app.get('/pedidosCompletados', async (req, res) => {
   }
 });
 
-// ✅ 10.3 ASIGNAR PEDIDO Y GENERAR ALBARÁN (ACTUALIZADO)
+// ✅ 6.3 ASIGNAR PEDIDO Y GENERAR ALBARÁN (ACTUALIZADO)
 app.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
   const { codigoEmpresa, ejercicio, serie, numeroPedido } = req.body;
 
@@ -395,6 +403,7 @@ app.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
   try {
     await transaction.begin();
     
+    // 1. Obtener el empleado asignado del pedido
     const requestEmpleado = new sql.Request(transaction);
     const empleadoResult = await requestEmpleado
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -416,6 +425,7 @@ app.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
 
     const codigoEmpleado = empleadoResult.recordset[0].CodigoEmpleadoAsignado;
 
+    // 2. Obtener el siguiente número de albarán
     const nextAlbaran = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -430,6 +440,7 @@ app.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
 
     const numeroAlbaran = nextAlbaran.recordset[0].SiguienteNumero;
 
+    // 3. Copiar cabecera del pedido al albarán
     const cabeceraPedido = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -476,6 +487,7 @@ app.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
         )
       `);
 
+    // 4. Copiar líneas del pedido al albarán
     const lineas = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -516,6 +528,7 @@ app.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
         `);
     }
 
+    // 5. Marcar el pedido como servido (Estado = 2)
     await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -549,10 +562,11 @@ app.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
   }
 });
 
-// ✅ 10.4 ASIGNAR/REMOVER EMPLEADO DE MÚLTIPLES PEDIDOS (SOLUCIÓN FINAL)
+// ✅ 6.4 ASIGNAR/REMOVER EMPLEADO DE MÚLTIPLES PEDIDOS (SOLUCIÓN FINAL)
 app.post('/asignarPedidosAEmpleado', async (req, res) => {
   const { pedidos, codigoEmpleado } = req.body;
   
+  // Validación mejorada
   if (!pedidos || !Array.isArray(pedidos)) {
     return res.status(400).json({ 
       success: false, 
@@ -572,8 +586,9 @@ app.post('/asignarPedidosAEmpleado', async (req, res) => {
   try {
     await transaction.begin();
     
+    // SOLUCIÓN: Crear un nuevo Request para cada iteración
     for (const pedido of pedidos) {
-      const request = new sql.Request(transaction); 
+      const request = new sql.Request(transaction); // Nueva instancia por pedido
       
       await request
         .input('codigoEmpresa', sql.SmallInt, pedido.codigoEmpresa)
@@ -611,7 +626,7 @@ app.post('/asignarPedidosAEmpleado', async (req, res) => {
   }
 });
 
-// ✅ 10.5 ASIGNAR PEDIDO A EMPLEADO
+// ✅ 6.5 ASIGNAR PEDIDO A EMPLEADO
 app.post('/asignar-pedido', async (req, res) => {
   const { pedidoId, empleadoId } = req.body;
   const codigoEmpresa = req.user.CodigoEmpresa;
@@ -645,7 +660,7 @@ app.post('/asignar-pedido', async (req, res) => {
   }
 });
 
-// ✅ 10.6 OBTENER PEDIDOS SIN ASIGNAR
+// ✅ 6.6 OBTENER PEDIDOS SIN ASIGNAR
 app.get('/pedidos-sin-asignar', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
   try {
@@ -674,7 +689,7 @@ app.get('/pedidos-sin-asignar', async (req, res) => {
   }
 });
 
-// ✅ 10.7 OBTENER EMPLEADOS PREPARADORES (VERSIÓN COMPLETA)
+// ✅ 6.7 OBTENER EMPLEADOS PREPARADORES (VERSIÓN COMPLETA)
 app.get('/empleados/preparadores', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autenticado' });
@@ -708,10 +723,10 @@ app.get('/empleados/preparadores', async (req, res) => {
 });
 
 // ============================================
-// ✅ 11. ALBARANES SCREEN (CORREGIDO Y COMPLETO)
+// ✅ 7. ALBARANES SCREEN (CORREGIDO Y COMPLETO)
 // ============================================
 
-// ✅ 11.1 GENERAR ALBARÁN AL ASIGNAR REPARTIDOR (ACTUALIZADO CON SISTEMA DE STATUS Y VOLUMINOSO)
+// ✅ 7.1 GENERAR ALBARÁN AL ASIGNAR REPARTIDOR (ACTUALIZADO CON SISTEMA DE STATUS Y VOLUMINOSO)
 app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -728,6 +743,7 @@ app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
   }
 
   try {
+    // 1. Verificación de permisos
     const permisoResult = await poolGlobal.request()
       .input('usuario', sql.VarChar, usuario)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -745,6 +761,7 @@ app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
       });
     }
 
+    // 2. Obtener datos del pedido
     const pedidoResult = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('numeroPedido', sql.Int, numeroPedido)
@@ -768,6 +785,7 @@ app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
     const pedido = pedidoResult.recordset[0];
     const ejercicio = new Date().getFullYear();
 
+    // 3. Generar número de albarán
     const nextAlbaran = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -783,6 +801,7 @@ app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
     const numeroAlbaran = nextAlbaran.recordset[0].SiguienteNumero;
     const fechaActual = new Date();
 
+    // 4. Crear cabecera del albarán
     await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -815,6 +834,7 @@ app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
         )
       `);
 
+    // 5. Copiar líneas del pedido al albarán
     const lineas = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, pedido.EjercicioPedido)
@@ -855,6 +875,7 @@ app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
         `);
     }
 
+    // 6. Actualizar estado del pedido
     await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('numeroPedido', sql.Int, numeroPedido)
@@ -886,7 +907,7 @@ app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
   }
 });
 
-// ✅ 11.2 ALBARANES PENDIENTES (VERSIÓN SIN JOIN - MÁS SEGURA)
+// ✅ 7.2 ALBARANES PENDIENTES (VERSIÓN SIN JOIN - MÁS SEGURA)
 app.get('/api/albaranesPendientes', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -986,7 +1007,7 @@ app.get('/api/albaranesPendientes', async (req, res) => {
   }
 });
 
-// ✅ 11.3 OBTENER PEDIDOS PREPARADOS (ÚLTIMO MES)
+// ✅ 7.3 OBTENER PEDIDOS PREPARADOS (ÚLTIMO MES)
 app.get('/pedidos-preparados', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1030,7 +1051,7 @@ app.get('/pedidos-preparados', async (req, res) => {
   }
 });
 
-// ✅ 11.4 OBTENER REPARTIDORES (VERSIÓN FINAL)
+// ✅ 7.4 OBTENER REPARTIDORES (VERSIÓN FINAL)
 app.get('/repartidores', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1062,7 +1083,7 @@ app.get('/repartidores', async (req, res) => {
   }
 });
 
-// ✅ 11.5 MARCAR ALBARÁN COMO COMPLETADO (SIMPLIFICADO - SIN EMAIL)
+// ✅ 7.5 MARCAR ALBARÁN COMO COMPLETADO (SIMPLIFICADO - SIN EMAIL)
 app.post('/completar-albaran', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1079,6 +1100,7 @@ app.post('/completar-albaran', async (req, res) => {
   }
 
   try {
+    // 1. Verificar permisos
     const permisoResult = await poolGlobal.request()
       .input('usuario', sql.VarChar, usuario)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -1100,6 +1122,7 @@ app.post('/completar-albaran', async (req, res) => {
     const esAdmin = userPerms.StatusAdministrador === -1;
     const esUsuarioAvanzado = userPerms.StatusUsuarioAvanzado === -1;
     
+    // 2. Verificar repartidor asignado
     const albaranResult = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -1132,6 +1155,7 @@ app.post('/completar-albaran', async (req, res) => {
       }
     }
 
+    // 3. Actualizar StatusFacturado a -1 (completado) - SIN ENVÍO DE EMAIL
     await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -1160,7 +1184,7 @@ app.post('/completar-albaran', async (req, res) => {
   }
 });
 
-// ✅ 11.6 ACTUALIZAR CANTIDADES DE ALBARANES (CORREGIDO)
+// ✅ 7.6 ACTUALIZAR CANTIDADES DE ALBARANES (CORREGIDO)
 app.put('/actualizarCantidadesAlbaran', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1245,7 +1269,7 @@ app.put('/actualizarCantidadesAlbaran', async (req, res) => {
   }
 });
 
-// ✅ 11.7 COMPLETAR ALBARÁN CON FIRMAS (NUEVO)
+// ✅ 7.7 COMPLETAR ALBARÁN CON FIRMAS (NUEVO)
 app.post('/completarAlbaranConFirmas', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1270,6 +1294,7 @@ app.post('/completarAlbaranConFirmas', async (req, res) => {
   }
 
   try {
+    // 1. Verificar permisos
     const permisoResult = await poolGlobal.request()
       .input('usuario', sql.VarChar, usuario)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -1291,6 +1316,7 @@ app.post('/completarAlbaranConFirmas', async (req, res) => {
     const esAdmin = userPerms.StatusAdministrador === -1;
     const esUsuarioAvanzado = userPerms.StatusUsuarioAvanzado === -1;
     
+    // 2. Verificar repartidor asignado
     const albaranResult = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -1330,6 +1356,7 @@ app.post('/completarAlbaranConFirmas', async (req, res) => {
       }
     }
 
+    // 3. Actualizar albarán con firmas y estado completado
     await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -1368,7 +1395,7 @@ app.post('/completarAlbaranConFirmas', async (req, res) => {
   }
 });
 
-// ✅ 11.8 OBTENER ALBARANES COMPLETADOS (ACTUALIZADO SOLO CON NOMBRE OBRA)
+// ✅ 7.8 OBTENER ALBARANES COMPLETADOS (ACTUALIZADO SOLO CON NOMBRE OBRA)
 app.get('/albaranesCompletados', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1391,7 +1418,7 @@ app.get('/albaranesCompletados', async (req, res) => {
         cac.ImporteLiquido,
         cac.StatusFacturado,
         cac.EmpleadoAsignado,
-        cac.NombreObra, 
+        cac.NombreObra, -- ✅ SOLO NOMBRE OBRA
         cac.Contacto,
         cac.Telefono AS TelefonoContacto,
         cac.FormaEntrega,
@@ -1442,7 +1469,7 @@ app.get('/albaranesCompletados', async (req, res) => {
         FechaAlbaran: cabecera.FechaAlbaran,
         importeLiquido: cabecera.ImporteLiquido,
         empleadoAsignado: cabecera.EmpleadoAsignado,
-        nombreObra: cabecera.NombreObra, 
+        nombreObra: cabecera.NombreObra, // ✅ SOLO NOMBRE OBRA
         contacto: cabecera.Contacto,
         telefonoContacto: cabecera.TelefonoContacto,
         FormaEntrega: cabecera.FormaEntrega,
@@ -1467,7 +1494,7 @@ app.get('/albaranesCompletados', async (req, res) => {
   }
 });
 
-// ✅ 11.9 REVERTIR ALBARÁN COMPLETADO (NUEVO)
+// ✅ 7.9 REVERTIR ALBARÁN COMPLETADO (NUEVO)
 app.post('/revertirAlbaran', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1489,6 +1516,7 @@ app.post('/revertirAlbaran', async (req, res) => {
   }
 
   try {
+    // 1. Verificar permisos de administrador
     const permisoResult = await poolGlobal.request()
       .input('usuario', sql.VarChar, usuario)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -1506,6 +1534,7 @@ app.post('/revertirAlbaran', async (req, res) => {
       });
     }
 
+    // 2. Verificar que el albarán existe y está completado
     const albaranResult = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -1534,6 +1563,7 @@ app.post('/revertirAlbaran', async (req, res) => {
       });
     }
 
+    // 3. Revertir el estado a pendiente
     await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -1564,10 +1594,10 @@ app.post('/revertirAlbaran', async (req, res) => {
 });
 
 // ============================================
-// ✅ 12. ASIGNAR ALBARANES SCREEN
+// ✅ 8. ASIGNAR ALBARANES SCREEN
 // ============================================
 
-// ✅ 12.1 ASIGNAR ALBARÁN EXISTENTE A REPARTIDOR
+// ✅ 8.1 ASIGNAR ALBARÁN EXISTENTE A REPARTIDOR
 app.post('/asignarAlbaranExistente', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1612,7 +1642,7 @@ app.post('/asignarAlbaranExistente', async (req, res) => {
   }
 });
 
-// ✅ 12.2 ALBARANES PARA ASIGNACIÓN (ACTUALIZADO)
+// ✅ 8.2 ALBARANES PARA ASIGNACIÓN (ACTUALIZADO)
 app.get('/albaranes-asignacion', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1654,6 +1684,7 @@ app.get('/albaranes-asignacion', async (req, res) => {
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(query);
       
+    // Formatear albaran
     const albaranesFormateados = result.recordset.map(albaran => ({
       ...albaran,
       albaran: `${albaran.SerieAlbaran || ''}${albaran.SerieAlbaran ? '-' : ''}${albaran.NumeroAlbaran}`
@@ -1671,7 +1702,7 @@ app.get('/albaranes-asignacion', async (req, res) => {
 });
 
 
-// ✅ 12.3 OBTENER REPARTIDORES (VERSIÓN FINAL)
+// ✅ 8.6 OBTENER REPARTIDORES (VERSIÓN FINAL)
 app.get('/repartidores', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1703,7 +1734,7 @@ app.get('/repartidores', async (req, res) => {
   }
 });
 
-// ✅ 12.4 REVERTIR ESTADO DE ALBARÁN
+// ✅ 8.8 REVERTIR ESTADO DE ALBARÁN
 app.post('/revertir-albaran', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1712,6 +1743,7 @@ app.post('/revertir-albaran', async (req, res) => {
   const { codigoEmpresa, ejercicio, serie, numeroAlbaran } = req.body;
 
   try {
+    // Verificar permisos de administrador
     const permisoResult = await poolGlobal.request()
       .input('usuario', sql.VarChar, req.user.UsuarioLogicNet)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -1750,7 +1782,7 @@ app.post('/revertir-albaran', async (req, res) => {
   }
 });
 
-// ✅ 12.5 ALBARANES COMPLETADOS (ACTUALIZADO CON FILTRO FORMA ENTREGA 3 Y 7 DÍAS)
+// ✅ 8.9 ALBARANES COMPLETADOS (ACTUALIZADO CON FILTRO FORMA ENTREGA 3 Y 7 DÍAS)
 app.get('/albaranes-completados', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1793,6 +1825,253 @@ app.get('/albaranes-completados', async (req, res) => {
       success: false, 
       mensaje: 'Error al obtener albaranes completados',
       error: err.message 
+    });
+  }
+});
+
+// ============================================
+// ✅ SISTEMA DE SINCRONIZACIÓN AUTOMÁTICA CADA 3 HORAS (SIN LOGS)
+// ============================================
+
+// ✅ FUNCIÓN PRINCIPAL DE SINCRONIZACIÓN
+async function sincronizacionAutomatica() {
+  console.log('🔄 [SYNC AUTO] Iniciando sincronización automática...');
+  
+  try {
+    // Verificar que poolGlobal esté conectado
+    if (!poolGlobal || !poolGlobal.connected) {
+      console.log('⏳ [SYNC AUTO] Esperando conexión a BD...');
+      return;
+    }
+
+    // Obtener todas las empresas - CORREGIDO: Sin columna Activa
+    const empresasResult = await poolGlobal.request()
+      .query(`
+        SELECT DISTINCT CodigoEmpresa 
+        FROM Empresas 
+        WHERE CodigoEmpresa IN (
+          SELECT CodigoEmpresa 
+          FROM lsysEmpresaAplicacion 
+          WHERE CodigoAplicacion = 'CON'
+        ) 
+        AND CodigoEmpresa <= 10000
+      `);
+
+    const empresas = empresasResult.recordset;
+    const ejercicio = new Date().getFullYear();
+
+    let totalCorregidos = 0;
+    let totalErrores = 0;
+
+    // Procesar cada empresa
+    for (const empresa of empresas) {
+      const codigoEmpresa = empresa.CodigoEmpresa;
+      
+      try {
+        console.log(`🏢 [SYNC AUTO] Sincronizando empresa: ${codigoEmpresa}`);
+        
+        // 1. IDENTIFICAR DISCREPANCIAS - CONSULTA MEJORADA
+        const discrepancias = await poolGlobal.request()
+          .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+          .input('ejercicio', sql.Int, ejercicio)
+          .query(`
+            SELECT 
+              ast.CodigoArticulo,
+              ast.CodigoAlmacen,
+              ast.Ubicacion,
+              ast.TipoUnidadMedida_,
+              ast.Partida,
+              ast.CodigoColor_,
+              ast.CodigoTalla01_,
+              -- Stock oficial (AcumuladoStock)
+              CAST(COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) AS DECIMAL(18, 4)) AS StockOficial,
+              -- Stock en ubicación (AcumuladoStockUbicacion)
+              COALESCE(asu.UnidadSaldoTipo_, asu.UnidadSaldo, 0) AS StockUbicacion,
+              -- Diferencia
+              CAST(COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) AS DECIMAL(18, 4)) - COALESCE(asu.UnidadSaldoTipo_, asu.UnidadSaldo, 0) AS Diferencia
+            FROM AcumuladoStock ast
+            LEFT JOIN AcumuladoStockUbicacion asu 
+              ON asu.CodigoEmpresa = ast.CodigoEmpresa
+              AND asu.Ejercicio = ast.Ejercicio
+              AND asu.CodigoAlmacen = ast.CodigoAlmacen
+              AND asu.CodigoArticulo = ast.CodigoArticulo
+              AND asu.Ubicacion = ast.Ubicacion
+              AND ISNULL(asu.TipoUnidadMedida_, '') = ISNULL(ast.TipoUnidadMedida_, '')
+              AND ISNULL(asu.Partida, '') = ISNULL(ast.Partida, '')
+              AND ISNULL(asu.CodigoColor_, '') = ISNULL(ast.CodigoColor_, '')
+              AND ISNULL(asu.CodigoTalla01_, '') = ISNULL(ast.CodigoTalla01_, '')
+              AND asu.Periodo = 99
+            WHERE ast.CodigoEmpresa = @codigoEmpresa
+              AND ast.Ejercicio = @ejercicio
+              AND ast.Periodo = 99
+              AND ast.CodigoAlmacen IN ('CEN', 'BCN', 'N5', 'N1', 'PK', '5')
+              AND ast.Ubicacion IS NOT NULL 
+              AND ast.Ubicacion != ''
+              AND COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) > 0
+              -- Solo procesar discrepancias significativas
+              AND ABS(
+                CAST(COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) AS DECIMAL(18, 4)) - COALESCE(asu.UnidadSaldoTipo_, asu.UnidadSaldo, 0)
+              ) > 0.001
+          `);
+
+        console.log(`📊 [SYNC AUTO] Empresa ${codigoEmpresa}: ${discrepancias.recordset.length} discrepancias encontradas`);
+
+        // 2. CORREGIR CADA DISCREPANCIA
+        for (const discrepancia of discrepancias.recordset) {
+          try {
+            await corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio);
+            totalCorregidos++;
+            
+            // Pequeña pausa para no saturar la BD
+            await new Promise(resolve => setTimeout(resolve, 10));
+            
+          } catch (error) {
+            console.error(`❌ [SYNC AUTO] Error corrigiendo discrepancia:`, error.message);
+            totalErrores++;
+          }
+        }
+
+      } catch (error) {
+        console.error(`❌ [SYNC AUTO] Error en empresa ${codigoEmpresa}:`, error.message);
+        totalErrores++;
+      }
+    }
+
+    console.log(`✅ [SYNC AUTO] Sincronización completada: ${totalCorregidos} correcciones, ${totalErrores} errores`);
+    
+  } catch (error) {
+    console.error('❌ [SYNC AUTO] Error general en sincronización:', error);
+  }
+}
+
+// ✅ FUNCIÓN PARA CORREGIR UNA DISCREPANCIA INDIVIDUAL
+async function corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio) {
+  const transaction = new sql.Transaction(poolGlobal);
+  
+  try {
+    await transaction.begin();
+
+    const {
+      CodigoArticulo,
+      CodigoAlmacen,
+      Ubicacion,
+      TipoUnidadMedida_,
+      Partida,
+      CodigoColor_,
+      CodigoTalla01_,
+      StockOficial,
+      StockUbicacion,
+      Diferencia
+    } = discrepancia;
+
+    console.log(`🔧 [SYNC AUTO] Corrigiendo: ${CodigoArticulo} | ${CodigoAlmacen} | ${Ubicacion} | ${StockUbicacion} → ${StockOficial} (Diferencia: ${Diferencia})`);
+
+    // 1. ELIMINAR REGISTRO EXISTENTE EN ACUMULADOSTOCKUBICACION (si existe)
+    const requestEliminar = new sql.Request(transaction);
+    await requestEliminar
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.Int, ejercicio)
+      .input('codigoAlmacen', sql.VarChar, CodigoAlmacen)
+      .input('codigoArticulo', sql.VarChar, CodigoArticulo)
+      .input('ubicacion', sql.VarChar, Ubicacion)
+      .input('tipoUnidadMedida', sql.VarChar, TipoUnidadMedida_ || '')
+      .input('partida', sql.VarChar, Partida || '')
+      .input('codigoColor', sql.VarChar, CodigoColor_ || '')
+      .input('codigoTalla', sql.VarChar, CodigoTalla01_ || '')
+      .query(`
+        DELETE FROM AcumuladoStockUbicacion
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND Ejercicio = @ejercicio
+          AND CodigoAlmacen = @codigoAlmacen
+          AND CodigoArticulo = @codigoArticulo
+          AND Ubicacion = @ubicacion
+          AND (TipoUnidadMedida_ = @tipoUnidadMedida OR (TipoUnidadMedida_ IS NULL AND @tipoUnidadMedida = ''))
+          AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+          AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+          AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+          AND Periodo = 99
+      `);
+
+    // 2. INSERTAR NUEVO REGISTRO CON EL STOCK CORRECTO
+    if (StockOficial > 0) {
+      const requestInsertar = new sql.Request(transaction);
+      
+      await requestInsertar
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('ejercicio', sql.Int, ejercicio)
+        .input('codigoAlmacen', sql.VarChar, CodigoAlmacen)
+        .input('ubicacion', sql.VarChar, Ubicacion)
+        .input('codigoArticulo', sql.VarChar, CodigoArticulo)
+        .input('tipoUnidadMedida', sql.VarChar, TipoUnidadMedida_ || '')
+        .input('partida', sql.VarChar, Partida || '')
+        .input('codigoColor', sql.VarChar, CodigoColor_ || '')
+        .input('codigoTalla', sql.VarChar, CodigoTalla01_ || '')
+        .input('unidadSaldo', sql.Decimal(18, 4), StockOficial)
+        .input('unidadSaldoTipo', sql.Decimal(18, 4), StockOficial)
+        .query(`
+          INSERT INTO AcumuladoStockUbicacion (
+            CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
+            CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
+            UnidadSaldo, UnidadSaldoTipo_, Periodo
+          ) VALUES (
+            @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
+            @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
+            @unidadSaldo, @unidadSaldoTipo, 99
+          )
+        `);
+    }
+
+    await transaction.commit();
+    console.log(`✅ [SYNC AUTO] Corregido: ${CodigoArticulo} | ${CodigoAlmacen} | ${Ubicacion}`);
+
+  } catch (error) {
+    if (transaction._aborted === false) {
+      await transaction.rollback();
+    }
+    throw error;
+  }
+}
+
+// ✅ CONFIGURACIÓN DEL CRON JOB (CADA 3 HORAS)
+
+// Función para iniciar la sincronización después de la conexión a BD
+function iniciarSincronizacionAutomatica() {
+  console.log('🚀 [SYNC AUTO] Configurando sistema de sincronización automática...');
+  
+  // Sincronización INMEDIATA al arrancar (5 segundos después de la conexión)
+  setTimeout(() => {
+    console.log('⏰ [SYNC AUTO] Ejecutando sincronización INICIAL inmediata...');
+    sincronizacionAutomatica();
+  }, 5000);
+
+  // Programar ejecución cada 3 horas (0 */3 * * *)
+  cron.schedule('0 */3 * * *', () => {
+    console.log('⏰ [SYNC AUTO] Ejecutando sincronización programada cada 3 horas...');
+    sincronizacionAutomatica();
+  });
+
+  console.log('✅ [SYNC AUTO] Sistema configurado: Sincronización inicial en 5 segundos + cada 3 horas');
+}
+
+// ✅ ENDPOINT MANUAL PARA FORZAR SINCRONIZACIÓN
+app.post('/inventario/sincronizacion-automatica', async (req, res) => {
+  try {
+    console.log('🔧 [SYNC MANUAL] Sincronización manual solicitada');
+    
+    // Ejecutar sincronización inmediata
+    await sincronizacionAutomatica();
+    
+    res.json({
+      success: true,
+      mensaje: 'Sincronización automática ejecutada manualmente'
+    });
+    
+  } catch (error) {
+    console.error('[ERROR SYNC MANUAL]', error);
+    res.status(500).json({
+      success: false,
+      mensaje: 'Error en sincronización manual',
+      error: error.message
     });
   }
 });
@@ -4683,7 +4962,7 @@ app.get('/pedidosPendientes', async (req, res) => {
         ORDER BY c.FechaEntrega ASC
       `);
 
-    // 12. Recopilar IDs para detalles (usando LineasPosicion)
+    // 8. Recopilar IDs para detalles (usando LineasPosicion)
     const lineasIds = [];
     result.recordset.forEach(row => {
       if (row.LineasPosicion) {
@@ -5740,7 +6019,7 @@ app.post('/generarAlbaranParcial', async (req, res) => {
 
     console.log('[GENERAR ALBARAN PARCIAL] Líneas insertadas correctamente');
 
-    // 12. Verificar si quedan unidades pendientes en el pedido
+    // 8. Verificar si quedan unidades pendientes en el pedido
     const pendientesRequest = new sql.Request(transaction);
     const pendientesResult = await pendientesRequest
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -6050,7 +6329,7 @@ app.post('/generarAlbaranParcial', async (req, res) => {
         `);
     }
 
-    // 12. Verificar si quedan unidades pendientes
+    // 8. Verificar si quedan unidades pendientes
     const pendientesRequest = new sql.Request(transaction);
     const pendientesResult = await pendientesRequest
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -6130,266 +6409,62 @@ app.post('/generarAlbaranParcial', async (req, res) => {
   }
 });
 
+
 // ============================================
-// ✅ SISTEMA DE SINCRONIZACIÓN AUTOMÁTICA CADA 3 HORAS (SIN LOGS)
+// ✅ CONFIGURACIÓN SIMPLIFICADA - GARANTIZADA
 // ============================================
 
-// ✅ FUNCIÓN PRINCIPAL DE SINCRONIZACIÓN
-async function sincronizacionAutomatica() {
-  console.log('🔄 [SYNC AUTO] Iniciando sincronización automática...');
-  
-  try {
-    // Verificar que poolGlobal esté conectado
-    if (!poolGlobal || !poolGlobal.connected) {
-      console.log('⏳ [SYNC AUTO] Esperando conexión a BD...');
-      return;
-    }
+// 1. Servir archivos estáticos
+app.use(express.static(path.join(__dirname, 'dist')));
 
-    // Obtener todas las empresas - CORREGIDO: Sin columna Activa
-    const empresasResult = await poolGlobal.request()
-      .query(`
-        SELECT DISTINCT CodigoEmpresa 
-        FROM Empresas 
-        WHERE CodigoEmpresa IN (
-          SELECT CodigoEmpresa 
-          FROM lsysEmpresaAplicacion 
-          WHERE CodigoAplicacion = 'CON'
-        ) 
-        AND CodigoEmpresa <= 10000
-      `);
-
-    const empresas = empresasResult.recordset;
-    const ejercicio = new Date().getFullYear();
-
-    let totalCorregidos = 0;
-    let totalErrores = 0;
-
-    // Procesar cada empresa
-    for (const empresa of empresas) {
-      const codigoEmpresa = empresa.CodigoEmpresa;
-      
-      try {
-        console.log(`🏢 [SYNC AUTO] Sincronizando empresa: ${codigoEmpresa}`);
-        
-        // 1. IDENTIFICAR DISCREPANCIAS - CONSULTA MEJORADA
-        const discrepancias = await poolGlobal.request()
-          .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-          .input('ejercicio', sql.Int, ejercicio)
-          .query(`
-            SELECT 
-              ast.CodigoArticulo,
-              ast.CodigoAlmacen,
-              ast.Ubicacion,
-              ast.TipoUnidadMedida_,
-              ast.Partida,
-              ast.CodigoColor_,
-              ast.CodigoTalla01_,
-              -- Stock oficial (AcumuladoStock)
-              CAST(COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) AS DECIMAL(18, 4)) AS StockOficial,
-              -- Stock en ubicación (AcumuladoStockUbicacion)
-              COALESCE(asu.UnidadSaldoTipo_, asu.UnidadSaldo, 0) AS StockUbicacion,
-              -- Diferencia
-              CAST(COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) AS DECIMAL(18, 4)) - COALESCE(asu.UnidadSaldoTipo_, asu.UnidadSaldo, 0) AS Diferencia
-            FROM AcumuladoStock ast
-            LEFT JOIN AcumuladoStockUbicacion asu 
-              ON asu.CodigoEmpresa = ast.CodigoEmpresa
-              AND asu.Ejercicio = ast.Ejercicio
-              AND asu.CodigoAlmacen = ast.CodigoAlmacen
-              AND asu.CodigoArticulo = ast.CodigoArticulo
-              AND asu.Ubicacion = ast.Ubicacion
-              AND ISNULL(asu.TipoUnidadMedida_, '') = ISNULL(ast.TipoUnidadMedida_, '')
-              AND ISNULL(asu.Partida, '') = ISNULL(ast.Partida, '')
-              AND ISNULL(asu.CodigoColor_, '') = ISNULL(ast.CodigoColor_, '')
-              AND ISNULL(asu.CodigoTalla01_, '') = ISNULL(ast.CodigoTalla01_, '')
-              AND asu.Periodo = 99
-            WHERE ast.CodigoEmpresa = @codigoEmpresa
-              AND ast.Ejercicio = @ejercicio
-              AND ast.Periodo = 99
-              AND ast.CodigoAlmacen IN ('CEN', 'BCN', 'N5', 'N1', 'PK', '5')
-              AND ast.Ubicacion IS NOT NULL 
-              AND ast.Ubicacion != ''
-              AND COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) > 0
-              -- Solo procesar discrepancias significativas
-              AND ABS(
-                CAST(COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) AS DECIMAL(18, 4)) - COALESCE(asu.UnidadSaldoTipo_, asu.UnidadSaldo, 0)
-              ) > 0.001
-          `);
-
-        console.log(`📊 [SYNC AUTO] Empresa ${codigoEmpresa}: ${discrepancias.recordset.length} discrepancias encontradas`);
-
-        // 2. CORREGIR CADA DISCREPANCIA
-        for (const discrepancia of discrepancias.recordset) {
-          try {
-            await corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio);
-            totalCorregidos++;
-            
-            // Pequeña pausa para no saturar la BD
-            await new Promise(resolve => setTimeout(resolve, 10));
-            
-          } catch (error) {
-            console.error(`❌ [SYNC AUTO] Error corrigiendo discrepancia:`, error.message);
-            totalErrores++;
-          }
-        }
-
-      } catch (error) {
-        console.error(`❌ [SYNC AUTO] Error en empresa ${codigoEmpresa}:`, error.message);
-        totalErrores++;
-      }
-    }
-
-    console.log(`✅ [SYNC AUTO] Sincronización completada: ${totalCorregidos} correcciones, ${totalErrores} errores`);
-    
-  } catch (error) {
-    console.error('❌ [SYNC AUTO] Error general en sincronización:', error);
-  }
-}
-
-async function corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio) {
-  const transaction = new sql.Transaction(poolGlobal);
-  
-  try {
-    await transaction.begin();
-
-    const {
-      CodigoArticulo,
-      CodigoAlmacen,
-      Ubicacion,
-      TipoUnidadMedida_,
-      Partida,
-      CodigoColor_,
-      CodigoTalla01_,
-      StockOficial,
-      StockUbicacion,
-      Diferencia
-    } = discrepancia;
-
-    console.log(`🔧 [SYNC AUTO] Corrigiendo: ${CodigoArticulo} | ${CodigoAlmacen} | ${Ubicacion} | ${StockUbicacion} → ${StockOficial} (Diferencia: ${Diferencia})`);
-
-    const requestEliminar = new sql.Request(transaction);
-    await requestEliminar
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.Int, ejercicio)
-      .input('codigoAlmacen', sql.VarChar, CodigoAlmacen)
-      .input('codigoArticulo', sql.VarChar, CodigoArticulo)
-      .input('ubicacion', sql.VarChar, Ubicacion)
-      .input('tipoUnidadMedida', sql.VarChar, TipoUnidadMedida_ || '')
-      .input('partida', sql.VarChar, Partida || '')
-      .input('codigoColor', sql.VarChar, CodigoColor_ || '')
-      .input('codigoTalla', sql.VarChar, CodigoTalla01_ || '')
-      .query(`
-        DELETE FROM AcumuladoStockUbicacion
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND Ejercicio = @ejercicio
-          AND CodigoAlmacen = @codigoAlmacen
-          AND CodigoArticulo = @codigoArticulo
-          AND Ubicacion = @ubicacion
-          AND (TipoUnidadMedida_ = @tipoUnidadMedida OR (TipoUnidadMedida_ IS NULL AND @tipoUnidadMedida = ''))
-          AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-          AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-          AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-          AND Periodo = 99
-      `);
-
-    if (StockOficial > 0) {
-      const requestInsertar = new sql.Request(transaction);
-      
-      await requestInsertar
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .input('ejercicio', sql.Int, ejercicio)
-        .input('codigoAlmacen', sql.VarChar, CodigoAlmacen)
-        .input('ubicacion', sql.VarChar, Ubicacion)
-        .input('codigoArticulo', sql.VarChar, CodigoArticulo)
-        .input('tipoUnidadMedida', sql.VarChar, TipoUnidadMedida_ || '')
-        .input('partida', sql.VarChar, Partida || '')
-        .input('codigoColor', sql.VarChar, CodigoColor_ || '')
-        .input('codigoTalla', sql.VarChar, CodigoTalla01_ || '')
-        .input('unidadSaldo', sql.Decimal(18, 4), StockOficial)
-        .input('unidadSaldoTipo', sql.Decimal(18, 4), StockOficial)
-        .query(`
-          INSERT INTO AcumuladoStockUbicacion (
-            CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
-            CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
-            UnidadSaldo, UnidadSaldoTipo_, Periodo
-          ) VALUES (
-            @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
-            @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
-            @unidadSaldo, @unidadSaldoTipo, 99
-          )
-        `);
-    }
-
-    await transaction.commit();
-    console.log(`✅ [SYNC AUTO] Corregido: ${CodigoArticulo} | ${CodigoAlmacen} | ${Ubicacion}`);
-
-  } catch (error) {
-    if (transaction._aborted === false) {
-      await transaction.rollback();
-    }
-    throw error;
-  }
-}
-
-function iniciarSincronizacionAutomatica() {
-  console.log('🚀 [SYNC AUTO] Configurando sistema de sincronización automática...');
-  
-  // Sincronización INMEDIATA al arrancar (5 segundos después de la conexión)
-  setTimeout(() => {
-    console.log('⏰ [SYNC AUTO] Ejecutando sincronización INICIAL inmediata...');
-    sincronizacionAutomatica();
-  }, 5000);
-
-  // Programar ejecución cada 3 horas (0 */3 * * *)
-  cron.schedule('0 */3 * * *', () => {
-    console.log('⏰ [SYNC AUTO] Ejecutando sincronización programada cada 3 horas...');
-    sincronizacionAutomatica();
-  });
-
-  console.log('✅ [SYNC AUTO] Sistema configurado: Sincronización inicial en 5 segundos + cada 3 horas');
-}
-
-app.post('/inventario/sincronizacion-automatica', async (req, res) => {
-  try {
-    console.log('🔧 [SYNC MANUAL] Sincronización manual solicitada');
-    
-    // Ejecutar sincronización inmediata
-    await sincronizacionAutomatica();
-    
-    res.json({
-      success: true,
-      mensaje: 'Sincronización automática ejecutada manualmente'
-    });
-    
-  } catch (error) {
-    console.error('[ERROR SYNC MANUAL]', error);
-    res.status(500).json({
-      success: false,
-      mensaje: 'Error en sincronización manual',
-      error: error.message
-    });
-  }
+// 2. Manejar rutas del frontend (SPA)
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// ------------------ BLOQUE CORREGIDO PARA backend/dist Y EXPRESS 5 ------------------
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
-// Ruta del frontend build (dentro del backend)
-const staticPath = path.join(__dirname, 'dist');
+app.get('/PedidosScreen', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
-if (fs.existsSync(staticPath)) {
-  // Servir archivos estáticos (JS, CSS, imágenes)
-  app.use(express.static(staticPath, { maxAge: '1d' }));
+app.get('/designar-rutas', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
-  // Cualquier ruta que no empiece por /api devuelve index.html
-  app.get(/^(?!\/api).*/, (req, res) => {
-    res.sendFile(path.join(staticPath, 'index.html'));
-  });
+app.get('/rutas', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
-  console.log('✅ Frontend estático servido desde:', staticPath);
-} else {
-  console.warn('⚠️ No se encontró carpeta dist en:', staticPath);
-}
-// ------------------ FIN DEL BLOQUE CORREGIDO ------------------
+app.get('/confirmacion-entrega', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
+app.get('/detalle-albaran', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+app.get('/pedidos-asignados', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+app.get('/albaranes-asignados', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+app.get('/traspasos', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+app.get('/inventario', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+app.get('/gestion-documental', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
 // ============================================
 // ✅ INICIAR SERVIDOR PARA PRODUCCIÓN
