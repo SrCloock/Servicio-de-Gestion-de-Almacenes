@@ -10,31 +10,26 @@ const fs = require('fs');
 const upload = multer();
 const app = express();
 
-// ✅ CONFIGURACIÓN MULTI-ENTORNO MEJORADA
+// ✅ CONFIGURACIÓN PRODUCCIÓN
 const isProduction = process.env.NODE_ENV === 'production';
-const PUBLIC_IP = process.env.PUBLIC_IP || '84.120.61.159'; // Tu IP pública
+const PUBLIC_IP = process.env.PUBLIC_IP || '84.120.61.159';
 const PUBLIC_PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0'; // ✅ DEFINIR HOST AQUÍ
 
-// Configuración CORS dinámica
-const allowedOrigins = isProduction 
-  ? [
-      `http://${PUBLIC_IP}:${PUBLIC_PORT}`,
-      `http://${PUBLIC_IP}:5173`,
-      'http://localhost:5173',
-      'http://localhost:3000'
-    ]
-  : [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      `http://${PUBLIC_IP}:${PUBLIC_PORT}`
-    ];
+// Configuración CORS
+const allowedOrigins = [
+  `http://${PUBLIC_IP}:${PUBLIC_PORT}`,
+  `http://${PUBLIC_IP}:5173`,
+  'http://localhost:5173',
+  'http://localhost:3000'
+];
 
-console.log('🌍 Entorno:', isProduction ? 'PRODUCCIÓN' : 'DESARROLLO');
+console.log('🌍 Entorno: PRODUCCIÓN');
 console.log('🎯 Orígenes permitidos:', allowedOrigins);
+console.log('🏠 Host configurado:', HOST);
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Permitir requests sin origin (como mobile apps o curl)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.indexOf(origin) === -1) {
@@ -48,23 +43,20 @@ app.use(cors({
   credentials: true
 }));
 
-// ✅ MIDDLEWARE PARA LOGS DE DEPURACIÓN
+// Middleware de logs
 app.use((req, res, next) => {
-  console.log(`🌐 [${isProduction ? 'PROD' : 'DEV'}] ${req.method} ${req.url}`);
-  console.log(`   Origin: ${req.headers.origin}`);
-  console.log(`   Host: ${req.headers.host}`);
-  console.log(`   User-Agent: ${req.headers['user-agent']}`);
+  console.log(`🌐 [PROD] ${req.method} ${req.url}`);
   next();
 });
 
 app.use(express.json());
 
-// 🔥 Configuración de conexión a SQL Server (MEJOR CON VARIABLES DE ENTORNO)
+// 🔥 Configuración de conexión a SQL Server
 const dbConfig = {
-  user: process.env.SAGE200_USER || 'Logic',
-  password: process.env.SAGE200_PASSWORD || '12345',
-  server: process.env.SAGE200_SERVER || 'DESKTOP-N86U7H1',
-  database: process.env.SAGE200_DATABASE || 'DEMOS',
+  user: 'Logic',
+  password: '12345',
+  server: 'DESKTOP-N86U7H1',
+  database: 'DEMOS',
   options: {
     trustServerCertificate: true,
     useUTC: false,
@@ -79,7 +71,7 @@ const dbConfig = {
   }
 };
 
-// 🔥 Pool de conexión global
+// Pool de conexión global
 let poolGlobal;
 
 // ============================================
@@ -114,19 +106,11 @@ app.use(async (req, res, next) => {
 });
 
 // ============================================
-// ✅ 2. MIDDLEWARE DE AUTENTICACIÓN MEJORADO
+// ✅ MIDDLEWARE DE AUTENTICACIÓN
 // ============================================
 app.use((req, res, next) => {
-  // ✅ EXCLUIR RECURSOS ESTÁTICOS Y RUTAS PÚBLICAS
-  const publicPaths = [
-    '/login', 
-    '/', 
-    '/api/diagnostic', 
-    '/diagnostic',
-    '/favicon.ico'
-  ];
+  const publicPaths = ['/login', '/', '/api/diagnostic', '/diagnostic', '/favicon.ico'];
   
-  // Excluir archivos estáticos (JS, CSS, imágenes, etc.)
   const isStaticFile = req.path.startsWith('/assets/') || 
                       req.path.startsWith('/static/') ||
                       req.path.endsWith('.js') ||
@@ -134,13 +118,9 @@ app.use((req, res, next) => {
                       req.path.endsWith('.ico') ||
                       req.path.endsWith('.png') ||
                       req.path.endsWith('.jpg') ||
-                      req.path.endsWith('.svg') ||
-                      req.path.endsWith('.woff') ||
-                      req.path.endsWith('.woff2') ||
-                      req.path.endsWith('.ttf');
+                      req.path.endsWith('.svg');
 
   if (publicPaths.includes(req.path) || isStaticFile) {
-    console.log(`✅ Ruta pública: ${req.path}`);
     return next();
   }
 
@@ -148,11 +128,7 @@ app.use((req, res, next) => {
   const codigoempresa = req.headers.codigoempresa;
 
   if (!usuario || !codigoempresa) {
-    console.error('🚨 Faltan cabeceras de autenticación:', {
-      path: req.path,
-      method: req.method,
-      origin: req.headers.origin
-    });
+    console.error('🚨 Faltan cabeceras de autenticación');
     return res.status(401).json({ 
       success: false, 
       mensaje: 'Faltan cabeceras de autenticación (usuario y codigoempresa)' 
@@ -167,6 +143,7 @@ app.use((req, res, next) => {
   console.log(`🔒 Usuario autenticado: ${usuario}, Empresa: ${codigoempresa}`);
   next();
 });
+
 
 // ============================================
 // ✅ ENDPOINT DE DIAGNÓSTICO MEJORADO
@@ -4802,7 +4779,7 @@ app.get('/ubicaciones-por-almacen/:codigoAlmacen', async (req, res) => {
 // ✅ 5. PEDIDOS SCREEN
 // ============================================
 
-// ✅ 5.1 PEDIDOS PENDIENTES (ACTUALIZADO SOLO CON NOMBRE OBRA)
+// ✅ 5.1 PEDIDOS PENDIENTES (ACTUALIZADO CON PAGINACIÓN)
 app.get('/pedidosPendientes', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ 
@@ -4851,12 +4828,17 @@ app.get('/pedidosPendientes', async (req, res) => {
       usuarioCondition = `AND c.EmpleadoAsignado = '${usuario}'`;
     }
 
-    // 3. Obtener parámetros de filtro
+    // 3. Obtener parámetros de filtro y paginación
     const rangoDias = req.query.rango || 'semana';
     const FormaEntrega = req.query.FormaEntrega;
     const empleado = req.query.empleado;
     const estadosPedido = req.query.estados ? req.query.estados.split(',') : [];
     const empleadoAsignado = req.query.empleadoAsignado;
+    
+    // ✅ NUEVO: Parámetros de paginación
+    const pagina = parseInt(req.query.pagina) || 1;
+    const limite = parseInt(req.query.limite) || 10; // 10 pedidos por página por defecto
+    const offset = (pagina - 1) * limite;
     
     // 4. Calcular fechas según rango
     const hoy = new Date();
@@ -4886,10 +4868,64 @@ app.get('/pedidosPendientes', async (req, res) => {
       6: 'Pedido Express'
     };
 
-    // 7. Consulta principal (ACTUALIZADA SOLO CON NOMBRE OBRA)
+    // ✅ NUEVO: Primero obtener el total de pedidos para la paginación
+    const countResult = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT COUNT(DISTINCT c.CodigoEmpresa, c.EjercicioPedido, c.SeriePedido, c.NumeroPedido) as total
+        FROM CabeceraPedidoCliente c
+        INNER JOIN LineasPedidoCliente l ON 
+          c.CodigoEmpresa = l.CodigoEmpresa 
+          AND c.EjercicioPedido = l.EjercicioPedido 
+          AND c.SeriePedido = l.SeriePedido 
+          AND c.NumeroPedido = l.NumeroPedido
+        WHERE c.Estado IN (0, 4)
+          AND c.CodigoEmpresa = @codigoEmpresa
+          AND l.UnidadesPendientes > 0
+          AND c.SeriePedido NOT IN ('X', 'R')
+          ${estadosPedido.length > 0 ? 
+            `AND c.Status IN (${estadosPedido.map(e => `'${e}'`).join(',')})` : ''}
+          AND c.FechaEntrega BETWEEN '${formatDate(fechaInicio)}' AND '${formatDate(fechaFin)}'
+          ${FormaEntrega ? `AND c.FormaEntrega = ${FormaEntrega}` : ''}
+          ${empleado ? `AND c.EmpleadoAsignado = '${empleado}'` : ''}
+          ${usuarioCondition}
+          ${empleadoAsignado ? `AND c.EmpleadoAsignado = '${empleadoAsignado}'` : ''}
+      `);
+
+    const totalPedidos = countResult.recordset[0].total;
+    const totalPaginas = Math.ceil(totalPedidos / limite);
+
+    // 7. Consulta principal (ACTUALIZADA CON PAGINACIÓN)
     const result = await poolGlobal.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(`
+        WITH PedidosPaginados AS (
+          SELECT DISTINCT
+            c.CodigoEmpresa,
+            c.EjercicioPedido,
+            c.SeriePedido,
+            c.NumeroPedido
+          FROM CabeceraPedidoCliente c
+          INNER JOIN LineasPedidoCliente l ON 
+            c.CodigoEmpresa = l.CodigoEmpresa 
+            AND c.EjercicioPedido = l.EjercicioPedido 
+            AND c.SeriePedido = l.SeriePedido 
+            AND c.NumeroPedido = l.NumeroPedido
+          WHERE c.Estado IN (0, 4)
+            AND c.CodigoEmpresa = @codigoEmpresa
+            AND l.UnidadesPendientes > 0
+            AND c.SeriePedido NOT IN ('X', 'R')
+            ${estadosPedido.length > 0 ? 
+              `AND c.Status IN (${estadosPedido.map(e => `'${e}'`).join(',')})` : ''}
+            AND c.FechaEntrega BETWEEN '${formatDate(fechaInicio)}' AND '${formatDate(fechaFin)}'
+            ${FormaEntrega ? `AND c.FormaEntrega = ${FormaEntrega}` : ''}
+            ${empleado ? `AND c.EmpleadoAsignado = '${empleado}'` : ''}
+            ${usuarioCondition}
+            ${empleadoAsignado ? `AND c.EmpleadoAsignado = '${empleadoAsignado}'` : ''}
+          ORDER BY c.FechaEntrega ASC
+          OFFSET ${offset} ROWS
+          FETCH NEXT ${limite} ROWS ONLY
+        )
         SELECT 
           c.CodigoEmpresa,
           c.EjercicioPedido,
@@ -4899,13 +4935,12 @@ app.get('/pedidosPendientes', async (req, res) => {
           c.Domicilio,
           c.Municipio,
           c.ObservacionesWeb AS Observaciones,
-          c.NombreObra, -- ✅ SOLO NOMBRE OBRA
+          c.NombreObra,
           c.FechaPedido,
           c.FechaEntrega,
           c.FormaEntrega,
           c.Estado,
           c.StatusAprobado,
-          -- Determinar Status basado en Estado y StatusAprobado
           CASE 
             WHEN c.Estado = 0 AND c.StatusAprobado = 0 THEN 'Revision'
             WHEN c.Estado = 0 AND c.StatusAprobado = -1 THEN 'Preparando'
@@ -4936,7 +4971,12 @@ app.get('/pedidosPendientes', async (req, res) => {
           ISNULL(a.PesoBrutoUnitario_, 0) AS PesoUnitario,
           (l.UnidadesPendientes * ISNULL(a.PesoBrutoUnitario_, 0)) AS PesoTotalLinea,
           l.GrupoTalla_
-        FROM CabeceraPedidoCliente c
+        FROM PedidosPaginados pp
+        INNER JOIN CabeceraPedidoCliente c ON 
+          pp.CodigoEmpresa = c.CodigoEmpresa 
+          AND pp.EjercicioPedido = c.EjercicioPedido 
+          AND pp.SeriePedido = c.SeriePedido 
+          AND pp.NumeroPedido = c.NumeroPedido
         INNER JOIN LineasPedidoCliente l ON 
           c.CodigoEmpresa = l.CodigoEmpresa 
           AND c.EjercicioPedido = l.EjercicioPedido 
@@ -4948,18 +4988,8 @@ app.get('/pedidosPendientes', async (req, res) => {
         LEFT JOIN Clientes emp ON 
           emp.CodigoCliente = c.EmpleadoAsignado 
           AND emp.CodigoEmpresa = c.CodigoEmpresa
-        WHERE c.Estado IN (0, 4)
-          AND c.CodigoEmpresa = @codigoEmpresa
-          AND l.UnidadesPendientes > 0
-          AND c.SeriePedido NOT IN ('X', 'R')
-          ${estadosPedido.length > 0 ? 
-            `AND c.Status IN (${estadosPedido.map(e => `'${e}'`).join(',')})` : ''}
-          AND c.FechaEntrega BETWEEN '${formatDate(fechaInicio)}' AND '${formatDate(fechaFin)}'
-          ${FormaEntrega ? `AND c.FormaEntrega = ${FormaEntrega}` : ''}
-          ${empleado ? `AND c.EmpleadoAsignado = '${empleado}'` : ''}
-          ${usuarioCondition}
-          ${empleadoAsignado ? `AND c.EmpleadoAsignado = '${empleadoAsignado}'` : ''}
-        ORDER BY c.FechaEntrega ASC
+        WHERE l.UnidadesPendientes > 0
+        ORDER BY c.FechaEntrega ASC, c.NumeroPedido, l.CodigoArticulo
       `);
 
     // 8. Recopilar IDs para detalles (usando LineasPosicion)
@@ -4970,7 +5000,7 @@ app.get('/pedidosPendientes', async (req, res) => {
       }
     });
 
-    // 9. Consulta para detalles de tallas/colores
+    // 9. Consulta para detalles de tallas/colores (solo para los pedidos de esta página)
     let detallesPorLinea = {};
     if (lineasIds.length > 0) {
       const placeholders = lineasIds.map((_, i) => `@id${i}`).join(',');
@@ -5086,7 +5116,7 @@ app.get('/pedidosPendientes', async (req, res) => {
           domicilio: row.Domicilio,
           municipio: row.Municipio,
           observaciones: row.Observaciones,
-          nombreObra: row.NombreObra, // ✅ SOLO NOMBRE OBRA
+          nombreObra: row.NombreObra,
           fechaPedido: row.FechaPedido,
           fechaEntrega: row.FechaEntrega,
           FormaEntrega: formasEntregaMap[row.FormaEntrega] || 'No especificada',
@@ -5129,7 +5159,18 @@ app.get('/pedidosPendientes', async (req, res) => {
     });
     
     const pedidosArray = Object.values(pedidosAgrupados);
-    res.json(pedidosArray);
+    
+    // ✅ NUEVO: Devolver respuesta con información de paginación
+    res.json({
+      success: true,
+      pedidos: pedidosArray,
+      paginacion: {
+        paginaActual: pagina,
+        totalPaginas: totalPaginas,
+        totalPedidos: totalPedidos,
+        limite: limite
+      }
+    });
   } catch (err) {
     console.error('[ERROR PEDIDOS PENDIENTES]', err);
     res.status(500).json({ 
@@ -6467,24 +6508,25 @@ app.get('/gestion-documental', (req, res) => {
 });
 
 // ============================================
-// ✅ INICIAR SERVIDOR PARA PRODUCCIÓN
+// ✅ SERVIR ARCHIVOS ESTÁTICOS DEL FRONTEND
 // ============================================
-async function iniciarServidor() {
-  try {
-    await conectarDB();
-    
-    app.listen(PUBLIC_PORT, '0.0.0.0', () => {
-      console.log(`🚀 Servidor backend corriendo en http://0.0.0.0:${PUBLIC_PORT}`);
-      console.log(`📱 Accesible desde: http://${PUBLIC_IP}:${PUBLIC_PORT}`);
-      console.log(`🔧 Entorno: ${process.env.NODE_ENV || 'development'}`);
-      console.log('🎯 Orígenes CORS permitidos:', allowedOrigins);
-    });
-    
-  } catch (error) {
-    console.error('❌ Error al iniciar servidor:', error);
-    process.exit(1);
-  }
-}
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// Ruta catch-all para SPA
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+// ============================================
+// ✅ INICIAR SERVIDOR
+// ============================================
+app.listen(PUBLIC_PORT, HOST, () => {
+  console.log(`🚀 Servidor ejecutándose en PRODUCCIÓN`);
+  console.log(`📍 URL: http://${PUBLIC_IP}:${PUBLIC_PORT}`);
+  console.log(`🌐 Host: ${HOST}:${PUBLIC_PORT}`);
+  console.log(`📁 Frontend servido desde: ${__dirname}/dist`);
+  console.log('✅ Servidor listo para recibir peticiones');
+});
 
 // Manejo de cierre graceful
 process.on('SIGINT', async () => {
@@ -6494,5 +6536,3 @@ process.on('SIGINT', async () => {
   }
   process.exit(0);
 });
-
-iniciarServidor();

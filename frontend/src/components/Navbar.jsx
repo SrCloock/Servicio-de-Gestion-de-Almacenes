@@ -5,7 +5,7 @@ import {
   FaUserFriends, FaFileInvoice, FaHome, FaWarehouse, FaTimes,
   FaBars, FaBuilding, FaChevronDown, FaFileContract
 } from 'react-icons/fa';
-import axios from 'axios';
+import API from '../helpers/api'; // ✅ CORREGIDO: Usar API configurada
 import { getAuthHeader } from '../helpers/authHelper';
 import { usePermissions } from '../PermissionsManager';
 import '../styles/Navbar.css';
@@ -83,12 +83,14 @@ const Navbar = () => {
     };
   }, [isMobileMenuOpen, isSelectorOpen]);
 
+  // ✅ CORREGIDO: Usar API configurada en lugar de axios directo
   useEffect(() => {
     const fetchEmpresas = async () => {
       if (!user) return;
       try {
         const headers = getAuthHeader();
-        const response = await axios.get('http://localhost:3000/empresas', { headers });
+        // ✅ USAR API EN LUGAR DE AXIOS CON LOCALHOST
+        const response = await API.get('/empresas', { headers });
         setEmpresas(response.data);
       } catch (error) {
         console.error('Error al obtener empresas:', error);
