@@ -5,7 +5,7 @@ import {
   FaUserFriends, FaFileInvoice, FaHome, FaWarehouse, FaTimes,
   FaBars, FaBuilding, FaChevronDown, FaFileContract
 } from 'react-icons/fa';
-import API from '../helpers/api'; // ✅ CORREGIDO: Usar API configurada
+import API from '../helpers/api'; // ✅ USAR API CONFIGURADA
 import { getAuthHeader } from '../helpers/authHelper';
 import { usePermissions } from '../PermissionsManager';
 import '../styles/Navbar.css';
@@ -83,14 +83,12 @@ const Navbar = () => {
     };
   }, [isMobileMenuOpen, isSelectorOpen]);
 
-  // ✅ CORREGIDO: Usar API configurada en lugar de axios directo
+  // ✅ CORREGIDO: Usar API en lugar de axios con URL hardcodeada
   useEffect(() => {
     const fetchEmpresas = async () => {
       if (!user) return;
       try {
-        const headers = getAuthHeader();
-        // ✅ USAR API EN LUGAR DE AXIOS CON LOCALHOST
-        const response = await API.get('/empresas', { headers });
+        const response = await API.get('/empresas'); // ✅ SIN URL HARCODEADA
         setEmpresas(response.data);
       } catch (error) {
         console.error('Error al obtener empresas:', error);
@@ -282,14 +280,14 @@ const Navbar = () => {
                 <select
                   value={user.CodigoEmpresa || ''}
                   onChange={(e) =>
-                    handleEmpresaChange({ CodigoEmpresa: e.target.value })
+                    handleEmpresaChange({ CodigoEmpresa: parseInt(e.target.value) })
                   }
                   className="mobile-empresa-selector"
                   aria-label="Seleccionar empresa"
                 >
                   {empresas.map((empresa) => (
                     <option key={empresa.CodigoEmpresa} value={empresa.CodigoEmpresa}>
-                      {empresa.CodigoEmpresa}
+                      {empresa.CodigoEmpresa} - {empresa.Empresa}
                     </option>
                   ))}
                 </select>

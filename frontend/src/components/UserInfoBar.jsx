@@ -1,19 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import API from '../helpers/api'; // ✅ CORREGIDO: Importación correcta
+import API from '../helpers/api'; // ✅ USAR API CONFIGURADA
 import '../styles/UserInfoBar.css';
 import { getAuthHeader } from '../helpers/authHelper';
 
 const UserInfoBar = () => {
   const [empresas, setEmpresas] = useState([]);
   const user = JSON.parse(localStorage.getItem('user'));
-
-  // ✅ CORREGIDO: Usar API configurada en lugar de axios directo
+  
+  // ✅ CORREGIDO: Usar API en lugar de axios con URL hardcodeada
   useEffect(() => {
     const fetchEmpresas = async () => {
       try {
-        const headers = getAuthHeader();
-        // ✅ USAR API EN LUGAR DE AXIOS CON LOCALHOST
-        const response = await API.get('/empresas', { headers });
+        const response = await API.get('/empresas'); // ✅ SIN URL HARCODEADA
         setEmpresas(response.data);
       } catch (error) {
         console.error('Error al obtener empresas:', error);
@@ -23,8 +21,8 @@ const UserInfoBar = () => {
   }, []);
 
   const handleEmpresaChange = async (e) => {
-    const nuevaEmpresa = e.target.value;
-    const updatedUser = { ...user, CodigoEmpresa: nuevaEmpresa };
+    const nuevaEmpresa = parseInt(e.target.value);
+    const updatedUser = {...user, CodigoEmpresa: nuevaEmpresa};
     localStorage.setItem('user', JSON.stringify(updatedUser));
     window.location.reload();
   };
@@ -35,23 +33,23 @@ const UserInfoBar = () => {
     <div className="user-info-bar">
       <div className="user-info-content">
         <span>Usuario: <strong>{user.Nombre}</strong> | </span>
-
-        <span>
-          Empresa:
-          <select
-            value={user.CodigoEmpresa}
+        
+        <span>Empresa: 
+          <select 
+            value={user.CodigoEmpresa || ''} 
             onChange={handleEmpresaChange}
             className="empresa-selector"
           >
-            {empresas.map((empresa) => (
+            <option value="">Seleccionar...</option>
+            {empresas.map(empresa => (
               <option key={empresa.CodigoEmpresa} value={empresa.CodigoEmpresa}>
                 {empresa.Empresa} ({empresa.CodigoEmpresa})
               </option>
             ))}
-          </select>
+          </select> 
         </span>
-
-        <span> | Categoría: <strong>{user.CodigoCategoriaEmpleadoLc}</strong></span>
+        
+        <span> | Categoría: <strong>{user.CodigoCategoriaEmpleadoLc || 'N/A'}</strong></span>
       </div>
     </div>
   );

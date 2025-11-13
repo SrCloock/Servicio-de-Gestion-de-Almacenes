@@ -448,7 +448,8 @@ const LineaPedido = React.memo(({
   iniciarEscaneo,
   abrirModalDetalles,
   canPerformActions,
-  isScanning
+  isScanning,
+  isProcesando
 }) => {
   const formatearUnidad = useFormatearUnidad();
   
@@ -758,7 +759,7 @@ const LineaPedido = React.memo(({
               value={expedicion.ubicacion}
               onChange={handleCambioUbicacion}
               className={`ps-ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga' : ''}`}
-              disabled={!canPerformActions}
+              disabled={!canPerformActions || isProcesando}
             >
               {ubicacionesConStock.map((ubicacion, locIndex) => (
                 <option 
@@ -782,7 +783,7 @@ const LineaPedido = React.memo(({
               value={expedicion.cantidad}
               onChange={handleCambioCantidad}
               className={expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-input' : ''}
-              disabled={!canPerformActions}
+              disabled={!canPerformActions || isProcesando}
               placeholder="0"
             />
             <div className="ps-unidad-info">{linea.unidadBase || 'ud'}</div>
@@ -800,9 +801,10 @@ const LineaPedido = React.memo(({
               });
               if (canPerformActions) iniciarEscaneo(linea, pedido);
             }}
-            disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning}
+            disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning || isProcesando}
           >
-            <FaCamera /> {isScanning ? 'Procesando...' : 'Escanear'}
+            <FaCamera /> 
+            {isProcesando ? 'Procesando...' : (isScanning ? 'Procesando...' : 'Escanear')}
           </button>
         </td>
       </tr>
@@ -854,7 +856,7 @@ const LineaPedido = React.memo(({
                     value={expedicion.ubicacion}
                     onChange={handleCambioUbicacion}
                     className={`ps-ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga' : ''}`}
-                    disabled={!canPerformActions}
+                    disabled={!canPerformActions || isProcesando}
                   >
                     {ubicacionesConStock.map((ubicacion, locIndex) => (
                       <option 
@@ -878,7 +880,7 @@ const LineaPedido = React.memo(({
                     value={expedicion.cantidad}
                     onChange={handleCambioCantidad}
                     className={expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-input' : ''}
-                    disabled={!canPerformActions}
+                    disabled={!canPerformActions || isProcesando}
                     placeholder="0"
                   />
                   <div className="ps-unidad-info">{linea.unidadBase || 'ud'}</div>
@@ -896,10 +898,11 @@ const LineaPedido = React.memo(({
                     });
                     if (canPerformActions) iniciarEscaneo(linea, pedido);
                   }}
-                  disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning}
+                  disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning || isProcesando}
                   style={{ whiteSpace: 'nowrap' }}
                 >
-                  <FaCamera /> {isScanning ? 'Procesando...' : 'Escanear'}
+                  <FaCamera /> 
+                  {isProcesando ? 'Procesando...' : (isScanning ? 'Procesando...' : 'Escanear')}
                 </button>
               </div>
             </div>
@@ -910,7 +913,7 @@ const LineaPedido = React.memo(({
   );
 });
 
-// Componente Tarjeta de Pedido - VERSIÓN ACTUALIZADA CON NUEVOS CAMPOS
+// Componente Tarjeta de Pedido - VERSIÓN ACTUALIZADA CON CAMPOS REALES
 const PedidoCard = React.memo(({ 
   pedido, 
   togglePedidoView, 
@@ -925,7 +928,8 @@ const PedidoCard = React.memo(({
   canPerformActions,
   canPerformActionsInPedidos,
   isScanning,
-  onActualizarVoluminoso
+  onActualizarVoluminoso,
+  lineasProcesando
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [actualizandoVoluminoso, setActualizandoVoluminoso] = useState(false);
@@ -975,7 +979,7 @@ const PedidoCard = React.memo(({
               Entrega: {pedido.fechaEntrega ? new Date(pedido.fechaEntrega).toLocaleDateString() : 'Sin fecha'}
             </span>
             
-            {/* ✅ NUEVO: Estado del pedido usando la columna Status */}
+            {/* ✅ Estado del pedido usando la columna Status */}
             <span className={`ps-status-pedido ps-status-${pedido.Status?.toLowerCase() || 'revision'}`}>
               {pedido.Status || 'Revisión'}
             </span>
@@ -986,7 +990,7 @@ const PedidoCard = React.memo(({
               </span>
             )}
             
-            {/* ✅ MEJORADO: Indicador voluminoso más visible */}
+            {/* ✅ Indicador voluminoso más visible */}
             {pedido.EsVoluminoso && (
               <span className="ps-voluminoso-badge ps-voluminoso-badge-prominente">
                 <FaExclamation /> VOLUMINOSO
@@ -1073,14 +1077,14 @@ const PedidoCard = React.memo(({
               </div>
             </div>
 
-            {/* ✅ NUEVA SECCIÓN: Información de contacto y observaciones web */}
+            {/* ✅ SECCIÓN CORREGIDA: Información de contacto con datos reales */}
             <div className="ps-contacto-info-grid">
               <div className="ps-contacto-item">
                 <div className="ps-contacto-label">
                   <FaUser /> Contacto:
                 </div>
                 <div className="ps-contacto-value">
-                  {pedido.contacto || 'CARLOS SÁNCHEZ'}
+                  {pedido.Contacto || 'No especificado'}
                 </div>
               </div>
               
@@ -1089,7 +1093,16 @@ const PedidoCard = React.memo(({
                   <FaPhone /> Teléfono:
                 </div>
                 <div className="ps-contacto-value">
-                  {pedido.telefono || '660 333 000'}
+                  {pedido.TelefonoContacto || 'No especificado'}
+                </div>
+              </div>
+
+              <div className="ps-contacto-item">
+                <div className="ps-contacto-label">
+                  <FaUser /> Vendedor:
+                </div>
+                <div className="ps-contacto-value">
+                  {pedido.NombreVendedor || pedido.Vendedor || 'No especificado'}
                 </div>
               </div>
               
@@ -1098,14 +1111,14 @@ const PedidoCard = React.memo(({
                   <FaInfoCircle /> Observaciones Web:
                 </div>
                 <div className="ps-contacto-value">
-                  {pedido.observacionesWeb || 'LLEVAR JUNTO CON PEDIDO 19346'}
+                  {pedido.observaciones || 'No hay observaciones'}
                 </div>
               </div>
             </div>
 
-            {/* ✅ MANTENEMOS SOLO LA OBRA - ELIMINAMOS DIRECCIÓN Y MUNICIPIO */}
+            {/* ✅ SECCIÓN CORREGIDA: Solo mostrar obra con datos reales */}
             <div className="ps-pedido-detail-item ps-obra-item">
-              <strong>Obra:</strong> {pedido.nombreObra || pedido.obra || 'Sin obra especificada'}
+              <strong>Obra:</strong> {pedido.nombreObra || 'Sin obra especificada'}
             </div>
           </div>
           
@@ -1136,6 +1149,7 @@ const PedidoCard = React.memo(({
                       abrirModalDetalles={abrirModalDetalles}
                       canPerformActions={canPerformActions}
                       isScanning={isScanning}
+                      isProcesando={lineasProcesando[linea.movPosicionLinea] || false}
                     />
                   ))}
                 </tbody>
@@ -1346,7 +1360,7 @@ const PedidosScreen = () => {
   const debouncedFiltroBusqueda = useDebounce(filtroBusqueda, 500);
   const [rangoFechas, setRangoFechas] = useState('semana');
   
-  // ✅ NUEVO: Estado para el filtro de Status
+  // Estado para el filtro de Status
   const [filtroStatus, setFiltroStatus] = useState('');
   
   const [paginaActual, setPaginaActual] = useState(1);
@@ -1360,6 +1374,10 @@ const PedidosScreen = () => {
   const [cameras, setCameras] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  
+  // Estado para controlar líneas en procesamiento
+  const [lineasProcesando, setLineasProcesando] = useState({});
+  
   const scannerRef = useRef(null);
   const abortControllerRef = useRef(null);
 
@@ -1376,7 +1394,7 @@ const PedidosScreen = () => {
     userRef.current = user;
   }, [user]);
 
-  // ✅ NUEVO: Opciones para el filtro de Status
+  // Opciones para el filtro de Status
   const opcionesStatus = useMemo(() => [
     { id: '', nombre: 'Todos los estados' },
     { id: 'PendienteProveedor', nombre: 'Pendiente Proveedor' },
@@ -1422,7 +1440,125 @@ const PedidosScreen = () => {
     }
   }, [canPerformActionsInPedidos]);
 
-  // Función para cargar pedidos con cancelación - MODIFICADA
+  // 🔥 FUNCIÓN OPTIMIZADA: Expedir artículo sin recarga completa
+  const handleExpedirArticuloOptimizado = useCallback(async (linea, pedido, expedicion) => {
+    if (!canPerformActions || isScanning) return;
+    
+    const key = linea.movPosicionLinea;
+    
+    // Mostrar estado de carga en la línea específica
+    setLineasProcesando(prev => ({
+      ...prev,
+      [key]: true
+    }));
+
+    try {
+      const response = await API.post('/actualizarLineaPedido', {
+        codigoEmpresa: pedido.codigoEmpresa,
+        ejercicio: pedido.ejercicioPedido,
+        serie: pedido.seriePedido || '',
+        numeroPedido: pedido.numeroPedido,
+        codigoArticulo: linea.codigoArticulo,
+        cantidadExpedida: parseFloat(expedicion.cantidad),
+        almacen: expedicion.almacen,
+        ubicacion: expedicion.ubicacion,
+        partida: expedicion.partida || '',
+        unidadMedida: expedicion.unidadMedida || linea.unidadPedido,
+        esZonaDescarga: expedicion.ubicacion === "Zona descarga",
+        movPosicionLinea: key
+      }, { headers: getAuthHeader() });
+
+      if (response.data.success) {
+        // 🔥 ACTUALIZACIÓN LOCAL SIN RECARGAR TODO
+        
+        // 1. Actualizar pedidos localmente
+        setPedidos(prev => 
+          prev.map(p => {
+            if (p.numeroPedido === pedido.numeroPedido) {
+              const articulosActualizados = p.articulos.map(art => {
+                if (art.movPosicionLinea === key) {
+                  const nuevasUnidadesPendientes = Math.max(0, parseFloat(art.unidadesPendientes) - parseFloat(expedicion.cantidad));
+                  return {
+                    ...art,
+                    unidadesPendientes: nuevasUnidadesPendientes
+                  };
+                }
+                return art;
+              });
+
+              // Verificar si el pedido aún tiene líneas pendientes
+              const tieneLineasPendientes = articulosActualizados.some(art => parseFloat(art.unidadesPendientes) > 0);
+
+              // Si no tiene pendientes, filtrar el pedido
+              if (!tieneLineasPendientes) {
+                return null;
+              }
+
+              return {
+                ...p,
+                articulos: articulosActualizados
+              };
+            }
+            return p;
+          }).filter(Boolean) // Eliminar pedidos null (completados)
+        );
+
+        // 2. Actualizar ubicaciones (reducir stock)
+        if (expedicion.ubicacion !== "Zona descarga") {
+          setUbicaciones(prev => {
+            const nuevasUbicaciones = { ...prev };
+            const ubicacionesArticulo = nuevasUbicaciones[linea.codigoArticulo] || [];
+            
+            const ubicacionesActualizadas = ubicacionesArticulo.map(ubic => {
+              if (ubic.ubicacion === expedicion.ubicacion && 
+                  ubic.codigoAlmacen === expedicion.almacen &&
+                  normalizarUnidad(ubic.unidadMedida) === normalizarUnidad(expedicion.unidadMedida)) {
+                
+                const stockActual = parseFloat(ubic.unidadSaldo) || 0;
+                const nuevoStock = Math.max(0, stockActual - parseFloat(expedicion.cantidad));
+                
+                console.log(`[DEBUG STOCK] Actualizando stock de ${ubic.ubicacion}: ${stockActual} -> ${nuevoStock} ${ubic.unidadMedida}`);
+                
+                return {
+                  ...ubic,
+                  unidadSaldo: nuevoStock
+                };
+              }
+              return ubic;
+            });
+            
+            nuevasUbicaciones[linea.codigoArticulo] = ubicacionesActualizadas;
+            return nuevasUbicaciones;
+          });
+        }
+
+        // 3. Limpiar expedición de esta línea
+        setExpediciones(prev => {
+          const nuevasExpediciones = { ...prev };
+          if (nuevasExpediciones[key]) {
+            nuevasExpediciones[key] = {
+              ...nuevasExpediciones[key],
+              cantidad: '0'
+            };
+          }
+          return nuevasExpediciones;
+        });
+
+        alert(`✅ Artículo expedido correctamente: ${expedicion.cantidad} ${linea.unidadBase || 'ud'}`);
+      }
+    } catch (error) {
+      console.error('Error al expedir artículo:', error);
+      alert('❌ Error al expedir artículo: ' + (error.response?.data?.mensaje || error.message));
+    } finally {
+      // Quitar estado de carga
+      setLineasProcesando(prev => ({
+        ...prev,
+        [key]: false
+      }));
+    }
+  }, [canPerformActions, isScanning]);
+
+  // Función para cargar pedidos con cancelación
   const cargarPedidos = useCallback(async (forzarRecarga = false) => {
     if (abortControllerRef.current && !forzarRecarga) {
       abortControllerRef.current.abort();
@@ -1581,7 +1717,7 @@ const PedidosScreen = () => {
     }
   }, [isScanning]); // 🔥 Añadimos isScanning como dependencia
 
-  // 🔥 FUNCIÓN handleExpedir COMPLETAMENTE CORREGIDA - SIN REINICIO COMPLETO
+  // 🔥 FUNCIÓN handleExpedir COMPLETAMENTE CORREGIDA - USANDO LA NUEVA FUNCIÓN OPTIMIZADA
   const handleExpedir = useCallback(async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea, detalle = null) => {
     if (!canPerformActions || isScanning) return;
     
@@ -1611,103 +1747,8 @@ const PedidosScreen = () => {
     }
 
     try {
-      const headers = getAuthHeader();
-      
-      const datosExpedicion = {
-        codigoEmpresa,
-        ejercicio,
-        serie: serie || '',
-        numeroPedido,
-        codigoArticulo,
-        cantidadExpedida,
-        almacen: expedicion.almacen,
-        ubicacion: expedicion.ubicacion,
-        partida: expedicion.partida || '',
-        unidadMedida: expedicion.unidadMedida || linea.unidadPedido,
-        esZonaDescarga: expedicion.ubicacion === "Zona descarga",
-        movPosicionLinea: key,
-        codigoColor: detalle?.codigoColor || '',
-        codigoTalla: detalle?.codigoTalla || ''
-      };
-
-      console.log('[FRONTEND DEBUG] Enviando datos al backend:', datosExpedicion);
-
-      const response = await API.post(
-        '/actualizarLineaPedido',
-        datosExpedicion,
-        { headers }
-      );
-
-      if (response.data.success) {
-        console.log('[FRONTEND DEBUG] Expedición exitosa:', response.data);
-        
-        // ✅ CORRECCIÓN CRÍTICA: ACTUALIZACIÓN LOCAL SIN RECARGAR TODO
-        
-        // 1. Actualizar expediciones (resetear cantidad a 0)
-        setExpediciones(prev => ({
-          ...prev,
-          [key]: {
-            ...prev[key],
-            cantidad: '0' // Resetear a 0 después de expedir
-          }
-        }));
-
-        // 2. Actualizar ubicaciones (reducir stock)
-        if (expedicion.ubicacion !== "Zona descarga") {
-          setUbicaciones(prev => {
-            const nuevasUbicaciones = { ...prev };
-            const ubicacionesArticulo = nuevasUbicaciones[linea.codigoArticulo] || [];
-            
-            const ubicacionesActualizadas = ubicacionesArticulo.map(ubic => {
-              // 🔥 CORRECCIÓN: Comparación más estricta incluyendo unidad de medida normalizada
-              if (ubic.ubicacion === expedicion.ubicacion && 
-                  ubic.codigoAlmacen === expedicion.almacen &&
-                  normalizarUnidad(ubic.unidadMedida) === normalizarUnidad(expedicion.unidadMedida)) {
-                
-                // Restar la cantidad expedida del stock
-                const stockActual = parseFloat(ubic.unidadSaldo) || 0;
-                const nuevoStock = Math.max(0, stockActual - cantidadExpedida);
-                
-                console.log(`[DEBUG STOCK] Actualizando stock de ${ubic.ubicacion}: ${stockActual} -> ${nuevoStock} ${ubic.unidadMedida}`);
-                
-                return {
-                  ...ubic,
-                  unidadSaldo: nuevoStock
-                };
-              }
-              return ubic;
-            });
-            
-            nuevasUbicaciones[linea.codigoArticulo] = ubicacionesActualizadas;
-            return nuevasUbicaciones;
-          });
-        }
-
-        // 3. Actualizar pedidos localmente (solo la línea afectada)
-        setPedidos(prev => prev.map(pedido => {
-          if (pedido.numeroPedido === numeroPedido) {
-            const articulosActualizados = pedido.articulos.map(articulo => {
-              if (articulo.movPosicionLinea === key) {
-                const nuevasUnidadesPendientes = Math.max(0, parseFloat(articulo.unidadesPendientes) - cantidadExpedida);
-                
-                return {
-                  ...articulo,
-                  unidadesPendientes: nuevasUnidadesPendientes
-                };
-              }
-              return articulo;
-            });
-            
-            return {
-              ...pedido,
-              articulos: articulosActualizados
-            };
-          }
-          return pedido;
-        }));
-
-        alert(`✅ Se expedieron ${cantidadExpedida} unidades correctamente.`);
-      }
+      // 🔥 USAR LA NUEVA FUNCIÓN OPTIMIZADA
+      await handleExpedirArticuloOptimizado(linea, { codigoEmpresa, ejercicioPedido: ejercicio, seriePedido: serie, numeroPedido }, expedicion);
     } catch (error) {
       console.error('[FRONTEND ERROR] Error al expedir artículo:', error);
       console.error('Respuesta del servidor:', error.response?.data);
@@ -1720,8 +1761,7 @@ const PedidosScreen = () => {
     } finally {
       setIsScanning(false);
     }
-  }, [canPerformActions, isScanning, expediciones, ubicaciones]);
-  // 🔥 QUITAMOS cargarPedidos DE LAS DEPENDENCIAS
+  }, [canPerformActions, isScanning, expediciones, handleExpedirArticuloOptimizado]);
 
   // 🔥 FUNCIÓN handleExpedirVariante CORREGIDA - SIN REINICIO COMPLETO
   const handleExpedirVariante = useCallback(async (datosVariante) => {
@@ -1817,7 +1857,6 @@ const PedidosScreen = () => {
       return Promise.reject(error);
     }
   }, [detallesModal]);
-  // 🔥 QUITAMOS cargarPedidos DE LAS DEPENDENCIAS
 
   // ✅ MOVER handleScanSuccess ANTES de los efectos que lo usan
   const handleScanSuccess = useCallback((decodedText) => {
@@ -2272,6 +2311,7 @@ const PedidosScreen = () => {
                   canPerformActionsInPedidos={canPerformActionsInPedidos}
                   isScanning={isScanning}
                   onActualizarVoluminoso={handleActualizarVoluminoso}
+                  lineasProcesando={lineasProcesando}
                 />
               ))}
             </>)}
