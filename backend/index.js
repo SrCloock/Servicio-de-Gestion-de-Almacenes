@@ -12,7 +12,7 @@ const app = express();
 
 // ✅ CONFIGURACIÓN MULTI-ENTORNO MEJORADA
 const isProduction = process.env.NODE_ENV === 'production';
-const PUBLIC_IP = process.env.PUBLIC_IP || '84.120.61.159'; // Tu IP pública
+const PUBLIC_IP = process.env.PUBLIC_IP || '80.24.244.68'; // Tu IP pública
 const PUBLIC_PORT = process.env.PORT || 3000;
 
 // Configuración CORS dinámica
@@ -61,10 +61,10 @@ app.use(express.json());
 
 // 🔥 Configuración de conexión a SQL Server (MEJOR CON VARIABLES DE ENTORNO)
 const dbConfig = {
-  user: process.env.SAGE200_USER || 'Logic',
-  password: process.env.SAGE200_PASSWORD || '12345',
-  server: process.env.SAGE200_SERVER || 'DESKTOP-N86U7H1',
-  database: process.env.SAGE200_DATABASE || 'DEMOS',
+  user: 'logic',
+  password: 'Sage2009+',
+  server: 'SERVIDORBD',
+  database: 'Sage',
   options: {
     trustServerCertificate: true,
     useUTC: false,
@@ -768,7 +768,7 @@ app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
       .query(`
         SELECT 
           p.EjercicioPedido, p.SeriePedido, p.CodigoCliente, p.RazonSocial, 
-          p.Domicilio, p.Municipio, p.NumeroLineas, p.ImporteLiquido, p.obra,
+          p.Domicilio, p.Municipio, p.NumeroLineas, p.ImporteLiquido, p.NombreObra,
           p.Contacto, p.Telefono AS TelefonoContacto, p.EsVoluminoso,
           -- Calcular líneas pendientes para determinar si es parcial
           (SELECT COUNT(*) FROM LineasPedidoCliente l 
@@ -824,7 +824,7 @@ app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
       .input('numeroLineas', sql.Int, pedido.NumeroLineas || 0)
       .input('importeLiquido', sql.Decimal(18,4), pedido.ImporteLiquido || 0)
       .input('empleadoAsignado', sql.VarChar, codigoRepartidor)
-      .input('obra', sql.VarChar, pedido.obra || '')
+      .input('NombreObra', sql.VarChar, pedido.NombreObra || '')
       .input('contacto', sql.VarChar, pedido.Contacto || '')
       .input('telefonoContacto', sql.VarChar, pedido.TelefonoContacto || '')
       .input('statusFacturado', sql.SmallInt, 0)
@@ -835,12 +835,12 @@ app.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
           CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
           CodigoCliente, RazonSocial, Domicilio, Municipio, FechaAlbaran,
           NumeroLineas, ImporteLiquido, EmpleadoAsignado,
-          obra, Contacto, Telefono, StatusFacturado, EsVoluminoso, EsParcial
+          NombreObra, Contacto, Telefono, StatusFacturado, EsVoluminoso, EsParcial
         ) VALUES (
           @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
           @codigoCliente, @razonSocial, @domicilio, @municipio, @fecha,
           @numeroLineas, @importeLiquido, @empleadoAsignado,
-          @obra, @contacto, @telefonoContacto, @statusFacturado, @esVoluminoso, @esParcial
+          @NombreObra, @contacto, @telefonoContacto, @statusFacturado, @esVoluminoso, @esParcial
         )
       `);
 
@@ -1017,7 +1017,7 @@ app.get('/api/albaranesPendientes', async (req, res) => {
         NombreObra,
         Contacto,
         Telefono,
-        formaentrega,
+        FormaEnvio,
         EsVoluminoso,
         EjercicioPedido,
         SeriePedido,
@@ -1026,7 +1026,7 @@ app.get('/api/albaranesPendientes', async (req, res) => {
       WHERE CodigoEmpresa = @codigoEmpresa
         AND StatusFacturado = 0
         AND FechaAlbaran >= DATEADD(DAY, -30, GETDATE())
-        AND formaentrega = 3  -- Solo nuestros medios
+        AND FormaEnvio = 3  -- Solo nuestros medios
       ORDER BY FechaAlbaran DESC
     `;
     
@@ -1069,7 +1069,7 @@ app.get('/api/albaranesPendientes', async (req, res) => {
         nombreObra: cabecera.NombreObra,
         contacto: cabecera.Contacto,
         telefonoContacto: cabecera.Telefono,
-        formaentrega: cabecera.formaentrega,
+        FormaEnvio: cabecera.FormaEnvio,
         EsVoluminoso: cabecera.EsVoluminoso,
         NumeroPedido: cabecera.NumeroPedido,
         articulos: lineas.recordset.map(art => ({
@@ -1112,7 +1112,7 @@ app.get('/pedidos-preparados', async (req, res) => {
           p.RazonSocial,
           p.Domicilio,
           p.Municipio,
-          p.obra,
+          p.NombreObra,
           p.FechaPedido,
           p.Contacto,
           p.Telefono AS TelefonoContacto,
@@ -1479,7 +1479,7 @@ app.post('/completarAlbaranConFirmas', async (req, res) => {
   }
 });
 
-// ✅ 7.8 OBTENER ALBARANES COMPLETADOS (ACTUALIZADO SOLO CON NOMBRE OBRA)
+// ✅ 7.8 OBTENER ALBARANES COMPLETADOS (ACTUALIZADO SOLO CON NOMBRE NombreObra)
 app.get('/albaranesCompletados', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1505,7 +1505,7 @@ app.get('/albaranesCompletados', async (req, res) => {
         cac.NombreObra, -- ✅ SOLO NOMBRE OBRA
         cac.Contacto,
         cac.Telefono AS TelefonoContacto,
-        cac.FormaEntrega,
+        cac.FormaEnvio,
         cac.EsVoluminoso,
         cac.ObservacionesAlbaran,
         ISNULL(cac.FirmaCliente, '') as FirmaCliente,
@@ -1514,7 +1514,7 @@ app.get('/albaranesCompletados', async (req, res) => {
       WHERE cac.CodigoEmpresa = @codigoEmpresa
         AND cac.StatusFacturado = -1
         AND cac.FechaAlbaran >= DATEADD(DAY, -30, GETDATE())
-        AND cac.FormaEntrega = 3  -- Solo nuestros medios
+        AND cac.FormaEnvio = 3  -- Solo nuestros medios
       ORDER BY cac.FechaAlbaran DESC
     `;
     
@@ -1556,7 +1556,7 @@ app.get('/albaranesCompletados', async (req, res) => {
         nombreObra: cabecera.NombreObra, // ✅ SOLO NOMBRE OBRA
         contacto: cabecera.Contacto,
         telefonoContacto: cabecera.TelefonoContacto,
-        FormaEntrega: cabecera.FormaEntrega,
+        FormaEnvio: cabecera.FormaEnvio,
         EsVoluminoso: cabecera.EsVoluminoso,
         tieneFirmaCliente: cabecera.FirmaCliente && cabecera.FirmaCliente.length > 10,
         tieneFirmaRepartidor: cabecera.FirmaRepartidor && cabecera.FirmaRepartidor.length > 10,
@@ -1748,7 +1748,7 @@ app.get('/albaranes-asignacion', async (req, res) => {
         cac.ImporteLiquido,
         cac.StatusFacturado,
         cac.EmpleadoAsignado AS repartidorAsignado,
-        cac.obra,
+        cac.NombreObra,
         cac.Contacto,
         cac.Telefono AS TelefonoContacto,
         cpc.NumeroPedido
@@ -1886,9 +1886,9 @@ app.get('/albaranes-completados', async (req, res) => {
           cac.CodigoEmpresa,
           cac.FechaAlbaran,
           cac.RazonSocial,
-          cac.obra,
+          cac.NombreObra,
           cac.StatusFacturado,
-          cpc.FormaEntrega
+          cpc.FormaEnvio
         FROM CabeceraAlbaranCliente cac
         INNER JOIN CabeceraPedidoCliente cpc ON 
           cac.CodigoEmpresa = cpc.CodigoEmpresa 
@@ -1898,7 +1898,7 @@ app.get('/albaranes-completados', async (req, res) => {
         WHERE cac.CodigoEmpresa = @codigoEmpresa
           AND cac.StatusFacturado = -1
           AND cac.FechaAlbaran >= DATEADD(DAY, -7, GETDATE())
-          AND cpc.FormaEntrega = 3  -- Solo nuestros medios
+          AND cpc.FormaEnvio = 3  -- Solo nuestros medios
         ORDER BY cac.FechaAlbaran DESC
       `);
       
@@ -4937,7 +4937,7 @@ app.get('/pedidosPendientes', async (req, res) => {
 
     // 3. Obtener parámetros de filtro
     const rangoDias = req.query.rango || 'semana';
-    const FormaEntrega = req.query.FormaEntrega;
+    const FormaEnvio = req.query.FormaEnvio;
     const empleado = req.query.empleado;
     const estadosPedido = req.query.estados ? req.query.estados.split(',') : [];
     const empleadoAsignado = req.query.empleadoAsignado;
@@ -4986,7 +4986,7 @@ app.get('/pedidosPendientes', async (req, res) => {
           c.NombreObra,
           c.FechaPedido,
           c.FechaEntrega,
-          c.FormaEntrega,
+          c.FormaEnvio,
           c.Estado,
           c.StatusAprobado,
           -- Determinar Status basado en Estado y StatusAprobado
@@ -5041,7 +5041,7 @@ app.get('/pedidosPendientes', async (req, res) => {
           ${estadosPedido.length > 0 ? 
             `AND c.Status IN (${estadosPedido.map(e => `'${e}'`).join(',')})` : ''}
           AND c.FechaEntrega BETWEEN '${formatDate(fechaInicio)}' AND '${formatDate(fechaFin)}'
-          ${FormaEntrega ? `AND c.FormaEntrega = ${FormaEntrega}` : ''}
+          ${FormaEnvio ? `AND c.FormaEnvio = ${FormaEnvio}` : ''}
           ${empleado ? `AND c.EmpleadoAsignado = '${empleado}'` : ''}
           ${usuarioCondition}
           ${empleadoAsignado ? `AND c.EmpleadoAsignado = '${empleadoAsignado}'` : ''}
@@ -5175,7 +5175,7 @@ app.get('/pedidosPendientes', async (req, res) => {
           nombreObra: row.NombreObra,
           fechaPedido: row.FechaPedido,
           fechaEntrega: row.FechaEntrega,
-          FormaEntrega: formasEntregaMap[row.FormaEntrega] || 'No especificada',
+          FormaEnvio: formasEntregaMap[row.FormaEnvio] || 'No especificada',
           Estado: row.Estado,
           StatusAprobado: row.StatusAprobado,
           Status: row.Status,
@@ -5922,7 +5922,6 @@ app.post('/generarAlbaranParcial', async (req, res) => {
       .input('numeroLineas', sql.Int, lineasResult.recordset.length)
       .input('importeLiquido', sql.Decimal(18,4), pedido.ImporteLiquido || 0)
       .input('empleadoAsignado', sql.VarChar, pedido.CodigoEmpleadoAsignado || usuario)
-      .input('obra', sql.VarChar, pedido.obra || '')
       .input('contacto', sql.VarChar, pedido.Contacto || '')
       .input('telefonoContacto', sql.VarChar, pedido.Telefono || '')
       .input('observacionesWeb', sql.VarChar, pedido.ObservacionesWeb || '')
@@ -5939,14 +5938,14 @@ app.post('/generarAlbaranParcial', async (req, res) => {
           CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
           CodigoCliente, RazonSocial, Domicilio, Municipio, FechaAlbaran,
           NumeroLineas, ImporteLiquido, EmpleadoAsignado,
-          obra, Contacto, Telefono, ObservacionesWeb, NombreObra, Vendedor,
+          Contacto, Telefono, ObservacionesWeb, NombreObra, Vendedor,
           StatusFacturado, EsVoluminoso, EsParcial,
           EjercicioPedido, SeriePedido, NumeroPedido
         ) VALUES (
           @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
           @codigoCliente, @razonSocial, @domicilio, @municipio, @fecha,
           @numeroLineas, @importeLiquido, @empleadoAsignado,
-          @obra, @contacto, @telefonoContacto, @observacionesWeb, @nombreObra, @vendedor,
+          @contacto, @telefonoContacto, @observacionesWeb, @nombreObra, @vendedor,
           @statusFacturado, @esVoluminoso, @esParcial,
           @ejercicioPedido, @seriePedido, @numeroPedido
         )
