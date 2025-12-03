@@ -36,7 +36,7 @@ class ApiService {
 
     // ✅ SIEMPRE usar la IP pública en producción
     if (import.meta.env.PROD) {
-      const publicIP = import.meta.env.VITE_PUBLIC_IP || '80.24.244.68';
+      const publicIP = import.meta.env.VITE_PUBLIC_IP || '84.120.61.159';
       const port = '3000';
       const productionURL = `http://${publicIP}:${port}`;
       

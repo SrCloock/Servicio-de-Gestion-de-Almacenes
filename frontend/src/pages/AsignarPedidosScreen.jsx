@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
@@ -10,49 +10,45 @@ const AsignarPedidosScreen = () => {
   const [preparadores, setPreparadores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const { canAssignOrders } = usePermissions();
   const [asignaciones, setAsignaciones] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
   const [cambiandoAsignaciones, setCambiandoAsignaciones] = useState(false);
+  
+  const { canAssignOrders } = usePermissions();
 
-  useEffect(() => {
+  const cargarDatos = useCallback(async () => {
     if (!canAssignOrders) return;
 
-    const cargarDatos = async () => {
-      try {
-        setLoading(true);
-        const headers = getAuthHeader();
+    try {
+      setLoading(true);
+      const headers = getAuthHeader();
 
-        // Obtener TODOS los pedidos pendientes
-        const pedidosResponse = await API.get('/pedidosPendientes', { 
+      const [pedidosResponse, prepResponse] = await Promise.all([
+        API.get('/pedidosPendientes', { 
           headers,
-          params: { 
-            soloAprobados: false,
-            rango: 'todo'
-          }
-        });
-        setPedidos(pedidosResponse.data);
+          params: { soloAprobados: false, rango: 'todo' }
+        }),
+        API.get('/empleados/preparadores', { headers })
+      ]);
 
-        // Obtener preparadores
-        const prepResponse = await API.get('/empleados/preparadores', { headers });
-        setPreparadores(prepResponse.data);
+      setPedidos(pedidosResponse.data);
+      setPreparadores(prepResponse.data);
 
-        // Inicializar asignaciones con valores actuales
-        const inicialAsignaciones = {};
-        pedidosResponse.data.forEach(pedido => {
-          inicialAsignaciones[pedido.numeroPedido] = pedido.EmpleadoAsignado || '';
-        });
-        setAsignaciones(inicialAsignaciones);
-
-        setLoading(false);
-      } catch (err) {
-        setError('Error al cargar datos: ' + err.message);
-        setLoading(false);
-      }
-    };
-
-    cargarDatos();
+      const inicialAsignaciones = {};
+      pedidosResponse.data.forEach(pedido => {
+        inicialAsignaciones[pedido.numeroPedido] = pedido.EmpleadoAsignado || '';
+      });
+      setAsignaciones(inicialAsignaciones);
+    } catch (err) {
+      setError('Error al cargar datos: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   }, [canAssignOrders]);
+
+  useEffect(() => {
+    cargarDatos();
+  }, [cargarDatos]);
 
   const handleAsignacionChange = (numeroPedido, codigoEmpleado) => {
     setAsignaciones(prev => ({
@@ -65,78 +61,74 @@ const AsignarPedidosScreen = () => {
     try {
       setCambiandoAsignaciones(true);
       setError('');
-      const headers = getAuthHeader();
+      setSuccessMessage('');
       
-      // Preparar cambios: solo los que han sido modificados
+      const headers = getAuthHeader();
       const cambios = [];
-      for (const numeroPedido in asignaciones) {
-        const nuevoEmpleado = asignaciones[numeroPedido];
-        const pedidoOriginal = pedidos.find(p => p.numeroPedido == numeroPedido);
-        
-        // Solo enviar si hay cambio real
-        if (nuevoEmpleado !== (pedidoOriginal?.EmpleadoAsignado || '')) {
-          cambios.push({
-            numeroPedido: parseInt(numeroPedido),
-            pedido: pedidoOriginal,
-            nuevoEmpleado: nuevoEmpleado
-          });
-        }
-      }
 
-      if (cambios.length === 0) {
+      pedidos.forEach(pedido => {
+        const nuevoEmpleado = asignaciones[pedido.numeroPedido];
+        const empleadoActual = pedido.EmpleadoAsignado || '';
+        if (nuevoEmpleado !== empleadoActual) {
+          cambios.push({ pedido, nuevoEmpleado });
+        }
+      });
+
+      if (!cambios.length) {
         setError('No hay cambios para guardar');
-        setCambiandoAsignaciones(false);
         return;
       }
 
-      // Agrupar cambios por empleado
-      const asignacionesPorEmpleado = {};
-      cambios.forEach(cambio => {
-        const empleadoId = cambio.nuevoEmpleado;
-        if (!asignacionesPorEmpleado[empleadoId]) {
-          asignacionesPorEmpleado[empleadoId] = [];
-        }
-        asignacionesPorEmpleado[empleadoId].push(cambio.pedido);
-      });
+      const asignacionesPorEmpleado = cambios.reduce((acc, { pedido, nuevoEmpleado }) => {
+        if (!acc[nuevoEmpleado]) acc[nuevoEmpleado] = [];
+        acc[nuevoEmpleado].push(pedido);
+        return acc;
+      }, {});
 
-      // Enviar cada grupo de asignaciones
-      for (const [empleadoId, pedidosAsignar] of Object.entries(asignacionesPorEmpleado)) {
-        const payload = {
-          pedidos: pedidosAsignar.map(p => ({
-            codigoEmpresa: p.codigoEmpresa,
-            ejercicioPedido: p.ejercicioPedido,
-            seriePedido: p.seriePedido || '',
-            numeroPedido: p.numeroPedido
-          })),
-          codigoEmpleado: empleadoId === '' ? null : empleadoId
-        };
-
-        await API.post('/asignarPedidosAEmpleado', payload, { headers });
-      }
-
-      // Actualizar estado local
-      setPedidos(prev => 
-        prev.map(p => ({
-          ...p, 
-          EmpleadoAsignado: asignaciones[p.numeroPedido] !== undefined ? 
-            (asignaciones[p.numeroPedido] || null) : 
-            p.EmpleadoAsignado
-        }))
+      await Promise.all(
+        Object.entries(asignacionesPorEmpleado).map(([empleadoId, pedidosAsignar]) =>
+          API.post('/asignarPedidosAEmpleado', {
+            pedidos: pedidosAsignar.map(p => ({
+              codigoEmpresa: p.codigoEmpresa,
+              ejercicioPedido: p.ejercicioPedido,
+              seriePedido: p.seriePedido || '',
+              numeroPedido: p.numeroPedido
+            })),
+            codigoEmpleado: empleadoId || null
+          }, { headers })
+        )
       );
 
-      // Mostrar éxito
+      setPedidos(prev => prev.map(p => ({
+        ...p,
+        EmpleadoAsignado: asignaciones[p.numeroPedido] || null
+      })));
+
       setSuccessMessage(`✅ ${cambios.length} asignaciones guardadas correctamente`);
     } catch (err) {
-      const errorMessage = err.response?.data?.detalles || 
-                          err.response?.data?.mensaje || 
-                          err.response?.data?.error || 
-                          err.message || 
-                          'Error desconocido';
+      const errorData = err.response?.data;
+      const errorMessage = errorData?.detalles || errorData?.mensaje || 
+                          errorData?.error || err.message || 'Error desconocido';
       setError(`Error al guardar: ${errorMessage}`);
     } finally {
       setCambiandoAsignaciones(false);
     }
   };
+
+  const preparadoresMap = useMemo(() => 
+    preparadores.reduce((acc, prep) => {
+      acc[prep.codigo] = prep.nombre;
+      return acc;
+    }, {}),
+  [preparadores]);
+
+  const hayCambiosPendientes = useMemo(() =>
+    pedidos.some(pedido => {
+      const nuevoEmpleado = asignaciones[pedido.numeroPedido];
+      const empleadoActual = pedido.EmpleadoAsignado || '';
+      return nuevoEmpleado !== empleadoActual;
+    }),
+  [pedidos, asignaciones]);
 
   if (!canAssignOrders) {
     return (
@@ -206,7 +198,7 @@ const AsignarPedidosScreen = () => {
                 </td>
                 <td className="AP-asignado-actual">
                   {pedido.EmpleadoAsignado 
-                    ? (preparadores.find(p => p.codigo === pedido.EmpleadoAsignado)?.nombre || pedido.EmpleadoAsignado)
+                    ? (preparadoresMap[pedido.EmpleadoAsignado] || pedido.EmpleadoAsignado)
                     : 'Sin asignar'}
                 </td>
                 <td>
@@ -231,27 +223,29 @@ const AsignarPedidosScreen = () => {
         </table>
       </div>
 
-      {pedidos.length === 0 && (
+      {!pedidos.length && (
         <div className="AP-no-pedidos">
           <p>No hay pedidos pendientes en este momento</p>
         </div>
       )}
 
-      <div className="AP-actions">
-        <button 
-          onClick={asignarPedidos} 
-          className="AP-btn-asignar"
-          disabled={pedidos.length === 0 || cambiandoAsignaciones}
-        >
-          {cambiandoAsignaciones ? (
-            <>
-              <span className="AP-spinner-btn"></span> Guardando...
-            </>
-          ) : (
-            'Guardar Cambios'
-          )}
-        </button>
-      </div>
+      {!!pedidos.length && (
+        <div className="AP-actions">
+          <button 
+            onClick={asignarPedidos} 
+            className="AP-btn-asignar"
+            disabled={!hayCambiosPendientes || cambiandoAsignaciones}
+          >
+            {cambiandoAsignaciones ? (
+              <>
+                <span className="AP-spinner-btn"></span> Guardando...
+              </>
+            ) : (
+              'Guardar Cambios'
+            )}
+          </button>
+        </div>
+      )}
       <Navbar />
     </div>
   );

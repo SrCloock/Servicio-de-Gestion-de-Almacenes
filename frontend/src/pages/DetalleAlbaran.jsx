@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
@@ -8,7 +8,7 @@ import SignatureCanvas from 'react-signature-canvas';
 import '../styles/DetalleAlbaran.css';
 import { FaArrowLeft, FaCheck, FaBox, FaExclamationTriangle, FaSignature, FaEraser } from 'react-icons/fa';
 
-function DetalleAlbaran() {
+const DetalleAlbaran = () => {
   const navigate = useNavigate();
   const { state } = useLocation();
   const albaran = state?.albaran;
@@ -24,13 +24,11 @@ function DetalleAlbaran() {
   });
   
   const { canPerformActionsInRutas } = usePermissions();
-
-  // Referencias para los canvas de firma
   const sigCliente = useRef();
   const sigRepartidor = useRef();
 
   useEffect(() => {
-    if (albaran && albaran.articulos) {
+    if (albaran?.articulos) {
       const initialCantidades = {};
       albaran.articulos.forEach(articulo => {
         initialCantidades[articulo.orden] = articulo.cantidadEntregada || articulo.cantidad;
@@ -39,59 +37,33 @@ function DetalleAlbaran() {
     }
   }, [albaran]);
 
-  // Función segura para obtener la firma como base64
-  const obtenerFirmaSegura = (signatureRef) => {
-    try {
-      if (!signatureRef.current) {
-        return null;
-      }
+  const obtenerFirmaSegura = useCallback((signatureRef) => {
+    if (!signatureRef.current) return null;
 
-      // Método 1: Intentar con getTrimmedCanvas
+    const tryMethods = [
+      () => signatureRef.current.getTrimmedCanvas()?.toDataURL('image/png'),
+      () => signatureRef.current.getCanvas()?.toDataURL('image/png'),
+      () => signatureRef.current._canvas?.toDataURL('image/png')
+    ];
+
+    for (const method of tryMethods) {
       try {
-        const canvas = signatureRef.current.getTrimmedCanvas();
-        if (canvas && canvas.toDataURL) {
-          return canvas.toDataURL('image/png');
-        }
-      } catch (error) {
-        console.warn('Error con getTrimmedCanvas:', error);
-      }
-
-      // Método 2: Intentar con getCanvas
-      try {
-        const canvas = signatureRef.current.getCanvas();
-        if (canvas && canvas.toDataURL) {
-          return canvas.toDataURL('image/png');
-        }
-      } catch (error) {
-        console.warn('Error con getCanvas:', error);
-      }
-
-      // Método 3: Usar el elemento canvas directamente
-      const canvasElement = signatureRef.current._canvas;
-      if (canvasElement && canvasElement.toDataURL) {
-        return canvasElement.toDataURL('image/png');
-      }
-
-      return null;
-    } catch (error) {
-      console.error('Error obteniendo firma:', error);
-      return null;
+        const result = method();
+        if (result?.startsWith('data:image/png')) return result;
+      } catch {}
     }
-  };
 
-  // Verificar si una firma está vacía
-  const firmaEstaVacia = (firmaDataURL) => {
-    if (!firmaDataURL) return true;
-    
-    // Una firma vacía suele tener una longitud específica o ser null/undefined
-    // Las data URLs de canvas vacíos suelen tener una longitud característica
-    return firmaDataURL.length < 1000 || 
+    return null;
+  }, []);
+
+  const firmaEstaVacia = useCallback((firmaDataURL) => {
+    return !firmaDataURL || 
+           firmaDataURL.length < 1000 || 
            firmaDataURL === 'data:,' || 
            !firmaDataURL.startsWith('data:image/png');
-  };
+  }, []);
 
-  // Actualizar estado de firmas válidas
-  const actualizarEstadoFirmas = () => {
+  const actualizarEstadoFirmas = useCallback(() => {
     const firmaCliente = obtenerFirmaSegura(sigCliente);
     const firmaRepartidor = obtenerFirmaSegura(sigRepartidor);
     
@@ -99,17 +71,17 @@ function DetalleAlbaran() {
       cliente: !firmaEstaVacia(firmaCliente),
       repartidor: !firmaEstaVacia(firmaRepartidor)
     });
-  };
+  }, [obtenerFirmaSegura, firmaEstaVacia]);
 
-  const handleCantidadChange = (orden, nuevaCantidad) => {
+  const handleCantidadChange = useCallback((orden, nuevaCantidad) => {
     setCantidades(prev => ({
       ...prev,
       [orden]: parseFloat(nuevaCantidad) || 0
     }));
-  };
+  }, []);
 
-  const handleActualizarCantidades = async () => {
-    if (!canPerformActionsInRutas) return;
+  const handleActualizarCantidades = useCallback(async () => {
+    if (!canPerformActionsInRutas || !albaran) return;
 
     try {
       setLoading(true);
@@ -120,16 +92,14 @@ function DetalleAlbaran() {
         unidades: parseFloat(unidades) || 0
       }));
 
-      const response = await API.put(
-        '/actualizarCantidadesAlbaran',
-        {
-          codigoEmpresa: albaran.codigoEmpresa,
-          ejercicio: albaran.ejercicio,
-          serie: albaran.serie,
-          numeroAlbaran: albaran.numero,
-          lineas: lineas,
-          observaciones: observaciones
-        });
+      const response = await API.put('/actualizarCantidadesAlbaran', {
+        codigoEmpresa: albaran.codigoEmpresa,
+        ejercicio: albaran.ejercicio,
+        serie: albaran.serie,
+        numeroAlbaran: albaran.numero,
+        lineas,
+        observaciones
+      });
 
       if (response.data.success) {
         alert('Cantidades actualizadas correctamente');
@@ -137,41 +107,28 @@ function DetalleAlbaran() {
       } else {
         setError(response.data.mensaje);
       }
-    } catch (error) {
-      console.error('Error actualizando cantidades:', error);
-      setError('Error al actualizar cantidades: ' + (error.response?.data?.mensaje || error.message));
+    } catch (err) {
+      setError('Error al actualizar cantidades: ' + (err.response?.data?.mensaje || err.message));
     } finally {
       setLoading(false);
     }
-  };
+  }, [albaran, cantidades, observaciones, canPerformActionsInRutas]);
 
-  const limpiarFirmaCliente = () => {
-    if (sigCliente.current) {
-      sigCliente.current.clear();
-      actualizarEstadoFirmas();
-    }
-  };
-
-  const limpiarFirmaRepartidor = () => {
-    if (sigRepartidor.current) {
-      sigRepartidor.current.clear();
-      actualizarEstadoFirmas();
-    }
-  };
-
-  // Manejar el final del dibujo en las firmas
-  const manejarFinFirma = () => {
+  const limpiarFirma = useCallback((signatureRef) => {
+    signatureRef.current?.clear();
     actualizarEstadoFirmas();
-  };
+  }, [actualizarEstadoFirmas]);
 
-  const handleCompletarAlbaran = async () => {
-    if (!canPerformActionsInRutas) return;
+  const manejarFinFirma = useCallback(() => {
+    actualizarEstadoFirmas();
+  }, [actualizarEstadoFirmas]);
 
-    // Obtener firmas de forma segura
+  const handleCompletarAlbaran = useCallback(async () => {
+    if (!canPerformActionsInRutas || !albaran) return;
+
     const firmaCliente = obtenerFirmaSegura(sigCliente);
     const firmaRepartidor = obtenerFirmaSegura(sigRepartidor);
 
-    // Validar firmas
     if (firmaEstaVacia(firmaCliente)) {
       alert('Por favor, capture la firma del cliente antes de completar la entrega');
       setActiveTab('firmas');
@@ -184,47 +141,39 @@ function DetalleAlbaran() {
       return;
     }
 
-    const confirmacion = window.confirm(
-      `¿Estás seguro de que quieres marcar el albarán ${albaran.albaran} como entregado?\n\nEsta acción no se puede deshacer.`
-    );
-
-    if (!confirmacion) return;
+    if (!window.confirm(`¿Estás seguro de que quieres marcar el albarán ${albaran.albaran} como entregado?\n\nEsta acción no se puede deshacer.`)) {
+      return;
+    }
 
     try {
       setLoading(true);
       setError(null);
 
-      // 1. Primero actualizar cantidades si hay cambios
-      if (Object.keys(cantidades).length > 0) {
-        const lineas = Object.entries(cantidades).map(([orden, unidades]) => ({
-          orden: parseInt(orden),
-          unidades: parseFloat(unidades) || 0
-        }));
+      const lineas = Object.entries(cantidades).map(([orden, unidades]) => ({
+        orden: parseInt(orden),
+        unidades: parseFloat(unidades) || 0
+      }));
 
-        await API.put(
-          '/actualizarCantidadesAlbaran',
-          {
-            codigoEmpresa: albaran.codigoEmpresa,
-            ejercicio: albaran.ejercicio,
-            serie: albaran.serie,
-            numeroAlbaran: albaran.numero,
-            lineas: lineas,
-            observaciones: observaciones
-          });
-      }
-
-      // 2. Luego completar el albarán con las firmas
-      const response = await API.post(
-        '/completarAlbaranConFirmas',
-        {
+      if (lineas.length > 0) {
+        await API.put('/actualizarCantidadesAlbaran', {
           codigoEmpresa: albaran.codigoEmpresa,
           ejercicio: albaran.ejercicio,
           serie: albaran.serie,
           numeroAlbaran: albaran.numero,
-          firmaCliente: firmaCliente,
-          firmaRepartidor: firmaRepartidor,
-          observaciones: observaciones
+          lineas,
+          observaciones
         });
+      }
+
+      const response = await API.post('/completarAlbaranConFirmas', {
+        codigoEmpresa: albaran.codigoEmpresa,
+        ejercicio: albaran.ejercicio,
+        serie: albaran.serie,
+        numeroAlbaran: albaran.numero,
+        firmaCliente,
+        firmaRepartidor,
+        observaciones
+      });
 
       if (response.data.success) {
         alert(`Albarán ${albaran.albaran} completado correctamente con firmas`);
@@ -232,15 +181,14 @@ function DetalleAlbaran() {
       } else {
         setError(response.data.mensaje);
       }
-    } catch (error) {
-      console.error('Error completando albarán:', error);
-      setError('Error al completar albarán: ' + (error.response?.data?.mensaje || error.message));
+    } catch (err) {
+      setError('Error al completar albarán: ' + (err.response?.data?.mensaje || err.message));
     } finally {
       setLoading(false);
     }
-  };
+  }, [albaran, cantidades, observaciones, canPerformActionsInRutas, navigate, obtenerFirmaSegura, firmaEstaVacia]);
 
-  const formatFecha = (fechaString) => {
+  const formatFecha = useCallback((fechaString) => {
     const fecha = new Date(fechaString);
     return fecha.toLocaleDateString('es-ES', {
       year: 'numeric',
@@ -249,7 +197,124 @@ function DetalleAlbaran() {
       hour: '2-digit',
       minute: '2-digit'
     });
-  };
+  }, []);
+
+  const headerBadges = useMemo(() => (
+    <div className="header-badges">
+      {albaran?.esParcial && <span className="parcial-badge">Parcial</span>}
+      {albaran?.esVoluminoso && (
+        <span className="voluminoso-badge">
+          <FaBox /> Voluminoso
+        </span>
+      )}
+    </div>
+  ), [albaran]);
+
+  const renderArticulos = useMemo(() => (
+    <div className="articulos-section">
+      <h3>Artículos del Albarán</h3>
+      <div className="articulos-table">
+        <div className="table-header">
+          <div>Artículo</div>
+          <div>Cantidad Original</div>
+          <div>Cantidad a Entregar</div>
+        </div>
+        {albaran?.articulos?.map((articulo) => (
+          <div key={articulo.orden} className="table-row">
+            <div className="articulo-info">
+              <div className="articulo-codigo">{articulo.codigo}</div>
+              <div className="articulo-nombre">{articulo.nombre}</div>
+            </div>
+            <div className="cantidad-original">
+              {articulo.cantidadOriginal}
+            </div>
+            <div className="cantidad-input">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={cantidades[articulo.orden] || ''}
+                onChange={(e) => handleCantidadChange(articulo.orden, e.target.value)}
+                disabled={!canPerformActionsInRutas}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="observaciones-section">
+        <h3>Observaciones</h3>
+        <textarea
+          value={observaciones}
+          onChange={(e) => setObservaciones(e.target.value)}
+          placeholder="Agregar observaciones sobre la entrega..."
+          disabled={!canPerformActionsInRutas}
+          rows="4"
+        />
+      </div>
+
+      {canPerformActionsInRutas && (
+        <div className="actions-section">
+          <button
+            onClick={handleActualizarCantidades}
+            disabled={loading}
+            className="btn-actualizar"
+          >
+            {loading ? 'Actualizando...' : 'Actualizar Cantidades'}
+          </button>
+        </div>
+      )}
+    </div>
+  ), [albaran, cantidades, observaciones, loading, canPerformActionsInRutas, handleCantidadChange, handleActualizarCantidades]);
+
+  const renderFirmas = useMemo(() => (
+    <div className="firmas-section">
+      <h3>Registro de Firmas</h3>
+      <p className="firmas-instructions">
+        Ambas firmas son obligatorias para completar la entrega
+      </p>
+
+      <div className="firmas-container">
+        {[
+          { title: 'Cliente', ref: sigCliente, limpiar: () => limpiarFirma(sigCliente), 
+            info: { nombre: albaran?.contacto || albaran?.cliente, fecha: new Date().toLocaleDateString('es-ES') } },
+          { title: 'Repartidor', ref: sigRepartidor, limpiar: () => limpiarFirma(sigRepartidor),
+            info: { nombre: albaran?.repartidor || 'Repartidor', fecha: new Date().toLocaleDateString('es-ES') } }
+        ].map(({ title, ref, limpiar, info }, index) => (
+          <div key={index} className="firma-item">
+            <div className="firma-header">
+              <h4>Firma del {title} {firmasValidas[title.toLowerCase()] && <span className="firma-ok">✓</span>}</h4>
+              <button 
+                onClick={limpiar}
+                className="btn-limpiar"
+                disabled={loading}
+              >
+                <FaEraser /> Limpiar
+              </button>
+            </div>
+            <SignatureCanvas 
+              penColor="black" 
+              canvasProps={{ 
+                className: 'firma-canvas',
+                'data-testid': `firma-${title.toLowerCase()}`
+              }} 
+              ref={ref}
+              onEnd={manejarFinFirma}
+            />
+            <div className="firma-info">
+              <p><strong>Nombre:</strong> {info.nombre}</p>
+              <p><strong>Fecha:</strong> {info.fecha}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="firmas-warning">
+        <FaExclamationTriangle />
+        <p>Ambas firmas son necesarias para completar el proceso de entrega</p>
+      </div>
+    </div>
+  ), [firmasValidas, loading, albaran, limpiarFirma, manejarFinFirma]);
 
   if (!albaran) {
     return (
@@ -275,52 +340,30 @@ function DetalleAlbaran() {
             <FaArrowLeft /> Volver
           </button>
           <h2>Detalle del Albarán: {albaran.albaran}</h2>
-          <div className="header-badges">
-            {albaran.esParcial && <span className="parcial-badge">Parcial</span>}
-            {albaran.esVoluminoso && (
-              <span className="voluminoso-badge">
-                <FaBox /> Voluminoso
-              </span>
-            )}
-          </div>
+          {headerBadges}
         </div>
 
         <div className="albaran-info">
           <div className="info-section">
             <h3>Información del Cliente</h3>
             <div className="info-grid">
-              <div className="info-item">
-                <label>Cliente:</label>
-                <span>{albaran.cliente}</span>
-              </div>
-              <div className="info-item">
-                <label>Dirección:</label>
-                <span>{albaran.direccion}</span>
-              </div>
-              <div className="info-item">
-                <label>Contacto:</label>
-                <span>{albaran.contacto || 'No especificado'}</span>
-              </div>
-              <div className="info-item">
-                <label>Teléfono:</label>
-                <span>{albaran.telefonoContacto || 'No especificado'}</span>
-              </div>
-              <div className="info-item">
-                <label>Obra:</label>
-                <span>{albaran.nombreObra || albaran.obra || 'No especificada'}</span>
-              </div>
-              <div className="info-item">
-                <label>Fecha Albarán:</label>
-                <span>{formatFecha(albaran.FechaAlbaran)}</span>
-              </div>
-              <div className="info-item">
-                <label>Repartidor Asignado:</label>
-                <span>{albaran.repartidor || 'Sin asignar'}</span>
-              </div>
+              {[
+                { label: 'Cliente:', value: albaran.cliente },
+                { label: 'Dirección:', value: albaran.direccion },
+                { label: 'Contacto:', value: albaran.contacto || 'No especificado' },
+                { label: 'Teléfono:', value: albaran.telefonoContacto || 'No especificado' },
+                { label: 'Obra:', value: albaran.nombreObra || albaran.obra || 'No especificada' },
+                { label: 'Fecha Albarán:', value: formatFecha(albaran.FechaAlbaran) },
+                { label: 'Repartidor Asignado:', value: albaran.repartidor || 'Sin asignar' }
+              ].map((item, index) => (
+                <div key={index} className="info-item">
+                  <label>{item.label}</label>
+                  <span>{item.value}</span>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Pestañas para Artículos y Firmas */}
           <div className="tabs-section">
             <div className="tabs-header">
               <button 
@@ -341,130 +384,7 @@ function DetalleAlbaran() {
             </div>
 
             <div className="tabs-content">
-              {activeTab === 'articulos' && (
-                <div className="articulos-section">
-                  <h3>Artículos del Albarán</h3>
-                  <div className="articulos-table">
-                    <div className="table-header">
-                      <div>Artículo</div>
-                      <div>Cantidad Original</div>
-                      <div>Cantidad a Entregar</div>
-                    </div>
-                    {albaran.articulos && albaran.articulos.map((articulo) => (
-                      <div key={articulo.orden} className="table-row">
-                        <div className="articulo-info">
-                          <div className="articulo-codigo">{articulo.codigo}</div>
-                          <div className="articulo-nombre">{articulo.nombre}</div>
-                        </div>
-                        <div className="cantidad-original">
-                          {articulo.cantidadOriginal}
-                        </div>
-                        <div className="cantidad-input">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={cantidades[articulo.orden] || ''}
-                            onChange={(e) => handleCantidadChange(articulo.orden, e.target.value)}
-                            disabled={!canPerformActionsInRutas}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="observaciones-section">
-                    <h3>Observaciones</h3>
-                    <textarea
-                      value={observaciones}
-                      onChange={(e) => setObservaciones(e.target.value)}
-                      placeholder="Agregar observaciones sobre la entrega..."
-                      disabled={!canPerformActionsInRutas}
-                      rows="4"
-                    />
-                  </div>
-
-                  {canPerformActionsInRutas && (
-                    <div className="actions-section">
-                      <button
-                        onClick={handleActualizarCantidades}
-                        disabled={loading}
-                        className="btn-actualizar"
-                      >
-                        {loading ? 'Actualizando...' : 'Actualizar Cantidades'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {activeTab === 'firmas' && (
-                <div className="firmas-section">
-                  <h3>Registro de Firmas</h3>
-                  <p className="firmas-instructions">
-                    Ambas firmas son obligatorias para completar la entrega
-                  </p>
-
-                  <div className="firmas-container">
-                    <div className="firma-item">
-                      <div className="firma-header">
-                        <h4>Firma del Cliente {firmasValidas.cliente && <span className="firma-ok">✓</span>}</h4>
-                        <button 
-                          onClick={limpiarFirmaCliente}
-                          className="btn-limpiar"
-                          disabled={loading}
-                        >
-                          <FaEraser /> Limpiar
-                        </button>
-                      </div>
-                      <SignatureCanvas 
-                        penColor="black" 
-                        canvasProps={{ 
-                          className: 'firma-canvas',
-                          'data-testid': 'firma-cliente'
-                        }} 
-                        ref={sigCliente}
-                        onEnd={manejarFinFirma}
-                      />
-                      <div className="firma-info">
-                        <p><strong>Nombre:</strong> {albaran.contacto || albaran.cliente}</p>
-                        <p><strong>Fecha:</strong> {new Date().toLocaleDateString('es-ES')}</p>
-                      </div>
-                    </div>
-
-                    <div className="firma-item">
-                      <div className="firma-header">
-                        <h4>Firma del Repartidor {firmasValidas.repartidor && <span className="firma-ok">✓</span>}</h4>
-                        <button 
-                          onClick={limpiarFirmaRepartidor}
-                          className="btn-limpiar"
-                          disabled={loading}
-                        >
-                          <FaEraser /> Limpiar
-                        </button>
-                      </div>
-                      <SignatureCanvas 
-                        penColor="black" 
-                        canvasProps={{ 
-                          className: 'firma-canvas',
-                          'data-testid': 'firma-repartidor'
-                        }} 
-                        ref={sigRepartidor}
-                        onEnd={manejarFinFirma}
-                      />
-                      <div className="firma-info">
-                        <p><strong>Nombre:</strong> {albaran.repartidor || 'Repartidor'}</p>
-                        <p><strong>Fecha:</strong> {new Date().toLocaleDateString('es-ES')}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="firmas-warning">
-                    <FaExclamationTriangle />
-                    <p>Ambas firmas son necesarias para completar el proceso de entrega</p>
-                  </div>
-                </div>
-              )}
+              {activeTab === 'articulos' ? renderArticulos : renderFirmas}
             </div>
           </div>
 
@@ -491,6 +411,6 @@ function DetalleAlbaran() {
       <Navbar />
     </div>
   );
-}
+};
 
 export default DetalleAlbaran;

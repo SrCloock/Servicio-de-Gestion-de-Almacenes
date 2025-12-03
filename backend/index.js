@@ -12,7 +12,7 @@ const app = express();
 
 // ✅ CONFIGURACIÓN MULTI-ENTORNO MEJORADA
 const isProduction = process.env.NODE_ENV === 'production';
-const PUBLIC_IP = process.env.PUBLIC_IP || '80.24.244.68'; // Tu IP pública
+const PUBLIC_IP = process.env.PUBLIC_IP || '84.120.61.159'; // Tu IP pública
 const PUBLIC_PORT = process.env.PORT || 3000;
 
 // Configuración CORS dinámica
@@ -61,16 +61,16 @@ app.use(express.json());
 
 // 🔥 Configuración de conexión a SQL Server (MEJOR CON VARIABLES DE ENTORNO)
 const dbConfig = {
-  user: 'logic',
-  password: 'Sage2009+',
-  server: 'SERVIDORBD',
+  server: 'DESKTOP-N86U7H1',
   database: 'Sage',
+  user: 'Logic',
+  password: '12345',
   options: {
+    encrypt: false,
     trustServerCertificate: true,
-    useUTC: false,
-    dateStrings: true,
-    enableArithAbort: true,
-    requestTimeout: 60000,
+    appName: 'GestorComprasWeb',
+    connectTimeout: 30000,
+    requestTimeout: 30000,
     pool: {
       max: 10,
       min: 0,
@@ -276,6 +276,1185 @@ app.get('/empresas', async (req, res) => {
   } catch (err) {
     console.error('[ERROR EMPRESAS]', err);
     res.status(500).json({ success: false, mensaje: 'Error al obtener empresas' });
+  }
+});
+
+// ============================================
+// ✅ 5. PEDIDOS SCREEN
+// ============================================
+
+// ✅ 5.1 PEDIDOS PENDIENTES (VERSIÓN COMPLETA CON TODOS LOS CAMPOS)
+app.get('/pedidosPendientes', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ 
+      success: false, 
+      mensaje: 'No autenticado' 
+    });
+  }
+  
+  const codigoEmpresa = req.user.CodigoEmpresa;
+  const usuario = req.user.UsuarioLogicNet;
+  
+  if (!codigoEmpresa) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Código de empresa requerido' 
+    });
+  }
+
+  try {
+    // 1. Obtener permisos del usuario
+    const userPermResult = await poolGlobal.request()
+      .input('usuario', sql.VarChar, usuario)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT StatusAdministrador, StatusUsuarioAvanzado, StatusTodosLosPedidos 
+        FROM Clientes
+        WHERE UsuarioLogicNet = @usuario
+          AND CodigoEmpresa = @codigoEmpresa
+      `);
+    
+    if (userPermResult.recordset.length === 0) {
+      return res.status(403).json({ 
+        success: false, 
+        mensaje: 'Usuario no encontrado' 
+      });
+    }
+    
+    const userPerms = userPermResult.recordset[0];
+    const esAdmin = userPerms.StatusAdministrador === -1;
+    const esUsuarioAvanzado = userPerms.StatusUsuarioAvanzado === -1;
+    const esPreparador = userPerms.StatusTodosLosPedidos === -1;
+    
+    // 2. Construir condición para filtrar por usuario asignado
+    let usuarioCondition = '';
+    if (esPreparador && !esAdmin && !esUsuarioAvanzado) {
+      usuarioCondition = `AND c.EmpleadoAsignado = '${usuario}'`;
+    }
+
+    // 3. Obtener parámetros de filtro
+    const rangoDias = req.query.rango || 'semana';
+    const FormaEnvio = req.query.FormaEnvio;
+    const empleado = req.query.empleado;
+    const estadosPedido = req.query.estados ? req.query.estados.split(',') : [];
+    const empleadoAsignado = req.query.empleadoAsignado;
+    
+    // 4. Calcular fechas según rango
+    const hoy = new Date();
+    let fechaInicio, fechaFin;
+    
+    if (rangoDias === 'dia') {
+      fechaInicio = new Date(hoy);
+      fechaInicio.setDate(hoy.getDate() - 1);
+      fechaFin = new Date(hoy);
+      fechaFin.setDate(hoy.getDate() + 1);
+    } else {
+      fechaInicio = new Date(hoy);
+      fechaInicio.setDate(hoy.getDate() - 7);
+      fechaFin = new Date(hoy);
+      fechaFin.setDate(hoy.getDate() + 7);
+    }
+
+    // 5. Formatear fechas para SQL
+    const formatDate = (date) => date.toISOString().split('T')[0];
+    
+    // 6. Mapeo de formas de entrega
+    const formasEntregaMap = {
+      1: 'Recogida Guadalhorce',
+      3: 'Nuestros Medios',
+      4: 'Agencia',
+      5: 'Directo Fabrica',
+      6: 'Pedido Express'
+    };
+
+    // 7. Consulta principal (ACTUALIZADA CON TODOS LOS CAMPOS NECESARIOS)
+    const result = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT 
+          c.CodigoEmpresa,
+          c.EjercicioPedido,
+          c.SeriePedido,
+          c.NumeroPedido,
+          c.RazonSocial,
+          c.Domicilio,
+          c.Municipio,
+          c.ObservacionesWeb AS Observaciones,
+          c.NombreObra,
+          c.FechaPedido,
+          c.FechaEntrega,
+          c.FormaEnvio,
+          c.Estado,
+          c.StatusAprobado,
+          -- Determinar Status basado en Estado y StatusAprobado
+          CASE 
+            WHEN c.Estado = 0 AND c.StatusAprobado = 0 THEN 'Revision'
+            WHEN c.Estado = 0 AND c.StatusAprobado = -1 THEN 'Preparando'
+            WHEN c.Estado = 2 AND c.StatusAprobado = -1 THEN 'Servido'
+            WHEN c.Estado = 4 THEN 'Parcial'
+            ELSE 'Desconocido'
+          END AS Status,
+          c.EsVoluminoso,
+          c.EmpleadoAsignado,
+          c.Contacto,
+          c.Telefono AS TelefonoContacto,
+          c.Vendedor,
+          l.CodigoArticulo,
+          l.DescripcionArticulo,
+          l.Descripcion2Articulo,
+          l.UnidadesPedidas, 
+          l.UnidadesPendientes,
+          l.UnidadesServidas,
+          (l.UnidadesPedidas - l.UnidadesPendientes) AS UnidadesExpedidas,
+          l.CodigoAlmacen,
+          a.CodigoAlternativo,
+          l.LineasPosicion,
+          l.LineasPosicion AS MovPosicionLinea,
+          l.UnidadMedida1_ AS UnidadBase,
+          l.UnidadMedida2_ AS UnidadAlternativa,
+          l.FactorConversion_ AS FactorConversion,
+          COALESCE(NULLIF(l.UnidadMedida1_, ''), a.UnidadMedida2_, 'ud') AS UnidadPedido,
+          emp.Nombre AS NombreVendedor,
+          l.Precio,
+          ISNULL(a.PesoBrutoUnitario_, 0) AS PesoUnitario,
+          (l.UnidadesPendientes * ISNULL(a.PesoBrutoUnitario_, 0)) AS PesoTotalLinea,
+          l.GrupoTalla_
+        FROM CabeceraPedidoCliente c
+        INNER JOIN LineasPedidoCliente l ON 
+          c.CodigoEmpresa = l.CodigoEmpresa 
+          AND c.EjercicioPedido = l.EjercicioPedido 
+          AND c.SeriePedido = l.SeriePedido 
+          AND c.NumeroPedido = l.NumeroPedido
+        LEFT JOIN Articulos a ON 
+          a.CodigoArticulo = l.CodigoArticulo 
+          AND a.CodigoEmpresa = l.CodigoEmpresa
+        LEFT JOIN Clientes emp ON 
+          emp.CodigoCliente = c.EmpleadoAsignado 
+          AND emp.CodigoEmpresa = c.CodigoEmpresa
+        WHERE c.Estado IN (0, 4)
+          AND c.CodigoEmpresa = @codigoEmpresa
+          AND l.UnidadesPendientes > 0
+          AND c.SeriePedido NOT IN ('X', 'R')
+          ${estadosPedido.length > 0 ? 
+            `AND c.Status IN (${estadosPedido.map(e => `'${e}'`).join(',')})` : ''}
+          AND c.FechaEntrega BETWEEN '${formatDate(fechaInicio)}' AND '${formatDate(fechaFin)}'
+          ${FormaEnvio ? `AND c.FormaEnvio = ${FormaEnvio}` : ''}
+          ${empleado ? `AND c.EmpleadoAsignado = '${empleado}'` : ''}
+          ${usuarioCondition}
+          ${empleadoAsignado ? `AND c.EmpleadoAsignado = '${empleadoAsignado}'` : ''}
+        ORDER BY c.FechaEntrega ASC
+      `);
+
+    // 8. Recopilar IDs para detalles (usando LineasPosicion)
+    const lineasIds = [];
+    result.recordset.forEach(row => {
+      if (row.LineasPosicion) {
+        lineasIds.push(row.LineasPosicion);
+      }
+    });
+
+    // 9. Consulta para detalles de tallas/colores
+    let detallesPorLinea = {};
+    if (lineasIds.length > 0) {
+      const placeholders = lineasIds.map((_, i) => `@id${i}`).join(',');
+      
+      const detallesQuery = `
+        SELECT 
+          lt.MovPosicionLinea_ AS MovPosicionLinea,
+          lt.CodigoColor_,
+          c.Color_ AS NombreColor,
+          lt.GrupoTalla_,
+          gt.DescripcionGrupoTalla_ AS NombreGrupoTalla,
+          gt.CodigoTalla01_,
+          gt.CodigoTalla02_,
+          gt.CodigoTalla03_,
+          gt.CodigoTalla04_,
+          gt.DescripcionTalla01_ AS DescTalla01,
+          gt.DescripcionTalla02_ AS DescTalla02,
+          gt.DescripcionTalla03_ AS DescTalla03,
+          gt.DescripcionTalla04_ AS DescTalla04,
+          lt.UnidadesTotalTallas_ AS Unidades,
+          lt.UnidadesTalla01_,
+          lt.UnidadesTalla02_,
+          lt.UnidadesTalla03_,
+          lt.UnidadesTalla04_
+        FROM LineasPedidoClienteTallas lt
+        LEFT JOIN Colores_ c ON 
+          lt.CodigoColor_ = c.CodigoColor_ 
+          AND lt.CodigoEmpresa = c.CodigoEmpresa
+        LEFT JOIN GrupoTallas_ gt ON 
+          lt.GrupoTalla_ = gt.GrupoTalla_ 
+          AND lt.CodigoEmpresa = gt.CodigoEmpresa
+        WHERE lt.CodigoEmpresa = @codigoEmpresa
+          AND lt.MovPosicionLinea_ IN (${placeholders})
+      `;
+
+      const detallesRequest = poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
+      
+      lineasIds.forEach((id, index) => {
+        detallesRequest.input(`id${index}`, sql.VarChar, id);
+      });
+
+      const detallesResult = await detallesRequest.query(detallesQuery);
+      
+      // Organizar por MovPosicionLinea
+      detallesResult.recordset.forEach(detalle => {
+        const key = detalle.MovPosicionLinea;
+        if (!detallesPorLinea[key]) {
+          detallesPorLinea[key] = [];
+        }
+        
+        const tallasConDescripciones = {};
+        
+        // Talla 01
+        if (detalle.CodigoTalla01_ && detalle.UnidadesTalla01_ > 0) {
+          tallasConDescripciones[detalle.CodigoTalla01_] = {
+            descripcion: detalle.DescTalla01,
+            unidades: detalle.UnidadesTalla01_
+          };
+        }
+        
+        // Talla 02
+        if (detalle.CodigoTalla02_ && detalle.UnidadesTalla02_ > 0) {
+          tallasConDescripciones[detalle.CodigoTalla02_] = {
+            descripcion: detalle.DescTalla02,
+            unidades: detalle.UnidadesTalla02_
+          };
+        }
+        
+        // Talla 03
+        if (detalle.CodigoTalla03_ && detalle.UnidadesTalla03_ > 0) {
+          tallasConDescripciones[detalle.CodigoTalla03_] = {
+            descripcion: detalle.DescTalla03,
+            unidades: detalle.UnidadesTalla03_
+          };
+        }
+        
+        // Talla 04
+        if (detalle.CodigoTalla04_ && detalle.UnidadesTalla04_ > 0) {
+          tallasConDescripciones[detalle.CodigoTalla04_] = {
+            descripcion: detalle.DescTalla04,
+            unidades: detalle.UnidadesTalla04_
+          };
+        }
+        
+        detallesPorLinea[key].push({
+          color: {
+            codigo: detalle.CodigoColor_,
+            nombre: detalle.NombreColor
+          },
+          grupoTalla: {
+            codigo: detalle.GrupoTalla_,
+            nombre: detalle.NombreGrupoTalla
+          },
+          unidades: detalle.Unidades,
+          tallas: tallasConDescripciones
+        });
+      });
+    }
+
+    // 10. Combinar resultados
+    const pedidosAgrupados = {};
+    result.recordset.forEach(row => {
+      const key = `${row.CodigoEmpresa}-${row.EjercicioPedido}-${row.SeriePedido}-${row.NumeroPedido}`;
+      
+      if (!pedidosAgrupados[key]) {
+        pedidosAgrupados[key] = {
+          codigoEmpresa: row.CodigoEmpresa,
+          ejercicioPedido: row.EjercicioPedido,
+          seriePedido: row.SeriePedido,
+          numeroPedido: row.NumeroPedido,
+          razonSocial: row.RazonSocial,
+          domicilio: row.Domicilio,
+          municipio: row.Municipio,
+          observaciones: row.Observaciones,
+          nombreObra: row.NombreObra,
+          fechaPedido: row.FechaPedido,
+          fechaEntrega: row.FechaEntrega,
+          FormaEnvio: formasEntregaMap[row.FormaEnvio] || 'No especificada',
+          Estado: row.Estado,
+          StatusAprobado: row.StatusAprobado,
+          Status: row.Status,
+          EsVoluminoso: row.EsVoluminoso,
+          EmpleadoAsignado: row.EmpleadoAsignado,
+          Contacto: row.Contacto,
+          TelefonoContacto: row.TelefonoContacto,
+          Vendedor: row.Vendedor,
+          NombreVendedor: row.NombreVendedor,
+          PesoTotal: 0,
+          articulos: []
+        };
+      }
+      
+      const pesoLinea = parseFloat(row.PesoTotalLinea) || 0;
+      pedidosAgrupados[key].PesoTotal += pesoLinea;
+
+      const detalles = detallesPorLinea[row.LineasPosicion] || [];
+      pedidosAgrupados[key].articulos.push({
+        codigoArticulo: row.CodigoArticulo,
+        descripcionArticulo: row.DescripcionArticulo,
+        descripcion2Articulo: row.Descripcion2Articulo,
+        unidadesPedidas: row.UnidadesPedidas,
+        unidadesPendientes: row.UnidadesPendientes,
+        unidadesServidas: row.UnidadesServidas,
+        UnidadesExpedidas: row.UnidadesExpedidas,
+        codigoAlmacen: row.CodigoAlmacen,
+        codigoAlternativo: row.CodigoAlternativo,
+        detalles: detalles.length > 0 ? detalles : null,
+        movPosicionLinea: row.LineasPosicion,
+        unidadBase: row.UnidadBase,
+        unidadAlternativa: row.UnidadAlternativa,
+        factorConversion: row.FactorConversion,
+        unidadPedido: row.UnidadPedido,
+        precio: row.Precio,
+        pesoUnitario: row.PesoUnitario,
+        pesoTotalLinea: row.PesoTotalLinea,
+        grupoTalla: row.GrupoTalla_
+      });
+    });
+    
+    const pedidosArray = Object.values(pedidosAgrupados);
+    res.json(pedidosArray);
+  } catch (err) {
+    console.error('[ERROR PEDIDOS PENDIENTES]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al obtener pedidos pendientes',
+      error: err.message,
+      stack: err.stack
+    });
+  }
+});
+
+// ✅ NUEVO ENDPOINT: ACTUALIZAR ESTADO VOLUMINOSO
+app.post('/pedidos/actualizar-voluminoso', async (req, res) => {
+  const { codigoEmpresa, ejercicio, serie, numeroPedido, esVoluminoso } = req.body;
+
+  if (!codigoEmpresa || !ejercicio || !numeroPedido) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Faltan parámetros requeridos.' 
+    });
+  }
+
+  try {
+    await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .input('esVoluminoso', sql.Bit, esVoluminoso ? 1 : 0)
+      .query(`
+        UPDATE CabeceraPedidoCliente
+        SET EsVoluminoso = @esVoluminoso
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioPedido = @ejercicio
+          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+          AND NumeroPedido = @numeroPedido
+      `);
+
+    res.json({ 
+      success: true, 
+      mensaje: `Pedido ${esVoluminoso ? 'marcado como voluminoso' : 'desmarcado como voluminoso'} correctamente.` 
+    });
+  } catch (err) {
+    console.error('[ERROR ACTUALIZAR VOLUMINOSO]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al actualizar estado voluminoso.',
+      error: err.message 
+    });
+  }
+});
+
+// ✅ 5.2 Asignar Preparador (VERSIÓN COMPLETA PARA REASIGNACIONES)
+app.post('/asignarEmpleado', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autenticado' });
+  }
+
+  const { asignaciones } = req.body;
+
+  if (!Array.isArray(asignaciones) || asignaciones.length === 0) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Datos inválidos para asignación' 
+    });
+  }
+
+  const transaction = new sql.Transaction(poolGlobal);
+  
+  try {
+    await transaction.begin();
+    const request = new sql.Request(transaction);
+    
+    for (const asignacion of asignaciones) {
+      await request
+        .input('codigoEmpresa', sql.SmallInt, asignacion.codigoEmpresa)
+        .input('ejercicio', sql.SmallInt, asignacion.ejercicioPedido)
+        .input('serie', sql.VarChar, asignacion.seriePedido || '')
+        .input('numeroPedido', sql.Int, asignacion.numeroPedido)
+        .input('empleado', sql.VarChar, asignacion.empleado)
+        .query(`
+          UPDATE CabeceraPedidoCliente
+          SET EmpleadoAsignado = @empleado
+          WHERE CodigoEmpresa = @codigoEmpresa
+            AND EjercicioPedido = @ejercicio
+            AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+            AND NumeroPedido = @numeroPedido
+        `);
+    }
+    
+    await transaction.commit();
+    res.json({ success: true, mensaje: 'Asignaciones actualizadas correctamente' });
+  } catch (err) {
+    await transaction.rollback();
+    console.error('[ERROR ASIGNAR EMPLEADO]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al asignar empleado', 
+      error: err.message 
+    });
+  }
+});
+
+// ✅ 5.3 ACTUALIZAR LÍNEA DE PEDIDO (VERSIÓN COMPLETA - ACTUALIZA UNIDADES SERVIDAS)
+app.post('/actualizarLineaPedido', async (req, res) => {
+  const datosLinea = req.body;
+
+  console.log('[BACKEND DEBUG] Datos recibidos para actualizar línea:', {
+    codigoArticulo: datosLinea.codigoArticulo,
+    unidadMedida: datosLinea.unidadMedida,
+    cantidadExpedida: datosLinea.cantidadExpedida,
+    movPosicionLinea: datosLinea.movPosicionLinea,
+    ubicacion: datosLinea.ubicacion,
+    almacen: datosLinea.almacen,
+    codigoColor: datosLinea.codigoColor,
+    codigoTalla: datosLinea.codigoTalla,
+    esZonaDescarga: datosLinea.esZonaDescarga
+  });
+
+  // Campos obligatorios
+  const camposRequeridos = [
+    'codigoEmpresa', 'ejercicio', 'numeroPedido', 
+    'codigoArticulo', 'cantidadExpedida', 'ubicacion', 'almacen',
+    'movPosicionLinea'
+  ];
+  
+  for (const campo of camposRequeridos) {
+    if (!datosLinea[campo]) {
+      return res.status(400).json({ 
+        success: false, 
+        mensaje: `Campo requerido: ${campo}` 
+      });
+    }
+  }
+
+  const truncarString = (valor, longitudMaxima) => {
+    if (!valor) return '';
+    return valor.toString().substring(0, longitudMaxima);
+  };
+
+  const codigoColor = datosLinea.codigoColor ? truncarString(datosLinea.codigoColor, 10) : '';
+  const codigoTalla = datosLinea.codigoTalla ? truncarString(datosLinea.codigoTalla, 10) : '';
+  const partida = datosLinea.partida ? truncarString(datosLinea.partida, 20) : '';
+  const esZonaDescarga = datosLinea.esZonaDescarga || datosLinea.ubicacion === "Zona descarga";
+
+  const transaction = new sql.Transaction(poolGlobal);
+  
+  try {
+    await transaction.begin();
+    
+    // OBTENER DATOS USANDO SOLO LineasPosicion COMO ID ÚNICO
+    const requestLinea = new sql.Request(transaction);
+    const resultLinea = await requestLinea
+      .input('movPosicionLinea', sql.VarChar, datosLinea.movPosicionLinea)
+      .query(`
+        SELECT 
+          l.LineasPosicion,
+          l.CodigoAlmacen, 
+          l.UnidadMedida1_ AS UnidadMedida, 
+          l.Precio, 
+          l.UnidadesPendientes,
+          l.UnidadesServidas,
+          l.GrupoTalla_,
+          l.EjercicioPedido,
+          l.NumeroPedido,
+          l.SeriePedido,
+          l.CodigoEmpresa,
+          l.CodigoArticulo,
+          a.UnidadMedida2_ AS UnidadBase,
+          a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
+          a.FactorConversion_ AS FactorConversion
+        FROM LineasPedidoCliente l
+        INNER JOIN Articulos a ON a.CodigoArticulo = l.CodigoArticulo AND a.CodigoEmpresa = l.CodigoEmpresa
+        WHERE l.LineasPosicion = @movPosicionLinea
+      `);
+
+    if (resultLinea.recordset.length === 0) {
+      await transaction.rollback();
+      return res.status(404).json({ 
+        success: false, 
+        mensaje: `Línea de pedido no encontrada con LineasPosicion: ${datosLinea.movPosicionLinea}` 
+      });
+    }
+
+    const lineaData = resultLinea.recordset[0];
+    const codigoAlmacen = lineaData.CodigoAlmacen;
+    
+    const unidadMedida = lineaData.UnidadMedida || 'unidades';
+    const precio = lineaData.Precio;
+    const unidadesPendientes = parseFloat(lineaData.UnidadesPendientes);
+    const unidadesServidas = parseFloat(lineaData.UnidadesServidas) || 0;
+    const movPosicionLinea = lineaData.LineasPosicion;
+    
+    const grupoTalla = lineaData.GrupoTalla_ ? 
+                      (typeof lineaData.GrupoTalla_ === 'number' ? 
+                       lineaData.GrupoTalla_.toString() : 
+                       lineaData.GrupoTalla_) : 
+                      null;
+
+    console.log('[BACKEND DEBUG] Datos de línea corregidos:', {
+      articulo: datosLinea.codigoArticulo,
+      unidadMedida: unidadMedida,
+      unidadesPendientes: unidadesPendientes,
+      unidadesServidas: unidadesServidas,
+      movPosicionLinea: movPosicionLinea,
+      grupoTalla: grupoTalla
+    });
+
+    // VALIDACIÓN DE UNIDADES PENDIENTES
+    if (datosLinea.cantidadExpedida > unidadesPendientes) {
+      await transaction.rollback();
+      return res.status(400).json({ 
+        success: false, 
+        mensaje: `La cantidad a expedir (${datosLinea.cantidadExpedida}) supera las unidades pendientes (${unidadesPendientes}).` 
+      });
+    }
+
+    // ✅ CORRECCIÓN: NO HACER CONVERSIÓN DE UNIDADES - USAR CANTIDAD DIRECTA
+    const cantidadExpedidaStock = datosLinea.cantidadExpedida;
+
+    console.log('[BACKEND DEBUG] Expedición sin conversión:', {
+      cantidadExpedida: datosLinea.cantidadExpedida,
+      cantidadExpedidaStock: cantidadExpedidaStock
+    });
+
+    // VERIFICAR STOCK SOLO SI NO ES ZONA DESCARGA
+    let ubicacionFinal = datosLinea.ubicacion;
+    let partidaFinal = partida;
+    
+    if (!esZonaDescarga) {
+      console.log('[BACKEND DEBUG] Verificando stock para ubicación:', ubicacionFinal);
+      
+      const requestStock = new sql.Request(transaction);
+      const stockResult = await requestStock
+        .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
+        .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
+        .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
+        .input('ubicacion', sql.VarChar(20), truncarString(datosLinea.ubicacion, 20))
+        .input('partida', sql.VarChar(20), truncarString(partida, 20))
+        .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
+        .input('codigoColor', sql.VarChar(10), codigoColor)
+        .input('codigoTalla', sql.VarChar(10), codigoTalla)
+        .query(`
+          SELECT UnidadSaldoTipo_
+          FROM AcumuladoStockUbicacion
+          WHERE 
+            CodigoEmpresa = @codigoEmpresa
+            AND CodigoAlmacen = @almacen
+            AND CodigoArticulo = @codigoArticulo
+            AND Ubicacion = @ubicacion
+            AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+            AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
+            AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+            AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+            AND Periodo = 99
+        `);
+
+      let stockDisponible = 0;
+      if (stockResult.recordset.length > 0) {
+        const stockData = stockResult.recordset[0];
+        stockDisponible = parseFloat(stockData.UnidadSaldoTipo_) || 0;
+      }
+
+      console.log('[BACKEND DEBUG] Stock disponible:', stockDisponible, 'Cantidad a expedir:', cantidadExpedidaStock);
+
+      if (stockDisponible === 0) {
+        const stockAlternativoRequest = new sql.Request(transaction);
+        const stockAlternativoResult = await stockAlternativoRequest
+          .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
+          .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
+          .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
+          .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
+          .input('codigoColor', sql.VarChar(10), codigoColor)
+          .input('codigoTalla', sql.VarChar(10), codigoTalla)
+          .query(`
+            SELECT TOP 1 Ubicacion, UnidadSaldoTipo_, Partida
+            FROM AcumuladoStockUbicacion
+            WHERE 
+              CodigoEmpresa = @codigoEmpresa
+              AND CodigoAlmacen = @almacen
+              AND CodigoArticulo = @codigoArticulo
+              AND UnidadSaldoTipo_ > 0
+              AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
+              AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+              AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+              AND Periodo = 99
+            ORDER BY UnidadSaldoTipo_ DESC
+          `);
+
+        if (stockAlternativoResult.recordset.length > 0) {
+          const ubicacionAlternativa = stockAlternativoResult.recordset[0];
+          stockDisponible = parseFloat(ubicacionAlternativa.UnidadSaldoTipo_) || 0;
+          ubicacionFinal = ubicacionAlternativa.Ubicacion;
+          partidaFinal = ubicacionAlternativa.Partida || '';
+        } else {
+          await transaction.rollback();
+          return res.status(400).json({ 
+            success: false, 
+            mensaje: `No hay stock disponible en ninguna ubicación. Stock disponible: 0 unidades.` 
+          });
+        }
+      }
+
+      if (cantidadExpedidaStock > stockDisponible) {
+        await transaction.rollback();
+        return res.status(400).json({ 
+          success: false, 
+          mensaje: `No hay suficiente stock en ${ubicacionFinal}. Solo hay ${stockDisponible} unidades disponibles.` 
+        });
+      }
+    }
+
+    // ✅ CORRECCIÓN CRÍTICA: ACTUALIZAR UNIDADES PENDIENTES Y UNIDADES SERVIDAS
+    const requestUpdate = new sql.Request(transaction);
+    await requestUpdate
+      .input('cantidadExpedida', sql.Decimal(18, 4), datosLinea.cantidadExpedida)
+      .input('movPosicionLinea', sql.VarChar, movPosicionLinea)
+      .query(`
+        UPDATE LineasPedidoCliente
+        SET 
+          UnidadesPendientes = UnidadesPendientes - @cantidadExpedida,
+          UnidadesServidas = UnidadesServidas + @cantidadExpedida
+        WHERE LineasPosicion = @movPosicionLinea
+      `);
+
+    console.log('[BACKEND DEBUG] Línea actualizada - Unidades pendientes reducidas y servidas incrementadas');
+
+    // ACTUALIZAR STOCK EN AMBAS TABLAS
+    if (!esZonaDescarga) {
+      console.log('[BACKEND DEBUG] Actualizando stock en ubicación:', ubicacionFinal);
+      
+      const requestStockActual = new sql.Request(transaction);
+      const stockActualResult = await requestStockActual
+        .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
+        .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
+        .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
+        .input('ubicacion', sql.VarChar(20), truncarString(ubicacionFinal, 20))
+        .input('partida', sql.VarChar(20), truncarString(partidaFinal, 20))
+        .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
+        .input('codigoColor', sql.VarChar(10), codigoColor)
+        .input('codigoTalla', sql.VarChar(10), codigoTalla)
+        .query(`
+          SELECT UnidadSaldo, UnidadSaldoTipo_
+          FROM AcumuladoStockUbicacion
+          WHERE 
+            CodigoEmpresa = @codigoEmpresa
+            AND CodigoAlmacen = @almacen
+            AND CodigoArticulo = @codigoArticulo
+            AND Ubicacion = @ubicacion
+            AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+            AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
+            AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+            AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+            AND Periodo = 99
+        `);
+
+      if (stockActualResult.recordset.length > 0) {
+        const stockActualData = stockActualResult.recordset[0];
+        
+        const stockActualUnidadSaldo = parseFloat(stockActualData.UnidadSaldo) || 0;
+        const stockActualUnidadSaldoTipo = parseFloat(stockActualData.UnidadSaldoTipo_) || 0;
+        
+        const nuevoStockUnidadSaldo = Math.max(0, stockActualUnidadSaldo - cantidadExpedidaStock);
+        const nuevoStockUnidadSaldoTipo = Math.max(0, stockActualUnidadSaldoTipo - cantidadExpedidaStock);
+
+        const requestUpdateStockUbicacion = new sql.Request(transaction);
+        await requestUpdateStockUbicacion
+          .input('nuevoStockUnidadSaldo', sql.Decimal(18, 4), nuevoStockUnidadSaldo)
+          .input('nuevoStockUnidadSaldoTipo', sql.Decimal(18, 4), nuevoStockUnidadSaldoTipo)
+          .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
+          .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
+          .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
+          .input('ubicacion', sql.VarChar(20), truncarString(ubicacionFinal, 20))
+          .input('partida', sql.VarChar(20), truncarString(partidaFinal, 20))
+          .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
+          .input('codigoColor', sql.VarChar(10), codigoColor)
+          .input('codigoTalla', sql.VarChar(10), codigoTalla)
+          .query(`
+            UPDATE AcumuladoStockUbicacion
+            SET 
+              UnidadSaldo = @nuevoStockUnidadSaldo,
+              UnidadSaldoTipo_ = @nuevoStockUnidadSaldoTipo
+            WHERE 
+              CodigoEmpresa = @codigoEmpresa
+              AND CodigoAlmacen = @almacen
+              AND CodigoArticulo = @codigoArticulo
+              AND Ubicacion = @ubicacion
+              AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+              AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
+              AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+              AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+              AND Periodo = 99
+          `);
+
+        const requestStockPrincipal = new sql.Request(transaction);
+        const stockPrincipalResult = await requestStockPrincipal
+          .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
+          .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
+          .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
+          .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
+          .input('partida', sql.VarChar(20), truncarString(partidaFinal, 20))
+          .input('codigoColor', sql.VarChar(10), codigoColor)
+          .input('codigoTalla', sql.VarChar(10), codigoTalla)
+          .input('ubicacion', sql.VarChar(20), truncarString(ubicacionFinal, 20))
+          .query(`
+            SELECT UnidadSaldo, UnidadSaldoTipo_
+            FROM AcumuladoStock
+            WHERE 
+              CodigoEmpresa = @codigoEmpresa
+              AND CodigoAlmacen = @almacen
+              AND CodigoArticulo = @codigoArticulo
+              AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+              AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
+              AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+              AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+              AND Ubicacion = @ubicacion
+              AND Periodo = 99
+          `);
+
+        if (stockPrincipalResult.recordset.length > 0) {
+          const stockPrincipalData = stockPrincipalResult.recordset[0];
+          
+          const stockPrincipalUnidadSaldo = parseFloat(stockPrincipalData.UnidadSaldo) || 0;
+          const stockPrincipalUnidadSaldoTipo = parseFloat(stockPrincipalData.UnidadSaldoTipo_) || 0;
+          
+          const nuevoStockPrincipalUnidadSaldo = Math.max(0, stockPrincipalUnidadSaldo - cantidadExpedidaStock);
+          const nuevoStockPrincipalUnidadSaldoTipo = Math.max(0, stockPrincipalUnidadSaldoTipo - cantidadExpedidaStock);
+
+          const requestUpdateStockPrincipal = new sql.Request(transaction);
+          await requestUpdateStockPrincipal
+            .input('nuevoStockUnidadSaldo', sql.Decimal(18, 4), nuevoStockPrincipalUnidadSaldo)
+            .input('nuevoStockUnidadSaldoTipo', sql.Decimal(18, 4), nuevoStockPrincipalUnidadSaldoTipo)
+            .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
+            .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
+            .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
+            .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
+            .input('partida', sql.VarChar(20), truncarString(partidaFinal, 20))
+            .input('codigoColor', sql.VarChar(10), codigoColor)
+            .input('codigoTalla', sql.VarChar(10), codigoTalla)
+            .input('ubicacion', sql.VarChar(20), truncarString(ubicacionFinal, 20))
+            .query(`
+              UPDATE AcumuladoStock
+              SET 
+                UnidadSaldo = @nuevoStockUnidadSaldo,
+                UnidadSaldoTipo_ = @nuevoStockUnidadSaldoTipo
+              WHERE 
+                CodigoEmpresa = @codigoEmpresa
+                AND CodigoAlmacen = @almacen
+                AND CodigoArticulo = @codigoArticulo
+                AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+                AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
+                AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+                AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+                AND Ubicacion = @ubicacion
+                AND Periodo = 99
+            `);
+        }
+      }
+    }
+
+    // ACTUALIZAR TABLA DE TALLAS SI ES NECESARIO
+    if (codigoColor && grupoTalla && codigoTalla) {
+      console.log('[BACKEND DEBUG] Actualizando tallas con:', {
+        grupoTalla: grupoTalla,
+        codigoColor: codigoColor,
+        codigoTalla: codigoTalla,
+        cantidad: datosLinea.cantidadExpedida
+      });
+
+      try {
+        const grupoTallasRequest = new sql.Request(transaction);
+        
+        let grupoTallaParam;
+        if (grupoTalla && !isNaN(grupoTalla)) {
+          grupoTallaParam = sql.Int;
+        } else {
+          grupoTallaParam = sql.VarChar;
+        }
+        
+        const grupoTallasResult = await grupoTallasRequest
+          .input('grupoTalla', grupoTallaParam, grupoTalla)
+          .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
+          .query(`
+            SELECT CodigoTalla01_, CodigoTalla02_, CodigoTalla03_, CodigoTalla04_
+            FROM GrupoTallas_
+            WHERE GrupoTalla_ = @grupoTalla
+              AND CodigoEmpresa = @codigoEmpresa
+          `);
+
+        if (grupoTallasResult.recordset.length > 0) {
+          const grupoTallas = grupoTallasResult.recordset[0];
+          let columnaTalla = '';
+          
+          if (grupoTallas.CodigoTalla01_ === codigoTalla) {
+            columnaTalla = 'UnidadesTalla01_';
+          } else if (grupoTallas.CodigoTalla02_ === codigoTalla) {
+            columnaTalla = 'UnidadesTalla02_';
+          } else if (grupoTallas.CodigoTalla03_ === codigoTalla) {
+            columnaTalla = 'UnidadesTalla03_';
+          } else if (grupoTallas.CodigoTalla04_ === codigoTalla) {
+            columnaTalla = 'UnidadesTalla04_';
+          }
+          
+          if (columnaTalla) {
+            console.log(`[BACKEND DEBUG] Actualizando columna: ${columnaTalla} para talla: ${codigoTalla}`);
+            
+            const updateTallasRequest = new sql.Request(transaction);
+            await updateTallasRequest
+              .input('cantidadExpedida', sql.Decimal(18, 4), datosLinea.cantidadExpedida)
+              .input('movPosicionLinea', sql.VarChar, movPosicionLinea)
+              .input('codigoColor', sql.VarChar, codigoColor)
+              .query(`
+                UPDATE LineasPedidoClienteTallas
+                SET 
+                  ${columnaTalla} = ${columnaTalla} - @cantidadExpedida,
+                  UnidadesTotalTallas_ = UnidadesTotalTallas_ - @cantidadExpedida
+                WHERE MovPosicionLinea_ = @movPosicionLinea
+                  AND CodigoColor_ = @codigoColor
+              `);
+          }
+        }
+      } catch (tallasError) {
+        console.error('[ERROR ACTUALIZAR TALLAS]', tallasError);
+      }
+    }
+
+    await transaction.commit();
+
+    // CALCULAR NUEVOS VALORES
+    const nuevasUnidadesPendientes = unidadesPendientes - datosLinea.cantidadExpedida;
+    const nuevasUnidadesServidas = unidadesServidas + datosLinea.cantidadExpedida;
+
+    res.json({ 
+      success: true, 
+      mensaje: 'Línea actualizada correctamente',
+      detalles: {
+        cantidadExpedidaVenta: datosLinea.cantidadExpedida,
+        cantidadExpedidaStock: cantidadExpedidaStock,
+        unidadesPendientesRestantes: nuevasUnidadesPendientes,
+        unidadesServidasActualizadas: nuevasUnidadesServidas,
+        stockRestante: esZonaDescarga ? 'N/A (Zona Descarga)' : 'Actualizado',
+        ubicacionUtilizada: ubicacionFinal,
+        tallasActualizadas: !!(codigoColor && grupoTalla && codigoTalla),
+        unidadMedida: unidadMedida
+      }
+    });
+
+  } catch (err) {
+    if (transaction._aborted === false) {
+      await transaction.rollback();
+    }
+    console.error('[ERROR ACTUALIZAR LINEA PEDIDO]', err);
+    res.status(500).json({
+      success: false,
+      mensaje: 'Error al actualizar línea de pedido',
+      error: err.message,
+      detalles: err.stack
+    });
+  }
+});
+
+// ✅ GENERAR ALBARÁN PARCIAL (ACTUALIZADO)
+app.post('/generarAlbaranParcial', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
+  }
+
+  const { codigoEmpresa, ejercicio, serie, numeroPedido } = req.body;
+  const usuario = req.user.UsuarioLogicNet;
+
+  if (!codigoEmpresa || !ejercicio || !numeroPedido) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Faltan datos requeridos: empresa, ejercicio y número de pedido.' 
+    });
+  }
+
+  const transaction = new sql.Transaction(poolGlobal);
+  
+  try {
+    await transaction.begin();
+
+    // 1. Verificar permisos del usuario
+    const permisoResult = await poolGlobal.request()
+      .input('usuario', sql.VarChar, usuario)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT StatusDesignarRutas
+        FROM Clientes
+        WHERE UsuarioLogicNet = @usuario
+          AND CodigoEmpresa = @codigoEmpresa
+      `);
+    
+    if (permisoResult.recordset.length === 0 || permisoResult.recordset[0].StatusDesignarRutas !== -1) {
+      await transaction.rollback();
+      return res.status(403).json({ 
+        success: false, 
+        mensaje: 'No tienes permiso para generar albaranes' 
+      });
+    }
+
+    // 2. Obtener el pedido con datos completos
+    const pedidoResult = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .query(`
+        SELECT 
+          cpc.*,
+          cli.NombreObra,
+          cli.Vendedor,
+          cli.Contacto,
+          cli.Telefono,
+          cli.ObservacionesWeb
+        FROM CabeceraPedidoCliente cpc
+        LEFT JOIN Clientes cli ON cpc.CodigoCliente = cli.CodigoCliente 
+          AND cpc.CodigoEmpresa = cli.CodigoEmpresa
+        WHERE cpc.CodigoEmpresa = @codigoEmpresa
+          AND cpc.EjercicioPedido = @ejercicio
+          AND (cpc.SeriePedido = @serie OR (@serie = '' AND cpc.SeriePedido IS NULL))
+          AND cpc.NumeroPedido = @numeroPedido
+      `);
+
+    if (pedidoResult.recordset.length === 0) {
+      await transaction.rollback();
+      return res.status(404).json({ 
+        success: false, 
+        mensaje: 'Pedido no encontrado' 
+      });
+    }
+
+    const pedido = pedidoResult.recordset[0];
+
+    // 3. Obtener TODAS las líneas del pedido (incluyendo completadas y parciales)
+    const lineasResult = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .query(`
+        SELECT 
+          lpc.*,
+          a.UnidadBase,
+          a.UnidadAlternativa,
+          a.FactorConversion
+        FROM LineasPedidoCliente lpc
+        LEFT JOIN Articulos a ON lpc.CodigoArticulo = a.CodigoArticulo 
+          AND lpc.CodigoEmpresa = a.CodigoEmpresa
+        WHERE lpc.CodigoEmpresa = @codigoEmpresa
+          AND lpc.EjercicioPedido = @ejercicio
+          AND (lpc.SeriePedido = @serie OR (@serie = '' AND lpc.SeriePedido IS NULL))
+          AND lpc.NumeroPedido = @numeroPedido
+          AND (lpc.UnidadesServidas > 0 OR lpc.UnidadesPendientes > 0)  -- Incluir líneas con expediciones
+      `);
+
+    if (lineasResult.recordset.length === 0) {
+      await transaction.rollback();
+      return res.status(400).json({ 
+        success: false, 
+        mensaje: 'No hay líneas con expediciones para generar albarán parcial' 
+      });
+    }
+
+    // 4. Verificar si hay líneas completadas (para determinar si es parcial)
+    const lineasCompletadas = lineasResult.recordset.filter(linea => 
+      parseFloat(linea.UnidadesServidas) > 0
+    ).length;
+
+    const esAlbaranParcial = lineasCompletadas > 0;
+
+    // 5. Generar número de albarán
+    const nextAlbaran = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .query(`
+        SELECT ISNULL(MAX(NumeroAlbaran), 0) + 1 AS SiguienteNumero
+        FROM CabeceraAlbaranCliente
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioAlbaran = @ejercicio
+          AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
+      `);
+
+    const numeroAlbaran = nextAlbaran.recordset[0].SiguienteNumero;
+    const fechaActual = new Date();
+
+    // 6. Crear cabecera del albarán
+    await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .input('numeroAlbaran', sql.Int, numeroAlbaran)
+      .input('codigoCliente', sql.VarChar, pedido.CodigoCliente)
+      .input('razonSocial', sql.VarChar, pedido.RazonSocial)
+      .input('domicilio', sql.VarChar, pedido.Domicilio)
+      .input('municipio', sql.VarChar, pedido.Municipio)
+      .input('fecha', sql.DateTime, fechaActual)
+      .input('numeroLineas', sql.Int, lineasResult.recordset.length)
+      .input('importeLiquido', sql.Decimal(18,4), pedido.ImporteLiquido || 0)
+      .input('empleadoAsignado', sql.VarChar, pedido.CodigoEmpleadoAsignado || usuario)
+      .input('contacto', sql.VarChar, pedido.Contacto || '')
+      .input('telefonoContacto', sql.VarChar, pedido.Telefono || '')
+      .input('observacionesWeb', sql.VarChar, pedido.ObservacionesWeb || '')
+      .input('nombreObra', sql.VarChar, pedido.NombreObra || '')
+      .input('vendedor', sql.VarChar, pedido.Vendedor || '')
+      .input('statusFacturado', sql.SmallInt, 0)
+      .input('esVoluminoso', sql.Bit, pedido.EsVoluminoso || 0)
+      .input('esParcial', sql.Bit, esAlbaranParcial ? 1 : 0)
+      .input('ejercicioPedido', sql.SmallInt, ejercicio)
+      .input('seriePedido', sql.VarChar, serie || '')
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .query(`
+        INSERT INTO CabeceraAlbaranCliente (
+          CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+          CodigoCliente, RazonSocial, Domicilio, Municipio, FechaAlbaran,
+          NumeroLineas, ImporteLiquido, EmpleadoAsignado,
+          Contacto, Telefono, ObservacionesWeb, NombreObra, Vendedor,
+          StatusFacturado, EsVoluminoso, EsParcial,
+          EjercicioPedido, SeriePedido, NumeroPedido
+        ) VALUES (
+          @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
+          @codigoCliente, @razonSocial, @domicilio, @municipio, @fecha,
+          @numeroLineas, @importeLiquido, @empleadoAsignado,
+          @contacto, @telefonoContacto, @observacionesWeb, @nombreObra, @vendedor,
+          @statusFacturado, @esVoluminoso, @esParcial,
+          @ejercicioPedido, @seriePedido, @numeroPedido
+        )
+      `);
+
+    // 7. Copiar las líneas al albarán (usar unidades servidas si existen, sino pendientes)
+    for (const [index, linea] of lineasResult.recordset.entries()) {
+      // Para albarán parcial, usar unidades servidas; para completo, usar pendientes
+      const unidadesAExpedir = linea.UnidadesServidas > 0 ? linea.UnidadesServidas : linea.UnidadesPendientes;
+      
+      await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('ejercicio', sql.SmallInt, ejercicio)
+        .input('serie', sql.VarChar, serie || '')
+        .input('numeroAlbaran', sql.Int, numeroAlbaran)
+        .input('orden', sql.SmallInt, index + 1)
+        .input('codigoArticulo', sql.VarChar, linea.CodigoArticulo)
+        .input('descripcionArticulo', sql.VarChar, linea.DescripcionArticulo)
+        .input('unidades', sql.Decimal(18,4), unidadesAExpedir)
+        .input('precio', sql.Decimal(18,4), linea.Precio)
+        .input('codigoAlmacen', sql.VarChar, linea.CodigoAlmacen || '')
+        .input('partida', sql.VarChar, linea.Partida || '')
+        .input('unidadMedida', sql.VarChar, linea.UnidadPedido || linea.UnidadBase || '')
+        .input('unidadBase', sql.VarChar, linea.UnidadBase || '')
+        .input('unidadAlternativa', sql.VarChar, linea.UnidadAlternativa || '')
+        .input('factorConversion', sql.Decimal(18,4), linea.FactorConversion || 1)
+        .query(`
+          INSERT INTO LineasAlbaranCliente (
+            CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+            Orden, CodigoArticulo, DescripcionArticulo, Unidades, Precio,
+            CodigoAlmacen, Partida, UnidadMedida, UnidadBase, UnidadAlternativa, FactorConversion
+          ) VALUES (
+            @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
+            @orden, @codigoArticulo, @descripcionArticulo, @unidades, @precio,
+            @codigoAlmacen, @partida, @unidadMedida, @unidadBase, @unidadAlternativa, @factorConversion
+          )
+        `);
+    }
+
+    // 8. Actualizar estado del pedido
+    // Verificar si quedan líneas pendientes después de la expedición
+    const lineasPendientesResult = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .query(`
+        SELECT COUNT(*) as TotalPendientes
+        FROM LineasPedidoCliente
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioPedido = @ejercicio
+          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+          AND NumeroPedido = @numeroPedido
+          AND UnidadesPendientes > 0
+      `);
+
+    const totalPendientes = lineasPendientesResult.recordset[0].TotalPendientes;
+
+    if (totalPendientes > 0) {
+      // Si quedan pendientes, marcar como parcial (Estado = 4)
+      await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('ejercicio', sql.SmallInt, ejercicio)
+        .input('serie', sql.VarChar, serie || '')
+        .input('numeroPedido', sql.Int, numeroPedido)
+        .query(`
+          UPDATE CabeceraPedidoCliente
+          SET Estado = 4,  -- Parcial
+              Status = 'Parcial'
+          WHERE CodigoEmpresa = @codigoEmpresa
+            AND EjercicioPedido = @ejercicio
+            AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+            AND NumeroPedido = @numeroPedido
+        `);
+    } else {
+      // Si no quedan pendientes, marcar como completado (Estado = 1)
+      await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('ejercicio', sql.SmallInt, ejercicio)
+        .input('serie', sql.VarChar, serie || '')
+        .input('numeroPedido', sql.Int, numeroPedido)
+        .query(`
+          UPDATE CabeceraPedidoCliente
+          SET Estado = 1,  -- Completado
+              Status = 'Completado',
+              FechaCompletado = GETDATE()
+          WHERE CodigoEmpresa = @codigoEmpresa
+            AND EjercicioPedido = @ejercicio
+            AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+            AND NumeroPedido = @numeroPedido
+        `);
+    }
+
+    await transaction.commit();
+
+    res.json({ 
+      success: true,
+      mensaje: esAlbaranParcial ? 'Albarán parcial generado correctamente' : 'Albarán completo generado correctamente',
+      albaran: {
+        ejercicio: ejercicio,
+        serie: serie || '',
+        numero: numeroAlbaran,
+        esParcial: esAlbaranParcial,
+        lineasProcesadas: lineasResult.recordset.length
+      }
+    });
+  } catch (err) {
+    await transaction.rollback();
+    console.error('[ERROR GENERAR ALBARAN PARCIAL]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al generar albarán parcial',
+      error: err.message 
+    });
   }
 });
 
@@ -4880,1189 +6059,6 @@ app.get('/ubicaciones-por-almacen/:codigoAlmacen', async (req, res) => {
     });
   }
 });
-
-
-// ============================================
-// ✅ 5. PEDIDOS SCREEN
-// ============================================
-
-// ✅ 5.1 PEDIDOS PENDIENTES (VERSIÓN COMPLETA CON TODOS LOS CAMPOS)
-app.get('/pedidosPendientes', async (req, res) => {
-  if (!req.user || !req.user.CodigoEmpresa) {
-    return res.status(401).json({ 
-      success: false, 
-      mensaje: 'No autenticado' 
-    });
-  }
-  
-  const codigoEmpresa = req.user.CodigoEmpresa;
-  const usuario = req.user.UsuarioLogicNet;
-  
-  if (!codigoEmpresa) {
-    return res.status(400).json({ 
-      success: false, 
-      mensaje: 'Código de empresa requerido' 
-    });
-  }
-
-  try {
-    // 1. Obtener permisos del usuario
-    const userPermResult = await poolGlobal.request()
-      .input('usuario', sql.VarChar, usuario)
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .query(`
-        SELECT StatusAdministrador, StatusUsuarioAvanzado, StatusTodosLosPedidos 
-        FROM Clientes
-        WHERE UsuarioLogicNet = @usuario
-          AND CodigoEmpresa = @codigoEmpresa
-      `);
-    
-    if (userPermResult.recordset.length === 0) {
-      return res.status(403).json({ 
-        success: false, 
-        mensaje: 'Usuario no encontrado' 
-      });
-    }
-    
-    const userPerms = userPermResult.recordset[0];
-    const esAdmin = userPerms.StatusAdministrador === -1;
-    const esUsuarioAvanzado = userPerms.StatusUsuarioAvanzado === -1;
-    const esPreparador = userPerms.StatusTodosLosPedidos === -1;
-    
-    // 2. Construir condición para filtrar por usuario asignado
-    let usuarioCondition = '';
-    if (esPreparador && !esAdmin && !esUsuarioAvanzado) {
-      usuarioCondition = `AND c.EmpleadoAsignado = '${usuario}'`;
-    }
-
-    // 3. Obtener parámetros de filtro
-    const rangoDias = req.query.rango || 'semana';
-    const FormaEnvio = req.query.FormaEnvio;
-    const empleado = req.query.empleado;
-    const estadosPedido = req.query.estados ? req.query.estados.split(',') : [];
-    const empleadoAsignado = req.query.empleadoAsignado;
-    
-    // 4. Calcular fechas según rango
-    const hoy = new Date();
-    let fechaInicio, fechaFin;
-    
-    if (rangoDias === 'dia') {
-      fechaInicio = new Date(hoy);
-      fechaInicio.setDate(hoy.getDate() - 1);
-      fechaFin = new Date(hoy);
-      fechaFin.setDate(hoy.getDate() + 1);
-    } else {
-      fechaInicio = new Date(hoy);
-      fechaInicio.setDate(hoy.getDate() - 7);
-      fechaFin = new Date(hoy);
-      fechaFin.setDate(hoy.getDate() + 7);
-    }
-
-    // 5. Formatear fechas para SQL
-    const formatDate = (date) => date.toISOString().split('T')[0];
-    
-    // 6. Mapeo de formas de entrega
-    const formasEntregaMap = {
-      1: 'Recogida Guadalhorce',
-      3: 'Nuestros Medios',
-      4: 'Agencia',
-      5: 'Directo Fabrica',
-      6: 'Pedido Express'
-    };
-
-    // 7. Consulta principal (ACTUALIZADA CON TODOS LOS CAMPOS NECESARIOS)
-    const result = await poolGlobal.request()
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .query(`
-        SELECT 
-          c.CodigoEmpresa,
-          c.EjercicioPedido,
-          c.SeriePedido,
-          c.NumeroPedido,
-          c.RazonSocial,
-          c.Domicilio,
-          c.Municipio,
-          c.ObservacionesWeb AS Observaciones,
-          c.NombreObra,
-          c.FechaPedido,
-          c.FechaEntrega,
-          c.FormaEnvio,
-          c.Estado,
-          c.StatusAprobado,
-          -- Determinar Status basado en Estado y StatusAprobado
-          CASE 
-            WHEN c.Estado = 0 AND c.StatusAprobado = 0 THEN 'Revision'
-            WHEN c.Estado = 0 AND c.StatusAprobado = -1 THEN 'Preparando'
-            WHEN c.Estado = 2 AND c.StatusAprobado = -1 THEN 'Servido'
-            WHEN c.Estado = 4 THEN 'Parcial'
-            ELSE 'Desconocido'
-          END AS Status,
-          c.EsVoluminoso,
-          c.EmpleadoAsignado,
-          c.Contacto,
-          c.Telefono AS TelefonoContacto,
-          c.Vendedor,
-          l.CodigoArticulo,
-          l.DescripcionArticulo,
-          l.Descripcion2Articulo,
-          l.UnidadesPedidas, 
-          l.UnidadesPendientes,
-          l.UnidadesServidas,
-          (l.UnidadesPedidas - l.UnidadesPendientes) AS UnidadesExpedidas,
-          l.CodigoAlmacen,
-          a.CodigoAlternativo,
-          l.LineasPosicion,
-          l.LineasPosicion AS MovPosicionLinea,
-          l.UnidadMedida1_ AS UnidadBase,
-          l.UnidadMedida2_ AS UnidadAlternativa,
-          l.FactorConversion_ AS FactorConversion,
-          COALESCE(NULLIF(l.UnidadMedida1_, ''), a.UnidadMedida2_, 'ud') AS UnidadPedido,
-          emp.Nombre AS NombreVendedor,
-          l.Precio,
-          ISNULL(a.PesoBrutoUnitario_, 0) AS PesoUnitario,
-          (l.UnidadesPendientes * ISNULL(a.PesoBrutoUnitario_, 0)) AS PesoTotalLinea,
-          l.GrupoTalla_
-        FROM CabeceraPedidoCliente c
-        INNER JOIN LineasPedidoCliente l ON 
-          c.CodigoEmpresa = l.CodigoEmpresa 
-          AND c.EjercicioPedido = l.EjercicioPedido 
-          AND c.SeriePedido = l.SeriePedido 
-          AND c.NumeroPedido = l.NumeroPedido
-        LEFT JOIN Articulos a ON 
-          a.CodigoArticulo = l.CodigoArticulo 
-          AND a.CodigoEmpresa = l.CodigoEmpresa
-        LEFT JOIN Clientes emp ON 
-          emp.CodigoCliente = c.EmpleadoAsignado 
-          AND emp.CodigoEmpresa = c.CodigoEmpresa
-        WHERE c.Estado IN (0, 4)
-          AND c.CodigoEmpresa = @codigoEmpresa
-          AND l.UnidadesPendientes > 0
-          AND c.SeriePedido NOT IN ('X', 'R')
-          ${estadosPedido.length > 0 ? 
-            `AND c.Status IN (${estadosPedido.map(e => `'${e}'`).join(',')})` : ''}
-          AND c.FechaEntrega BETWEEN '${formatDate(fechaInicio)}' AND '${formatDate(fechaFin)}'
-          ${FormaEnvio ? `AND c.FormaEnvio = ${FormaEnvio}` : ''}
-          ${empleado ? `AND c.EmpleadoAsignado = '${empleado}'` : ''}
-          ${usuarioCondition}
-          ${empleadoAsignado ? `AND c.EmpleadoAsignado = '${empleadoAsignado}'` : ''}
-        ORDER BY c.FechaEntrega ASC
-      `);
-
-    // 8. Recopilar IDs para detalles (usando LineasPosicion)
-    const lineasIds = [];
-    result.recordset.forEach(row => {
-      if (row.LineasPosicion) {
-        lineasIds.push(row.LineasPosicion);
-      }
-    });
-
-    // 9. Consulta para detalles de tallas/colores
-    let detallesPorLinea = {};
-    if (lineasIds.length > 0) {
-      const placeholders = lineasIds.map((_, i) => `@id${i}`).join(',');
-      
-      const detallesQuery = `
-        SELECT 
-          lt.MovPosicionLinea_ AS MovPosicionLinea,
-          lt.CodigoColor_,
-          c.Color_ AS NombreColor,
-          lt.GrupoTalla_,
-          gt.DescripcionGrupoTalla_ AS NombreGrupoTalla,
-          gt.CodigoTalla01_,
-          gt.CodigoTalla02_,
-          gt.CodigoTalla03_,
-          gt.CodigoTalla04_,
-          gt.DescripcionTalla01_ AS DescTalla01,
-          gt.DescripcionTalla02_ AS DescTalla02,
-          gt.DescripcionTalla03_ AS DescTalla03,
-          gt.DescripcionTalla04_ AS DescTalla04,
-          lt.UnidadesTotalTallas_ AS Unidades,
-          lt.UnidadesTalla01_,
-          lt.UnidadesTalla02_,
-          lt.UnidadesTalla03_,
-          lt.UnidadesTalla04_
-        FROM LineasPedidoClienteTallas lt
-        LEFT JOIN Colores_ c ON 
-          lt.CodigoColor_ = c.CodigoColor_ 
-          AND lt.CodigoEmpresa = c.CodigoEmpresa
-        LEFT JOIN GrupoTallas_ gt ON 
-          lt.GrupoTalla_ = gt.GrupoTalla_ 
-          AND lt.CodigoEmpresa = gt.CodigoEmpresa
-        WHERE lt.CodigoEmpresa = @codigoEmpresa
-          AND lt.MovPosicionLinea_ IN (${placeholders})
-      `;
-
-      const detallesRequest = poolGlobal.request()
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
-      
-      lineasIds.forEach((id, index) => {
-        detallesRequest.input(`id${index}`, sql.VarChar, id);
-      });
-
-      const detallesResult = await detallesRequest.query(detallesQuery);
-      
-      // Organizar por MovPosicionLinea
-      detallesResult.recordset.forEach(detalle => {
-        const key = detalle.MovPosicionLinea;
-        if (!detallesPorLinea[key]) {
-          detallesPorLinea[key] = [];
-        }
-        
-        const tallasConDescripciones = {};
-        
-        // Talla 01
-        if (detalle.CodigoTalla01_ && detalle.UnidadesTalla01_ > 0) {
-          tallasConDescripciones[detalle.CodigoTalla01_] = {
-            descripcion: detalle.DescTalla01,
-            unidades: detalle.UnidadesTalla01_
-          };
-        }
-        
-        // Talla 02
-        if (detalle.CodigoTalla02_ && detalle.UnidadesTalla02_ > 0) {
-          tallasConDescripciones[detalle.CodigoTalla02_] = {
-            descripcion: detalle.DescTalla02,
-            unidades: detalle.UnidadesTalla02_
-          };
-        }
-        
-        // Talla 03
-        if (detalle.CodigoTalla03_ && detalle.UnidadesTalla03_ > 0) {
-          tallasConDescripciones[detalle.CodigoTalla03_] = {
-            descripcion: detalle.DescTalla03,
-            unidades: detalle.UnidadesTalla03_
-          };
-        }
-        
-        // Talla 04
-        if (detalle.CodigoTalla04_ && detalle.UnidadesTalla04_ > 0) {
-          tallasConDescripciones[detalle.CodigoTalla04_] = {
-            descripcion: detalle.DescTalla04,
-            unidades: detalle.UnidadesTalla04_
-          };
-        }
-        
-        detallesPorLinea[key].push({
-          color: {
-            codigo: detalle.CodigoColor_,
-            nombre: detalle.NombreColor
-          },
-          grupoTalla: {
-            codigo: detalle.GrupoTalla_,
-            nombre: detalle.NombreGrupoTalla
-          },
-          unidades: detalle.Unidades,
-          tallas: tallasConDescripciones
-        });
-      });
-    }
-
-    // 10. Combinar resultados
-    const pedidosAgrupados = {};
-    result.recordset.forEach(row => {
-      const key = `${row.CodigoEmpresa}-${row.EjercicioPedido}-${row.SeriePedido}-${row.NumeroPedido}`;
-      
-      if (!pedidosAgrupados[key]) {
-        pedidosAgrupados[key] = {
-          codigoEmpresa: row.CodigoEmpresa,
-          ejercicioPedido: row.EjercicioPedido,
-          seriePedido: row.SeriePedido,
-          numeroPedido: row.NumeroPedido,
-          razonSocial: row.RazonSocial,
-          domicilio: row.Domicilio,
-          municipio: row.Municipio,
-          observaciones: row.Observaciones,
-          nombreObra: row.NombreObra,
-          fechaPedido: row.FechaPedido,
-          fechaEntrega: row.FechaEntrega,
-          FormaEnvio: formasEntregaMap[row.FormaEnvio] || 'No especificada',
-          Estado: row.Estado,
-          StatusAprobado: row.StatusAprobado,
-          Status: row.Status,
-          EsVoluminoso: row.EsVoluminoso,
-          EmpleadoAsignado: row.EmpleadoAsignado,
-          Contacto: row.Contacto,
-          TelefonoContacto: row.TelefonoContacto,
-          Vendedor: row.Vendedor,
-          NombreVendedor: row.NombreVendedor,
-          PesoTotal: 0,
-          articulos: []
-        };
-      }
-      
-      const pesoLinea = parseFloat(row.PesoTotalLinea) || 0;
-      pedidosAgrupados[key].PesoTotal += pesoLinea;
-
-      const detalles = detallesPorLinea[row.LineasPosicion] || [];
-      pedidosAgrupados[key].articulos.push({
-        codigoArticulo: row.CodigoArticulo,
-        descripcionArticulo: row.DescripcionArticulo,
-        descripcion2Articulo: row.Descripcion2Articulo,
-        unidadesPedidas: row.UnidadesPedidas,
-        unidadesPendientes: row.UnidadesPendientes,
-        unidadesServidas: row.UnidadesServidas,
-        UnidadesExpedidas: row.UnidadesExpedidas,
-        codigoAlmacen: row.CodigoAlmacen,
-        codigoAlternativo: row.CodigoAlternativo,
-        detalles: detalles.length > 0 ? detalles : null,
-        movPosicionLinea: row.LineasPosicion,
-        unidadBase: row.UnidadBase,
-        unidadAlternativa: row.UnidadAlternativa,
-        factorConversion: row.FactorConversion,
-        unidadPedido: row.UnidadPedido,
-        precio: row.Precio,
-        pesoUnitario: row.PesoUnitario,
-        pesoTotalLinea: row.PesoTotalLinea,
-        grupoTalla: row.GrupoTalla_
-      });
-    });
-    
-    const pedidosArray = Object.values(pedidosAgrupados);
-    res.json(pedidosArray);
-  } catch (err) {
-    console.error('[ERROR PEDIDOS PENDIENTES]', err);
-    res.status(500).json({ 
-      success: false, 
-      mensaje: 'Error al obtener pedidos pendientes',
-      error: err.message,
-      stack: err.stack
-    });
-  }
-});
-
-// ✅ NUEVO ENDPOINT: ACTUALIZAR ESTADO VOLUMINOSO
-app.post('/pedidos/actualizar-voluminoso', async (req, res) => {
-  const { codigoEmpresa, ejercicio, serie, numeroPedido, esVoluminoso } = req.body;
-
-  if (!codigoEmpresa || !ejercicio || !numeroPedido) {
-    return res.status(400).json({ 
-      success: false, 
-      mensaje: 'Faltan parámetros requeridos.' 
-    });
-  }
-
-  try {
-    await poolGlobal.request()
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
-      .input('serie', sql.VarChar, serie || '')
-      .input('numeroPedido', sql.Int, numeroPedido)
-      .input('esVoluminoso', sql.Bit, esVoluminoso ? 1 : 0)
-      .query(`
-        UPDATE CabeceraPedidoCliente
-        SET EsVoluminoso = @esVoluminoso
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioPedido = @ejercicio
-          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
-          AND NumeroPedido = @numeroPedido
-      `);
-
-    res.json({ 
-      success: true, 
-      mensaje: `Pedido ${esVoluminoso ? 'marcado como voluminoso' : 'desmarcado como voluminoso'} correctamente.` 
-    });
-  } catch (err) {
-    console.error('[ERROR ACTUALIZAR VOLUMINOSO]', err);
-    res.status(500).json({ 
-      success: false, 
-      mensaje: 'Error al actualizar estado voluminoso.',
-      error: err.message 
-    });
-  }
-});
-
-// ✅ 5.2 Asignar Preparador (VERSIÓN COMPLETA PARA REASIGNACIONES)
-app.post('/asignarEmpleado', async (req, res) => {
-  if (!req.user || !req.user.CodigoEmpresa) {
-    return res.status(401).json({ success: false, mensaje: 'No autenticado' });
-  }
-
-  const { asignaciones } = req.body;
-
-  if (!Array.isArray(asignaciones) || asignaciones.length === 0) {
-    return res.status(400).json({ 
-      success: false, 
-      mensaje: 'Datos inválidos para asignación' 
-    });
-  }
-
-  const transaction = new sql.Transaction(poolGlobal);
-  
-  try {
-    await transaction.begin();
-    const request = new sql.Request(transaction);
-    
-    for (const asignacion of asignaciones) {
-      await request
-        .input('codigoEmpresa', sql.SmallInt, asignacion.codigoEmpresa)
-        .input('ejercicio', sql.SmallInt, asignacion.ejercicioPedido)
-        .input('serie', sql.VarChar, asignacion.seriePedido || '')
-        .input('numeroPedido', sql.Int, asignacion.numeroPedido)
-        .input('empleado', sql.VarChar, asignacion.empleado)
-        .query(`
-          UPDATE CabeceraPedidoCliente
-          SET EmpleadoAsignado = @empleado
-          WHERE CodigoEmpresa = @codigoEmpresa
-            AND EjercicioPedido = @ejercicio
-            AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
-            AND NumeroPedido = @numeroPedido
-        `);
-    }
-    
-    await transaction.commit();
-    res.json({ success: true, mensaje: 'Asignaciones actualizadas correctamente' });
-  } catch (err) {
-    await transaction.rollback();
-    console.error('[ERROR ASIGNAR EMPLEADO]', err);
-    res.status(500).json({ 
-      success: false, 
-      mensaje: 'Error al asignar empleado', 
-      error: err.message 
-    });
-  }
-});
-
-// ✅ 5.3 ACTUALIZAR LÍNEA DE PEDIDO (VERSIÓN COMPLETA - ACTUALIZA UNIDADES SERVIDAS)
-app.post('/actualizarLineaPedido', async (req, res) => {
-  const datosLinea = req.body;
-
-  console.log('[BACKEND DEBUG] Datos recibidos para actualizar línea:', {
-    codigoArticulo: datosLinea.codigoArticulo,
-    unidadMedida: datosLinea.unidadMedida,
-    cantidadExpedida: datosLinea.cantidadExpedida,
-    movPosicionLinea: datosLinea.movPosicionLinea,
-    ubicacion: datosLinea.ubicacion,
-    almacen: datosLinea.almacen,
-    codigoColor: datosLinea.codigoColor,
-    codigoTalla: datosLinea.codigoTalla,
-    esZonaDescarga: datosLinea.esZonaDescarga
-  });
-
-  // Campos obligatorios
-  const camposRequeridos = [
-    'codigoEmpresa', 'ejercicio', 'numeroPedido', 
-    'codigoArticulo', 'cantidadExpedida', 'ubicacion', 'almacen',
-    'movPosicionLinea'
-  ];
-  
-  for (const campo of camposRequeridos) {
-    if (!datosLinea[campo]) {
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: `Campo requerido: ${campo}` 
-      });
-    }
-  }
-
-  const truncarString = (valor, longitudMaxima) => {
-    if (!valor) return '';
-    return valor.toString().substring(0, longitudMaxima);
-  };
-
-  const codigoColor = datosLinea.codigoColor ? truncarString(datosLinea.codigoColor, 10) : '';
-  const codigoTalla = datosLinea.codigoTalla ? truncarString(datosLinea.codigoTalla, 10) : '';
-  const partida = datosLinea.partida ? truncarString(datosLinea.partida, 20) : '';
-  const esZonaDescarga = datosLinea.esZonaDescarga || datosLinea.ubicacion === "Zona descarga";
-
-  const transaction = new sql.Transaction(poolGlobal);
-  
-  try {
-    await transaction.begin();
-    
-    // OBTENER DATOS USANDO SOLO LineasPosicion COMO ID ÚNICO
-    const requestLinea = new sql.Request(transaction);
-    const resultLinea = await requestLinea
-      .input('movPosicionLinea', sql.VarChar, datosLinea.movPosicionLinea)
-      .query(`
-        SELECT 
-          l.LineasPosicion,
-          l.CodigoAlmacen, 
-          l.UnidadMedida1_ AS UnidadMedida, 
-          l.Precio, 
-          l.UnidadesPendientes,
-          l.UnidadesServidas,
-          l.GrupoTalla_,
-          l.EjercicioPedido,
-          l.NumeroPedido,
-          l.SeriePedido,
-          l.CodigoEmpresa,
-          l.CodigoArticulo,
-          a.UnidadMedida2_ AS UnidadBase,
-          a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
-          a.FactorConversion_ AS FactorConversion
-        FROM LineasPedidoCliente l
-        INNER JOIN Articulos a ON a.CodigoArticulo = l.CodigoArticulo AND a.CodigoEmpresa = l.CodigoEmpresa
-        WHERE l.LineasPosicion = @movPosicionLinea
-      `);
-
-    if (resultLinea.recordset.length === 0) {
-      await transaction.rollback();
-      return res.status(404).json({ 
-        success: false, 
-        mensaje: `Línea de pedido no encontrada con LineasPosicion: ${datosLinea.movPosicionLinea}` 
-      });
-    }
-
-    const lineaData = resultLinea.recordset[0];
-    const codigoAlmacen = lineaData.CodigoAlmacen;
-    
-    const unidadMedida = lineaData.UnidadMedida || 'unidades';
-    const precio = lineaData.Precio;
-    const unidadesPendientes = parseFloat(lineaData.UnidadesPendientes);
-    const unidadesServidas = parseFloat(lineaData.UnidadesServidas) || 0;
-    const movPosicionLinea = lineaData.LineasPosicion;
-    
-    const grupoTalla = lineaData.GrupoTalla_ ? 
-                      (typeof lineaData.GrupoTalla_ === 'number' ? 
-                       lineaData.GrupoTalla_.toString() : 
-                       lineaData.GrupoTalla_) : 
-                      null;
-
-    console.log('[BACKEND DEBUG] Datos de línea corregidos:', {
-      articulo: datosLinea.codigoArticulo,
-      unidadMedida: unidadMedida,
-      unidadesPendientes: unidadesPendientes,
-      unidadesServidas: unidadesServidas,
-      movPosicionLinea: movPosicionLinea,
-      grupoTalla: grupoTalla
-    });
-
-    // VALIDACIÓN DE UNIDADES PENDIENTES
-    if (datosLinea.cantidadExpedida > unidadesPendientes) {
-      await transaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: `La cantidad a expedir (${datosLinea.cantidadExpedida}) supera las unidades pendientes (${unidadesPendientes}).` 
-      });
-    }
-
-    // ✅ CORRECCIÓN: NO HACER CONVERSIÓN DE UNIDADES - USAR CANTIDAD DIRECTA
-    const cantidadExpedidaStock = datosLinea.cantidadExpedida;
-
-    console.log('[BACKEND DEBUG] Expedición sin conversión:', {
-      cantidadExpedida: datosLinea.cantidadExpedida,
-      cantidadExpedidaStock: cantidadExpedidaStock
-    });
-
-    // VERIFICAR STOCK SOLO SI NO ES ZONA DESCARGA
-    let ubicacionFinal = datosLinea.ubicacion;
-    let partidaFinal = partida;
-    
-    if (!esZonaDescarga) {
-      console.log('[BACKEND DEBUG] Verificando stock para ubicación:', ubicacionFinal);
-      
-      const requestStock = new sql.Request(transaction);
-      const stockResult = await requestStock
-        .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
-        .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
-        .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
-        .input('ubicacion', sql.VarChar(20), truncarString(datosLinea.ubicacion, 20))
-        .input('partida', sql.VarChar(20), truncarString(partida, 20))
-        .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
-        .input('codigoColor', sql.VarChar(10), codigoColor)
-        .input('codigoTalla', sql.VarChar(10), codigoTalla)
-        .query(`
-          SELECT UnidadSaldoTipo_
-          FROM AcumuladoStockUbicacion
-          WHERE 
-            CodigoEmpresa = @codigoEmpresa
-            AND CodigoAlmacen = @almacen
-            AND CodigoArticulo = @codigoArticulo
-            AND Ubicacion = @ubicacion
-            AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-            AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
-            AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-            AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-            AND Periodo = 99
-        `);
-
-      let stockDisponible = 0;
-      if (stockResult.recordset.length > 0) {
-        const stockData = stockResult.recordset[0];
-        stockDisponible = parseFloat(stockData.UnidadSaldoTipo_) || 0;
-      }
-
-      console.log('[BACKEND DEBUG] Stock disponible:', stockDisponible, 'Cantidad a expedir:', cantidadExpedidaStock);
-
-      if (stockDisponible === 0) {
-        const stockAlternativoRequest = new sql.Request(transaction);
-        const stockAlternativoResult = await stockAlternativoRequest
-          .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
-          .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
-          .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
-          .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
-          .input('codigoColor', sql.VarChar(10), codigoColor)
-          .input('codigoTalla', sql.VarChar(10), codigoTalla)
-          .query(`
-            SELECT TOP 1 Ubicacion, UnidadSaldoTipo_, Partida
-            FROM AcumuladoStockUbicacion
-            WHERE 
-              CodigoEmpresa = @codigoEmpresa
-              AND CodigoAlmacen = @almacen
-              AND CodigoArticulo = @codigoArticulo
-              AND UnidadSaldoTipo_ > 0
-              AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
-              AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-              AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-              AND Periodo = 99
-            ORDER BY UnidadSaldoTipo_ DESC
-          `);
-
-        if (stockAlternativoResult.recordset.length > 0) {
-          const ubicacionAlternativa = stockAlternativoResult.recordset[0];
-          stockDisponible = parseFloat(ubicacionAlternativa.UnidadSaldoTipo_) || 0;
-          ubicacionFinal = ubicacionAlternativa.Ubicacion;
-          partidaFinal = ubicacionAlternativa.Partida || '';
-        } else {
-          await transaction.rollback();
-          return res.status(400).json({ 
-            success: false, 
-            mensaje: `No hay stock disponible en ninguna ubicación. Stock disponible: 0 unidades.` 
-          });
-        }
-      }
-
-      if (cantidadExpedidaStock > stockDisponible) {
-        await transaction.rollback();
-        return res.status(400).json({ 
-          success: false, 
-          mensaje: `No hay suficiente stock en ${ubicacionFinal}. Solo hay ${stockDisponible} unidades disponibles.` 
-        });
-      }
-    }
-
-    // ✅ CORRECCIÓN CRÍTICA: ACTUALIZAR UNIDADES PENDIENTES Y UNIDADES SERVIDAS
-    const requestUpdate = new sql.Request(transaction);
-    await requestUpdate
-      .input('cantidadExpedida', sql.Decimal(18, 4), datosLinea.cantidadExpedida)
-      .input('movPosicionLinea', sql.VarChar, movPosicionLinea)
-      .query(`
-        UPDATE LineasPedidoCliente
-        SET 
-          UnidadesPendientes = UnidadesPendientes - @cantidadExpedida,
-          UnidadesServidas = UnidadesServidas + @cantidadExpedida
-        WHERE LineasPosicion = @movPosicionLinea
-      `);
-
-    console.log('[BACKEND DEBUG] Línea actualizada - Unidades pendientes reducidas y servidas incrementadas');
-
-    // ACTUALIZAR STOCK EN AMBAS TABLAS
-    if (!esZonaDescarga) {
-      console.log('[BACKEND DEBUG] Actualizando stock en ubicación:', ubicacionFinal);
-      
-      const requestStockActual = new sql.Request(transaction);
-      const stockActualResult = await requestStockActual
-        .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
-        .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
-        .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
-        .input('ubicacion', sql.VarChar(20), truncarString(ubicacionFinal, 20))
-        .input('partida', sql.VarChar(20), truncarString(partidaFinal, 20))
-        .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
-        .input('codigoColor', sql.VarChar(10), codigoColor)
-        .input('codigoTalla', sql.VarChar(10), codigoTalla)
-        .query(`
-          SELECT UnidadSaldo, UnidadSaldoTipo_
-          FROM AcumuladoStockUbicacion
-          WHERE 
-            CodigoEmpresa = @codigoEmpresa
-            AND CodigoAlmacen = @almacen
-            AND CodigoArticulo = @codigoArticulo
-            AND Ubicacion = @ubicacion
-            AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-            AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
-            AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-            AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-            AND Periodo = 99
-        `);
-
-      if (stockActualResult.recordset.length > 0) {
-        const stockActualData = stockActualResult.recordset[0];
-        
-        const stockActualUnidadSaldo = parseFloat(stockActualData.UnidadSaldo) || 0;
-        const stockActualUnidadSaldoTipo = parseFloat(stockActualData.UnidadSaldoTipo_) || 0;
-        
-        const nuevoStockUnidadSaldo = Math.max(0, stockActualUnidadSaldo - cantidadExpedidaStock);
-        const nuevoStockUnidadSaldoTipo = Math.max(0, stockActualUnidadSaldoTipo - cantidadExpedidaStock);
-
-        const requestUpdateStockUbicacion = new sql.Request(transaction);
-        await requestUpdateStockUbicacion
-          .input('nuevoStockUnidadSaldo', sql.Decimal(18, 4), nuevoStockUnidadSaldo)
-          .input('nuevoStockUnidadSaldoTipo', sql.Decimal(18, 4), nuevoStockUnidadSaldoTipo)
-          .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
-          .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
-          .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
-          .input('ubicacion', sql.VarChar(20), truncarString(ubicacionFinal, 20))
-          .input('partida', sql.VarChar(20), truncarString(partidaFinal, 20))
-          .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
-          .input('codigoColor', sql.VarChar(10), codigoColor)
-          .input('codigoTalla', sql.VarChar(10), codigoTalla)
-          .query(`
-            UPDATE AcumuladoStockUbicacion
-            SET 
-              UnidadSaldo = @nuevoStockUnidadSaldo,
-              UnidadSaldoTipo_ = @nuevoStockUnidadSaldoTipo
-            WHERE 
-              CodigoEmpresa = @codigoEmpresa
-              AND CodigoAlmacen = @almacen
-              AND CodigoArticulo = @codigoArticulo
-              AND Ubicacion = @ubicacion
-              AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-              AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
-              AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-              AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-              AND Periodo = 99
-          `);
-
-        const requestStockPrincipal = new sql.Request(transaction);
-        const stockPrincipalResult = await requestStockPrincipal
-          .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
-          .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
-          .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
-          .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
-          .input('partida', sql.VarChar(20), truncarString(partidaFinal, 20))
-          .input('codigoColor', sql.VarChar(10), codigoColor)
-          .input('codigoTalla', sql.VarChar(10), codigoTalla)
-          .input('ubicacion', sql.VarChar(20), truncarString(ubicacionFinal, 20))
-          .query(`
-            SELECT UnidadSaldo, UnidadSaldoTipo_
-            FROM AcumuladoStock
-            WHERE 
-              CodigoEmpresa = @codigoEmpresa
-              AND CodigoAlmacen = @almacen
-              AND CodigoArticulo = @codigoArticulo
-              AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-              AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
-              AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-              AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-              AND Ubicacion = @ubicacion
-              AND Periodo = 99
-          `);
-
-        if (stockPrincipalResult.recordset.length > 0) {
-          const stockPrincipalData = stockPrincipalResult.recordset[0];
-          
-          const stockPrincipalUnidadSaldo = parseFloat(stockPrincipalData.UnidadSaldo) || 0;
-          const stockPrincipalUnidadSaldoTipo = parseFloat(stockPrincipalData.UnidadSaldoTipo_) || 0;
-          
-          const nuevoStockPrincipalUnidadSaldo = Math.max(0, stockPrincipalUnidadSaldo - cantidadExpedidaStock);
-          const nuevoStockPrincipalUnidadSaldoTipo = Math.max(0, stockPrincipalUnidadSaldoTipo - cantidadExpedidaStock);
-
-          const requestUpdateStockPrincipal = new sql.Request(transaction);
-          await requestUpdateStockPrincipal
-            .input('nuevoStockUnidadSaldo', sql.Decimal(18, 4), nuevoStockPrincipalUnidadSaldo)
-            .input('nuevoStockUnidadSaldoTipo', sql.Decimal(18, 4), nuevoStockPrincipalUnidadSaldoTipo)
-            .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
-            .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
-            .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
-            .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
-            .input('partida', sql.VarChar(20), truncarString(partidaFinal, 20))
-            .input('codigoColor', sql.VarChar(10), codigoColor)
-            .input('codigoTalla', sql.VarChar(10), codigoTalla)
-            .input('ubicacion', sql.VarChar(20), truncarString(ubicacionFinal, 20))
-            .query(`
-              UPDATE AcumuladoStock
-              SET 
-                UnidadSaldo = @nuevoStockUnidadSaldo,
-                UnidadSaldoTipo_ = @nuevoStockUnidadSaldoTipo
-              WHERE 
-                CodigoEmpresa = @codigoEmpresa
-                AND CodigoAlmacen = @almacen
-                AND CodigoArticulo = @codigoArticulo
-                AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-                AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
-                AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-                AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-                AND Ubicacion = @ubicacion
-                AND Periodo = 99
-            `);
-        }
-      }
-    }
-
-    // ACTUALIZAR TABLA DE TALLAS SI ES NECESARIO
-    if (codigoColor && grupoTalla && codigoTalla) {
-      console.log('[BACKEND DEBUG] Actualizando tallas con:', {
-        grupoTalla: grupoTalla,
-        codigoColor: codigoColor,
-        codigoTalla: codigoTalla,
-        cantidad: datosLinea.cantidadExpedida
-      });
-
-      try {
-        const grupoTallasRequest = new sql.Request(transaction);
-        
-        let grupoTallaParam;
-        if (grupoTalla && !isNaN(grupoTalla)) {
-          grupoTallaParam = sql.Int;
-        } else {
-          grupoTallaParam = sql.VarChar;
-        }
-        
-        const grupoTallasResult = await grupoTallasRequest
-          .input('grupoTalla', grupoTallaParam, grupoTalla)
-          .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
-          .query(`
-            SELECT CodigoTalla01_, CodigoTalla02_, CodigoTalla03_, CodigoTalla04_
-            FROM GrupoTallas_
-            WHERE GrupoTalla_ = @grupoTalla
-              AND CodigoEmpresa = @codigoEmpresa
-          `);
-
-        if (grupoTallasResult.recordset.length > 0) {
-          const grupoTallas = grupoTallasResult.recordset[0];
-          let columnaTalla = '';
-          
-          if (grupoTallas.CodigoTalla01_ === codigoTalla) {
-            columnaTalla = 'UnidadesTalla01_';
-          } else if (grupoTallas.CodigoTalla02_ === codigoTalla) {
-            columnaTalla = 'UnidadesTalla02_';
-          } else if (grupoTallas.CodigoTalla03_ === codigoTalla) {
-            columnaTalla = 'UnidadesTalla03_';
-          } else if (grupoTallas.CodigoTalla04_ === codigoTalla) {
-            columnaTalla = 'UnidadesTalla04_';
-          }
-          
-          if (columnaTalla) {
-            console.log(`[BACKEND DEBUG] Actualizando columna: ${columnaTalla} para talla: ${codigoTalla}`);
-            
-            const updateTallasRequest = new sql.Request(transaction);
-            await updateTallasRequest
-              .input('cantidadExpedida', sql.Decimal(18, 4), datosLinea.cantidadExpedida)
-              .input('movPosicionLinea', sql.VarChar, movPosicionLinea)
-              .input('codigoColor', sql.VarChar, codigoColor)
-              .query(`
-                UPDATE LineasPedidoClienteTallas
-                SET 
-                  ${columnaTalla} = ${columnaTalla} - @cantidadExpedida,
-                  UnidadesTotalTallas_ = UnidadesTotalTallas_ - @cantidadExpedida
-                WHERE MovPosicionLinea_ = @movPosicionLinea
-                  AND CodigoColor_ = @codigoColor
-              `);
-          }
-        }
-      } catch (tallasError) {
-        console.error('[ERROR ACTUALIZAR TALLAS]', tallasError);
-      }
-    }
-
-    await transaction.commit();
-
-    // CALCULAR NUEVOS VALORES
-    const nuevasUnidadesPendientes = unidadesPendientes - datosLinea.cantidadExpedida;
-    const nuevasUnidadesServidas = unidadesServidas + datosLinea.cantidadExpedida;
-
-    res.json({ 
-      success: true, 
-      mensaje: 'Línea actualizada correctamente',
-      detalles: {
-        cantidadExpedidaVenta: datosLinea.cantidadExpedida,
-        cantidadExpedidaStock: cantidadExpedidaStock,
-        unidadesPendientesRestantes: nuevasUnidadesPendientes,
-        unidadesServidasActualizadas: nuevasUnidadesServidas,
-        stockRestante: esZonaDescarga ? 'N/A (Zona Descarga)' : 'Actualizado',
-        ubicacionUtilizada: ubicacionFinal,
-        tallasActualizadas: !!(codigoColor && grupoTalla && codigoTalla),
-        unidadMedida: unidadMedida
-      }
-    });
-
-  } catch (err) {
-    if (transaction._aborted === false) {
-      await transaction.rollback();
-    }
-    console.error('[ERROR ACTUALIZAR LINEA PEDIDO]', err);
-    res.status(500).json({
-      success: false,
-      mensaje: 'Error al actualizar línea de pedido',
-      error: err.message,
-      detalles: err.stack
-    });
-  }
-});
-
-// ============================================
-// ✅ GENERAR ALBARÁN PARCIAL (ACTUALIZADO)
-// ============================================
-app.post('/generarAlbaranParcial', async (req, res) => {
-  if (!req.user || !req.user.CodigoEmpresa) {
-    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
-  }
-
-  const { codigoEmpresa, ejercicio, serie, numeroPedido } = req.body;
-  const usuario = req.user.UsuarioLogicNet;
-
-  if (!codigoEmpresa || !ejercicio || !numeroPedido) {
-    return res.status(400).json({ 
-      success: false, 
-      mensaje: 'Faltan datos requeridos: empresa, ejercicio y número de pedido.' 
-    });
-  }
-
-  const transaction = new sql.Transaction(poolGlobal);
-  
-  try {
-    await transaction.begin();
-
-    // 1. Verificar permisos del usuario
-    const permisoResult = await poolGlobal.request()
-      .input('usuario', sql.VarChar, usuario)
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .query(`
-        SELECT StatusDesignarRutas
-        FROM Clientes
-        WHERE UsuarioLogicNet = @usuario
-          AND CodigoEmpresa = @codigoEmpresa
-      `);
-    
-    if (permisoResult.recordset.length === 0 || permisoResult.recordset[0].StatusDesignarRutas !== -1) {
-      await transaction.rollback();
-      return res.status(403).json({ 
-        success: false, 
-        mensaje: 'No tienes permiso para generar albaranes' 
-      });
-    }
-
-    // 2. Obtener el pedido con datos completos
-    const pedidoResult = await poolGlobal.request()
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
-      .input('serie', sql.VarChar, serie || '')
-      .input('numeroPedido', sql.Int, numeroPedido)
-      .query(`
-        SELECT 
-          cpc.*,
-          cli.NombreObra,
-          cli.Vendedor,
-          cli.Contacto,
-          cli.Telefono,
-          cli.ObservacionesWeb
-        FROM CabeceraPedidoCliente cpc
-        LEFT JOIN Clientes cli ON cpc.CodigoCliente = cli.CodigoCliente 
-          AND cpc.CodigoEmpresa = cli.CodigoEmpresa
-        WHERE cpc.CodigoEmpresa = @codigoEmpresa
-          AND cpc.EjercicioPedido = @ejercicio
-          AND (cpc.SeriePedido = @serie OR (@serie = '' AND cpc.SeriePedido IS NULL))
-          AND cpc.NumeroPedido = @numeroPedido
-      `);
-
-    if (pedidoResult.recordset.length === 0) {
-      await transaction.rollback();
-      return res.status(404).json({ 
-        success: false, 
-        mensaje: 'Pedido no encontrado' 
-      });
-    }
-
-    const pedido = pedidoResult.recordset[0];
-
-    // 3. Obtener TODAS las líneas del pedido (incluyendo completadas y parciales)
-    const lineasResult = await poolGlobal.request()
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
-      .input('serie', sql.VarChar, serie || '')
-      .input('numeroPedido', sql.Int, numeroPedido)
-      .query(`
-        SELECT 
-          lpc.*,
-          a.UnidadBase,
-          a.UnidadAlternativa,
-          a.FactorConversion
-        FROM LineasPedidoCliente lpc
-        LEFT JOIN Articulos a ON lpc.CodigoArticulo = a.CodigoArticulo 
-          AND lpc.CodigoEmpresa = a.CodigoEmpresa
-        WHERE lpc.CodigoEmpresa = @codigoEmpresa
-          AND lpc.EjercicioPedido = @ejercicio
-          AND (lpc.SeriePedido = @serie OR (@serie = '' AND lpc.SeriePedido IS NULL))
-          AND lpc.NumeroPedido = @numeroPedido
-          AND (lpc.UnidadesServidas > 0 OR lpc.UnidadesPendientes > 0)  -- Incluir líneas con expediciones
-      `);
-
-    if (lineasResult.recordset.length === 0) {
-      await transaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: 'No hay líneas con expediciones para generar albarán parcial' 
-      });
-    }
-
-    // 4. Verificar si hay líneas completadas (para determinar si es parcial)
-    const lineasCompletadas = lineasResult.recordset.filter(linea => 
-      parseFloat(linea.UnidadesServidas) > 0
-    ).length;
-
-    const esAlbaranParcial = lineasCompletadas > 0;
-
-    // 5. Generar número de albarán
-    const nextAlbaran = await poolGlobal.request()
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
-      .input('serie', sql.VarChar, serie || '')
-      .query(`
-        SELECT ISNULL(MAX(NumeroAlbaran), 0) + 1 AS SiguienteNumero
-        FROM CabeceraAlbaranCliente
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioAlbaran = @ejercicio
-          AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
-      `);
-
-    const numeroAlbaran = nextAlbaran.recordset[0].SiguienteNumero;
-    const fechaActual = new Date();
-
-    // 6. Crear cabecera del albarán
-    await poolGlobal.request()
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
-      .input('serie', sql.VarChar, serie || '')
-      .input('numeroAlbaran', sql.Int, numeroAlbaran)
-      .input('codigoCliente', sql.VarChar, pedido.CodigoCliente)
-      .input('razonSocial', sql.VarChar, pedido.RazonSocial)
-      .input('domicilio', sql.VarChar, pedido.Domicilio)
-      .input('municipio', sql.VarChar, pedido.Municipio)
-      .input('fecha', sql.DateTime, fechaActual)
-      .input('numeroLineas', sql.Int, lineasResult.recordset.length)
-      .input('importeLiquido', sql.Decimal(18,4), pedido.ImporteLiquido || 0)
-      .input('empleadoAsignado', sql.VarChar, pedido.CodigoEmpleadoAsignado || usuario)
-      .input('contacto', sql.VarChar, pedido.Contacto || '')
-      .input('telefonoContacto', sql.VarChar, pedido.Telefono || '')
-      .input('observacionesWeb', sql.VarChar, pedido.ObservacionesWeb || '')
-      .input('nombreObra', sql.VarChar, pedido.NombreObra || '')
-      .input('vendedor', sql.VarChar, pedido.Vendedor || '')
-      .input('statusFacturado', sql.SmallInt, 0)
-      .input('esVoluminoso', sql.Bit, pedido.EsVoluminoso || 0)
-      .input('esParcial', sql.Bit, esAlbaranParcial ? 1 : 0)
-      .input('ejercicioPedido', sql.SmallInt, ejercicio)
-      .input('seriePedido', sql.VarChar, serie || '')
-      .input('numeroPedido', sql.Int, numeroPedido)
-      .query(`
-        INSERT INTO CabeceraAlbaranCliente (
-          CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
-          CodigoCliente, RazonSocial, Domicilio, Municipio, FechaAlbaran,
-          NumeroLineas, ImporteLiquido, EmpleadoAsignado,
-          Contacto, Telefono, ObservacionesWeb, NombreObra, Vendedor,
-          StatusFacturado, EsVoluminoso, EsParcial,
-          EjercicioPedido, SeriePedido, NumeroPedido
-        ) VALUES (
-          @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
-          @codigoCliente, @razonSocial, @domicilio, @municipio, @fecha,
-          @numeroLineas, @importeLiquido, @empleadoAsignado,
-          @contacto, @telefonoContacto, @observacionesWeb, @nombreObra, @vendedor,
-          @statusFacturado, @esVoluminoso, @esParcial,
-          @ejercicioPedido, @seriePedido, @numeroPedido
-        )
-      `);
-
-    // 7. Copiar las líneas al albarán (usar unidades servidas si existen, sino pendientes)
-    for (const [index, linea] of lineasResult.recordset.entries()) {
-      // Para albarán parcial, usar unidades servidas; para completo, usar pendientes
-      const unidadesAExpedir = linea.UnidadesServidas > 0 ? linea.UnidadesServidas : linea.UnidadesPendientes;
-      
-      await poolGlobal.request()
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .input('ejercicio', sql.SmallInt, ejercicio)
-        .input('serie', sql.VarChar, serie || '')
-        .input('numeroAlbaran', sql.Int, numeroAlbaran)
-        .input('orden', sql.SmallInt, index + 1)
-        .input('codigoArticulo', sql.VarChar, linea.CodigoArticulo)
-        .input('descripcionArticulo', sql.VarChar, linea.DescripcionArticulo)
-        .input('unidades', sql.Decimal(18,4), unidadesAExpedir)
-        .input('precio', sql.Decimal(18,4), linea.Precio)
-        .input('codigoAlmacen', sql.VarChar, linea.CodigoAlmacen || '')
-        .input('partida', sql.VarChar, linea.Partida || '')
-        .input('unidadMedida', sql.VarChar, linea.UnidadPedido || linea.UnidadBase || '')
-        .input('unidadBase', sql.VarChar, linea.UnidadBase || '')
-        .input('unidadAlternativa', sql.VarChar, linea.UnidadAlternativa || '')
-        .input('factorConversion', sql.Decimal(18,4), linea.FactorConversion || 1)
-        .query(`
-          INSERT INTO LineasAlbaranCliente (
-            CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
-            Orden, CodigoArticulo, DescripcionArticulo, Unidades, Precio,
-            CodigoAlmacen, Partida, UnidadMedida, UnidadBase, UnidadAlternativa, FactorConversion
-          ) VALUES (
-            @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
-            @orden, @codigoArticulo, @descripcionArticulo, @unidades, @precio,
-            @codigoAlmacen, @partida, @unidadMedida, @unidadBase, @unidadAlternativa, @factorConversion
-          )
-        `);
-    }
-
-    // 8. Actualizar estado del pedido
-    // Verificar si quedan líneas pendientes después de la expedición
-    const lineasPendientesResult = await poolGlobal.request()
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
-      .input('serie', sql.VarChar, serie || '')
-      .input('numeroPedido', sql.Int, numeroPedido)
-      .query(`
-        SELECT COUNT(*) as TotalPendientes
-        FROM LineasPedidoCliente
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioPedido = @ejercicio
-          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
-          AND NumeroPedido = @numeroPedido
-          AND UnidadesPendientes > 0
-      `);
-
-    const totalPendientes = lineasPendientesResult.recordset[0].TotalPendientes;
-
-    if (totalPendientes > 0) {
-      // Si quedan pendientes, marcar como parcial (Estado = 4)
-      await poolGlobal.request()
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .input('ejercicio', sql.SmallInt, ejercicio)
-        .input('serie', sql.VarChar, serie || '')
-        .input('numeroPedido', sql.Int, numeroPedido)
-        .query(`
-          UPDATE CabeceraPedidoCliente
-          SET Estado = 4,  -- Parcial
-              Status = 'Parcial'
-          WHERE CodigoEmpresa = @codigoEmpresa
-            AND EjercicioPedido = @ejercicio
-            AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
-            AND NumeroPedido = @numeroPedido
-        `);
-    } else {
-      // Si no quedan pendientes, marcar como completado (Estado = 1)
-      await poolGlobal.request()
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .input('ejercicio', sql.SmallInt, ejercicio)
-        .input('serie', sql.VarChar, serie || '')
-        .input('numeroPedido', sql.Int, numeroPedido)
-        .query(`
-          UPDATE CabeceraPedidoCliente
-          SET Estado = 1,  -- Completado
-              Status = 'Completado',
-              FechaCompletado = GETDATE()
-          WHERE CodigoEmpresa = @codigoEmpresa
-            AND EjercicioPedido = @ejercicio
-            AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
-            AND NumeroPedido = @numeroPedido
-        `);
-    }
-
-    await transaction.commit();
-
-    res.json({ 
-      success: true,
-      mensaje: esAlbaranParcial ? 'Albarán parcial generado correctamente' : 'Albarán completo generado correctamente',
-      albaran: {
-        ejercicio: ejercicio,
-        serie: serie || '',
-        numero: numeroAlbaran,
-        esParcial: esAlbaranParcial,
-        lineasProcesadas: lineasResult.recordset.length
-      }
-    });
-  } catch (err) {
-    await transaction.rollback();
-    console.error('[ERROR GENERAR ALBARAN PARCIAL]', err);
-    res.status(500).json({ 
-      success: false, 
-      mensaje: 'Error al generar albarán parcial',
-      error: err.message 
-    });
-  }
-});
-
 
 // ============================================
 // ✅ CONFIGURACIÓN SIMPLIFICADA - GARANTIZADA

@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import Select from 'react-select';
 import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import { v4 as uuidv4 } from 'uuid';
@@ -57,12 +58,19 @@ const TraspasosPage = () => {
   const [ubicacionesCargadas, setUbicacionesCargadas] = useState({});
   const [cargandoBusquedaUbicacion, setCargandoBusquedaUbicacion] = useState(false);
   const [ubicacionesBuscadas, setUbicacionesBuscadas] = useState([]);
+  
+  const [optionsAlmacenes, setOptionsAlmacenes] = useState([]);
+  const [optionsUbicacionesDestino, setOptionsUbicacionesDestino] = useState([]);
+  const [optionsUbicacionesOrigen, setOptionsUbicacionesOrigen] = useState([]);
+  const [selectedUbicacionOrigen, setSelectedUbicacionOrigen] = useState(null);
+  const [selectedAlmacenOrigen, setSelectedAlmacenOrigen] = useState(null);
+  const [selectedAlmacenDestino, setSelectedAlmacenDestino] = useState(null);
+  const [selectedUbicacionDestino, setSelectedUbicacionDestino] = useState(null);
 
   const searchTimer = useRef(null);
   const searchRef = useRef(null);
   const listaRef = useRef(null);
 
-  // 🔥 MISMAS FUNCIONES DE FORMATEO QUE INVENTARIO
   const formatearUnidad = (cantidad, unidad) => {
     let cantidadNum = parseFloat(cantidad);
     if (isNaN(cantidadNum)) {
@@ -140,9 +148,7 @@ const TraspasosPage = () => {
     });
   };
 
-  // 🔥 CORRECCIÓN: Funciones para normalizar y mostrar unidad de medida
   const normalizarUnidadMedida = (unidad) => {
-    // Si es 'unidades' o está vacío, enviar vacío (el backend lo espera así)
     if (!unidad || unidad === 'unidades' || unidad.trim() === '') {
       return '';
     }
@@ -156,7 +162,6 @@ const TraspasosPage = () => {
     return unidad;
   };
 
-  // Función mejorada para obtener nombre de almacén
   const getNombreAlmacen = (codigo) => {
     if (!codigo || codigo === 'undefined') return 'Almacén no disponible';
     if (codigo === 'SIN-UBICACION') return 'Stock Sin Ubicación';
@@ -165,7 +170,6 @@ const TraspasosPage = () => {
     return almacen ? `${almacen.Almacen} (${codigo})` : `${codigo}`;
   };
 
-  // Función para formatear ubicación
   const formatUbicacionDisplay = (ubicacion, esSinUbicacion) => {
     if (esSinUbicacion || ubicacion === 'SIN-UBICACION') {
       return 'Stock Sin Ubicación';
@@ -173,7 +177,95 @@ const TraspasosPage = () => {
     return ubicacion;
   };
 
-  // Función corregida para cargar historial
+  const prepararOpcionesAlmacenes = (almacenesList) => {
+    return almacenesList.map(almacen => ({
+      value: almacen.CodigoAlmacen,
+      label: `${almacen.Almacen} (${almacen.CodigoAlmacen})`,
+      data: almacen
+    }));
+  };
+
+  const prepararOpcionesUbicacionesDestino = (ubicacionesList) => {
+    return ubicacionesList.map(ubicacion => ({
+      value: ubicacion.Ubicacion,
+      label: ubicacion.Ubicacion === 'SIN-UBICACION' 
+        ? '[SIN UBICACIÓN] Stock sin ubicación asignada'
+        : `${ubicacion.Ubicacion}${ubicacion.DescripcionUbicacion ? ` - ${ubicacion.DescripcionUbicacion}` : ''}`,
+      data: ubicacion
+    }));
+  };
+
+  const prepararOpcionesUbicacionesOrigen = (stockList, almacenCodigo) => {
+    if (!stockList || stockList.length === 0) return [];
+    
+    const ubicacionesEnAlmacen = stockList.filter(item => item.CodigoAlmacen === almacenCodigo);
+    
+    return ubicacionesEnAlmacen.map((item, index) => {
+      const tallaColor = item.Talla || item.CodigoColor_ 
+        ? ` - Talla/Color: ${item.Talla || ''}${item.CodigoColor_ || ''}` 
+        : '';
+      
+      const partidaText = item.Partida ? ` (Lote: ${item.Partida})` : '';
+      
+      const esSinUbicacion = item.EsSinUbicacion || item.Ubicacion === 'SIN-UBICACION';
+      const ubicacionDisplay = esSinUbicacion ? '[SIN UBICACIÓN]' : item.Ubicacion;
+      
+      return {
+        value: item.GrupoUnico,
+        label: `${ubicacionDisplay}${tallaColor} - ${formatearUnidad(item.Cantidad, item.UnidadMedida)}${partidaText}`,
+        data: item
+      };
+    });
+  };
+
+  const buscarAlmacenes = (inputValue) => {
+    if (!inputValue) return optionsAlmacenes;
+    
+    return optionsAlmacenes.filter(option =>
+      option.label.toLowerCase().includes(inputValue.toLowerCase()) ||
+      option.value.toLowerCase().includes(inputValue.toLowerCase())
+    );
+  };
+
+  const buscarUbicacionesDestino = (inputValue) => {
+    if (!inputValue) return optionsUbicacionesDestino;
+    
+    return optionsUbicacionesDestino.filter(option =>
+      option.label.toLowerCase().includes(inputValue.toLowerCase()) ||
+      option.value.toLowerCase().includes(inputValue.toLowerCase())
+    );
+  };
+
+  const buscarUbicacionesOrigen = (inputValue) => {
+    if (!inputValue || !almacenOrigen) return optionsUbicacionesOrigen;
+    
+    return optionsUbicacionesOrigen.filter(option =>
+      option.label.toLowerCase().includes(inputValue.toLowerCase()) ||
+      option.data?.Ubicacion?.toLowerCase().includes(inputValue.toLowerCase())
+    );
+  };
+
+  useEffect(() => {
+    if (almacenes.length > 0) {
+      const opciones = prepararOpcionesAlmacenes(almacenes);
+      setOptionsAlmacenes(opciones);
+    }
+  }, [almacenes]);
+
+  useEffect(() => {
+    if (ubicacionesDestino.length > 0) {
+      const opciones = prepararOpcionesUbicacionesDestino(ubicacionesDestino);
+      setOptionsUbicacionesDestino(opciones);
+    }
+  }, [ubicacionesDestino]);
+
+  useEffect(() => {
+    if (stockDisponible.length > 0 && almacenOrigen) {
+      const opciones = prepararOpcionesUbicacionesOrigen(stockDisponible, almacenOrigen);
+      setOptionsUbicacionesOrigen(opciones);
+    }
+  }, [stockDisponible, almacenOrigen]);
+
   const cargarHistorial = useCallback(async () => {
     try {
       const headers = getAuthHeader();
@@ -251,7 +343,6 @@ const TraspasosPage = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Efecto para buscar ubicaciones
   useEffect(() => {
     const buscarUbicaciones = async () => {
       if (busquedaUbicacion.trim().length < 2) {
@@ -334,7 +425,6 @@ const TraspasosPage = () => {
     }
   };
 
-  // 🔥 CORRECCIÓN: Función mejorada para cargar stock usando el nuevo endpoint
   const cargarStock = async () => {
     if (!articuloSeleccionado) return;
     
@@ -347,12 +437,10 @@ const TraspasosPage = () => {
     }
   };
 
-  // 🔥 CORRECCIÓN: Usar el nuevo endpoint específico para traspasos
   const cargarStockAlternativo = async () => {
     try {
       const headers = getAuthHeader();
       
-      // 🔥 USAR EL NUEVO ENDPOINT ESPECÍFICO PARA TRASPASOS
       const response = await API.get(
         `/traspasos/stock-por-articulo`,
         { 
@@ -363,7 +451,7 @@ const TraspasosPage = () => {
       
       const stockData = response.data;
       
-      console.log('✅ [TRASPASOS] Datos de stock recibidos:', stockData);
+      console.log('Datos de stock recibidos:', stockData);
       
       const stockNormalizado = stockData.map(item => ({
         CodigoAlmacen: item.CodigoAlmacen,
@@ -378,7 +466,6 @@ const TraspasosPage = () => {
         Talla: item.CodigoTalla01_ || '',
         EsSinUbicacion: item.EsSinUbicacion === 1 || item.TipoStock === 'SIN_UBICACION',
         GrupoUnico: item.ClaveUnica,
-        // 🔥 INCLUIR INFORMACIÓN DE CONVERSIÓN PARA CONSISTENCIA
         UnidadBase: item.UnidadBase,
         UnidadAlternativa: item.UnidadAlternativa,
         FactorConversion: item.FactorConversion,
@@ -400,13 +487,15 @@ const TraspasosPage = () => {
         setTallaOrigen(almacenConMasStock.Talla || '');
         setColorOrigen(almacenConMasStock.CodigoColor_ || '');
         setStockDisponibleInfo(`${almacenConMasStock.Cantidad} ${almacenConMasStock.UnidadMedida}`);
+        
+        const almacenOption = optionsAlmacenes.find(opt => opt.value === almacenConMasStock.CodigoAlmacen);
+        setSelectedAlmacenOrigen(almacenOption);
       }
     } catch (error) {
-      console.error('❌ [TRASPASOS] Error cargando stock:', error);
+      console.error('Error cargando stock:', error);
       
-      // 🔥 FALLBACK: Intentar con el método anterior si el nuevo falla
       try {
-        console.log('🔄 [TRASPASOS] Intentando fallback con ubicacionesMultiples...');
+        console.log('Intentando fallback con ubicacionesMultiples...');
         const headers = getAuthHeader();
         
         const response = await API.post(
@@ -449,9 +538,12 @@ const TraspasosPage = () => {
           setTallaOrigen(almacenConMasStock.Talla || '');
           setColorOrigen(almacenConMasStock.CodigoColor_ || '');
           setStockDisponibleInfo(`${almacenConMasStock.Cantidad} ${almacenConMasStock.UnidadMedida}`);
+          
+          const almacenOption = optionsAlmacenes.find(opt => opt.value === almacenConMasStock.CodigoAlmacen);
+          setSelectedAlmacenOrigen(almacenOption);
         }
       } catch (fallbackError) {
-        console.error('❌ [TRASPASOS] Error en fallback:', fallbackError);
+        console.error('Error en fallback:', fallbackError);
         throw error;
       }
     }
@@ -462,63 +554,6 @@ const TraspasosPage = () => {
       cargarStock();
     }
   }, [articuloSeleccionado]);
-
-  const cargarUbicacionesConResiliencia = async (codigoAlmacen) => {
-    try {
-      const headers = getAuthHeader();
-      const response = await API.get(
-        `/ubicaciones-por-almacen/${codigoAlmacen}`,
-        { headers, timeout: 10000 }
-      );
-      return response.data;
-    } catch (error) {
-      console.warn(`No se pudieron cargar las ubicaciones para ${codigoAlmacen}, usando valor por defecto`);
-      return [
-        { 
-          Ubicacion: 'SIN-UBICACION', 
-          DescripcionUbicacion: 'Stock sin ubicación asignada',
-          CantidadArticulos: 'Varios'
-        }
-      ];
-    }
-  };
-
-  const cargarArticulosUbicacion = useCallback(async (almacen, ubicacion, page = 1) => {
-    try {
-      const headers = getAuthHeader();
-      const response = await API.get(
-        `/stock/por-ubicacion`,
-        { 
-          headers,
-          params: {
-            codigoAlmacen: almacen,
-            ubicacion: ubicacion,
-            page,
-            pageSize: paginationUbicacion.pageSize
-          }
-        }
-      );
-      
-      const articulosConTipoUnidad = response.data.articulos.map(articulo => ({
-        ...articulo,
-        TipoUnidadMedida_: articulo.TipoUnidadMedida_ || articulo.UnidadMedida || 'unidades'
-      }));
-      
-      setArticulosUbicacion(articulosConTipoUnidad);
-      setPaginationUbicacion({
-        page,
-        pageSize: response.data.pageSize,
-        total: response.data.total
-      });
-      
-      setUbicacionSeleccionada({ almacen, ubicacion });
-      setVistaUbicacion('detalle');
-    } catch (error) {
-      console.error('Error cargando artículos:', error);
-      setArticulosUbicacion([]);
-      alert(`Error cargando artículos: ${error.response?.data?.mensaje || error.message}`);
-    }
-  }, [paginationUbicacion.pageSize]);
 
   const cargarUbicacionesDestino = useCallback(async (excluirUbicacion = '') => {
     if (!almacenDestino) return;
@@ -549,60 +584,26 @@ const TraspasosPage = () => {
     cargarUbicacionesDestino();
   }, [almacenDestino, cargarUbicacionesDestino]);
 
-  const toggleAlmacenExpandido = async (codigoAlmacen) => {
-    if (almacenesExpandidos[codigoAlmacen]) {
-      setAlmacenesExpandidos(prev => ({ ...prev, [codigoAlmacen]: false }));
+  const cambiarAlmacenOrigen = (selectedOption) => {
+    if (!selectedOption) {
+      setAlmacenOrigen('');
+      setSelectedAlmacenOrigen(null);
+      setUbicacionOrigen('');
+      setSelectedUbicacionOrigen(null);
+      setUnidadMedida('');
+      setTipoUnidadMedida('');
+      setPartida('');
+      setTallaOrigen('');
+      setColorOrigen('');
+      setStockDisponibleInfo('');
       return;
     }
 
-    if (!ubicacionesCargadas[codigoAlmacen]) {
-      try {
-        setLoading(true);
-        const ubicacionesData = await cargarUbicacionesConResiliencia(codigoAlmacen);
-        
-        const ubicacionesConSinUbicacion = [
-          { 
-            Ubicacion: 'SIN-UBICACION', 
-            DescripcionUbicacion: 'Stock sin ubicación asignada',
-            CantidadArticulos: 'Varios'
-          },
-          ...ubicacionesData
-        ];
-        
-        setUbicacionesCargadas(prev => ({
-          ...prev,
-          [codigoAlmacen]: ubicacionesConSinUbicacion
-        }));
-      } catch (error) {
-        console.error('Error cargando ubicaciones:', error);
-        setUbicacionesCargadas(prev => ({
-          ...prev,
-          [codigoAlmacen]: [
-            { 
-              Ubicacion: 'SIN-UBICACION', 
-              DescripcionUbicacion: 'Stock sin ubicación asignada',
-              CantidadArticulos: 'Varios'
-            }
-          ]
-        }));
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    setAlmacenesExpandidos(prev => ({ ...prev, [codigoAlmacen]: true }));
-  };
-
-  const seleccionarArticulo = (articulo) => {
-    setArticuloSeleccionado(articulo);
-    setTerminoBusqueda('');
-    setMostrarResultados(false);
-    setAllArticulosLoaded(false);
-  };
-
-  const cambiarAlmacenOrigen = (codigoAlmacen) => {
+    const codigoAlmacen = selectedOption.value;
     setAlmacenOrigen(codigoAlmacen);
+    setSelectedAlmacenOrigen(selectedOption);
     setUbicacionOrigen('');
+    setSelectedUbicacionOrigen(null);
     setUnidadMedida('');
     setTipoUnidadMedida('');
     setPartida('');
@@ -625,12 +626,34 @@ const TraspasosPage = () => {
       setPartida(ubicacionConMasStock.Partida || '');
       setTallaOrigen(ubicacionConMasStock.Talla || '');
       setColorOrigen(ubicacionConMasStock.CodigoColor_ || '');
-      setStockDisponibleInfo(`${almacenConMasStock.Cantidad} ${almacenConMasStock.UnidadMedida}`);
+      setStockDisponibleInfo(`${ubicacionConMasStock.Cantidad} ${ubicacionConMasStock.UnidadMedida}`);
+      
+      const ubicacionOption = optionsUbicacionesOrigen.find(opt => 
+        opt.data.GrupoUnico === ubicacionConMasStock.GrupoUnico
+      );
+      if (ubicacionOption) {
+        setSelectedUbicacionOrigen(ubicacionOption);
+      }
     }
   };
 
-  const seleccionarUbicacionOrigen = (item) => {
+  const seleccionarUbicacionOrigen = (selectedOption) => {
+    if (!selectedOption) {
+      setUbicacionOrigen('');
+      setSelectedUbicacionOrigen(null);
+      setUnidadMedida('');
+      setTipoUnidadMedida('');
+      setPartida('');
+      setTallaOrigen('');
+      setColorOrigen('');
+      setGrupoUnicoOrigen('');
+      setStockDisponibleInfo('');
+      return;
+    }
+
+    const item = selectedOption.data;
     setUbicacionOrigen(item.Ubicacion);
+    setSelectedUbicacionOrigen(selectedOption);
     setUnidadMedida(item.UnidadMedida);
     setTipoUnidadMedida(item.TipoUnidadMedida_);
     setPartida(item.Partida || '');
@@ -639,6 +662,32 @@ const TraspasosPage = () => {
     setGrupoUnicoOrigen(item.GrupoUnico);
     setStockDisponibleInfo(`${item.Cantidad} ${item.UnidadMedida}`);
     cargarUbicacionesDestino(item.Ubicacion);
+  };
+
+  const cambiarAlmacenDestino = (selectedOption) => {
+    if (!selectedOption) {
+      setAlmacenDestino('');
+      setSelectedAlmacenDestino(null);
+      setUbicacionDestino('');
+      setSelectedUbicacionDestino(null);
+      return;
+    }
+
+    setAlmacenDestino(selectedOption.value);
+    setSelectedAlmacenDestino(selectedOption);
+    setUbicacionDestino('');
+    setSelectedUbicacionDestino(null);
+  };
+
+  const cambiarUbicacionDestino = (selectedOption) => {
+    if (!selectedOption) {
+      setUbicacionDestino('');
+      setSelectedUbicacionDestino(null);
+      return;
+    }
+
+    setUbicacionDestino(selectedOption.value);
+    setSelectedUbicacionDestino(selectedOption);
   };
 
   const handleCantidadChange = (e) => {
@@ -675,12 +724,6 @@ const TraspasosPage = () => {
       return;
     }
 
-    // 🔥 CORRECCIÓN: No validar que unidadMedida esté lleno, ya que puede ser vacío para "unidades"
-    // if (!unidadMedida) {
-    //   alert('Debe seleccionar una unidad de medida');
-    //   return;
-    // }
-
     if (!articuloSeleccionado || !almacenOrigen || !ubicacionOrigen || !almacenDestino || !ubicacionDestino || !cantidad) {
       alert('Complete todos los campos');
       return;
@@ -700,7 +743,6 @@ const TraspasosPage = () => {
       return;
     }
     
-    // 🔥 CORRECCIÓN: Normalizar unidad de medida para el backend
     const unidadMedidaNormalizada = normalizarUnidadMedida(unidadMedida);
     const tipoUnidadMedidaNormalizada = normalizarUnidadMedida(tipoUnidadMedida);
     
@@ -726,8 +768,8 @@ const TraspasosPage = () => {
         ubicacion: ubicacionDestino
       },
       cantidad: cantidadNum,
-      unidadMedida: unidadMedidaNormalizada, // 🔥 Usar la versión normalizada
-      tipoUnidadMedida: tipoUnidadMedidaNormalizada, // 🔥 Usar la versión normalizada
+      unidadMedida: unidadMedidaNormalizada,
+      tipoUnidadMedida: tipoUnidadMedidaNormalizada,
       partida: partida,
       talla: tallaOrigen,
       color: colorOrigen
@@ -763,7 +805,6 @@ const TraspasosPage = () => {
       return;
     }
     
-    // 🔥 CORRECCIÓN: Normalizar unidad de medida
     const unidadMedidaNormalizada = normalizarUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida);
     const tipoUnidadMedidaNormalizada = normalizarUnidadMedida(articuloUbicacionSeleccionado.TipoUnidadMedida_);
     
@@ -788,8 +829,8 @@ const TraspasosPage = () => {
         ubicacion: ubicacionDestino
       },
       cantidad: cantidadNum,
-      unidadMedida: unidadMedidaNormalizada, // 🔥 Usar versión normalizada
-      tipoUnidadMedida: tipoUnidadMedidaNormalizada, // 🔥 Usar versión normalizada
+      unidadMedida: unidadMedidaNormalizada,
+      tipoUnidadMedida: tipoUnidadMedidaNormalizada,
       partida: articuloUbicacionSeleccionado.Partida || '',
       talla: articuloUbicacionSeleccionado.Talla || '',
       color: articuloUbicacionSeleccionado.CodigoColor_ || ''
@@ -822,8 +863,6 @@ const TraspasosPage = () => {
         const talla = traspaso.talla || '';
         const color = traspaso.color || '';
         
-        // 🔥 CORRECCIÓN: El backend ya normaliza 'unidades' a vacío, pero por consistencia
-        // también normalizamos aquí
         const tipoUnidadMedida = normalizarUnidadMedida(traspaso.tipoUnidadMedida);
         
         const ubicacionOrigenFinal = traspaso.origen.esSinUbicacion ? 'SIN-UBICACION' : traspaso.origen.ubicacion;
@@ -835,7 +874,7 @@ const TraspasosPage = () => {
           destinoAlmacen: traspaso.destino.almacen,
           destinoUbicacion: traspaso.destino.ubicacion,
           cantidad: cantidadEntera,
-          unidadMedida: tipoUnidadMedida, // 🔥 Ya normalizada
+          unidadMedida: tipoUnidadMedida,
           partida: partida,
           grupoTalla: talla ? 1 : 0,
           codigoTalla: talla,
@@ -850,7 +889,6 @@ const TraspasosPage = () => {
 
       console.log('Datos a enviar:', JSON.stringify(traspasosValidados, null, 2));
 
-      // Enviar los traspasos uno por uno
       const resultados = [];
       for (const [index, traspaso] of traspasosValidados.entries()) {
         try {
@@ -1086,80 +1124,37 @@ const TraspasosPage = () => {
                     <h2>Origen</h2>
                     <div className="form-control-group">
                       <label>Almacén:</label>
-                      <select 
-                        className="form-control-enhanced"
-                        value={almacenOrigen}
-                        onChange={(e) => cambiarAlmacenOrigen(e.target.value)}
+                      <Select
+                        className="react-select-container"
+                        classNamePrefix="react-select"
+                        value={selectedAlmacenOrigen}
+                        onChange={cambiarAlmacenOrigen}
+                        options={optionsAlmacenes}
+                        filterOption={buscarAlmacenes}
+                        placeholder="Buscar o seleccionar almacén..."
+                        noOptionsMessage={() => "No hay almacenes disponibles"}
+                        isClearable
+                        isSearchable
                         required
-                      >
-                        <option value="">Seleccionar almacén</option>
-                        {[...new Set(stockDisponible.map(item => item.CodigoAlmacen))]
-                          .map((codigo) => (
-                            <option key={codigo} value={codigo}>
-                              {getNombreAlmacen(codigo)}
-                            </option>
-                          ))}
-                      </select>
+                      />
                     </div>
 
                     <div className="form-control-group">
                       <label>Ubicación y Variantes:</label>
-                      <select 
-                        className="form-control-enhanced"
-                        value={`${ubicacionOrigen}-${tipoUnidadMedida}-${partida}-${tallaOrigen}-${colorOrigen}`}
-                        onChange={(e) => {
-                          const selectedOption = e.target.options[e.target.selectedIndex];
-                          const itemId = selectedOption.getAttribute('data-item-id');
-                          if (itemId) {
-                            const item = stockDisponible.find(i => i.GrupoUnico === itemId);
-                            if (item) {
-                              seleccionarUbicacionOrigen(item);
-                            }
-                          }
-                        }}
+                      <Select
+                        className="react-select-container"
+                        classNamePrefix="react-select"
+                        value={selectedUbicacionOrigen}
+                        onChange={seleccionarUbicacionOrigen}
+                        options={optionsUbicacionesOrigen}
+                        filterOption={buscarUbicacionesOrigen}
+                        placeholder="Buscar o seleccionar ubicación..."
+                        noOptionsMessage={() => "No hay ubicaciones disponibles"}
+                        isClearable
+                        isSearchable
+                        isDisabled={!almacenOrigen}
                         required
-                        disabled={!almacenOrigen}
-                      >
-                        <option value="">Seleccionar ubicación y variante</option>
-                        {stockDisponible
-                          .filter(item => item.CodigoAlmacen === almacenOrigen)
-                          .map((item, index) => {
-                            const tallaColor = formatTallaColor(item.Talla, item.CodigoColor_);
-                            
-                            const uniqueKey = `${item.GrupoUnico}_${index}`;
-                            
-                            // Texto mejorado para el selector
-                            let optionText = '';
-                            
-                            if (item.EsSinUbicacion) {
-                              optionText += '[SIN UBICACIÓN] ';
-                            }
-                            
-                            optionText += formatUbicacionDisplay(item.Ubicacion, item.EsSinUbicacion);
-                            
-                            // Agregar Talla/Color de manera prominente
-                            if (tallaColor) {
-                              optionText += ` - Talla/Color: ${tallaColor}`;
-                            }
-                            
-                            // 🔥 USAR EL MISMO FORMATEO QUE INVENTARIO
-                            optionText += ` - ${formatearUnidad(item.Cantidad, item.UnidadMedida)}`;
-                            
-                            if (item.Partida) {
-                              optionText += ` (Lote: ${item.Partida})`;
-                            }
-                            
-                            return (
-                              <option 
-                                key={uniqueKey}
-                                value={`${item.Ubicacion}-${item.TipoUnidadMedida_}-${item.Partida || ''}-${item.Talla || ''}-${item.CodigoColor_ || ''}`}
-                                data-item-id={item.GrupoUnico}
-                              >
-                                {optionText}
-                              </option>
-                            );
-                          })}
-                      </select>
+                      />
                     </div>
                     
                     {ubicacionOrigen && (
@@ -1193,46 +1188,37 @@ const TraspasosPage = () => {
                     <h2>Destino</h2>
                     <div className="form-control-group">
                       <label>Almacén:</label>
-                      <select 
-                        className="form-control-enhanced"
-                        value={almacenDestino}
-                        onChange={(e) => {
-                          setAlmacenDestino(e.target.value);
-                          setUbicacionDestino('');
-                        }}
+                      <Select
+                        className="react-select-container"
+                        classNamePrefix="react-select"
+                        value={selectedAlmacenDestino}
+                        onChange={cambiarAlmacenDestino}
+                        options={optionsAlmacenes}
+                        filterOption={buscarAlmacenes}
+                        placeholder="Buscar o seleccionar almacén..."
+                        noOptionsMessage={() => "No hay almacenes disponibles"}
+                        isClearable
+                        isSearchable
                         required
-                      >
-                        <option value="">Seleccionar almacén</option>
-                        {almacenes.map((almacen) => (
-                          <option key={almacen.CodigoAlmacen} value={almacen.CodigoAlmacen}>
-                            {almacen.Almacen} ({almacen.CodigoAlmacen})
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </div>
 
                     <div className="form-control-group">
                       <label>Ubicación:</label>
-                      <select 
-                        className="form-control-enhanced"
-                        value={ubicacionDestino}
-                        onChange={(e) => setUbicacionDestino(e.target.value)}
+                      <Select
+                        className="react-select-container"
+                        classNamePrefix="react-select"
+                        value={selectedUbicacionDestino}
+                        onChange={cambiarUbicacionDestino}
+                        options={optionsUbicacionesDestino}
+                        filterOption={buscarUbicacionesDestino}
+                        placeholder="Buscar o seleccionar ubicación..."
+                        noOptionsMessage={() => "No hay ubicaciones disponibles"}
+                        isClearable
+                        isSearchable
+                        isDisabled={!almacenDestino}
                         required
-                        disabled={!almacenDestino}
-                      >
-                        <option value="">Seleccionar ubicación</option>
-                        {ubicacionesDestino
-                          .filter(ubicacion => 
-                            almacenDestino !== almacenOrigen || ubicacion.Ubicacion !== ubicacionOrigen
-                          )
-                          .map((ubicacion) => (
-                            <option key={ubicacion.Ubicacion} value={ubicacion.Ubicacion}>
-                              {ubicacion.Ubicacion === 'SIN-UBICACION' ? '[SIN UBICACIÓN] ' : ''}
-                              {formatUbicacionDisplay(ubicacion.Ubicacion, ubicacion.Ubicacion === 'SIN-UBICACION')}
-                              {ubicacion.DescripcionUbicacion && ` - ${ubicacion.DescripcionUbicacion}`}
-                            </option>
-                          ))}
-                      </select>
+                      />
                     </div>
                   </div>
 
@@ -1279,14 +1265,29 @@ const TraspasosPage = () => {
                   
                   <div className="form-control-group">
                     <label>Buscar ubicación:</label>
-                    <input
-                      type="text"
-                      value={busquedaUbicacion}
-                      onChange={(e) => setBusquedaUbicacion(e.target.value)}
-                      placeholder="Escriba el código de ubicación..."
-                      className="search-input"
+                    <Select
+                      className="react-select-container"
+                      classNamePrefix="react-select"
+                      value={null}
+                      onChange={(selectedOption) => {
+                        if (selectedOption && selectedOption.value) {
+                          const ubicacion = selectedOption.value;
+                          cargarArticulosUbicacion(ubicacion.CodigoAlmacen, ubicacion.Ubicacion);
+                        }
+                      }}
+                      options={ubicacionesBuscadas.map(ubicacion => ({
+                        value: ubicacion,
+                        label: `${getNombreAlmacen(ubicacion.CodigoAlmacen)} → ${formatUbicacionDisplay(ubicacion.Ubicacion, ubicacion.Ubicacion === 'SIN-UBICACION')} (${ubicacion.CantidadArticulos} artículos)`
+                      }))}
+                      onInputChange={(inputValue) => {
+                        setBusquedaUbicacion(inputValue);
+                      }}
+                      isLoading={cargandoBusquedaUbicacion}
+                      placeholder="Escriba para buscar ubicaciones..."
+                      noOptionsMessage={() => cargandoBusquedaUbicacion ? "Buscando..." : "Escriba al menos 2 caracteres"}
+                      isClearable
+                      isSearchable
                     />
-                    {cargandoBusquedaUbicacion && <div className="cargando">Buscando...</div>}
                   </div>
                   
                   {busquedaUbicacion ? (
@@ -1344,7 +1345,7 @@ const TraspasosPage = () => {
                             </div>
                           )}
                         </div>
-                      ))},
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1414,7 +1415,6 @@ const TraspasosPage = () => {
                                   <td>{articulo.CodigoArticulo}</td>
                                   <td>{articulo.DescripcionArticulo}</td>
                                   <td>
-                                    {/* 🔥 USAR EL MISMO FORMATEO QUE INVENTARIO */}
                                     {formatearUnidad(articulo.Cantidad, articulo.UnidadMedida)} 
                                     {articulo.UnidadMedida !== articulo.UnidadBase && articulo.FactorConversion && (
                                       <span className="unidad-base">
@@ -1517,46 +1517,37 @@ const TraspasosPage = () => {
                     
                     <div className="form-control-group">
                       <label>Almacén de destino:</label>
-                      <select 
-                        className="form-control-enhanced"
-                        value={almacenDestino}
-                        onChange={(e) => {
-                          setAlmacenDestino(e.target.value);
-                          setUbicacionDestino('');
-                        }}
+                      <Select
+                        className="react-select-container"
+                        classNamePrefix="react-select"
+                        value={selectedAlmacenDestino}
+                        onChange={cambiarAlmacenDestino}
+                        options={optionsAlmacenes}
+                        filterOption={buscarAlmacenes}
+                        placeholder="Buscar o seleccionar almacén..."
+                        noOptionsMessage={() => "No hay almacenes disponibles"}
+                        isClearable
+                        isSearchable
                         required
-                      >
-                        <option value="">Seleccionar almacén</option>
-                        {almacenes.map(almacen => (
-                          <option key={almacen.CodigoAlmacen} value={almacen.CodigoAlmacen}>
-                            {almacen.Almacen} ({almacen.CodigoAlmacen})
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </div>
 
                     <div className="form-control-group">
                       <label>Ubicación de destino:</label>
-                      <select 
-                        className="form-control-enhanced"
-                        value={ubicacionDestino}
-                        onChange={(e) => setUbicacionDestino(e.target.value)}
+                      <Select
+                        className="react-select-container"
+                        classNamePrefix="react-select"
+                        value={selectedUbicacionDestino}
+                        onChange={cambiarUbicacionDestino}
+                        options={optionsUbicacionesDestino}
+                        filterOption={buscarUbicacionesDestino}
+                        placeholder="Buscar o seleccionar ubicación..."
+                        noOptionsMessage={() => "No hay ubicaciones disponibles"}
+                        isClearable
+                        isSearchable
+                        isDisabled={!almacenDestino}
                         required
-                        disabled={!almacenDestino}
-                      >
-                        <option value="">Seleccionar ubicación</option>
-                        {ubicacionesDestino
-                          .filter(ubicacion => 
-                            almacenDestino !== ubicacionSeleccionada.almacen || 
-                            ubicacion.Ubicacion !== ubicacionSeleccionada.ubicacion
-                          )
-                          .map((ubicacion) => (
-                            <option key={ubicacion.Ubicacion} value={ubicacion.Ubicacion}>
-                              {ubicacion.Ubicacion === 'SIN-UBICACION' ? '[SIN UBICACIÓN] ' : ''}
-                              {formatUbicacionDisplay(ubicacion.Ubicacion, ubicacion.Ubicacion === 'SIN-UBICACION')}
-                            </option>
-                          ))}
-                      </select>
+                      />
                     </div>
 
                     <div className="form-control-group">
@@ -1632,7 +1623,6 @@ const TraspasosPage = () => {
                           <br />{traspaso.destino.ubicacion}
                         </td>
                         <td className="cantidad-td">
-                          {/* 🔥 USAR EL MISMO FORMATEO QUE INVENTARIO */}
                           {formatearUnidad(traspaso.cantidad, mostrarUnidadMedida(traspaso.unidadMedida))}
                         </td>
                         <td>
@@ -1730,7 +1720,6 @@ const TraspasosPage = () => {
                           {item.DestinoUbicacion}
                         </td>
                         <td>
-                          {/* 🔥 USAR EL MISMO FORMATEO QUE INVENTARIO */}
                           {formatearUnidad(item.Cantidad, mostrarUnidadMedida(item.UnidadMedida))}
                         </td>
                         <td>

@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import '../styles/ConfirmacionEntrega.css';
 
-function ConfirmacionEntrega() {
+const ConfirmacionEntrega = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { id } = useParams();
+  
   const [pedido, setPedido] = useState(null);
   const [datosCliente, setDatosCliente] = useState({
     nombre: '',
@@ -15,44 +16,132 @@ function ConfirmacionEntrega() {
   const [confirmado, setConfirmado] = useState(false);
 
   useEffect(() => {
-    if (location.state?.pedido) {
-      setPedido(location.state.pedido);
-    } else {
-      const savedPedidos = JSON.parse(localStorage.getItem('preparacionPedidosData'))?.pedidos || [];
-      const foundPedido = savedPedidos.find(p => p.id.toString() === id);
-      if (foundPedido) {
-        setPedido(foundPedido);
-      } else {
+    const loadPedido = () => {
+      if (location.state?.pedido) {
+        setPedido(location.state.pedido);
+        return;
+      }
+
+      try {
+        const savedData = JSON.parse(localStorage.getItem('preparacionPedidosData'));
+        const foundPedido = savedData?.pedidos?.find(p => p.id.toString() === id);
+        
+        if (foundPedido) {
+          setPedido(foundPedido);
+        } else {
+          navigate('/preparacion-pedidos');
+        }
+      } catch {
         navigate('/preparacion-pedidos');
       }
-    }
-  }, [id, location, navigate]);
+    };
 
-  const handleInputChange = (e) => {
+    loadPedido();
+  }, [id, location.state, navigate]);
+
+  const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
-    setDatosCliente(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
+    setDatosCliente(prev => ({ ...prev, [name]: value }));
+  }, []);
 
-  const handleConfirmar = () => {
-    if (datosCliente.nombre.trim() && datosCliente.dni.trim()) {
-      setConfirmado(true);
-      
-      setTimeout(() => {
-        alert(`Resguardo enviado por correo a ${datosCliente.nombre}`);
-      }, 1500);
-    } else {
+  const handleConfirmar = useCallback(() => {
+    const { nombre, dni } = datosCliente;
+    
+    if (!nombre.trim() || !dni.trim()) {
       alert('Por favor, complete todos los datos requeridos');
+      return;
     }
-  };
 
-  const volverAPedidos = () => {
+    setConfirmado(true);
+    
+    setTimeout(() => {
+      alert(`Resguardo enviado por correo a ${nombre}`);
+    }, 1500);
+  }, [datosCliente]);
+
+  const volverAPedidos = useCallback(() => {
     navigate('/preparacion-pedidos');
-  };
+  }, [navigate]);
 
-  if (!pedido) return <div className="cargando">Cargando...</div>;
+  const formValido = useMemo(() => {
+    const { nombre, dni, firma } = datosCliente;
+    return nombre.trim() && dni.trim() && firma.trim();
+  }, [datosCliente]);
+
+  const renderTablaArticulos = useMemo(() => (
+    <table className="tabla-articulos">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Descripción</th>
+          <th>Cantidad</th>
+        </tr>
+      </thead>
+      <tbody>
+        {pedido.articulos.map(articulo => (
+          <tr key={articulo.id}>
+            <td>{articulo.codigo}</td>
+            <td>{articulo.descripcion}</td>
+            <td>{articulo.cantidad}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ), [pedido]);
+
+  const renderFormulario = useMemo(() => (
+    <div className="formulario-firma">
+      {[
+        { id: 'nombre', label: 'Nombre completo:', placeholder: 'Nombre y apellidos' },
+        { id: 'dni', label: 'DNI/NIF:', placeholder: 'Documento de identidad' },
+        { id: 'firma', label: 'Firma (nombre):', placeholder: 'Firme aquí escribiendo su nombre' }
+      ].map(({ id, label, placeholder }) => (
+        <div key={id} className="campo-formulario">
+          <label htmlFor={id}>{label}</label>
+          <input
+            id={id}
+            type="text"
+            name={id}
+            value={datosCliente[id]}
+            onChange={handleInputChange}
+            placeholder={placeholder}
+            required
+          />
+        </div>
+      ))}
+    </div>
+  ), [datosCliente, handleInputChange]);
+
+  const renderMensajeExito = useMemo(() => (
+    <div className="mensaje-exito">
+      <div className="icono-exito">✓</div>
+      <h3>¡Entrega Confirmada!</h3>
+      
+      <div className="detalle-entrega">
+        {[
+          ['Pedido:', `#${pedido.id}`],
+          ['Cliente:', pedido.cliente],
+          ['Fecha de entrega:', new Date().toLocaleDateString('es-ES')],
+          ['Responsable:', datosCliente.nombre],
+          ['DNI:', datosCliente.dni]
+        ].map(([label, value]) => (
+          <p key={label}><strong>{label}</strong> {value}</p>
+        ))}
+      </div>
+      
+      <p className="mensaje-resguardo">
+        El resguardo de entrega ha sido enviado por correo electrónico correctamente.
+      </p>
+      
+      <button onClick={volverAPedidos} className="btn-volver">
+        Volver a Pedidos
+      </button>
+    </div>
+  ), [pedido, datosCliente, volverAPedidos]);
+
+  if (!pedido) {
+    return <div className="cargando">Cargando...</div>;
+  }
 
   return (
     <div className="confirmacion-entrega-container">
@@ -67,106 +156,25 @@ function ConfirmacionEntrega() {
               <p><strong>Fecha:</strong> {pedido.fecha}</p>
             </div>
             
-            <table className="tabla-articulos">
-              <thead>
-                <tr>
-                  <th>Código</th>
-                  <th>Descripción</th>
-                  <th>Cantidad</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pedido.articulos.map(articulo => (
-                  <tr key={articulo.id}>
-                    <td>{articulo.codigo}</td>
-                    <td>{articulo.descripcion}</td>
-                    <td>{articulo.cantidad}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {renderTablaArticulos}
           </div>
           
           <div className="seccion-firma">
             <h4>Datos de Confirmación</h4>
-            
-            <div className="formulario-firma">
-              <div className="campo-formulario">
-                <label htmlFor="nombre">Nombre completo:</label>
-                <input
-                  id="nombre"
-                  type="text"
-                  name="nombre"
-                  value={datosCliente.nombre}
-                  onChange={handleInputChange}
-                  placeholder="Nombre y apellidos"
-                  required
-                />
-              </div>
-              
-              <div className="campo-formulario">
-                <label htmlFor="dni">DNI/NIF:</label>
-                <input
-                  id="dni"
-                  type="text"
-                  name="dni"
-                  value={datosCliente.dni}
-                  onChange={handleInputChange}
-                  placeholder="Documento de identidad"
-                  required
-                />
-              </div>
-              
-              <div className="campo-formulario">
-                <label htmlFor="firma">Firma (nombre):</label>
-                <input
-                  id="firma"
-                  type="text"
-                  name="firma"
-                  value={datosCliente.firma}
-                  onChange={handleInputChange}
-                  placeholder="Firme aquí escribiendo su nombre"
-                  required
-                />
-              </div>
-            </div>
+            {renderFormulario}
             
             <button
               onClick={handleConfirmar}
-              disabled={!datosCliente.nombre || !datosCliente.dni || !datosCliente.firma}
+              disabled={!formValido}
               className="btn-confirmar"
             >
               Confirmar Entrega
             </button>
           </div>
         </>
-      ) : (
-        <div className="mensaje-exito">
-          <div className="icono-exito">✓</div>
-          <h3>¡Entrega Confirmada!</h3>
-          
-          <div className="detalle-entrega">
-            <p><strong>Pedido:</strong> #{pedido.id}</p>
-            <p><strong>Cliente:</strong> {pedido.cliente}</p>
-            <p><strong>Fecha de entrega:</strong> {new Date().toLocaleDateString('es-ES')}</p>
-            <p><strong>Responsable:</strong> {datosCliente.nombre}</p>
-            <p><strong>DNI:</strong> {datosCliente.dni}</p>
-          </div>
-          
-          <p className="mensaje-resguardo">
-            El resguardo de entrega ha sido enviado por correo electrónico correctamente.
-          </p>
-          
-          <button
-            onClick={volverAPedidos}
-            className="btn-volver"
-          >
-            Volver a Pedidos
-          </button>
-        </div>
-      )}
+      ) : renderMensajeExito}
     </div>
   );
-}
+};
 
 export default ConfirmacionEntrega;

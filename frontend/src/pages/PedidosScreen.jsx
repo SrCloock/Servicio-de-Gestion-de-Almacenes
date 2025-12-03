@@ -3,10 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
-import { Html5Qrcode, Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 import { usePermissions } from '../PermissionsManager';
 import '../styles/PedidosScreen.css';
-import { FaEllipsisV, FaCamera, FaQrcode, FaBarcode, FaCheck, FaTimes, FaExclamationTriangle, FaChevronDown, FaSearch, FaCalendarAlt, FaTruck, FaInfoCircle, FaSync, FaFilter, FaWeight, FaBox, FaUser, FaPhone, FaExclamation } from 'react-icons/fa';
+import { 
+  FaEllipsisV, FaCamera, FaQrcode, FaBarcode, FaCheck, FaTimes, 
+  FaExclamationTriangle, FaChevronDown, FaSearch, FaCalendarAlt, 
+  FaTruck, FaInfoCircle, FaSync, FaFilter, FaWeight, FaBox, 
+  FaUser, FaPhone, FaExclamation 
+} from 'react-icons/fa';
 
 // Custom hook para debounce
 const useDebounce = (value, delay) => {
@@ -156,14 +161,17 @@ const DetallesArticuloModal = React.memo(({
   const [erroresCarga, setErroresCarga] = useState({});
   const abortControllers = useRef({});
 
-  // Cancelar todas las peticiones al desmontar
+  // Cancelar todas las peticiones al desmontar o cambiar detalles
   useEffect(() => {
     return () => {
-      Object.values(abortControllers.current).forEach(controller => {
-        if (controller) controller.abort();
+      Object.entries(abortControllers.current).forEach(([key, controller]) => {
+        if (controller) {
+          controller.abort();
+          delete abortControllers.current[key];
+        }
       });
     };
-  }, []);
+  }, [detalles]);
 
   // Cargar stock cuando abrimos el modal - SOLO para variantes con unidades pendientes
   useEffect(() => {
@@ -225,6 +233,13 @@ const DetallesArticuloModal = React.memo(({
     };
 
     cargarUbicaciones();
+
+    // Cleanup: abortar todas las peticiones al desmontar
+    return () => {
+      Object.values(abortControllers.current).forEach(controller => {
+        if (controller) controller.abort();
+      });
+    };
   }, [detalles]);
 
   const detallesConPendientes = useMemo(() => 
@@ -344,13 +359,13 @@ const DetallesArticuloModal = React.memo(({
               </thead>
               <tbody>
                 {detallesConPendientes.map((detalle, index) => {
-                  const key = `${detalle.codigoArticulo}-${detalle.codigoColor}-${detalle.codigoTalla}`;
+                  const key = `${detalle.codigoArticulo}-${detalle.codigoColor}-${detalle.codigoTalla}-${index}`;
                   const ubicaciones = ubicacionesPorDetalle[key] || [];
                   const seleccion = selecciones[key] || {};
                   const error = erroresCarga[key];
 
                   return (
-                    <tr key={index} className={ubicaciones.length === 0 ? 'ps-sin-stock-row' : ''}>
+                    <tr key={key} className={ubicaciones.length === 0 ? 'ps-sin-stock-row' : ''}>
                       <td>{detalle.colorNombre || detalle.codigoColor}</td>
                       <td>{detalle.descripcionTalla || detalle.codigoTalla}</td>
                       <td>{formatearUnidad(detalle.cantidadPendiente, linea.unidadBase)}</td>
@@ -452,14 +467,11 @@ const LineaPedido = React.memo(({
   isProcesando
 }) => {
   const formatearUnidad = useFormatearUnidad();
+  const [isUpdatingExpedicion, setIsUpdatingExpedicion] = useState(false);
   
   const ubicacionesConStock = useMemo(() => {
     const ubicacionesArticulo = ubicaciones[linea.codigoArticulo] || [];
     
-    console.log(`[FRONTEND DEBUG] Ubicaciones para artículo ${linea.codigoArticulo}:`, ubicacionesArticulo);
-    console.log(`[FRONTEND DEBUG] Buscando unidad: "${linea.unidadPedido}" en pedido`);
-
-    // 🔥 CORRECCIÓN: Filtrar considerando unidades normalizadas
     let ubicacionesConStockReal = ubicacionesArticulo.filter(ubi => {
       const tieneStock = parseFloat(ubi.unidadSaldo) > 0;
       
@@ -468,34 +480,18 @@ const LineaPedido = React.memo(({
       const unidadPedidoNormalizada = normalizarUnidad(linea.unidadPedido);
       const unidadBaseNormalizada = normalizarUnidad(linea.unidadBase);
       
-      // 🔥 COMPARACIÓN MEJORADA: Considerar unidades normalizadas
       const unidadCoincide = 
         unidadUbicacionNormalizada === unidadPedidoNormalizada || 
         unidadUbicacionNormalizada === unidadBaseNormalizada;
       
       const noEsZonaDescarga = ubi.ubicacion !== "Zona descarga";
       
-      console.log(`[FRONTEND DEBUG] Ubicación ${ubi.ubicacion}:`, {
-        unidadMedida: ubi.unidadMedida,
-        unidadUbicacionNormalizada,
-        unidadPedido: linea.unidadPedido,
-        unidadPedidoNormalizada,
-        unidadBase: linea.unidadBase,
-        unidadBaseNormalizada,
-        tieneStock,
-        unidadCoincide,
-        noEsZonaDescarga
-      });
-      
       return tieneStock && unidadCoincide && noEsZonaDescarga;
     });
-
-    console.log(`[FRONTEND DEBUG] Ubicaciones con stock real para ${linea.codigoArticulo}:`, ubicacionesConStockReal);
 
     // Si no hay ubicaciones con stock, mostrar todas las disponibles (incluyendo sin stock)
     if (ubicacionesConStockReal.length === 0) {
       ubicacionesConStockReal = ubicacionesArticulo.filter(ubi => {
-        // Normalizar unidades para comparación
         const unidadUbicacionNormalizada = normalizarUnidad(ubi.unidadMedida);
         const unidadPedidoNormalizada = normalizarUnidad(linea.unidadPedido);
         const unidadBaseNormalizada = normalizarUnidad(linea.unidadBase);
@@ -508,8 +504,6 @@ const LineaPedido = React.memo(({
         
         return unidadCoincide && noEsZonaDescarga;
       });
-      
-      console.log(`[FRONTEND DEBUG] Ubicaciones sin stock pero con unidad correcta:`, ubicacionesConStockReal);
     }
 
     // Si aún no hay ubicaciones, usar zona descarga
@@ -525,15 +519,11 @@ const LineaPedido = React.memo(({
     }
 
     // Ordenar por stock descendente
-    const ubicacionesOrdenadas = ubicacionesConStockReal.sort((a, b) => {
+    return ubicacionesConStockReal.sort((a, b) => {
       const stockA = a.unidadSaldo === Infinity ? 999999 : parseFloat(a.unidadSaldo);
       const stockB = b.unidadSaldo === Infinity ? 999999 : parseFloat(b.unidadSaldo);
       return stockB - stockA;
     });
-    
-    console.log(`[FRONTEND DEBUG] Ubicaciones finales ordenadas:`, ubicacionesOrdenadas);
-    
-    return ubicacionesOrdenadas;
   }, [ubicaciones, linea.codigoArticulo, linea.unidadPedido, linea.codigoAlmacen, linea.unidadBase]);
 
   const key = linea.movPosicionLinea;
@@ -545,36 +535,44 @@ const LineaPedido = React.memo(({
     cantidad: '0'
   };
   
-  // 🔥 CORRECCIÓN CRÍTICA: Verificar que la expedición actual coincide con las ubicaciones disponibles
+  // 🔥 CORRECCIÓN: Verificar que la expedición actual coincide con las ubicaciones disponibles
   useEffect(() => {
+    if (ubicacionesConStock.length === 0 || isUpdatingExpedicion) return;
+
     const ubicacionActual = ubicacionesConStock.find(
       ubi => ubi.ubicacion === expedicion.ubicacion && ubi.codigoAlmacen === expedicion.almacen
     );
     
-    if (!ubicacionActual && ubicacionesConStock.length > 0) {
-      console.log(`[FRONTEND DEBUG] Corrigiendo expedición automáticamente para ${linea.codigoArticulo}`);
-      console.log(`[FRONTEND DEBUG] Expedición actual:`, expedicion);
-      console.log(`[FRONTEND DEBUG] Primera ubicación disponible:`, ubicacionesConStock[0]);
+    if (!ubicacionActual) {
+      setIsUpdatingExpedicion(true);
       
-      // Corregir automáticamente la expedición si no coincide
-      handleExpedicionChange(key, 'ubicacion', ubicacionesConStock[0].ubicacion);
-      handleExpedicionChange(key, 'almacen', ubicacionesConStock[0].codigoAlmacen);
-      handleExpedicionChange(key, 'partida', ubicacionesConStock[0].partida || '');
-      handleExpedicionChange(key, 'unidadMedida', ubicacionesConStock[0].unidadMedida || linea.unidadPedido);
-      
-      const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
-      let nuevaCantidad = 0;
-      
-      if (ubicacionesConStock[0].ubicacion === "Zona descarga") {
-        nuevaCantidad = unidadesPendientes;
-      } else {
-        const stockDisponible = parseFloat(ubicacionesConStock[0].unidadSaldo) || 0;
-        nuevaCantidad = Math.min(unidadesPendientes, stockDisponible);
-      }
-      
-      handleExpedicionChange(key, 'cantidad', nuevaCantidad.toString());
+      // Usar timeout para evitar actualización inmediata en el mismo ciclo
+      const timeoutId = setTimeout(() => {
+        const primeraUbicacion = ubicacionesConStock[0];
+        
+        handleExpedicionChange(key, 'ubicacion', primeraUbicacion.ubicacion);
+        handleExpedicionChange(key, 'almacen', primeraUbicacion.codigoAlmacen);
+        handleExpedicionChange(key, 'partida', primeraUbicacion.partida || '');
+        handleExpedicionChange(key, 'unidadMedida', primeraUbicacion.unidadMedida || linea.unidadPedido);
+        
+        const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
+        let nuevaCantidad = 0;
+        
+        if (primeraUbicacion.ubicacion === "Zona descarga") {
+          nuevaCantidad = unidadesPendientes;
+        } else {
+          const stockDisponible = parseFloat(primeraUbicacion.unidadSaldo) || 0;
+          nuevaCantidad = Math.min(unidadesPendientes, stockDisponible);
+        }
+        
+        handleExpedicionChange(key, 'cantidad', nuevaCantidad.toString());
+        
+        setIsUpdatingExpedicion(false);
+      }, 0);
+
+      return () => clearTimeout(timeoutId);
     }
-  }, [ubicacionesConStock, expedicion, key, linea.unidadesPendientes, linea.unidadPedido, handleExpedicionChange]);
+  }, [ubicacionesConStock]); // Solo dependemos de ubicacionesConStock
 
   const formatted = useMemo(() => {
     const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
@@ -650,18 +648,12 @@ const LineaPedido = React.memo(({
   
   const handleCambioUbicacion = useCallback((e) => {
     const nuevaUbicacion = e.target.value;
-    console.log(`[FRONTEND DEBUG] Cambiando ubicación a: ${nuevaUbicacion}`);
     
     const ubicacionSeleccionada = ubicacionesConStock.find(
       ubi => ubi.ubicacion === nuevaUbicacion
     );
     
-    if (!ubicacionSeleccionada) {
-      console.error('[FRONTEND ERROR] No se encontró la ubicación seleccionada:', nuevaUbicacion);
-      return;
-    }
-    
-    console.log(`[FRONTEND DEBUG] Ubicación seleccionada:`, ubicacionSeleccionada);
+    if (!ubicacionSeleccionada) return;
     
     let nuevaCantidad = 0;
     const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
@@ -673,19 +665,11 @@ const LineaPedido = React.memo(({
       nuevaCantidad = Math.min(unidadesPendientes, stockDisponible);
     }
     
-    // 🔥 CORRECCIÓN: Actualizar TODOS los campos necesarios
     handleExpedicionChange(key, 'ubicacion', nuevaUbicacion);
     handleExpedicionChange(key, 'almacen', ubicacionSeleccionada.codigoAlmacen);
     handleExpedicionChange(key, 'partida', ubicacionSeleccionada.partida || '');
     handleExpedicionChange(key, 'unidadMedida', ubicacionSeleccionada.unidadMedida || linea.unidadPedido);
     handleExpedicionChange(key, 'cantidad', nuevaCantidad.toString());
-    
-    console.log(`[FRONTEND DEBUG] Expedición actualizada:`, {
-      ubicacion: nuevaUbicacion,
-      almacen: ubicacionSeleccionada.codigoAlmacen,
-      cantidad: nuevaCantidad,
-      unidadMedida: ubicacionSeleccionada.unidadMedida
-    });
   }, [handleExpedicionChange, key, linea.unidadesPendientes, linea.unidadPedido, ubicacionesConStock]);
   
   const formatearInfoStock = useCallback((ubicacion) => {
@@ -698,10 +682,6 @@ const LineaPedido = React.memo(({
     
     return formatearUnidad(stock, ubicacion.unidadMedida);
   }, [formatearUnidad]);
-
-  // 🔥 DEBUG: Verificar qué se está enviando
-  console.log(`[FRONTEND DEBUG] ${linea.codigoArticulo} - Expedición actual:`, expedicion);
-  console.log(`[FRONTEND DEBUG] Ubicaciones disponibles:`, ubicacionesConStock);
 
   return (
     <>
@@ -759,7 +739,7 @@ const LineaPedido = React.memo(({
               value={expedicion.ubicacion}
               onChange={handleCambioUbicacion}
               className={`ps-ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga' : ''}`}
-              disabled={!canPerformActions || isProcesando}
+              disabled={!canPerformActions || isProcesando || isUpdatingExpedicion}
             >
               {ubicacionesConStock.map((ubicacion, locIndex) => (
                 <option 
@@ -783,7 +763,7 @@ const LineaPedido = React.memo(({
               value={expedicion.cantidad}
               onChange={handleCambioCantidad}
               className={expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-input' : ''}
-              disabled={!canPerformActions || isProcesando}
+              disabled={!canPerformActions || isProcesando || isUpdatingExpedicion}
               placeholder="0"
             />
             <div className="ps-unidad-info">{linea.unidadBase || 'ud'}</div>
@@ -794,14 +774,9 @@ const LineaPedido = React.memo(({
             className="ps-btn-expedir"
             onClick={(e) => {
               e.stopPropagation();
-              console.log(`[FRONTEND DEBUG] Iniciando escaneo para:`, {
-                articulo: linea.codigoArticulo,
-                expedicion: expedicion,
-                ubicacionesDisponibles: ubicacionesConStock
-              });
               if (canPerformActions) iniciarEscaneo(linea, pedido);
             }}
-            disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning || isProcesando}
+            disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning || isProcesando || isUpdatingExpedicion}
           >
             <FaCamera /> 
             {isProcesando ? 'Procesando...' : (isScanning ? 'Procesando...' : 'Escanear')}
@@ -856,7 +831,7 @@ const LineaPedido = React.memo(({
                     value={expedicion.ubicacion}
                     onChange={handleCambioUbicacion}
                     className={`ps-ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga' : ''}`}
-                    disabled={!canPerformActions || isProcesando}
+                    disabled={!canPerformActions || isProcesando || isUpdatingExpedicion}
                   >
                     {ubicacionesConStock.map((ubicacion, locIndex) => (
                       <option 
@@ -880,7 +855,7 @@ const LineaPedido = React.memo(({
                     value={expedicion.cantidad}
                     onChange={handleCambioCantidad}
                     className={expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-input' : ''}
-                    disabled={!canPerformActions || isProcesando}
+                    disabled={!canPerformActions || isProcesando || isUpdatingExpedicion}
                     placeholder="0"
                   />
                   <div className="ps-unidad-info">{linea.unidadBase || 'ud'}</div>
@@ -891,14 +866,9 @@ const LineaPedido = React.memo(({
                   className="ps-btn-expedir"
                   onClick={(e) => {
                     e.stopPropagation();
-                    console.log(`[FRONTEND DEBUG] Iniciando escaneo para:`, {
-                      articulo: linea.codigoArticulo,
-                      expedicion: expedicion,
-                      ubicacionesDisponibles: ubicacionesConStock
-                    });
                     if (canPerformActions) iniciarEscaneo(linea, pedido);
                   }}
-                  disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning || isProcesando}
+                  disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning || isProcesando || isUpdatingExpedicion}
                   style={{ whiteSpace: 'nowrap' }}
                 >
                   <FaCamera /> 
@@ -1517,8 +1487,6 @@ const PedidosScreen = () => {
                 const stockActual = parseFloat(ubic.unidadSaldo) || 0;
                 const nuevoStock = Math.max(0, stockActual - parseFloat(expedicion.cantidad));
                 
-                console.log(`[DEBUG STOCK] Actualizando stock de ${ubic.ubicacion}: ${stockActual} -> ${nuevoStock} ${ubic.unidadMedida}`);
-                
                 return {
                   ...ubic,
                   unidadSaldo: nuevoStock
@@ -1558,166 +1526,36 @@ const PedidosScreen = () => {
     }
   }, [canPerformActions, isScanning]);
 
-  // Función para cargar pedidos con cancelación
-  const cargarPedidos = useCallback(async (forzarRecarga = false) => {
-    if (abortControllerRef.current && !forzarRecarga) {
-      abortControllerRef.current.abort();
-    }
+  // Función para procesar expedición (común para escaneo y manual)
+  const procesarExpedicion = useCallback((codigoVerificado, detalle = null) => {
+    if (!currentScanningLine) return false;
     
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
+    const { linea, pedido } = currentScanningLine;
     
-    try {
-      setLoading(true);
-      setError('');
+    if (codigoVerificado === linea.codigoArticulo || codigoVerificado === linea.codigoAlternativo) {
+      const key = linea.movPosicionLinea;
+      const expedicion = expediciones[key];
       
-      // ✅ SOLO LIMPIAR ESTADOS SI ES UNA RECARGA MANUAL, NO DESPUÉS DE EXPEDIR
-      if (forzarRecarga && !isScanning) {
-        setUbicaciones({});
-        setExpediciones({});
+      if (!expedicion) {
+        console.error('[FRONTEND ERROR] No se encontró expedición para la línea:', key);
+        return false;
       }
-      
-      const codigoEmpresa = userRef.current?.CodigoEmpresa;
-      const rango = rangoFechasRef.current;
-      
-      if (!codigoEmpresa) {
-        setError('No se encontró el código de empresa del usuario.');
-        setLoading(false);
-        return;
-      }
-      
-      const headers = getAuthHeader();
-      
-      // ✅ ACTUALIZADO: Eliminamos el parámetro formaEntrega
-      const response = await API.get(`/pedidosPendientes`, { 
-        headers,
-        params: { 
-          codigoEmpresa,
-          rango: rango
-        },
-        signal
-      });
-      
-      if (signal.aborted) return;
-      
-      setPedidos(response.data);
-      
-      const articulosConUnidad = response.data.flatMap(pedido => 
-        pedido.articulos.map(articulo => ({
-          codigo: articulo.codigoArticulo,
-          unidad: articulo.unidadPedido
-        }))
-      );
 
-      // 🔥 FORZAR RECARGA COMPLETA DE UBICACIONES CON DATOS REALES
-      if (articulosConUnidad.length > 0) {
-        try {
-          console.log('[DEBUG] Recargando ubicaciones para', articulosConUnidad.length, 'artículos');
-          
-          const ubicacionesPorArticulo = {};
-          
-          // Usar el endpoint de traspasos que sabemos que funciona
-          for (const articulo of articulosConUnidad) {
-            try {
-              const response = await API.get(
-                '/traspasos/stock-por-articulo',
-                {
-                  headers,
-                  params: { codigoArticulo: articulo.codigo },
-                  signal
-                }
-              );
-              
-              // Normalizar los datos al formato esperado
-              ubicacionesPorArticulo[articulo.codigo] = response.data.map(item => ({
-                codigoAlmacen: item.CodigoAlmacen,
-                ubicacion: item.Ubicacion,
-                partida: item.Partida || null,
-                unidadSaldo: item.Cantidad,
-                unidadMedida: item.UnidadStock || 'unidades',
-                descripcionUbicacion: item.DescripcionUbicacion
-              }));
-              
-              console.log(`[DEBUG] ${articulo.codigo}: ${response.data.length} ubicaciones`);
-            } catch (error) {
-              console.error(`[ERROR] Al cargar ubicaciones para ${articulo.codigo}:`, error);
-              ubicacionesPorArticulo[articulo.codigo] = [];
-            }
-          }
-          
-          if (signal.aborted) return;
-          setUbicaciones(ubicacionesPorArticulo);
-          
-          // 🔥 ACTUALIZAR EXPEDICIONES CON DATOS REALES DEL BACKEND
-          const nuevasExpediciones = {};
-          response.data.forEach(pedido => {
-            pedido.articulos.forEach(linea => {
-              const key = linea.movPosicionLinea;
-              const ubicacionesArticulo = ubicacionesPorArticulo[linea.codigoArticulo] || [];
-              
-              // Buscar la mejor ubicación disponible (ya viene ordenado por stock DESC del backend)
-              let mejorUbicacion = ubicacionesArticulo[0];
-              
-              let cantidadInicial = 0;
-              if (mejorUbicacion) {
-                const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
-                
-                if (mejorUbicacion.ubicacion === "Zona descarga") {
-                  cantidadInicial = unidadesPendientes;
-                } else {
-                  const stockDisponible = parseFloat(mejorUbicacion.unidadSaldo) || 0;
-                  cantidadInicial = Math.min(unidadesPendientes, stockDisponible);
-                }
-              }
-
-              if (isNaN(cantidadInicial)) cantidadInicial = 0;
-              
-              nuevasExpediciones[key] = {
-                almacen: mejorUbicacion?.codigoAlmacen || "CEN",
-                ubicacion: mejorUbicacion?.ubicacion || "Zona descarga",
-                partida: mejorUbicacion?.partida || null,
-                unidadMedida: mejorUbicacion?.unidadMedida || linea.unidadPedido,
-                cantidad: cantidadInicial.toString()
-              };
-            });
-          });
-          
-          if (signal.aborted) return;
-          setExpediciones(nuevasExpediciones);
-          
-        } catch (error) {
-          console.error('[ERROR] Al cargar ubicaciones:', error);
-        }
-      }
+      handleExpedirArticuloOptimizado(linea, pedido, expedicion);
       
-      const initialModes = {};
-      response.data.forEach(pedido => {
-        initialModes[pedido.numeroPedido] = 'show';
-      });
-      
-      if (signal.aborted) return;
-      setPedidoViewModes(initialModes);
-    } catch (err) {
-      if (err.name === 'CanceledError') {
-        console.log('Solicitud cancelada');
-      } else {
-        console.error('Error al obtener pedidos:', err);
-        if (err.response?.status === 500) {
-          setError('Error interno del servidor. Inténtalo más tarde');
-        } else if (err.response?.status === 401) {
-          setError('Error de autenticación. Vuelve a iniciar sesión');
-        } else {
-          setError('Error de conexión con el servidor');
-        }
+      if (detalle) {
+        const itemKey = `${linea.codigoArticulo}-${detalle.talla}-${detalle.color}`;
+        setScannedItems(prev => ({
+          ...prev,
+          [itemKey]: (prev[itemKey] || 0) + 1
+        }));
       }
-    } finally {
-      if (!signal.aborted) {
-        setLoading(false);
-      }
+      return true;
     }
-  }, [isScanning]); // 🔥 Añadimos isScanning como dependencia
+    return false;
+  }, [currentScanningLine, expediciones, handleExpedirArticuloOptimizado]);
 
-  // 🔥 FUNCIÓN handleExpedir COMPLETAMENTE CORREGIDA - USANDO LA NUEVA FUNCIÓN OPTIMIZADA
+  // 🔥 FUNCIÓN handleExpedir COMPLETAMENTE CORREGIDA
   const handleExpedir = useCallback(async (codigoEmpresa, ejercicio, serie, numeroPedido, codigoArticulo, unidadesPendientes, linea, detalle = null) => {
     if (!canPerformActions || isScanning) return;
     
@@ -1726,18 +1564,11 @@ const PedidosScreen = () => {
     
     const expedicion = expediciones[key];
     
-    // 🔥 VERIFICACIÓN CRÍTICA: Asegurar que tenemos los datos correctos
     if (!expedicion) {
       console.error('[FRONTEND ERROR] No se encontró expedición para la línea:', key);
       setIsScanning(false);
       return;
     }
-
-    console.log('[FRONTEND DEBUG EXPEDICIÓN] Datos a enviar al backend:', {
-      articulo: codigoArticulo,
-      expedicion: expedicion,
-      linea: linea
-    });
 
     let cantidadExpedida = parseFloat(expedicion.cantidad);
     if (isNaN(cantidadExpedida) || cantidadExpedida <= 0) {
@@ -1747,11 +1578,9 @@ const PedidosScreen = () => {
     }
 
     try {
-      // 🔥 USAR LA NUEVA FUNCIÓN OPTIMIZADA
       await handleExpedirArticuloOptimizado(linea, { codigoEmpresa, ejercicioPedido: ejercicio, seriePedido: serie, numeroPedido }, expedicion);
     } catch (error) {
       console.error('[FRONTEND ERROR] Error al expedir artículo:', error);
-      console.error('Respuesta del servidor:', error.response?.data);
       
       if (error.response?.data?.mensaje) {
         alert('❌ Error al expedir artículo: ' + error.response.data.mensaje);
@@ -1858,72 +1687,24 @@ const PedidosScreen = () => {
     }
   }, [detallesModal]);
 
-  // ✅ MOVER handleScanSuccess ANTES de los efectos que lo usan
   const handleScanSuccess = useCallback((decodedText) => {
-    if (!currentScanningLine) return;
-    
-    const { linea, pedido, detalle } = currentScanningLine;
-    
-    if (decodedText === linea.codigoArticulo || decodedText === linea.codigoAlternativo) {
-      handleExpedir(
-        pedido.codigoEmpresa,
-        pedido.ejercicioPedido,
-        pedido.seriePedido,
-        pedido.numeroPedido,
-        linea.codigoArticulo,
-        linea.unidadesPendientes,
-        linea,
-        detalle
-      );
-      
-      if (detalle) {
-        const itemKey = `${linea.codigoArticulo}-${detalle.talla}-${detalle.color}`;
-        setScannedItems(prev => ({
-          ...prev,
-          [itemKey]: (prev[itemKey] || 0) + 1
-        }));
-      }
-    } else {
+    if (!procesarExpedicion(decodedText, currentScanningLine?.detalle)) {
       alert('Código escaneado no coincide con el artículo');
     }
-    
     setShowCamera(false);
-  }, [currentScanningLine, handleExpedir]);
+  }, [procesarExpedicion, currentScanningLine]);
 
-  // ✅ MOVER handleManualVerification ANTES de los efectos que lo usan
   const handleManualVerification = useCallback(() => {
-    if (!currentScanningLine || !manualCode) return;
+    if (!manualCode) return;
     
-    const { linea, pedido, detalle } = currentScanningLine;
-    
-    if (manualCode === linea.codigoArticulo || manualCode === linea.codigoAlternativo) {
-      handleExpedir(
-        pedido.codigoEmpresa,
-        pedido.ejercicioPedido,
-        pedido.seriePedido,
-        pedido.numeroPedido,
-        linea.codigoArticulo,
-        linea.unidadesPendientes,
-        linea,
-        detalle
-      );
-      
-      if (detalle) {
-        const itemKey = `${linea.codigoArticulo}-${detalle.talla}-${detalle.color}`;
-        setScannedItems(prev => ({
-          ...prev,
-          [itemKey]: (prev[itemKey] || 0) + 1
-        }));
-      }
-    } else {
+    if (!procesarExpedicion(manualCode, currentScanningLine?.detalle)) {
       alert('Código introducido no coincide con el artículo');
     }
     
     setShowCamera(false);
     setManualCode('');
-  }, [currentScanningLine, manualCode, handleExpedir]);
+  }, [procesarExpedicion, manualCode, currentScanningLine]);
 
-  // ✅ MOVER iniciarEscaneo ANTES de los efectos que lo usan
   const iniciarEscaneo = useCallback((linea, pedido, detalle = null) => {
     if (!canPerformActions) return;
     
@@ -1948,13 +1729,11 @@ const PedidosScreen = () => {
       const detectarCamaras = async () => {
         try {
           setCameraError('');
-          console.log('🔍 Detectando cámaras disponibles...');
           
           // Usar Html5Qrcode para detectar cámaras
           const dispositivos = await Html5Qrcode.getCameras();
           
           if (dispositivos && dispositivos.length > 0) {
-            console.log(`📷 Se encontraron ${dispositivos.length} cámaras:`, dispositivos);
             setCameras(dispositivos);
             setSelectedCamera(dispositivos[0].id);
           } else {
@@ -1984,8 +1763,6 @@ const PedidosScreen = () => {
     const inicializarEscaner = async () => {
       if (showCamera && selectedCamera && document.getElementById('ps-camera-container')) {
         try {
-          console.log('🚀 Inicializando escáner con cámara:', selectedCamera);
-          
           scanner = new Html5QrcodeScanner(
             "ps-camera-container",
             { 
@@ -1999,7 +1776,6 @@ const PedidosScreen = () => {
           
           await scanner.render(
             (decodedText) => {
-              console.log('✅ Código escaneado:', decodedText);
               handleScanSuccess(decodedText);
             },
             (error) => {
@@ -2011,7 +1787,6 @@ const PedidosScreen = () => {
           );
           
           scannerRef.current = scanner;
-          console.log('📱 Escáner inicializado correctamente');
         } catch (error) {
           console.error('❌ Error al inicializar el escáner:', error);
           setCameraError('Error al inicializar la cámara: ' + error);
@@ -2024,7 +1799,6 @@ const PedidosScreen = () => {
     // Cleanup function
     return () => {
       if (scanner) {
-        console.log('🧹 Limpiando escáner...');
         scanner.clear().catch(error => {
           console.log('⚠️ Error al limpiar escáner (normal durante desarrollo):', error);
         });
@@ -2172,6 +1946,161 @@ const PedidosScreen = () => {
       setGenerandoAlbaran(false);
     }
   }, [canPerformActionsInPedidos]);
+
+  // Función para cargar pedidos con cancelación
+  const cargarPedidos = useCallback(async (forzarRecarga = false) => {
+    if (abortControllerRef.current && !forzarRecarga) {
+      abortControllerRef.current.abort();
+    }
+    
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+    
+    try {
+      setLoading(true);
+      setError('');
+      
+      // ✅ SOLO LIMPIAR ESTADOS SI ES UNA RECARGA MANUAL, NO DESPUÉS DE EXPEDIR
+      if (forzarRecarga && !isScanning) {
+        setUbicaciones({});
+        setExpediciones({});
+      }
+      
+      const codigoEmpresa = userRef.current?.CodigoEmpresa;
+      const rango = rangoFechasRef.current;
+      
+      if (!codigoEmpresa) {
+        setError('No se encontró el código de empresa del usuario.');
+        setLoading(false);
+        return;
+      }
+      
+      const headers = getAuthHeader();
+      
+      const response = await API.get(`/pedidosPendientes`, { 
+        headers,
+        params: { 
+          codigoEmpresa,
+          rango: rango
+        },
+        signal
+      });
+      
+      if (signal.aborted) return;
+      
+      setPedidos(response.data);
+      
+      const articulosConUnidad = response.data.flatMap(pedido => 
+        pedido.articulos.map(articulo => ({
+          codigo: articulo.codigoArticulo,
+          unidad: articulo.unidadPedido
+        }))
+      );
+
+      // 🔥 FORZAR RECARGA COMPLETA DE UBICACIONES CON DATOS REALES
+      if (articulosConUnidad.length > 0) {
+        try {
+          const ubicacionesPorArticulo = {};
+          
+          // Usar el endpoint de traspasos que sabemos que funciona
+          for (const articulo of articulosConUnidad) {
+            try {
+              const response = await API.get(
+                '/traspasos/stock-por-articulo',
+                {
+                  headers,
+                  params: { codigoArticulo: articulo.codigo },
+                  signal
+                }
+              );
+              
+              // Normalizar los datos al formato esperado
+              ubicacionesPorArticulo[articulo.codigo] = response.data.map(item => ({
+                codigoAlmacen: item.CodigoAlmacen,
+                ubicacion: item.Ubicacion,
+                partida: item.Partida || null,
+                unidadSaldo: item.Cantidad,
+                unidadMedida: item.UnidadStock || 'unidades',
+                descripcionUbicacion: item.DescripcionUbicacion
+              }));
+              
+            } catch (error) {
+              console.error(`[ERROR] Al cargar ubicaciones para ${articulo.codigo}:`, error);
+              ubicacionesPorArticulo[articulo.codigo] = [];
+            }
+          }
+          
+          if (signal.aborted) return;
+          setUbicaciones(ubicacionesPorArticulo);
+          
+          // 🔥 ACTUALIZAR EXPEDICIONES CON DATOS REALES DEL BACKEND
+          const nuevasExpediciones = {};
+          response.data.forEach(pedido => {
+            pedido.articulos.forEach(linea => {
+              const key = linea.movPosicionLinea;
+              const ubicacionesArticulo = ubicacionesPorArticulo[linea.codigoArticulo] || [];
+              
+              // Buscar la mejor ubicación disponible (ya viene ordenado por stock DESC del backend)
+              let mejorUbicacion = ubicacionesArticulo[0];
+              
+              let cantidadInicial = 0;
+              if (mejorUbicacion) {
+                const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
+                
+                if (mejorUbicacion.ubicacion === "Zona descarga") {
+                  cantidadInicial = unidadesPendientes;
+                } else {
+                  const stockDisponible = parseFloat(mejorUbicacion.unidadSaldo) || 0;
+                  cantidadInicial = Math.min(unidadesPendientes, stockDisponible);
+                }
+              }
+
+              if (isNaN(cantidadInicial)) cantidadInicial = 0;
+              
+              nuevasExpediciones[key] = {
+                almacen: mejorUbicacion?.codigoAlmacen || "CEN",
+                ubicacion: mejorUbicacion?.ubicacion || "Zona descarga",
+                partida: mejorUbicacion?.partida || null,
+                unidadMedida: mejorUbicacion?.unidadMedida || linea.unidadPedido,
+                cantidad: cantidadInicial.toString()
+              };
+            });
+          });
+          
+          if (signal.aborted) return;
+          setExpediciones(nuevasExpediciones);
+          
+        } catch (error) {
+          console.error('[ERROR] Al cargar ubicaciones:', error);
+        }
+      }
+      
+      const initialModes = {};
+      response.data.forEach(pedido => {
+        initialModes[pedido.numeroPedido] = 'show';
+      });
+      
+      if (signal.aborted) return;
+      setPedidoViewModes(initialModes);
+    } catch (err) {
+      if (err.name === 'CanceledError') {
+        console.log('Solicitud cancelada');
+      } else {
+        console.error('Error al obtener pedidos:', err);
+        if (err.response?.status === 500) {
+          setError('Error interno del servidor. Inténtalo más tarde');
+        } else if (err.response?.status === 401) {
+          setError('Error de autenticación. Vuelve a iniciar sesión');
+        } else {
+          setError('Error de conexión con el servidor');
+        }
+      }
+    } finally {
+      if (!signal.aborted) {
+        setLoading(false);
+      }
+    }
+  }, [isScanning]);
 
   // Filtrar pedidos con useMemo para evitar recálculos innecesarios
   const pedidosFiltrados = useMemo(() => {

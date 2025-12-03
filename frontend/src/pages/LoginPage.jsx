@@ -3,29 +3,33 @@ import { useNavigate } from 'react-router-dom';
 import API from '../helpers/api';
 import '../styles/LoginPage.css';
 
-function LoginPage() {
+const LoginPage = () => {
   const navigate = useNavigate();
-  const [usuario, setUsuario] = useState('');
-  const [contrasena, setContrasena] = useState('');
+  const [credenciales, setCredenciales] = useState({ usuario: '', contrasena: '' });
   const [loading, setLoading] = useState(false);
+
+  const handleChange = (campo, valor) => {
+    setCredenciales(prev => ({ ...prev, [campo]: valor }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const res = await API.post("/login", { usuario, contrasena });
-      if (res.data.success) {
-        localStorage.setItem('user', JSON.stringify(res.data.datos));
+      const { data } = await API.post("/login", credenciales);
+      
+      if (data.success) {
+        localStorage.setItem('user', JSON.stringify(data.datos));
         navigate('/PedidosScreen');
       } else {
         alert("Usuario o contraseña incorrectos");
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
       alert("Error de conexión al servidor.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -41,29 +45,22 @@ function LoginPage() {
         </div>
         
         <form onSubmit={handleSubmit} autoComplete="off">
-          <div className="lp-input-group">
-            <label htmlFor="usuario">Usuario</label>
-            <input
-              type="text"
-              id="usuario"
-              value={usuario}
-              onChange={e => setUsuario(e.target.value)}
-              required
-              placeholder="Ingrese su usuario"
-            />
-          </div>
-          
-          <div className="lp-input-group">
-            <label htmlFor="contrasena">Contraseña</label>
-            <input
-              type="password"
-              id="contrasena"
-              value={contrasena}
-              onChange={e => setContrasena(e.target.value)}
-              required
-              placeholder="Ingrese su contraseña"
-            />
-          </div>
+          {[
+            { id: 'usuario', label: 'Usuario', type: 'text', placeholder: 'Ingrese su usuario' },
+            { id: 'contrasena', label: 'Contraseña', type: 'password', placeholder: 'Ingrese su contraseña' }
+          ].map(({ id, label, type, placeholder }) => (
+            <div key={id} className="lp-input-group">
+              <label htmlFor={id}>{label}</label>
+              <input
+                type={type}
+                id={id}
+                value={credenciales[id]}
+                onChange={e => handleChange(id, e.target.value)}
+                required
+                placeholder={placeholder}
+              />
+            </div>
+          ))}
           
           <div className="lp-button-container">
             <button 
@@ -84,6 +81,6 @@ function LoginPage() {
       </div>
     </div>
   );
-}
+};
 
 export default LoginPage;

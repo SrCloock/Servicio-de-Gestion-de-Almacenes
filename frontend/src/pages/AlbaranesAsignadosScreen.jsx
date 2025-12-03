@@ -19,7 +19,6 @@ function AlbaranesAsignadosScreen() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        setError(null);
         
         const headers = getAuthHeader();
         
@@ -28,7 +27,6 @@ function AlbaranesAsignadosScreen() {
           API.get('/repartidores', { headers })
         ]);
         
-        // Procesar para incluir albaranes parciales
         const albaranesConStatus = albaranesResponse.data.map(albaran => ({
           ...albaran,
           esParcial: albaran.Status === 'Parcial'
@@ -37,7 +35,6 @@ function AlbaranesAsignadosScreen() {
         setAlbaranes(albaranesConStatus);
         setRepartidores(repartidoresResponse.data);
         
-        // Inicializar asignaciones
         const initialAsignaciones = {};
         albaranesResponse.data.forEach(albaran => {
           const key = `albaran-${albaran.EjercicioAlbaran}-${albaran.SerieAlbaran || ''}-${albaran.NumeroAlbaran}`;
@@ -80,7 +77,6 @@ function AlbaranesAsignadosScreen() {
       );
 
       if (response.data.success) {
-        // Actualizar el albarán en el estado (solo el repartidor)
         setAlbaranes(prev => prev.map(a => 
           a.EjercicioAlbaran === albaran.EjercicioAlbaran &&
           (a.SerieAlbaran || '') === (albaran.SerieAlbaran || '') &&
@@ -92,7 +88,6 @@ function AlbaranesAsignadosScreen() {
       }
       
     } catch (error) {
-      console.error('Error asignando albarán:', error);
       setError(`Error: ${error.response?.data?.mensaje || error.message}`);
     }
   };
