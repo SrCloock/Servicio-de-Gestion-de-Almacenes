@@ -121,8 +121,7 @@ function App() {
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
-
-            {/* Gestión Documental - Nueva ruta */}
+            {/* Gestión Documental */}
             <Route path="/gestion-documental" element={
               <ProtectedRoute>
                 <ProtectedRouteWithPermission requiredPermission="canViewDocumentManagement">

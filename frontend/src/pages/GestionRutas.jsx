@@ -13,8 +13,10 @@ import {
   FaCheck, 
   FaFilter,
   FaTimes,
-  FaMapMarkerAlt,
-  FaBuilding
+  FaBuilding,
+  FaUser,
+  FaPhone,
+  FaMapMarkerAlt
 } from 'react-icons/fa';
 
 function GestionRutas() {
@@ -24,14 +26,17 @@ function GestionRutas() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [refreshing, setRefreshing] = useState(false);
   const itemsPerPage = 10;
   
   // Estados para los filtros de búsqueda
   const [filtros, setFiltros] = useState({
     numeroAlbaran: '',
-    municipio: '',
     nombreObra: '',
     repartidor: '',
+    cliente: '',
+    contacto: '',
+    telefono: '',
     busquedaGeneral: ''
   });
   
@@ -55,15 +60,15 @@ function GestionRutas() {
         ...albaran,
         repartidor: albaran.empleadoAsignado || 'Sin asignar',
         esParcial: albaran.EstadoPedido === 4,
-        esVoluminoso: albaran.EsVoluminoso,
+        esVoluminoso: albaran.EsVoluminoso || albaran.EsVoluminosoPedido,
         // Normalizar campos para búsqueda
         albaranLower: albaran.albaran?.toLowerCase() || '',
-        municipioLower: albaran.municipio?.toLowerCase() || '',
         nombreObraLower: (albaran.nombreObra || albaran.obra || '').toLowerCase(),
         repartidorLower: (albaran.empleadoAsignado || '').toLowerCase(),
         clienteLower: (albaran.cliente || '').toLowerCase(),
         contactoLower: (albaran.contacto || '').toLowerCase(),
-        telefonoLower: (albaran.telefonoContacto || '').toString()
+        telefonoLower: (albaran.telefonoContacto || '').toString().toLowerCase(),
+        municipioLower: (albaran.municipio || '').toLowerCase()
       }));
 
       setAlbaranes(processedAlbaranes);
@@ -73,6 +78,7 @@ function GestionRutas() {
       setError('Error al cargar albaranes: ' + (err.response?.data?.mensaje || err.message));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -84,21 +90,23 @@ function GestionRutas() {
     fetchAlbaranes();
   }, [canViewGestionRutas, navigate, fetchAlbaranes]);
 
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchAlbaranes();
+  };
+
   // Filtrar albaranes con useMemo para mejor rendimiento
   const albaranesFiltrados = useMemo(() => {
     let filtered = albaranes.filter(albaran => 
       isDelivery ? albaran.empleadoAsignado === user?.UsuarioLogicNet : true
-    ).filter(albaran => 
-      albaran.formaentrega === 3
     );
 
-    // Búsqueda general (mismo comportamiento original)
+    // Búsqueda general
     if (filtros.busquedaGeneral) {
       const searchLower = filtros.busquedaGeneral.toLowerCase().trim();
       filtered = filtered.filter(albaran => 
         albaran.albaranLower.includes(searchLower) ||
         albaran.nombreObraLower.includes(searchLower) ||
-        (albaran.obra && albaran.obra.toLowerCase().includes(searchLower)) ||
         albaran.clienteLower.includes(searchLower) ||
         albaran.contactoLower.includes(searchLower) ||
         albaran.telefonoLower.includes(searchLower) ||
@@ -112,13 +120,6 @@ function GestionRutas() {
       const searchNum = filtros.numeroAlbaran.toLowerCase().trim();
       filtered = filtered.filter(albaran => 
         albaran.albaranLower.includes(searchNum)
-      );
-    }
-
-    if (filtros.municipio) {
-      const searchMun = filtros.municipio.toLowerCase().trim();
-      filtered = filtered.filter(albaran => 
-        albaran.municipioLower.includes(searchMun)
       );
     }
 
@@ -136,6 +137,27 @@ function GestionRutas() {
       );
     }
 
+    if (filtros.cliente) {
+      const searchCliente = filtros.cliente.toLowerCase().trim();
+      filtered = filtered.filter(albaran => 
+        albaran.clienteLower.includes(searchCliente)
+      );
+    }
+
+    if (filtros.contacto) {
+      const searchContacto = filtros.contacto.toLowerCase().trim();
+      filtered = filtered.filter(albaran => 
+        albaran.contactoLower.includes(searchContacto)
+      );
+    }
+
+    if (filtros.telefono) {
+      const searchTelefono = filtros.telefono.toLowerCase().trim();
+      filtered = filtered.filter(albaran => 
+        albaran.telefonoLower.includes(searchTelefono)
+      );
+    }
+
     return filtered;
   }, [albaranes, isDelivery, user, filtros]);
 
@@ -148,7 +170,16 @@ function GestionRutas() {
   const totalPages = Math.ceil(albaranesFiltrados.length / itemsPerPage);
 
   const handleCompletarAlbaran = async (albaran) => {
-    if (!canPerformActionsInRutas) return;
+    if (!canPerformActionsInRutas) {
+      alert('No tienes permiso para completar albaranes');
+      return;
+    }
+    
+    // Verificar que el albarán esté asignado al usuario actual si es repartidor
+    if (isDelivery && albaran.empleadoAsignado !== user?.UsuarioLogicNet) {
+      alert('Solo puedes completar albaranes asignados a ti');
+      return;
+    }
     
     const observaciones = prompt('¿Alguna observación sobre la entrega? (Opcional)') || '';
     
@@ -168,6 +199,7 @@ function GestionRutas() {
         });
 
       if (response.data.success) {
+        // Actualizar lista eliminando el albarán completado
         setAlbaranes(prev => prev.filter(a => 
           !(a.numero === albaran.numero && a.serie === albaran.serie && a.ejercicio === albaran.ejercicio)
         ));
@@ -193,9 +225,11 @@ function GestionRutas() {
   const resetFilters = () => {
     setFiltros({
       numeroAlbaran: '',
-      municipio: '',
       nombreObra: '',
       repartidor: '',
+      cliente: '',
+      contacto: '',
+      telefono: '',
       busquedaGeneral: ''
     });
     setCurrentPage(1);
@@ -224,6 +258,16 @@ function GestionRutas() {
     return Object.values(specificFilters).filter(value => value.trim() !== '').length;
   };
 
+  const getEstadoText = (estadoPedido) => {
+    switch(estadoPedido) {
+      case 4: return 'Parcial';
+      case 2: return 'Servido';
+      case 1: return 'Completado';
+      case 0: return 'Pendiente';
+      default: return 'Desconocido';
+    }
+  };
+
   if (!canViewGestionRutas) {
     return (
       <div className="gestion-rutas-screen">
@@ -243,63 +287,44 @@ function GestionRutas() {
     <div className="gestion-rutas-screen">
       <div className="rutas-content">
         <div className="rutas-header">
-          <h2>Gestión de Rutas</h2>
-          <div className="permiso-indicator">
-            {canPerformActionsInRutas ? 'Acceso completo' : 'Acceso limitado'}
+          <div className="rutas-title">
+            <h2>Gestión de Rutas</h2>
+            <div className="permiso-indicator">
+              {isDelivery ? 'Repartidor' : canPerformActionsInRutas ? 'Acceso completo' : 'Acceso limitado'}
+            </div>
           </div>
+          <button 
+            onClick={handleRefresh} 
+            className="refresh-btn"
+            disabled={refreshing || loading}
+          >
+            <FaSync className={refreshing ? 'refresh-spin' : ''} />
+            {refreshing ? ' Actualizando...' : ' Actualizar'}
+          </button>
         </div>
 
         <div className="subtitle-container">
-          <h3>Entregas Asignadas a Tu Ruta (Solo Nuestros Medios)</h3>
+          <h3>Albaranes Pendientes de Entrega (Solo Nuestros Medios)</h3>
+          {isDelivery && (
+            <p className="user-notice">
+              <FaUser /> Solo ves los albaranes asignados a tu usuario
+            </p>
+          )}
         </div>
 
         {/* Panel de filtros */}
-        <div className="filters-panel" style={{
-          backgroundColor: 'var(--light-bg)',
-          borderRadius: 'var(--border-radius)',
-          padding: '20px',
-          marginBottom: '25px',
-          boxShadow: 'var(--shadow)',
-          border: '1px solid var(--gray-300)'
-        }}>
-          <div className="filters-header" style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            marginBottom: '20px',
-            paddingBottom: '10px',
-            borderBottom: '2px solid var(--gray-200)'
-          }}>
-            <FaFilter style={{ color: 'var(--primary-color)' }} />
-            <h4 style={{ margin: 0, color: 'var(--dark-text)' }}>Filtros de búsqueda</h4>
+        <div className="filters-panel">
+          <div className="filters-header">
+            <FaFilter className="filter-icon" />
+            <h4>Filtros de búsqueda</h4>
             {getActiveFiltersCount() > 0 && (
-              <span style={{
-                background: 'var(--accent-color)',
-                color: 'white',
-                padding: '4px 10px',
-                borderRadius: '12px',
-                fontSize: '0.8rem',
-                fontWeight: '600'
-              }}>
-                {getActiveFiltersCount()} filtro{getActiveFiltersCount() !== 1 ? 's' : ''} activo{getActiveFiltersCount() !== 1 ? 's' : ''}
+              <span className="active-filters-badge">
+                {getActiveFiltersCount()} filtro{getActiveFiltersCount() !== 1 ? 's' : ''}
               </span>
             )}
             <button 
               onClick={resetFilters} 
-              style={{
-                marginLeft: 'auto',
-                padding: '8px 15px',
-                background: 'var(--gray-700)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                fontSize: '0.9rem',
-                opacity: getActiveFiltersCount() === 0 ? 0.5 : 1
-              }}
+              className="clear-filters-btn"
               disabled={getActiveFiltersCount() === 0}
             >
               <FaTimes /> Limpiar filtros
@@ -307,32 +332,20 @@ function GestionRutas() {
           </div>
           
           {/* Búsqueda general */}
-          <div className="search-bar" style={{ marginBottom: '20px' }}>
+          <div className="search-bar">
             <FaSearch className="search-icon" />
             <input
               type="text"
-              placeholder="Busqueda general: albarán, obra, cliente, contacto..."
+              placeholder="Busqueda general: albarán, obra, cliente, contacto, teléfono, municipio..."
               value={filtros.busquedaGeneral}
               onChange={(e) => handleFilterChange('busquedaGeneral', e.target.value)}
             />
           </div>
           
           {/* Filtros específicos */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-            gap: '15px'
-          }}>
+          <div className="filters-grid">
             <div className="filter-group">
-              <label style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontWeight: '600',
-                color: 'var(--gray-700)',
-                fontSize: '0.9rem',
-                marginBottom: '5px'
-              }}>
+              <label>
                 <FaSearch /> Número de Albarán
               </label>
               <input
@@ -340,55 +353,11 @@ function GestionRutas() {
                 placeholder="Ej: ALB-2024-00123"
                 value={filtros.numeroAlbaran}
                 onChange={(e) => handleFilterChange('numeroAlbaran', e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 15px',
-                  border: '2px solid var(--gray-300)',
-                  borderRadius: '6px',
-                  fontSize: '0.95rem',
-                  transition: 'border-color 0.2s'
-                }}
               />
             </div>
             
             <div className="filter-group">
-              <label style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontWeight: '600',
-                color: 'var(--gray-700)',
-                fontSize: '0.9rem',
-                marginBottom: '5px'
-              }}>
-                <FaMapMarkerAlt /> Municipio
-              </label>
-              <input
-                type="text"
-                placeholder="Buscar por municipio"
-                value={filtros.municipio}
-                onChange={(e) => handleFilterChange('municipio', e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 15px',
-                  border: '2px solid var(--gray-300)',
-                  borderRadius: '6px',
-                  fontSize: '0.95rem',
-                  transition: 'border-color 0.2s'
-                }}
-              />
-            </div>
-            
-            <div className="filter-group">
-              <label style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontWeight: '600',
-                color: 'var(--gray-700)',
-                fontSize: '0.9rem',
-                marginBottom: '5px'
-              }}>
+              <label>
                 <FaBuilding /> Nombre de Obra
               </label>
               <input
@@ -396,88 +365,99 @@ function GestionRutas() {
                 placeholder="Buscar por obra"
                 value={filtros.nombreObra}
                 onChange={(e) => handleFilterChange('nombreObra', e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 15px',
-                  border: '2px solid var(--gray-300)',
-                  borderRadius: '6px',
-                  fontSize: '0.95rem',
-                  transition: 'border-color 0.2s'
-                }}
               />
             </div>
             
             <div className="filter-group">
-              <label style={{
-                fontWeight: '600',
-                color: 'var(--gray-700)',
-                fontSize: '0.9rem',
-                marginBottom: '5px'
-              }}>
-                Repartidor
+              <label>
+                <FaUser /> Cliente
               </label>
               <input
                 type="text"
-                placeholder="Buscar por repartidor"
-                value={filtros.repartidor}
-                onChange={(e) => handleFilterChange('repartidor', e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 15px',
-                  border: '2px solid var(--gray-300)',
-                  borderRadius: '6px',
-                  fontSize: '0.95rem',
-                  transition: 'border-color 0.2s'
-                }}
+                placeholder="Buscar por cliente"
+                value={filtros.cliente}
+                onChange={(e) => handleFilterChange('cliente', e.target.value)}
               />
             </div>
+            
+            <div className="filter-group">
+              <label>
+                <FaUser /> Contacto
+              </label>
+              <input
+                type="text"
+                placeholder="Buscar por contacto"
+                value={filtros.contacto}
+                onChange={(e) => handleFilterChange('contacto', e.target.value)}
+              />
+            </div>
+            
+            <div className="filter-group">
+              <label>
+                <FaPhone /> Teléfono
+              </label>
+              <input
+                type="text"
+                placeholder="Buscar por teléfono"
+                value={filtros.telefono}
+                onChange={(e) => handleFilterChange('telefono', e.target.value)}
+              />
+            </div>
+            
+            {!isDelivery && (
+              <div className="filter-group">
+                <label>
+                  <FaUser /> Repartidor
+                </label>
+                <input
+                  type="text"
+                  placeholder="Buscar por repartidor"
+                  value={filtros.repartidor}
+                  onChange={(e) => handleFilterChange('repartidor', e.target.value)}
+                />
+              </div>
+            )}
           </div>
         </div>
 
         <div className="search-and-pagination">
           <div className="pagination-controls">
             <button 
-              disabled={currentPage === 1}
+              disabled={currentPage === 1 || totalPages === 0}
               onClick={() => setCurrentPage(currentPage - 1)}
+              className="pagination-btn"
             >
               &lt;
             </button>
-            <span>Página {currentPage} de {totalPages} ({albaranesFiltrados.length} resultados)</span>
+            <span className="pagination-info">
+              {totalPages === 0 
+                ? '0 resultados' 
+                : `Página ${currentPage} de ${totalPages} (${albaranesFiltrados.length} resultados)`
+              }
+            </span>
             <button 
-              disabled={currentPage === totalPages}
+              disabled={currentPage === totalPages || totalPages === 0}
               onClick={() => setCurrentPage(currentPage + 1)}
+              className="pagination-btn"
             >
               &gt;
             </button>
           </div>
           
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px'
-          }}>
-            <button 
-              onClick={fetchAlbaranes} 
-              className="refresh-btn"
-              disabled={loading}
-              style={{
-                padding: '10px 20px',
-                background: 'var(--success-color)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '30px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <FaSync /> {loading ? 'Actualizando...' : 'Actualizar'}
-            </button>
+          <div className="view-info">
+            {isDelivery ? (
+              <span className="delivery-view">
+                <FaUser /> Vista de repartidor: solo tus albaranes
+              </span>
+            ) : (
+              <span className="admin-view">
+                Vista completa: todos los albaranes
+              </span>
+            )}
           </div>
         </div>
 
-        {loading && (
+        {loading && !refreshing && (
           <div className="loading-container">
             <div className="loading-spinner"></div>
             <p>Cargando albaranes...</p>
@@ -499,18 +479,14 @@ function GestionRutas() {
             {getActiveFiltersCount() > 0 ? (
               <>
                 <p>No se encontraron albaranes con los filtros aplicados</p>
-                <button onClick={resetFilters} style={{
-                  marginTop: '15px',
-                  padding: '10px 20px',
-                  background: 'var(--gray-700)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer'
-                }}>
+                <button onClick={resetFilters} className="clear-filters-small">
                   Limpiar filtros
                 </button>
               </>
+            ) : albaranes.length === 0 ? (
+              <p>No hay albaranes pendientes de entrega</p>
+            ) : isDelivery ? (
+              <p>No tienes albaranes asignados actualmente</p>
             ) : (
               <p>No hay albaranes pendientes de entrega (solo nuestros medios)</p>
             )}
@@ -522,40 +498,24 @@ function GestionRutas() {
             <div 
               key={`${albaran.ejercicio}-${albaran.serie}-${albaran.numero}`} 
               className={`ruta-card ${albaran.esParcial ? 'albaran-parcial' : ''} ${albaran.esVoluminoso ? 'albaran-voluminoso' : ''}`}
-              onClick={() => canPerformActionsInRutas && navigate('/detalle-albaran', { state: { albaran } })}
+              onClick={() => navigate('/detalle-albaran', { state: { albaran } })}
             >
               <div className="card-header">
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  width: '100%',
-                  flexWrap: 'wrap'
-                }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    flexWrap: 'wrap'
-                  }}>
-                    <h4 style={{ margin: 0 }}>Albarán: {albaran.albaran}</h4>
-                    <div style={{
-                      display: 'flex',
-                      gap: '5px',
-                      flexWrap: 'wrap'
-                    }}>
-                      {albaran.esParcial && <span style={{
-                        background: '#ff9800',
-                        color: 'white',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontSize: '0.8em'
-                      }}>Parcial</span>}
+                <div className="card-header-top">
+                  <div className="card-title-section">
+                    <h4>Albarán: {albaran.albaran}</h4>
+                    <div className="card-badges">
+                      {albaran.esParcial && (
+                        <span className="badge badge-parcial">Parcial</span>
+                      )}
                       {albaran.esVoluminoso && (
-                        <span className="voluminoso-badge">
+                        <span className="badge badge-voluminoso">
                           <FaBox /> Voluminoso
                         </span>
                       )}
+                      <span className="estado-badge estado-{getEstadoText(albaran.EstadoPedido).toLowerCase()}">
+                        {getEstadoText(albaran.EstadoPedido)}
+                      </span>
                     </div>
                   </div>
                   <span className="fecha-albaran">
@@ -565,74 +525,54 @@ function GestionRutas() {
               </div>
               
               <div className="card-body">
-                <div className="cliente-info">
-                  <strong style={{ minWidth: '80px', display: 'inline-block' }}>Cliente:</strong>
-                  <span style={{ color: 'var(--gray-700)' }}>{albaran.cliente}</span>
+                <div className="info-row">
+                  <strong>Cliente:</strong>
+                  <span>{albaran.cliente}</span>
                 </div>
                 
-                {(albaran.nombreObra || albaran.obra) && (
-                  <div className="obra-info">
-                    <strong style={{ minWidth: '80px', display: 'inline-block' }}>Obra:</strong>
-                    <span style={{ color: 'var(--gray-700)' }}>{albaran.nombreObra || albaran.obra}</span>
+                {albaran.nombreObra && (
+                  <div className="info-row">
+                    <strong>Obra:</strong>
+                    <span>{albaran.nombreObra}</span>
                   </div>
                 )}
                 
                 {albaran.municipio && (
-                  <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '15px' }}>
-                    <strong style={{ minWidth: '80px', display: 'inline-block' }}>Municipio:</strong>
-                    <span style={{ color: 'var(--gray-700)' }}>{albaran.municipio}</span>
+                  <div className="info-row">
+                    <strong><FaMapMarkerAlt /> Municipio:</strong>
+                    <span>{albaran.municipio}</span>
                   </div>
                 )}
                 
-                <div className="contacto-info">
-                  <strong style={{ minWidth: '80px', display: 'inline-block' }}>Contacto:</strong>
-                  <span style={{ color: 'var(--gray-700)' }}>{albaran.contacto || 'No especificado'}</span>
+                <div className="info-row">
+                  <strong>Contacto:</strong>
+                  <span>{albaran.contacto || 'No especificado'}</span>
                 </div>
                 
-                <div className="telefono-info">
-                  <strong style={{ minWidth: '80px', display: 'inline-block' }}>Teléfono:</strong>
-                  <span style={{ color: 'var(--gray-700)' }}>{albaran.telefonoContacto || 'No especificado'}</span>
+                <div className="info-row">
+                  <strong><FaPhone /> Teléfono:</strong>
+                  <span>{albaran.telefonoContacto || 'No especificado'}</span>
                 </div>
                 
-                <div className="asignado-info">
-                  <strong style={{ minWidth: '80px', display: 'inline-block' }}>Repartidor:</strong>
-                  <span style={{ 
-                    color: albaran.repartidor ? 'var(--gray-700)' : 'var(--danger-color)',
-                    fontStyle: albaran.repartidor ? 'normal' : 'italic'
-                  }}>
-                    {albaran.repartidor || 'Sin asignar'}
+                <div className="info-row">
+                  <strong>Repartidor:</strong>
+                  <span className={albaran.empleadoAsignado ? 'repartidor-asignado' : 'sin-repartidor'}>
+                    {albaran.repartidor}
                   </span>
                 </div>
 
                 {albaran.articulos && albaran.articulos.length > 0 && (
-                  <div style={{ marginTop: '15px' }}>
-                    <strong style={{ display: 'block', marginBottom: '5px' }}>Artículos:</strong>
-                    <div style={{ 
-                      maxHeight: '80px',
-                      overflowY: 'auto',
-                      padding: '5px',
-                      background: 'var(--gray-100)',
-                      borderRadius: '4px'
-                    }}>
+                  <div className="articulos-section">
+                    <strong>Artículos ({albaran.articulos.length}):</strong>
+                    <div className="articulos-list">
                       {albaran.articulos.slice(0, 3).map((articulo, index) => (
-                        <div key={index} style={{ 
-                          fontSize: '0.9rem',
-                          padding: '2px 0',
-                          borderBottom: '1px solid var(--gray-200)',
-                          display: 'flex',
-                          justifyContent: 'space-between'
-                        }}>
-                          <span>{articulo.nombre}</span>
-                          <span>{articulo.cantidad} uds</span>
+                        <div key={index} className="articulo-item">
+                          <span className="articulo-nombre">{articulo.nombre}</span>
+                          <span className="articulo-cantidad">{articulo.cantidad} uds</span>
                         </div>
                       ))}
                       {albaran.articulos.length > 3 && (
-                        <div style={{ 
-                          fontSize: '0.8rem',
-                          color: 'var(--gray-500)',
-                          padding: '2px 0',
-                          textAlign: 'center'
-                        }}>
+                        <div className="articulo-mas">
                           +{albaran.articulos.length - 3} más...
                         </div>
                       )}
@@ -650,6 +590,10 @@ function GestionRutas() {
                         e.stopPropagation();
                         handleCompletarAlbaran(albaran);
                       }}
+                      disabled={isDelivery && albaran.empleadoAsignado !== user?.UsuarioLogicNet}
+                      title={isDelivery && albaran.empleadoAsignado !== user?.UsuarioLogicNet ? 
+                        "Solo puedes completar tus albaranes" : 
+                        "Marcar como entregado"}
                     >
                       <FaCheck /> Marcar como entregado
                     </button>
@@ -660,18 +604,8 @@ function GestionRutas() {
                         e.stopPropagation();
                         navigate('/detalle-albaran', { state: { albaran } });
                       }}
-                      style={{
-                        width: '100%',
-                        marginTop: '10px',
-                        padding: '10px 15px',
-                        background: 'var(--accent-color)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
-                      }}
                     >
-                      Ver detalle
+                      Ver detalle completo
                     </button>
                   </>
                 )}
@@ -681,18 +615,20 @@ function GestionRutas() {
         </div>
 
         {totalPages > 1 && (
-          <div className="pagination-bottom" style={{ marginTop: '20px' }}>
+          <div className="pagination-bottom">
             <div className="pagination-controls">
               <button 
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage(currentPage - 1)}
+                className="pagination-btn"
               >
                 &lt;
               </button>
-              <span>Página {currentPage} de {totalPages}</span>
+              <span className="pagination-info">Página {currentPage} de {totalPages}</span>
               <button 
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage(currentPage + 1)}
+                className="pagination-btn"
               >
                 &gt;
               </button>

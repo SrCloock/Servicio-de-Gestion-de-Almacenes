@@ -3,9 +3,9 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   FaRoute, FaClipboardList, FaTruckLoading, FaExchangeAlt, FaBoxes,
   FaUserFriends, FaFileInvoice, FaHome, FaWarehouse, FaTimes,
-  FaBars, FaBuilding, FaChevronDown, FaFileContract
+  FaBars, FaBuilding, FaChevronDown, FaFileContract, FaShoppingCart // ✅ NUEVO ICONO
 } from 'react-icons/fa';
-import API from '../helpers/api'; // ✅ USAR API CONFIGURADA
+import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import { usePermissions } from '../PermissionsManager';
 import '../styles/Navbar.css';
@@ -83,12 +83,11 @@ const Navbar = () => {
     };
   }, [isMobileMenuOpen, isSelectorOpen]);
 
-  // ✅ CORREGIDO: Usar API en lugar de axios con URL hardcodeada
   useEffect(() => {
     const fetchEmpresas = async () => {
       if (!user) return;
       try {
-        const response = await API.get('/empresas'); // ✅ SIN URL HARCODEADA
+        const response = await API.get('/empresas');
         setEmpresas(response.data);
       } catch (error) {
         console.error('Error al obtener empresas:', error);
@@ -131,7 +130,6 @@ const Navbar = () => {
     window.location.reload();
   };
 
-  // Lógica de visibilidad según permisos y roles
   const navItems = [
     {
       path: '/',
@@ -175,6 +173,7 @@ const Navbar = () => {
       icon: <FaBoxes />,
       visible: permissions.canViewInventory
     },
+
     {
       path: '/gestion-documental',
       label: 'Gestión Documental',

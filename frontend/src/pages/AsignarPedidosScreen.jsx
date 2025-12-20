@@ -14,6 +14,11 @@ const AsignarPedidosScreen = () => {
   const [successMessage, setSuccessMessage] = useState('');
   const [cambiandoAsignaciones, setCambiandoAsignaciones] = useState(false);
   
+  // Estados para los filtros
+  const [filtroNumeroPedido, setFiltroNumeroPedido] = useState('');
+  const [filtroCliente, setFiltroCliente] = useState('');
+  const [filtroEmpleadoAsignado, setFiltroEmpleadoAsignado] = useState('todos');
+  
   const { canAssignOrders } = usePermissions();
 
   const cargarDatos = useCallback(async () => {
@@ -130,6 +135,43 @@ const AsignarPedidosScreen = () => {
     }),
   [pedidos, asignaciones]);
 
+  // Función para limpiar todos los filtros
+  const limpiarFiltros = () => {
+    setFiltroNumeroPedido('');
+    setFiltroCliente('');
+    setFiltroEmpleadoAsignado('todos');
+  };
+
+  // Filtrar pedidos según los criterios
+  const pedidosFiltrados = useMemo(() => {
+    return pedidos.filter(pedido => {
+      // Filtro por número de pedido
+      if (filtroNumeroPedido && 
+          !pedido.numeroPedido.toString().toLowerCase().includes(filtroNumeroPedido.toLowerCase())) {
+        return false;
+      }
+      
+      // Filtro por cliente
+      if (filtroCliente && 
+          !pedido.razonSocial.toLowerCase().includes(filtroCliente.toLowerCase())) {
+        return false;
+      }
+      
+      // Filtro por empleado asignado
+      if (filtroEmpleadoAsignado !== 'todos') {
+        if (filtroEmpleadoAsignado === 'sin-asignar') {
+          // Filtrar pedidos sin asignar
+          if (pedido.EmpleadoAsignado) return false;
+        } else {
+          // Filtrar por empleado específico
+          if (pedido.EmpleadoAsignado !== filtroEmpleadoAsignado) return false;
+        }
+      }
+      
+      return true;
+    });
+  }, [pedidos, filtroNumeroPedido, filtroCliente, filtroEmpleadoAsignado]);
+
   if (!canAssignOrders) {
     return (
       <div className="AP-container">
@@ -161,11 +203,63 @@ const AsignarPedidosScreen = () => {
       {error && <div className="AP-error">{error}</div>}
       {successMessage && <div className="AP-success">{successMessage}</div>}
 
-      <div className="AP-controls">
-        <div className="AP-info-box">
-          <p>Se muestran todos los pedidos pendientes de preparación</p>
-          <p>Selecciona un preparador para cada pedido y guarda los cambios</p>
-          <p className="AP-note">Nota: Selecciona "Quitar asignación" para remover al preparador asignado</p>
+      {/* Filtros */}
+      <div className="AP-filtros-container">
+        <h3 className="AP-filtros-title">Filtrar Pedidos</h3>
+        <div className="AP-filtros-grid">
+          <div className="AP-filtro-group">
+            <label htmlFor="filtroNumero">Número de Pedido</label>
+            <input
+              id="filtroNumero"
+              type="text"
+              placeholder="Buscar por número..."
+              value={filtroNumeroPedido}
+              onChange={(e) => setFiltroNumeroPedido(e.target.value)}
+              className="AP-filtro-input"
+            />
+          </div>
+          
+          <div className="AP-filtro-group">
+            <label htmlFor="filtroCliente">Cliente</label>
+            <input
+              id="filtroCliente"
+              type="text"
+              placeholder="Buscar por cliente..."
+              value={filtroCliente}
+              onChange={(e) => setFiltroCliente(e.target.value)}
+              className="AP-filtro-input"
+            />
+          </div>
+          
+          <div className="AP-filtro-group">
+            <label htmlFor="filtroEmpleado">Asignado a</label>
+            <select
+              id="filtroEmpleado"
+              value={filtroEmpleadoAsignado}
+              onChange={(e) => setFiltroEmpleadoAsignado(e.target.value)}
+              className="AP-filtro-select"
+            >
+              <option value="todos">Todos los empleados</option>
+              <option value="sin-asignar">Sin asignar</option>
+              {preparadores.map(prep => (
+                <option key={prep.codigo} value={prep.codigo}>
+                  {prep.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="AP-filtro-group AP-filtro-actions">
+            <button 
+              onClick={limpiarFiltros}
+              className="AP-btn-limpiar"
+            >
+              Limpiar Filtros
+            </button>
+            <span className="AP-resultados-count">
+              {pedidosFiltrados.length} de {pedidos.length} pedidos
+            </span>
+          </div>
         </div>
       </div>
 
@@ -182,7 +276,7 @@ const AsignarPedidosScreen = () => {
             </tr>
           </thead>
           <tbody>
-            {pedidos.map(pedido => (
+            {pedidosFiltrados.map(pedido => (
               <tr key={pedido.numeroPedido}>
                 <td>{pedido.numeroPedido}</td>
                 <td>{pedido.razonSocial}</td>
@@ -223,13 +317,25 @@ const AsignarPedidosScreen = () => {
         </table>
       </div>
 
+      {!pedidosFiltrados.length && pedidos.length > 0 && (
+        <div className="AP-no-resultados">
+          <p>No se encontraron pedidos con los filtros aplicados</p>
+          <button 
+            onClick={limpiarFiltros}
+            className="AP-btn-limpiar-inline"
+          >
+            Limpiar filtros para ver todos
+          </button>
+        </div>
+      )}
+
       {!pedidos.length && (
         <div className="AP-no-pedidos">
           <p>No hay pedidos pendientes en este momento</p>
         </div>
       )}
 
-      {!!pedidos.length && (
+      {!!pedidosFiltrados.length && (
         <div className="AP-actions">
           <button 
             onClick={asignarPedidos} 

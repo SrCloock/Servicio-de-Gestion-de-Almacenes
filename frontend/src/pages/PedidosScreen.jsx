@@ -10,7 +10,7 @@ import {
   FaEllipsisV, FaCamera, FaQrcode, FaBarcode, FaCheck, FaTimes, 
   FaExclamationTriangle, FaChevronDown, FaSearch, FaCalendarAlt, 
   FaTruck, FaInfoCircle, FaSync, FaFilter, FaWeight, FaBox, 
-  FaUser, FaPhone, FaExclamation 
+  FaUser, FaPhone, FaExclamation, FaBell 
 } from 'react-icons/fa';
 
 // Custom hook para debounce
@@ -38,89 +38,87 @@ const normalizarUnidad = (unidad) => {
   return unidad.toLowerCase().trim();
 };
 
-// Función para formatear unidades (optimizada con useMemo)
-const useFormatearUnidad = () => {
-  return useMemo(() => (cantidad, unidad) => {
-    if (!cantidad && cantidad !== 0) return '0 ud';
-    
-    // Normalizar unidad para display
-    let unidadDisplay = unidad;
-    if (!unidadDisplay || unidadDisplay.trim() === '' || unidadDisplay === 'unidades') {
-      unidadDisplay = 'ud';
-    }
-    
-    let cantidadNum = typeof cantidad === 'string' ? parseFloat(cantidad) : cantidad;
-    
-    if (isNaN(cantidadNum)) return `${cantidad} ${unidadDisplay}`;
-    
-    const unidadesDecimales = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
-    const esUnidadDecimal = unidadesDecimales.includes(unidadDisplay.toLowerCase());
-    
-    if (!esUnidadDecimal) {
-      cantidadNum = Math.round(cantidadNum);
-    } else {
-      cantidadNum = parseFloat(cantidadNum.toFixed(2));
-    }
-    
-    const unidadesInvariables = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
-    const unidadLower = unidadDisplay.toLowerCase();
-    
-    if (unidadesInvariables.includes(unidadLower)) {
-      return `${cantidadNum} ${unidadDisplay}`;
-    }
-    
-    const pluralesIrregulares = {
-      'ud': 'uds',
-      'par': 'pares',
-      'metro': 'metros',
-      'pack': 'packs',
-      'saco': 'sacos',
-      'barra': 'barras',
-      'caja': 'cajas',
-      'rollo': 'rollos',
-      'lata': 'latas',
-      'bote': 'botes',
-      'tubo': 'tubos',
-      'unidad': 'unidades',
-      'juego': 'juegos',
-      'kit': 'kits',
-      'paquete': 'paquetes',
-      'cajetin': 'cajetines',
-      'bidon': 'bidones',
-      'palet': 'palets',
-      'bobina': 'bobinas',
-      'fardo': 'fardos',
-      'cubeta': 'cubetas',
-      'garrafa': 'garrafas',
-      'tambor': 'tambores',
-      'cubos': 'cubos',
-      'pares': 'pares'
-    };
+// Función para formatear unidades (convertida de hook a función normal)
+const formatearUnidad = (cantidad, unidad) => {
+  if (!cantidad && cantidad !== 0) return '0 ud';
+  
+  // Normalizar unidad para display
+  let unidadDisplay = unidad;
+  if (!unidadDisplay || unidadDisplay.trim() === '' || unidadDisplay === 'unidades') {
+    unidadDisplay = 'ud';
+  }
+  
+  let cantidadNum = typeof cantidad === 'string' ? parseFloat(cantidad) : cantidad;
+  
+  if (isNaN(cantidadNum)) return `${cantidad} ${unidadDisplay}`;
+  
+  const unidadesDecimales = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
+  const esUnidadDecimal = unidadesDecimales.includes(unidadDisplay.toLowerCase());
+  
+  if (!esUnidadDecimal) {
+    cantidadNum = Math.round(cantidadNum);
+  } else {
+    cantidadNum = parseFloat(cantidadNum.toFixed(2));
+  }
+  
+  const unidadesInvariables = ['kg', 'm', 'cm', 'mm', 'l', 'ml', 'g', 'mg', 'm2', 'm3'];
+  const unidadLower = unidadDisplay.toLowerCase();
+  
+  if (unidadesInvariables.includes(unidadLower)) {
+    return `${cantidadNum} ${unidadDisplay}`;
+  }
+  
+  const pluralesIrregulares = {
+    'ud': 'uds',
+    'par': 'pares',
+    'metro': 'metros',
+    'pack': 'packs',
+    'saco': 'sacos',
+    'barra': 'barras',
+    'caja': 'cajas',
+    'rollo': 'rollos',
+    'lata': 'latas',
+    'bote': 'botes',
+    'tubo': 'tubos',
+    'unidad': 'unidades',
+    'juego': 'juegos',
+    'kit': 'kits',
+    'paquete': 'paquetes',
+    'cajetin': 'cajetines',
+    'bidon': 'bidones',
+    'palet': 'palets',
+    'bobina': 'bobinas',
+    'fardo': 'fardos',
+    'cubeta': 'cubetas',
+    'garrafa': 'garrafas',
+    'tambor': 'tambores',
+    'cubos': 'cubos',
+    'pares': 'pares'
+  };
 
-    if (cantidadNum === 1) {
-      if (unidadLower === 'unidad' || unidadLower === 'unidades' || unidadLower === 'ud') {
-        return '1 unidad';
-      }
-      return `1 ${unidadDisplay}`;
-    } else {
-      if (unidadLower === 'unidad' || unidadLower === 'unidades' || unidadLower === 'ud') {
-        return `${cantidadNum} unidades`;
-      }
-      
-      if (pluralesIrregulares[unidadLower]) {
-        return `${cantidadNum} ${pluralesIrregulares[unidadLower]}`;
-      }
-      
-      const ultimaLetra = unidadDisplay.charAt(unidadDisplay.length - 1);
-      const penultimaLetra = unidadDisplay.charAt(unidadDisplay.length - 2);
-      
-      if (['a', 'e', 'i', 'o', 'u'].includes(ultimaLetra)) {
-        return `${cantidadNum} ${unidadDisplay}s`;
-      } else {
-        return `${cantidadNum} ${unidadDisplay}es`;
-      }
+  if (cantidadNum === 1) {
+    if (unidadLower === 'unidad' || unidadLower === 'unidades' || unidadLower === 'ud') {
+      return '1 unidad';
     }
-  }, []);
+    return `1 ${unidadDisplay}`;
+  } else {
+    if (unidadLower === 'unidad' || unidadLower === 'unidades' || unidadLower === 'ud') {
+      return `${cantidadNum} unidades`;
+    }
+    
+    if (pluralesIrregulares[unidadLower]) {
+      return `${cantidadNum} ${pluralesIrregulares[unidadLower]}`;
+    }
+    
+    const ultimaLetra = unidadDisplay.charAt(unidadDisplay.length - 1);
+    const penultimaLetra = unidadDisplay.charAt(unidadDisplay.length - 2);
+    
+    if (['a', 'e', 'i', 'o', 'u'].includes(ultimaLetra)) {
+      return `${cantidadNum} ${unidadDisplay}s`;
+    } else {
+      return `${cantidadNum} ${unidadDisplay}es`;
+    }
+  }
 };
 
 // Componente de carga mejorado
@@ -144,7 +142,7 @@ const ErrorMessage = React.memo(({ message, onRetry }) => (
   </div>
 ));
 
-// Componente Modal de Detalles de Artículo
+// Componente Modal de Detalles de Artículo - VERSIÓN CORREGIDA
 const DetallesArticuloModal = React.memo(({ 
   detalles, 
   linea, 
@@ -153,7 +151,6 @@ const DetallesArticuloModal = React.memo(({
   onExpedirVariante,
   canPerformActions
 }) => {
-  const formatearUnidad = useFormatearUnidad();
   const [ubicacionesPorDetalle, setUbicacionesPorDetalle] = useState({});
   const [selecciones, setSelecciones] = useState({});
   const [procesando, setProcesando] = useState(false);
@@ -173,7 +170,7 @@ const DetallesArticuloModal = React.memo(({
     };
   }, [detalles]);
 
-  // Cargar stock cuando abrimos el modal - SOLO para variantes con unidades pendientes
+  // 🔥 CORRECCIÓN CRÍTICA: Cargar stock con filtros específicos por color y talla
   useEffect(() => {
     const detallesConStock = detalles.filter(detalle => 
       parseFloat(detalle.cantidadPendiente) > 0
@@ -191,7 +188,7 @@ const DetallesArticuloModal = React.memo(({
       const nuevosErrores = {};
 
       for (const detalle of detallesConStock) {
-        const key = `${detalle.codigoArticulo}-${detalle.codigoColor}-${detalle.codigoTalla}`;
+        const key = `${detalle.codigoArticulo}-${detalle.codigoColor || 'SIN_COLOR'}-${detalle.codigoTalla || 'SIN_TALLA'}`;
         
         // Cancelar petición anterior si existe
         if (abortControllers.current[key]) {
@@ -202,20 +199,50 @@ const DetallesArticuloModal = React.memo(({
         abortControllers.current[key] = new AbortController();
         
         try {
+          console.log('[MODAL DETALLES] Solicitando stock para:', {
+            articulo: detalle.codigoArticulo,
+            color: detalle.codigoColor || 'Sin color',
+            talla: detalle.codigoTalla || 'Sin talla',
+            key: key
+          });
+
+          // 🔥 USAR PARÁMETROS ESPECÍFICOS PARA CADA VARIANTE
+          const params = {
+            codigoArticulo: detalle.codigoArticulo
+          };
+
+          // Solo agregar color si tiene valor
+          if (detalle.codigoColor && detalle.codigoColor !== '' && detalle.codigoColor !== 'null') {
+            params.codigoColor = detalle.codigoColor;
+          }
+
+          // Solo agregar talla si tiene valor
+          if (detalle.codigoTalla && detalle.codigoTalla !== '' && detalle.codigoTalla !== 'null') {
+            params.codigoTalla = detalle.codigoTalla;
+          }
+
           const response = await API.get(
             '/stock/por-variante',
             {
               headers: getAuthHeader(),
-              params: {
-                codigoArticulo: detalle.codigoArticulo,
-                codigoColor: detalle.codigoColor,
-                codigoTalla: detalle.codigoTalla
-              },
+              params: params,
               signal: abortControllers.current[key].signal
             }
           );
 
           resultados[key] = Array.isArray(response.data) ? response.data : [];
+          
+          console.log(`[MODAL DETALLES] Respuesta para ${key}:`, {
+            ubicacionesEncontradas: resultados[key].length,
+            ubicaciones: resultados[key].map(u => ({
+              almacen: u.CodigoAlmacen,
+              ubicacion: u.Ubicacion,
+              color: u.CodigoColor_,
+              talla: u.CodigoTalla01_,
+              cantidad: u.Cantidad
+            }))
+          });
+
         } catch (error) {
           if (error.name === 'CanceledError') {
             console.log('Petición cancelada:', key);
@@ -247,6 +274,41 @@ const DetallesArticuloModal = React.memo(({
     [detalles]
   );
 
+  // 🔥 FUNCIÓN PARA FORMATAR INFORMACIÓN DE UBICACIÓN EN EL MODAL
+  const formatearInfoUbicacionModal = useCallback((ubicacion) => {
+    if (ubicacion.ubicacion === "Zona descarga") {
+      return "Stock disponible";
+    }
+    
+    const stock = parseFloat(ubicacion.Cantidad);
+    if (isNaN(stock)) return "Stock no disponible";
+    
+    return `${formatearUnidad(stock, ubicacion.UnidadMedida)}`;
+  }, []);
+
+  // 🔥 FUNCIÓN PARA MOSTRAR TEXTO DE UBICACIÓN EN EL SELECT
+  const getTextoOpcionUbicacion = useCallback((ubicacion) => {
+    let texto = `${ubicacion.CodigoAlmacen} - ${ubicacion.Ubicacion}`;
+    
+    if (ubicacion.Partida && ubicacion.Partida.trim() !== '') {
+      texto += ` (${ubicacion.Partida})`;
+    }
+    
+    texto += ` - Stock: ${formatearInfoUbicacionModal(ubicacion)}`;
+    
+    // 🔥 MOSTRAR COLOR Y TALLA DE LA UBICACIÓN (PARA DEBUG)
+    if (ubicacion.CodigoColor_ || ubicacion.CodigoTalla01_) {
+      const infoVariante = [];
+      if (ubicacion.CodigoColor_) infoVariante.push(`Color: ${ubicacion.CodigoColor_}`);
+      if (ubicacion.CodigoTalla01_) infoVariante.push(`Talla: ${ubicacion.CodigoTalla01_}`);
+      if (infoVariante.length > 0) {
+        texto += ` [${infoVariante.join(', ')}]`;
+      }
+    }
+    
+    return texto;
+  }, [formatearInfoUbicacionModal]);
+
   // Guardar selección de ubicación y cantidad
   const handleCambioSeleccion = useCallback((detalleKey, field, value) => {
     setSelecciones((prev) => ({
@@ -260,7 +322,7 @@ const DetallesArticuloModal = React.memo(({
 
   // Confirmar expedición de una sublínea
   const handleExpedir = useCallback(async (detalle) => {
-    const detalleKey = `${detalle.codigoArticulo}-${detalle.codigoColor}-${detalle.codigoTalla}`;
+    const detalleKey = `${detalle.codigoArticulo}-${detalle.codigoColor || 'SIN_COLOR'}-${detalle.codigoTalla || 'SIN_TALLA'}`;
     const seleccion = selecciones[detalleKey];
 
     if (!seleccion || !seleccion.ubicacion || !seleccion.cantidad) {
@@ -290,6 +352,16 @@ const DetallesArticuloModal = React.memo(({
         setProcesando(false);
         return;
       }
+
+      console.log('[MODAL DETALLES] Expediendo variante:', {
+        articulo: detalle.codigoArticulo,
+        color: detalle.codigoColor,
+        talla: detalle.codigoTalla,
+        cantidad: cantidad,
+        ubicacion: seleccion.ubicacion,
+        almacen: ubicacionSeleccionada.CodigoAlmacen,
+        ubicacionData: ubicacionSeleccionada
+      });
 
       await onExpedirVariante({
         articulo: detalle.codigoArticulo,
@@ -343,7 +415,7 @@ const DetallesArticuloModal = React.memo(({
         </div>
 
         {cargandoUbicaciones ? (
-          <LoadingSpinner message="Cargando información de stock..." />
+          <LoadingSpinner message="Cargando información de stock por variante..." />
         ) : (
           <div className="ps-tabla-detalles-container">
             <table className="ps-tabla-detalles">
@@ -359,15 +431,21 @@ const DetallesArticuloModal = React.memo(({
               </thead>
               <tbody>
                 {detallesConPendientes.map((detalle, index) => {
-                  const key = `${detalle.codigoArticulo}-${detalle.codigoColor}-${detalle.codigoTalla}-${index}`;
+                  const key = `${detalle.codigoArticulo}-${detalle.codigoColor || 'SIN_COLOR'}-${detalle.codigoTalla || 'SIN_TALLA'}`;
                   const ubicaciones = ubicacionesPorDetalle[key] || [];
                   const seleccion = selecciones[key] || {};
                   const error = erroresCarga[key];
 
+                  console.log(`[MODAL DETALLES] Renderizando fila ${index}:`, {
+                    key,
+                    ubicaciones: ubicaciones.length,
+                    detalle
+                  });
+
                   return (
                     <tr key={key} className={ubicaciones.length === 0 ? 'ps-sin-stock-row' : ''}>
-                      <td>{detalle.colorNombre || detalle.codigoColor}</td>
-                      <td>{detalle.descripcionTalla || detalle.codigoTalla}</td>
+                      <td>{detalle.colorNombre || detalle.codigoColor || 'Sin color'}</td>
+                      <td>{detalle.descripcionTalla || detalle.codigoTalla || 'Sin talla'}</td>
                       <td>{formatearUnidad(detalle.cantidadPendiente, linea.unidadBase)}</td>
                       <td>
                         {error ? (
@@ -378,38 +456,45 @@ const DetallesArticuloModal = React.memo(({
                               value={seleccion.ubicacion || ""}
                               onChange={(e) => handleCambioSeleccion(key, "ubicacion", e.target.value)}
                               disabled={!canPerformActions}
+                              className="ps-ubicacion-select-detalle"
                             >
                               <option value="">Selecciona ubicación</option>
                               {ubicaciones.map((ubic, idx) => (
-                                <option key={idx} value={ubic.Ubicacion}>
-                                  {ubic.CodigoAlmacen} - {ubic.Ubicacion} 
-                                  {ubic.Partida ? `(${ubic.Partida})` : ''} - 
-                                  Stock: {formatearUnidad(ubic.Cantidad, ubic.UnidadMedida)}
+                                <option key={`${ubic.CodigoAlmacen}-${ubic.Ubicacion}-${ubic.Partida || 'no-partida'}-${idx}`}
+                                        value={ubic.Ubicacion}>
+                                  {getTextoOpcionUbicacion(ubic)}
                                 </option>
                               ))}
                             </select>
                             <div className="ps-select-arrow"><FaChevronDown /></div>
                           </div>
                         ) : (
-                          <span className="ps-sin-stock">Sin stock disponible</span>
+                          <div className="ps-sin-stock-detalle">
+                            <FaExclamationTriangle className="ps-sin-stock-icon" />
+                            <span>Sin stock disponible para esta variante</span>
+                            <div className="ps-sin-stock-info">
+                              (Color: {detalle.codigoColor || 'N/A'}, Talla: {detalle.codigoTalla || 'N/A'})
+                            </div>
+                          </div>
                         )}
                       </td>
                       <td>
-                        <div className="ps-cantidad-input-container">
+                        <div className="ps-cantidad-input-container-detalle">
                           <input
                             type="number"
                             value={seleccion.cantidad || ""}
                             min={0}
                             max={detalle.cantidadPendiente}
+                            step={linea.unidadBase === 'kg' ? '0.01' : '1'}
                             onChange={(e) => {
-                              const nuevaCantidad = Math.min(
-                                parseFloat(e.target.value) || 0, 
-                                detalle.cantidadPendiente
-                              );
+                              let nuevaCantidad = parseFloat(e.target.value) || 0;
+                              // Limitar a las unidades pendientes
+                              nuevaCantidad = Math.min(nuevaCantidad, detalle.cantidadPendiente);
                               handleCambioSeleccion(key, "cantidad", nuevaCantidad.toString());
                             }}
                             disabled={!canPerformActions || ubicaciones.length === 0 || !!error || detalle.cantidadPendiente <= 0}
                             placeholder="0"
+                            className="ps-cantidad-input-detalle"
                           />
                           <span className="ps-unidad-info">{linea.unidadBase || 'ud'}</span>
                         </div>
@@ -426,7 +511,8 @@ const DetallesArticuloModal = React.memo(({
                             parseFloat(seleccion.cantidad) > detalle.cantidadPendiente ||
                             procesando || 
                             !!error ||
-                            detalle.cantidadPendiente <= 0
+                            detalle.cantidadPendiente <= 0 ||
+                            ubicaciones.length === 0
                           }
                         >
                           {procesando ? "Procesando..." : "Expedir"}
@@ -453,23 +539,28 @@ const DetallesArticuloModal = React.memo(({
   );
 });
 
-// Componente Línea de Pedido - VERSIÓN CORREGIDA
+// Componente Línea de Pedido - VERSIÓN OPTIMIZADA
 const LineaPedido = React.memo(({ 
   linea, 
   pedido, 
   expediciones, 
   handleExpedicionChange, 
   ubicaciones,
+  ubicacionesCargadas,
   iniciarEscaneo,
   abrirModalDetalles,
   canPerformActions,
   isScanning,
   isProcesando
 }) => {
-  const formatearUnidad = useFormatearUnidad();
   const [isUpdatingExpedicion, setIsUpdatingExpedicion] = useState(false);
   
   const ubicacionesConStock = useMemo(() => {
+    // Si las ubicaciones no están cargadas, retornar array vacío
+    if (!ubicacionesCargadas) {
+      return [];
+    }
+    
     const ubicacionesArticulo = ubicaciones[linea.codigoArticulo] || [];
     
     let ubicacionesConStockReal = ubicacionesArticulo.filter(ubi => {
@@ -524,7 +615,7 @@ const LineaPedido = React.memo(({
       const stockB = b.unidadSaldo === Infinity ? 999999 : parseFloat(b.unidadSaldo);
       return stockB - stockA;
     });
-  }, [ubicaciones, linea.codigoArticulo, linea.unidadPedido, linea.codigoAlmacen, linea.unidadBase]);
+  }, [ubicaciones, ubicacionesCargadas, linea.codigoArticulo, linea.unidadPedido, linea.codigoAlmacen, linea.unidadBase]);
 
   const key = linea.movPosicionLinea;
   const expedicion = expediciones[key] || {
@@ -550,29 +641,31 @@ const LineaPedido = React.memo(({
       const timeoutId = setTimeout(() => {
         const primeraUbicacion = ubicacionesConStock[0];
         
-        handleExpedicionChange(key, 'ubicacion', primeraUbicacion.ubicacion);
-        handleExpedicionChange(key, 'almacen', primeraUbicacion.codigoAlmacen);
-        handleExpedicionChange(key, 'partida', primeraUbicacion.partida || '');
-        handleExpedicionChange(key, 'unidadMedida', primeraUbicacion.unidadMedida || linea.unidadPedido);
-        
-        const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
-        let nuevaCantidad = 0;
-        
-        if (primeraUbicacion.ubicacion === "Zona descarga") {
-          nuevaCantidad = unidadesPendientes;
-        } else {
-          const stockDisponible = parseFloat(primeraUbicacion.unidadSaldo) || 0;
-          nuevaCantidad = Math.min(unidadesPendientes, stockDisponible);
+        if (primeraUbicacion) {
+          handleExpedicionChange(key, 'ubicacion', primeraUbicacion.ubicacion);
+          handleExpedicionChange(key, 'almacen', primeraUbicacion.codigoAlmacen);
+          handleExpedicionChange(key, 'partida', primeraUbicacion.partida || '');
+          handleExpedicionChange(key, 'unidadMedida', primeraUbicacion.unidadMedida || linea.unidadPedido);
+          
+          const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
+          let nuevaCantidad = 0;
+          
+          if (primeraUbicacion.ubicacion === "Zona descarga") {
+            nuevaCantidad = unidadesPendientes;
+          } else {
+            const stockDisponible = parseFloat(primeraUbicacion.unidadSaldo) || 0;
+            nuevaCantidad = Math.min(unidadesPendientes, stockDisponible);
+          }
+          
+          handleExpedicionChange(key, 'cantidad', nuevaCantidad.toString());
         }
-        
-        handleExpedicionChange(key, 'cantidad', nuevaCantidad.toString());
         
         setIsUpdatingExpedicion(false);
       }, 0);
 
       return () => clearTimeout(timeoutId);
     }
-  }, [ubicacionesConStock]); // Solo dependemos de ubicacionesConStock
+  }, [ubicacionesConStock, expedicion.ubicacion, expedicion.almacen, handleExpedicionChange, key, linea.unidadesPendientes, linea.unidadPedido, isUpdatingExpedicion]);
 
   const formatted = useMemo(() => {
     const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
@@ -590,7 +683,7 @@ const LineaPedido = React.memo(({
         ? formatearUnidad(equivalencia, unidadStock) 
         : null
     };
-  }, [linea.unidadesPendientes, linea.unidadBase, linea.unidadAlternativa, linea.factorConversion, formatearUnidad]);
+  }, [linea.unidadesPendientes, linea.unidadBase, linea.unidadAlternativa, linea.factorConversion]);
   
   const infoPeso = useMemo(() => {
     const pesoUnitario = parseFloat(linea.pesoUnitario) || 0;
@@ -681,7 +774,7 @@ const LineaPedido = React.memo(({
     if (isNaN(stock)) return "Stock no disponible";
     
     return formatearUnidad(stock, ubicacion.unidadMedida);
-  }, [formatearUnidad]);
+  }, []);
 
   return (
     <>
@@ -739,19 +832,25 @@ const LineaPedido = React.memo(({
               value={expedicion.ubicacion}
               onChange={handleCambioUbicacion}
               className={`ps-ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga' : ''}`}
-              disabled={!canPerformActions || isProcesando || isUpdatingExpedicion}
+              disabled={!canPerformActions || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
             >
-              {ubicacionesConStock.map((ubicacion, locIndex) => (
-                <option 
-                  key={`${ubicacion.codigoAlmacen}-${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
-                  value={ubicacion.ubicacion}
-                  className={ubicacion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-option' : ''}
-                >
-                  {ubicacion.codigoAlmacen} - {ubicacion.ubicacion} 
-                  {ubicacion.partida ? ` (${ubicacion.partida})` : ''} - 
-                  {formatearInfoStock(ubicacion)}
-                </option>
-              ))}
+              {!ubicacionesCargadas ? (
+                <option value="">Cargando ubicaciones...</option>
+              ) : ubicacionesConStock.length === 0 ? (
+                <option value="">Sin ubicaciones disponibles</option>
+              ) : (
+                ubicacionesConStock.map((ubicacion, locIndex) => (
+                  <option 
+                    key={`${ubicacion.codigoAlmacen}-${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
+                    value={ubicacion.ubicacion}
+                    className={ubicacion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-option' : ''}
+                  >
+                    {ubicacion.codigoAlmacen} - {ubicacion.ubicacion} 
+                    {ubicacion.partida ? ` (${ubicacion.partida})` : ''} - 
+                    {formatearInfoStock(ubicacion)}
+                  </option>
+                ))
+              )}
             </select>
             <div className="ps-select-arrow"><FaChevronDown /></div>
           </div>
@@ -763,7 +862,7 @@ const LineaPedido = React.memo(({
               value={expedicion.cantidad}
               onChange={handleCambioCantidad}
               className={expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-input' : ''}
-              disabled={!canPerformActions || isProcesando || isUpdatingExpedicion}
+              disabled={!canPerformActions || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
               placeholder="0"
             />
             <div className="ps-unidad-info">{linea.unidadBase || 'ud'}</div>
@@ -776,7 +875,7 @@ const LineaPedido = React.memo(({
               e.stopPropagation();
               if (canPerformActions) iniciarEscaneo(linea, pedido);
             }}
-            disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning || isProcesando || isUpdatingExpedicion}
+            disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
           >
             <FaCamera /> 
             {isProcesando ? 'Procesando...' : (isScanning ? 'Procesando...' : 'Escanear')}
@@ -831,18 +930,24 @@ const LineaPedido = React.memo(({
                     value={expedicion.ubicacion}
                     onChange={handleCambioUbicacion}
                     className={`ps-ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga' : ''}`}
-                    disabled={!canPerformActions || isProcesando || isUpdatingExpedicion}
+                    disabled={!canPerformActions || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
                   >
-                    {ubicacionesConStock.map((ubicacion, locIndex) => (
-                      <option 
-                        key={`${ubicacion.codigoAlmacen}-${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
-                        value={ubicacion.ubicacion}
-                      >
-                        {ubicacion.codigoAlmacen} - {ubicacion.ubicacion} 
-                        {ubicacion.partida ? ` (${ubicacion.partida})` : ''} - 
-                        {formatearInfoStock(ubicacion)}
-                      </option>
-                    ))}
+                    {!ubicacionesCargadas ? (
+                      <option value="">Cargando ubicaciones...</option>
+                    ) : ubicacionesConStock.length === 0 ? (
+                      <option value="">Sin ubicaciones disponibles</option>
+                    ) : (
+                      ubicacionesConStock.map((ubicacion, locIndex) => (
+                        <option 
+                          key={`${ubicacion.codigoAlmacen}-${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
+                          value={ubicacion.ubicacion}
+                        >
+                          {ubicacion.codigoAlmacen} - {ubicacion.ubicacion} 
+                          {ubicacion.partida ? ` (${ubicacion.partida})` : ''} - 
+                          {formatearInfoStock(ubicacion)}
+                        </option>
+                      ))
+                    )}
                   </select>
                   <div className="ps-select-arrow"><FaChevronDown /></div>
                 </div>
@@ -855,7 +960,7 @@ const LineaPedido = React.memo(({
                     value={expedicion.cantidad}
                     onChange={handleCambioCantidad}
                     className={expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-input' : ''}
-                    disabled={!canPerformActions || isProcesando || isUpdatingExpedicion}
+                    disabled={!canPerformActions || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
                     placeholder="0"
                   />
                   <div className="ps-unidad-info">{linea.unidadBase || 'ud'}</div>
@@ -868,7 +973,7 @@ const LineaPedido = React.memo(({
                     e.stopPropagation();
                     if (canPerformActions) iniciarEscaneo(linea, pedido);
                   }}
-                  disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning || isProcesando || isUpdatingExpedicion}
+                  disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
                   style={{ whiteSpace: 'nowrap' }}
                 >
                   <FaCamera /> 
@@ -883,7 +988,7 @@ const LineaPedido = React.memo(({
   );
 });
 
-// Componente Tarjeta de Pedido - VERSIÓN ACTUALIZADA CON CAMPOS REALES
+// Componente Tarjeta de Pedido - VERSIÓN OPTIMIZADA
 const PedidoCard = React.memo(({ 
   pedido, 
   togglePedidoView, 
@@ -899,10 +1004,12 @@ const PedidoCard = React.memo(({
   canPerformActionsInPedidos,
   isScanning,
   onActualizarVoluminoso,
-  lineasProcesando
+  lineasProcesando,
+  onCargarUbicaciones
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [actualizandoVoluminoso, setActualizandoVoluminoso] = useState(false);
+  const [ubicacionesCargando, setUbicacionesCargando] = useState(false);
   
   const tieneLineasParciales = useMemo(() => {
     return pedido.articulos.some(articulo => {
@@ -937,6 +1044,14 @@ const PedidoCard = React.memo(({
       setActualizandoVoluminoso(false);
     }
   };
+
+  // Cargar ubicaciones cuando se despliegue el pedido
+  useEffect(() => {
+    if (pedidoViewModes[pedido.numeroPedido] === 'show' && onCargarUbicaciones) {
+      const articulos = pedido.articulos.map(art => art.codigoArticulo);
+      onCargarUbicaciones(articulos);
+    }
+  }, [pedidoViewModes[pedido.numeroPedido], pedido.numeroPedido, pedido.articulos, onCargarUbicaciones]);
 
   return (
     <div className={`ps-pedido-card ${parcial ? 'ps-pedido-parcial' : ''} ${pedido.EsVoluminoso ? 'ps-pedido-voluminoso' : ''}`}>
@@ -1115,6 +1230,7 @@ const PedidoCard = React.memo(({
                       expediciones={expediciones}
                       handleExpedicionChange={handleExpedicionChange}
                       ubicaciones={ubicaciones}
+                      ubicacionesCargadas={!!ubicaciones[linea.codigoArticulo]}
                       iniciarEscaneo={iniciarEscaneo}
                       abrirModalDetalles={abrirModalDetalles}
                       canPerformActions={canPerformActions}
@@ -1195,7 +1311,7 @@ const Paginacion = React.memo(({ totalPaginas, paginaActual, cambiarPagina }) =>
   );
 });
 
-// Componente Modal de Cámara
+// Componente Modal de Cámara - VERSIÓN COMPATIBLE CON HTTP
 const CameraModal = React.memo(({ 
   showCamera, 
   setShowCamera, 
@@ -1221,14 +1337,27 @@ const CameraModal = React.memo(({
           <h3>Escanear Artículo</h3>
         </div>
         
+        {/* 🔥 MOSTRAR ERROR DE CÁMARA CON MÁS INFORMACIÓN */}
         {cameraError ? (
           <div className="ps-camera-error">
             <div className="ps-error-icon">
               <FaExclamationTriangle />
             </div>
+            <h4>No se pudo acceder a la cámara</h4>
             <p>{cameraError}</p>
-            <p>Por favor, introduce el código manualmente:</p>
+            
+            <div className="ps-camera-troubleshoot">
+              <h5>⚠️ Cámara no disponible en HTTP:</h5>
+              <p>Para usar la cámara necesitas:</p>
+              <ul>
+                <li>✅ Usar HTTPS en lugar de HTTP</li>
+                <li>✅ O acceder desde localhost</li>
+                <li>✅ O usar la entrada manual de código</li>
+              </ul>
+            </div>
+            
             <div className="ps-manual-verification">
+              <p><strong>Introduce el código manualmente:</strong></p>
               <div className="ps-input-group">
                 <FaBarcode />
                 <input
@@ -1247,27 +1376,37 @@ const CameraModal = React.memo(({
                 <FaCheck /> Verificar
               </button>
             </div>
+            
             <button className="ps-btn-cerrar-camara" onClick={() => setShowCamera(false)}>
               <FaTimes /> Cancelar
             </button>
           </div>
         ) : (<>
-            <div className="ps-camera-selector">
-              <label><FaCamera /> Seleccionar cámara:</label>
-              <select 
-                value={selectedCamera} 
-                onChange={(e) => setSelectedCamera(e.target.value)}
-                disabled={cameras.length === 0}
-              >
-                {cameras.map(camera => (
-                  <option key={camera.id} value={camera.id}>
-                    {camera.label || `Cámara ${camera.id}`}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Selector de cámara */}
+            {cameras.length > 0 && (
+              <div className="ps-camera-selector">
+                <label><FaCamera /> Seleccionar cámara:</label>
+                <select 
+                  value={selectedCamera} 
+                  onChange={(e) => setSelectedCamera(e.target.value)}
+                >
+                  {cameras.map(camera => (
+                    <option key={camera.id} value={camera.id}>
+                      {camera.label || `Cámara ${camera.id}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             
+            {/* Contenedor de la cámara */}
             <div id="ps-camera-container" className="ps-camera-view">
+              {cameras.length === 0 && !cameraError && (
+                <div className="ps-camera-loading">
+                  <div className="ps-spinner"></div>
+                  <p>Inicializando cámara...</p>
+                </div>
+              )}
               <div className="ps-scan-frame">
                 <div className="ps-frame-line top-left"></div>
                 <div className="ps-frame-line top-right"></div>
@@ -1276,6 +1415,7 @@ const CameraModal = React.memo(({
               </div>
             </div>
             
+            {/* Entrada manual */}
             <div className="ps-manual-verification">
               <p>O introduce el código manualmente:</p>
               <div className="ps-input-group">
@@ -1305,7 +1445,7 @@ const CameraModal = React.memo(({
   );
 });
 
-// Componente Principal PedidosScreen - VERSIÓN ACTUALIZADA
+// Componente Principal PedidosScreen - VERSIÓN COMPLETA
 const PedidosScreen = () => {
   const navigate = useNavigate();
   const [user] = useState(() => {
@@ -1348,21 +1488,16 @@ const PedidosScreen = () => {
   // Estado para controlar líneas en procesamiento
   const [lineasProcesando, setLineasProcesando] = useState({});
   
+  // Cache para ubicaciones ya cargadas
+  const [articulosConUbicacionesCargadas, setArticulosConUbicacionesCargadas] = useState(new Set());
+  const [articulosCargandoUbicaciones, setArticulosCargandoUbicaciones] = useState(new Set());
+  
   const scannerRef = useRef(null);
   const abortControllerRef = useRef(null);
 
   // Refs para evitar bucles en efectos
   const rangoFechasRef = useRef(rangoFechas);
   const userRef = useRef(user);
-
-  // Actualizar refs cuando cambien los valores
-  useEffect(() => {
-    rangoFechasRef.current = rangoFechas;
-  }, [rangoFechas]);
-
-  useEffect(() => {
-    userRef.current = user;
-  }, [user]);
 
   // Opciones para el filtro de Status
   const opcionesStatus = useMemo(() => [
@@ -1371,6 +1506,141 @@ const PedidosScreen = () => {
     { id: 'Parcial', nombre: 'Parcial' },
     { id: 'Pendiente', nombre: 'Pendiente' }
   ], []);
+
+  // 🔔 FUNCIÓN PARA MOSTRAR NOTIFICACIONES DEL NAVEGADOR
+  const mostrarNotificacionNavegador = useCallback((titulo, cuerpo, tipo = 'info') => {
+    // Verificar si el navegador soporta notificaciones
+    if (!("Notification" in window)) {
+      console.log("Este navegador no soporta notificaciones del sistema");
+      
+      // Fallback: mostrar toast en la página
+      mostrarToastEnPagina(titulo, cuerpo, tipo);
+      return false;
+    }
+
+    // Configurar icono según tipo
+    let icono = '/favicon.ico';
+    let badge = '/favicon.ico';
+    
+    switch(tipo) {
+      case 'success':
+        icono = '/icons/success-icon.png'; // Cambia por tu ruta
+        break;
+      case 'error':
+        icono = '/icons/error-icon.png'; // Cambia por tu ruta
+        break;
+      case 'warning':
+        icono = '/icons/warning-icon.png'; // Cambia por tu ruta
+        break;
+    }
+
+    // Verificar si ya tenemos permiso
+    if (Notification.permission === "granted") {
+      // Crear notificación con vibración si está soportada
+      const options = {
+        body: cuerpo,
+        icon: icono,
+        badge: badge,
+        tag: 'albaran-generado', // Para agrupar notificaciones similares
+        renotify: true,
+        silent: false,
+        requireInteraction: false // Cambia a true si quieres que el usuario interactúe
+      };
+
+      // Intentar usar vibración en dispositivos móviles
+      if ('vibrate' in navigator) {
+        // Vibración corta para éxito, larga para error
+        navigator.vibrate(tipo === 'error' ? [200, 100, 200] : [100]);
+      }
+
+      const notificacion = new Notification(titulo, options);
+      
+      // Agregar click handler para enfocar la ventana
+      notificacion.onclick = function() {
+        window.focus();
+        this.close();
+      };
+      
+      // Cerrar automáticamente después de 5 segundos
+      setTimeout(() => {
+        notificacion.close();
+      }, 5000);
+      
+      return true;
+      
+    } else if (Notification.permission !== "denied") {
+      // Pedir permiso de manera más amigable
+      const pedirPermiso = () => {
+        Notification.requestPermission().then(permission => {
+          if (permission === "granted") {
+            // Repetir la notificación ahora que tenemos permiso
+            mostrarNotificacionNavegador(titulo, cuerpo, tipo);
+          } else {
+            // Fallback a toast si se niega el permiso
+            mostrarToastEnPagina(titulo, cuerpo, tipo);
+          }
+        });
+      };
+      
+      // Mostrar mensaje amigable antes de pedir permiso
+      if (window.confirm('¿Deseas recibir notificaciones cuando se generen albaranes? Esto te permitirá ver el número de albarán sin interrumpir tu trabajo.')) {
+        pedirPermiso();
+      }
+      
+      return false;
+    } else {
+      // Permiso denegado, usar fallback
+      mostrarToastEnPagina(titulo, cuerpo, tipo);
+      return false;
+    }
+  }, []);
+
+  // Función de fallback para mostrar toast en la página
+  const mostrarToastEnPagina = useCallback((titulo, cuerpo, tipo) => {
+    // Crear elemento toast
+    const toast = document.createElement('div');
+    toast.className = `ps-toast ps-toast-${tipo}`;
+    toast.innerHTML = `
+      <div class="ps-toast-header">
+        <strong>${titulo}</strong>
+        <button class="ps-toast-close">&times;</button>
+      </div>
+      <div class="ps-toast-body">${cuerpo.replace(/\n/g, '<br>')}</div>
+    `;
+    
+    // Estilos inline para el toast
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      min-width: 300px;
+      max-width: 400px;
+      background: ${tipo === 'success' ? '#4CAF50' : tipo === 'error' ? '#F44336' : '#2196F3'};
+      color: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 9999;
+      animation: slideInNotification 0.3s ease-out;
+    `;
+    
+    // Agregar evento de cierre
+    const closeBtn = toast.querySelector('.ps-toast-close');
+    closeBtn.onclick = () => {
+      toast.style.animation = 'slideOutNotification 0.3s ease-out';
+      setTimeout(() => toast.remove(), 300);
+    };
+    
+    // Auto cerrar después de 5 segundos
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.style.animation = 'slideOutNotification 0.3s ease-out';
+        setTimeout(() => toast.remove(), 300);
+      }
+    }, 5000);
+    
+    document.body.appendChild(toast);
+  }, []);
 
   // ✅ FUNCIÓN: Actualizar estado voluminoso
   const handleActualizarVoluminoso = useCallback(async (pedido, esVoluminoso) => {
@@ -1410,6 +1680,95 @@ const PedidosScreen = () => {
     }
   }, [canPerformActionsInPedidos]);
 
+  // 🔥 FUNCIÓN OPTIMIZADA: Cargar ubicaciones para múltiples artículos (BATCH)
+  const cargarUbicacionesParaArticulos = useCallback(async (codigosArticulos) => {
+    // Filtrar artículos que ya están cargados o en proceso de carga
+    const codigosParaCargar = codigosArticulos.filter(codigo => 
+      !articulosConUbicacionesCargadas.has(codigo) && !articulosCargandoUbicaciones.has(codigo)
+    );
+
+    if (codigosParaCargar.length === 0) return;
+
+    // Marcar como cargando
+    setArticulosCargandoUbicaciones(prev => {
+      const nuevo = new Set(prev);
+      codigosParaCargar.forEach(codigo => nuevo.add(codigo));
+      return nuevo;
+    });
+
+    const headers = getAuthHeader();
+    const nuevasUbicaciones = {};
+
+    try {
+      // 🔥 OPTIMIZACIÓN: Cargar en lotes de 10 artículos
+      const batchSize = 10;
+      for (let i = 0; i < codigosParaCargar.length; i += batchSize) {
+        const batch = codigosParaCargar.slice(i, i + batchSize);
+        
+        // Cargar en paralelo con Promise.allSettled para manejar errores individuales
+        const resultados = await Promise.allSettled(
+          batch.map(async (codigo) => {
+            try {
+              const response = await API.get(
+                '/traspasos/stock-por-articulo',
+                {
+                  headers,
+                  params: { codigoArticulo: codigo }
+                }
+              );
+
+              return {
+                codigo,
+                data: response.data.map(item => ({
+                  codigoAlmacen: item.CodigoAlmacen,
+                  ubicacion: item.Ubicacion,
+                  partida: item.Partida || null,
+                  unidadSaldo: item.Cantidad,
+                  unidadMedida: item.UnidadStock || 'unidades',
+                  descripcionUbicacion: item.DescripcionUbicacion
+                }))
+              };
+            } catch (error) {
+              console.error(`[ERROR] Al cargar ubicaciones para ${codigo}:`, error);
+              return {
+                codigo,
+                data: [],
+                error: true
+              };
+            }
+          })
+        );
+
+        // Procesar resultados
+        resultados.forEach(resultado => {
+          if (resultado.status === 'fulfilled') {
+            nuevasUbicaciones[resultado.value.codigo] = resultado.value.data;
+          }
+        });
+
+        // Actualizar estado parcialmente para mejor UX
+        setUbicaciones(prev => ({
+          ...prev,
+          ...nuevasUbicaciones
+        }));
+      }
+    } finally {
+      // Actualizar cache de artículos cargados
+      setArticulosConUbicacionesCargadas(prev => {
+        const nuevo = new Set(prev);
+        codigosParaCargar.forEach(codigo => nuevo.add(codigo));
+        return nuevo;
+      });
+
+      // Limpiar estado de carga
+      setArticulosCargandoUbicaciones(prev => {
+        const nuevo = new Set(prev);
+        codigosParaCargar.forEach(codigo => nuevo.delete(codigo));
+        return nuevo;
+      });
+    }
+  }, [articulosConUbicacionesCargadas, articulosCargandoUbicaciones]);
+
   // 🔥 FUNCIÓN OPTIMIZADA: Expedir artículo sin recarga completa
   const handleExpedirArticuloOptimizado = useCallback(async (linea, pedido, expedicion) => {
     if (!canPerformActions || isScanning) return;
@@ -1439,6 +1798,23 @@ const PedidosScreen = () => {
       }, { headers: getAuthHeader() });
 
       if (response.data.success) {
+        // 🔔 Verificar si se generó albarán automático
+        if (response.data.detalles?.albaranProgramado || 
+            response.data.detalles?.pedidoCompletado) {
+          
+          // Si el pedido se completó y se programó albarán
+          if (response.data.detalles.pedidoCompletado) {
+            // Esperar un momento para dar tiempo a que el backend genere el albarán
+            setTimeout(() => {
+              mostrarNotificacionNavegador(
+                'Pedido Completado',
+                `El pedido #${pedido.numeroPedido} se ha completado.\n` +
+                `Se generará albarán automáticamente en segundo plano.`
+              );
+            }, 1500);
+          }
+        }
+
         // 🔥 ACTUALIZACIÓN LOCAL SIN RECARGAR TODO
         
         // 1. Actualizar pedidos localmente
@@ -1516,6 +1892,14 @@ const PedidosScreen = () => {
       }
     } catch (error) {
       console.error('Error al expedir artículo:', error);
+      
+      // 🔔 Notificación de error
+      mostrarNotificacionNavegador(
+        'Error al Expedir',
+        error.response?.data?.mensaje || 'Error al expedir artículo',
+        'error'
+      );
+      
       alert('❌ Error al expedir artículo: ' + (error.response?.data?.mensaje || error.message));
     } finally {
       // Quitar estado de carga
@@ -1524,7 +1908,7 @@ const PedidosScreen = () => {
         [key]: false
       }));
     }
-  }, [canPerformActions, isScanning]);
+  }, [canPerformActions, isScanning, mostrarNotificacionNavegador]);
 
   // Función para procesar expedición (común para escaneo y manual)
   const procesarExpedicion = useCallback((codigoVerificado, detalle = null) => {
@@ -1713,6 +2097,80 @@ const PedidosScreen = () => {
     setManualCode('');
   }, [canPerformActions]);
 
+  // ✅ Función para cargar pedidos con cancelación
+  const cargarPedidos = useCallback(async (forzarRecarga = false) => {
+    if (abortControllerRef.current && !forzarRecarga) {
+      abortControllerRef.current.abort();
+    }
+    
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+    
+    try {
+      setLoading(true);
+      setError('');
+      
+      // ✅ SOLO LIMPIAR ESTADOS SI ES UNA RECARGA MANUAL, NO DESPUÉS DE EXPEDIR
+      if (forzarRecarga && !isScanning) {
+        setUbicaciones({});
+        setExpediciones({});
+        setArticulosConUbicacionesCargadas(new Set());
+        setArticulosCargandoUbicaciones(new Set());
+      }
+      
+      const codigoEmpresa = userRef.current?.CodigoEmpresa;
+      const rango = rangoFechasRef.current;
+      
+      if (!codigoEmpresa) {
+        setError('No se encontró el código de empresa del usuario.');
+        setLoading(false);
+        return;
+      }
+      
+      const headers = getAuthHeader();
+      
+      const response = await API.get(`/pedidosPendientes`, { 
+        headers,
+        params: { 
+          codigoEmpresa,
+          rango: rango
+        },
+        signal
+      });
+      
+      if (signal.aborted) return;
+      
+      setPedidos(response.data);
+      
+      // 🔥 NO CARGAR UBICACIONES AQUÍ - Se cargarán bajo demanda
+      
+      const initialModes = {};
+      response.data.forEach(pedido => {
+        initialModes[pedido.numeroPedido] = 'show';
+      });
+      
+      if (signal.aborted) return;
+      setPedidoViewModes(initialModes);
+    } catch (err) {
+      if (err.name === 'CanceledError') {
+        console.log('Solicitud cancelada');
+      } else {
+        console.error('Error al obtener pedidos:', err);
+        if (err.response?.status === 500) {
+          setError('Error interno del servidor. Inténtalo más tarde');
+        } else if (err.response?.status === 401) {
+          setError('Error de autenticación. Vuelve a iniciar sesión');
+        } else {
+          setError('Error de conexión con el servidor');
+        }
+      }
+    } finally {
+      if (!signal.aborted) {
+        setLoading(false);
+      }
+    }
+  }, [isScanning]);
+
   useEffect(() => {
     cargarPedidos();
     
@@ -1723,31 +2181,90 @@ const PedidosScreen = () => {
     };
   }, [rangoFechas, cargarPedidos]);
 
-  // ✅ EFECTO MEJORADO: Detectar cámaras disponibles con Html5Qrcode
+  // 🔧 EFECTO CORREGIDO: Detectar cámaras con compatibilidad HTTP
   useEffect(() => {
     if (showCamera) {
       const detectarCamaras = async () => {
         try {
           setCameraError('');
+          setCameras([]);
+          setSelectedCamera('');
+
+          // 🔥 VERIFICAR SI ESTAMOS EN HTTP (no localhost)
+          const isHttp = window.location.protocol === 'http:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
           
-          // Usar Html5Qrcode para detectar cámaras
-          const dispositivos = await Html5Qrcode.getCameras();
-          
-          if (dispositivos && dispositivos.length > 0) {
-            setCameras(dispositivos);
-            setSelectedCamera(dispositivos[0].id);
-          } else {
-            setCameraError('No se encontraron cámaras disponibles en el dispositivo.');
+          if (isHttp) {
+            // Estamos en HTTP (no localhost), la cámara no funcionará
+            throw new Error('La cámara solo está disponible en HTTPS o localhost. Usa la entrada manual.');
           }
+
+          // Verificar si el navegador soporta mediaDevices
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('El navegador no soporta acceso a la cámara.');
+          }
+
+          // 🔥 INTENTAR USAR Html5Qrcode primero (más compatible)
+          try {
+            const html5QrCode = new Html5Qrcode("ps-camera-container");
+            const camaras = await Html5Qrcode.getCameras();
+            
+            if (camaras && camaras.length > 0) {
+              setCameras(camaras);
+              setSelectedCamera(camaras[0].id);
+              console.log('✅ Cámaras detectadas con Html5Qrcode:', camaras.length);
+              return;
+            }
+          } catch (html5Error) {
+            console.log('Html5Qrcode no pudo detectar cámaras, intentando método nativo...');
+          }
+
+          // 🔥 INTENTAR MÉTODO NATIVO
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+              video: { facingMode: 'environment' } 
+            });
+            
+            if (stream) {
+              const dispositivos = await navigator.mediaDevices.enumerateDevices();
+              const camaras = dispositivos
+                .filter(dispositivo => dispositivo.kind === 'videoinput')
+                .map((camara, index) => ({
+                  id: camara.deviceId,
+                  label: camara.label || `Cámara ${index + 1}`
+                }));
+              
+              if (camaras.length > 0) {
+                setCameras(camaras);
+                setSelectedCamera(camaras[0].id);
+                
+                // Detener el stream temporal
+                stream.getTracks().forEach(track => track.stop());
+                console.log('✅ Cámaras detectadas con método nativo:', camaras.length);
+              } else {
+                throw new Error('No se encontraron cámaras disponibles.');
+              }
+            }
+          } catch (nativeError) {
+            console.error('Error con método nativo:', nativeError);
+            throw nativeError;
+          }
+
         } catch (error) {
           console.error('❌ Error al detectar cámaras:', error);
           
-          if (error.includes('NotAllowedError') || error.includes('Permission denied')) {
+          // 🔥 MENSAJES DE ERROR ESPECÍFICOS
+          if (error.message.includes('HTTPS') || error.message.includes('secure context')) {
+            setCameraError('La cámara solo está disponible en HTTPS o localhost. Por favor, usa la entrada manual.');
+          } else if (error.name === 'NotAllowedError' || error.message.includes('Permission denied')) {
             setCameraError('Permiso de cámara denegado. Por favor, permite el acceso a la cámara en la configuración de tu navegador.');
-          } else if (error.includes('NotFoundError') || error.includes('No camera found')) {
+          } else if (error.name === 'NotFoundError' || error.message.includes('No camera found')) {
             setCameraError('No se encontró ninguna cámara en el dispositivo.');
+          } else if (error.name === 'NotSupportedError') {
+            setCameraError('Tu navegador no soporta el acceso a la cámara.');
+          } else if (error.name === 'NotReadableError') {
+            setCameraError('La cámara está siendo usada por otra aplicación.');
           } else {
-            setCameraError('Error al acceder a la cámara: ' + error);
+            setCameraError('Error al acceder a la cámara: ' + error.message);
           }
         }
       };
@@ -1756,41 +2273,61 @@ const PedidosScreen = () => {
     }
   }, [showCamera]);
 
-  // ✅ EFECTO MEJORADO: Inicializar escáner cuando se selecciona una cámara
+  // ✅ EFECTO MEJORADO: Inicializar escáner solo si hay cámara disponible
   useEffect(() => {
     let scanner = null;
+    let stream = null;
 
     const inicializarEscaner = async () => {
-      if (showCamera && selectedCamera && document.getElementById('ps-camera-container')) {
-        try {
-          scanner = new Html5QrcodeScanner(
-            "ps-camera-container",
-            { 
-              fps: 10, 
-              qrbox: { width: 250, height: 250 },
-              aspectRatio: 1.0,
-              deviceId: selectedCamera
-            },
-            false
-          );
-          
-          await scanner.render(
-            (decodedText) => {
-              handleScanSuccess(decodedText);
-            },
-            (error) => {
-              // Ignorar errores de escaneo (son normales mientras se busca el código)
-              if (!error.includes('No MultiFormat Readers')) {
-                console.log('🔍 Escaneando...', error);
-              }
+      // 🔥 NO INTENTAR INICIALIZAR SI HAY ERROR O NO HAY CÁMARA
+      if (cameraError || !selectedCamera || !showCamera || !document.getElementById('ps-camera-container')) {
+        return;
+      }
+
+      try {
+        // 🔥 LIMPIAR CONTENEDOR PRIMERO
+        const container = document.getElementById('ps-camera-container');
+        container.innerHTML = '';
+        
+        // 🔥 USAR Html5Qrcode (más compatible)
+        scanner = new Html5Qrcode(
+          "ps-camera-container",
+          { 
+            fps: 10, 
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0,
+            verbose: false
+          }
+        );
+        
+        const config = {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+          deviceId: selectedCamera
+        };
+        
+        await scanner.start(
+          selectedCamera,
+          config,
+          (decodedText) => {
+            console.log('✅ Código escaneado:', decodedText);
+            handleScanSuccess(decodedText);
+          },
+          (error) => {
+            // Ignorar errores normales de escaneo
+            if (error && !error.includes('No MultiFormat Readers')) {
+              console.log('🔍 Escaneando...');
             }
-          );
-          
-          scannerRef.current = scanner;
-        } catch (error) {
-          console.error('❌ Error al inicializar el escáner:', error);
-          setCameraError('Error al inicializar la cámara: ' + error);
-        }
+          }
+        );
+        
+        scannerRef.current = scanner;
+        console.log('✅ Escáner Html5Qrcode iniciado correctamente');
+        
+      } catch (error) {
+        console.error('❌ Error al inicializar el escáner:', error);
+        setCameraError('Error al inicializar la cámara. Por favor, usa la entrada manual.');
       }
     };
 
@@ -1798,15 +2335,29 @@ const PedidosScreen = () => {
 
     // Cleanup function
     return () => {
-      if (scanner) {
-        scanner.clear().catch(error => {
-          console.log('⚠️ Error al limpiar escáner (normal durante desarrollo):', error);
+      if (stream) {
+        stream.getTracks().forEach(track => {
+          track.stop();
         });
+        stream = null;
+      }
+      
+      if (scanner) {
+        try {
+          scanner.stop().then(() => {
+            console.log('✅ Escáner detenido correctamente');
+            scanner.clear();
+          }).catch(error => {
+            console.log('⚠️ Error al detener escáner:', error);
+          });
+        } catch (error) {
+          console.log('⚠️ Error en cleanup:', error);
+        }
         scanner = null;
         scannerRef.current = null;
       }
     };
-  }, [showCamera, selectedCamera, handleScanSuccess]);
+  }, [showCamera, selectedCamera, handleScanSuccess, cameraError]);
 
   const abrirModalDetalles = useCallback(async (detallesAnidados, linea, pedido) => {
     try {
@@ -1871,6 +2422,7 @@ const PedidosScreen = () => {
     window.scrollTo(0, 0);
   }, []);
 
+  // 🔔 FUNCIÓN MODIFICADA: Generar albarán parcial con notificaciones
   const generarAlbaranParcial = useCallback(async (pedido) => {
     if (!canPerformActionsInPedidos) return;
     
@@ -1928,10 +2480,34 @@ const PedidosScreen = () => {
           )
         );
         
-        alert(`✅ Albarán parcial generado correctamente\nNúmero: ${response.data.albaran.serie}${response.data.albaran.numero}\nEstado del pedido: ${response.data.statusPedido}`);
+        // 🔔 MOSTRAR NOTIFICACIÓN DEL NAVEGADOR CON EL NÚMERO DE ALBARÁN
+        const albaranInfo = response.data.albaran;
+        const mensajeNotificacion = 
+          `✅ Albarán ${albaranInfo.esParcial ? 'parcial' : 'completo'} generado\n` +
+          `Número: ${albaranInfo.serie || ''}${albaranInfo.numero}\n` +
+          `Líneas: ${albaranInfo.lineasProcesadas}\n` +
+          `Unidades: ${albaranInfo.unidadesServidas}`;
+        
+        mostrarNotificacionNavegador(
+          'Albarán Generado',
+          mensajeNotificacion,
+          'success'
+        );
+        
+        // También mostrar alert tradicional (como fallback)
+        alert(`✅ Albarán generado correctamente\n` +
+              `Número: ${albaranInfo.serie || ''}${albaranInfo.numero}\n` +
+              `Estado: ${response.data.statusPedido}`);
       }
     } catch (error) {
       console.error('Error al generar albarán parcial:', error);
+      
+      // 🔔 Notificación de error
+      mostrarNotificacionNavegador(
+        'Error Generando Albarán',
+        error.response?.data?.mensaje || 'Error al generar albarán',
+        'error'
+      );
       
       if (error.response?.status === 403) {
         alert('Error de permisos: ' + (error.response.data?.mensaje || 'No tienes permiso para realizar esta acción.'));
@@ -1945,162 +2521,7 @@ const PedidosScreen = () => {
     } finally {
       setGenerandoAlbaran(false);
     }
-  }, [canPerformActionsInPedidos]);
-
-  // Función para cargar pedidos con cancelación
-  const cargarPedidos = useCallback(async (forzarRecarga = false) => {
-    if (abortControllerRef.current && !forzarRecarga) {
-      abortControllerRef.current.abort();
-    }
-    
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-    
-    try {
-      setLoading(true);
-      setError('');
-      
-      // ✅ SOLO LIMPIAR ESTADOS SI ES UNA RECARGA MANUAL, NO DESPUÉS DE EXPEDIR
-      if (forzarRecarga && !isScanning) {
-        setUbicaciones({});
-        setExpediciones({});
-      }
-      
-      const codigoEmpresa = userRef.current?.CodigoEmpresa;
-      const rango = rangoFechasRef.current;
-      
-      if (!codigoEmpresa) {
-        setError('No se encontró el código de empresa del usuario.');
-        setLoading(false);
-        return;
-      }
-      
-      const headers = getAuthHeader();
-      
-      const response = await API.get(`/pedidosPendientes`, { 
-        headers,
-        params: { 
-          codigoEmpresa,
-          rango: rango
-        },
-        signal
-      });
-      
-      if (signal.aborted) return;
-      
-      setPedidos(response.data);
-      
-      const articulosConUnidad = response.data.flatMap(pedido => 
-        pedido.articulos.map(articulo => ({
-          codigo: articulo.codigoArticulo,
-          unidad: articulo.unidadPedido
-        }))
-      );
-
-      // 🔥 FORZAR RECARGA COMPLETA DE UBICACIONES CON DATOS REALES
-      if (articulosConUnidad.length > 0) {
-        try {
-          const ubicacionesPorArticulo = {};
-          
-          // Usar el endpoint de traspasos que sabemos que funciona
-          for (const articulo of articulosConUnidad) {
-            try {
-              const response = await API.get(
-                '/traspasos/stock-por-articulo',
-                {
-                  headers,
-                  params: { codigoArticulo: articulo.codigo },
-                  signal
-                }
-              );
-              
-              // Normalizar los datos al formato esperado
-              ubicacionesPorArticulo[articulo.codigo] = response.data.map(item => ({
-                codigoAlmacen: item.CodigoAlmacen,
-                ubicacion: item.Ubicacion,
-                partida: item.Partida || null,
-                unidadSaldo: item.Cantidad,
-                unidadMedida: item.UnidadStock || 'unidades',
-                descripcionUbicacion: item.DescripcionUbicacion
-              }));
-              
-            } catch (error) {
-              console.error(`[ERROR] Al cargar ubicaciones para ${articulo.codigo}:`, error);
-              ubicacionesPorArticulo[articulo.codigo] = [];
-            }
-          }
-          
-          if (signal.aborted) return;
-          setUbicaciones(ubicacionesPorArticulo);
-          
-          // 🔥 ACTUALIZAR EXPEDICIONES CON DATOS REALES DEL BACKEND
-          const nuevasExpediciones = {};
-          response.data.forEach(pedido => {
-            pedido.articulos.forEach(linea => {
-              const key = linea.movPosicionLinea;
-              const ubicacionesArticulo = ubicacionesPorArticulo[linea.codigoArticulo] || [];
-              
-              // Buscar la mejor ubicación disponible (ya viene ordenado por stock DESC del backend)
-              let mejorUbicacion = ubicacionesArticulo[0];
-              
-              let cantidadInicial = 0;
-              if (mejorUbicacion) {
-                const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
-                
-                if (mejorUbicacion.ubicacion === "Zona descarga") {
-                  cantidadInicial = unidadesPendientes;
-                } else {
-                  const stockDisponible = parseFloat(mejorUbicacion.unidadSaldo) || 0;
-                  cantidadInicial = Math.min(unidadesPendientes, stockDisponible);
-                }
-              }
-
-              if (isNaN(cantidadInicial)) cantidadInicial = 0;
-              
-              nuevasExpediciones[key] = {
-                almacen: mejorUbicacion?.codigoAlmacen || "CEN",
-                ubicacion: mejorUbicacion?.ubicacion || "Zona descarga",
-                partida: mejorUbicacion?.partida || null,
-                unidadMedida: mejorUbicacion?.unidadMedida || linea.unidadPedido,
-                cantidad: cantidadInicial.toString()
-              };
-            });
-          });
-          
-          if (signal.aborted) return;
-          setExpediciones(nuevasExpediciones);
-          
-        } catch (error) {
-          console.error('[ERROR] Al cargar ubicaciones:', error);
-        }
-      }
-      
-      const initialModes = {};
-      response.data.forEach(pedido => {
-        initialModes[pedido.numeroPedido] = 'show';
-      });
-      
-      if (signal.aborted) return;
-      setPedidoViewModes(initialModes);
-    } catch (err) {
-      if (err.name === 'CanceledError') {
-        console.log('Solicitud cancelada');
-      } else {
-        console.error('Error al obtener pedidos:', err);
-        if (err.response?.status === 500) {
-          setError('Error interno del servidor. Inténtalo más tarde');
-        } else if (err.response?.status === 401) {
-          setError('Error de autenticación. Vuelve a iniciar sesión');
-        } else {
-          setError('Error de conexión con el servidor');
-        }
-      }
-    } finally {
-      if (!signal.aborted) {
-        setLoading(false);
-      }
-    }
-  }, [isScanning]);
+  }, [canPerformActionsInPedidos, mostrarNotificacionNavegador]);
 
   // Filtrar pedidos con useMemo para evitar recálculos innecesarios
   const pedidosFiltrados = useMemo(() => {
@@ -2241,6 +2662,7 @@ const PedidosScreen = () => {
                   isScanning={isScanning}
                   onActualizarVoluminoso={handleActualizarVoluminoso}
                   lineasProcesando={lineasProcesando}
+                  onCargarUbicaciones={cargarUbicacionesParaArticulos}
                 />
               ))}
             </>)}
