@@ -1,0 +1,54 @@
+// ============================================
+// ✅ 2. MIDDLEWARE DE AUTENTICACIÓN MEJORADO
+// ============================================
+app.use((req, res, next) => {
+  // ✅ EXCLUIR RECURSOS ESTÁTICOS Y RUTAS PÚBLICAS
+  const publicPaths = [
+    '/login', 
+    '/', 
+    '/api/diagnostic', 
+    '/diagnostic',
+    '/favicon.ico'
+  ];
+  
+  // Excluir archivos estáticos (JS, CSS, imágenes, etc.)
+  const isStaticFile = req.path.startsWith('/assets/') || 
+                      req.path.startsWith('/static/') ||
+                      req.path.endsWith('.js') ||
+                      req.path.endsWith('.css') ||
+                      req.path.endsWith('.ico') ||
+                      req.path.endsWith('.png') ||
+                      req.path.endsWith('.jpg') ||
+                      req.path.endsWith('.svg') ||
+                      req.path.endsWith('.woff') ||
+                      req.path.endsWith('.woff2') ||
+                      req.path.endsWith('.ttf');
+
+  if (publicPaths.includes(req.path) || isStaticFile) {
+    console.log(`✅ Ruta pública: ${req.path}`);
+    return next();
+  }
+
+  const usuario = req.headers.usuario;
+  const codigoempresa = req.headers.codigoempresa;
+
+  if (!usuario || !codigoempresa) {
+    console.error('🚨 Faltan cabeceras de autenticación:', {
+      path: req.path,
+      method: req.method,
+      origin: req.headers.origin
+    });
+    return res.status(401).json({ 
+      success: false, 
+      mensaje: 'Faltan cabeceras de autenticación (usuario y codigoempresa)' 
+    });
+  }
+
+  req.user = {
+    UsuarioLogicNet: usuario,
+    CodigoEmpresa: parseInt(codigoempresa, 10) || 0
+  };
+
+  console.log(`🔒 Usuario autenticado: ${usuario}, Empresa: ${codigoempresa}`);
+  next();
+});

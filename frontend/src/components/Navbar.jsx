@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   FaRoute, FaClipboardList, FaTruckLoading, FaExchangeAlt, FaBoxes,
   FaUserFriends, FaFileInvoice, FaHome, FaWarehouse, FaTimes,
-  FaBars, FaBuilding, FaChevronDown, FaFileContract, FaShoppingCart // ✅ NUEVO ICONO
+  FaBars, FaBuilding, FaChevronDown, FaFileContract, FaShoppingCart, FaReceipt
 } from 'react-icons/fa';
 import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
@@ -173,7 +173,12 @@ const Navbar = () => {
       icon: <FaBoxes />,
       visible: permissions.canViewInventory
     },
-
+    {
+     path: '/recepcion-pedidos-compra', // ✅ NUEVA RUTA
+     label: 'Recepción Pedidos Compra',
+     icon: <FaShoppingCart />, // ✅ NUEVO ICONO
+     visible: permissions.canViewInventory // Mismo permiso que inventario
+    },
     {
       path: '/gestion-documental',
       label: 'Gestión Documental',

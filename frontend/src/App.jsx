@@ -1,4 +1,4 @@
-﻿import React from 'react';
+﻿﻿import React from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import LoginPage from './pages/LoginPage';
@@ -12,6 +12,7 @@ import AlbaranesAsignadosScreen from './pages/AlbaranesAsignadosScreen';
 import TraspasosPage from './pages/TraspasosPage';
 import InventarioPage from './pages/InventarioPage';
 import GestionDocumentalScreen from './pages/GestionDocumentalScreen';
+import RecepcionPedidosCompra from './pages/RecepcionPedidosCompra'; // ✅ NUEVO IMPORT
 import { PermissionsProvider, ProtectedRouteWithPermission } from './PermissionsManager';
 
 const ProtectedRoute = ({ children }) => {
@@ -121,11 +122,21 @@ function App() {
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
+
             {/* Gestión Documental */}
             <Route path="/gestion-documental" element={
               <ProtectedRoute>
                 <ProtectedRouteWithPermission requiredPermission="canViewDocumentManagement">
                   <GestionDocumentalScreen />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+
+            {/* ✅ NUEVA PANTALLA: Recepción de Pedidos de Compra */}
+            <Route path="/recepcion-pedidos-compra" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewInventory">
+                  <RecepcionPedidosCompra />
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
