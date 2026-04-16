@@ -7,10 +7,8 @@
     "dev": "vite --host 0.0.0.0 --port 5173",
     "dev:local": "vite --host localhost --port 5173",
     "build": "vite build",
-    "build:production": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
-    "preview:local": "vite preview --host localhost --port 4173",
-    "deploy:build": "VITE_APP_ENV=production VITE_API_URL=http://84.120.61.159:3000 vite build"
+    "preview:local": "vite preview --host localhost --port 4173"
   },
   "dependencies": {
     "@capacitor/android": "^7.2.0",

@@ -1,16 +1,19 @@
+// src/main.jsx
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom'; // ⬅️ Importa BrowserRouter
+import { BrowserRouter } from 'react-router-dom';
+import { ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
 import App from './App';
-
-
-
-console.log("React está corriendo ✅");
+import { theme } from './theme';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <App />
+      <ThemeProvider theme={theme}>
+        <CssBaseline />  {/* Normaliza estilos y aplica fondo de theme */}
+        <App />
+      </ThemeProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

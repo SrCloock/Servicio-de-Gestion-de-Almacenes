@@ -189,7 +189,7 @@ function GestionRutas() {
     
     try {
       const response = await API.post(
-        '/api/completar-albaran',
+        '/completar-albaran',
         {
           codigoEmpresa: albaran.codigoEmpresa,
           ejercicio: albaran.ejercicio,

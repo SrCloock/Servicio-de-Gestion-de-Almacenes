@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { usePermissions } from '../PermissionsManager';
+import API from '../helpers/api';
 import '../styles/RecepcionPedidosCompra.css';
 
 const RecepcionPedidosCompra = () => {
@@ -70,6 +71,9 @@ const RecepcionPedidosCompra = () => {
   const canReceivePurchaseOrders = permissions.canViewInventory || 
     permissions.isAdmin || 
     permissions.isAdvancedUser;
+
+  const getApiErrorMessage = (err, fallbackMessage) =>
+    err.response?.data?.mensaje || err.message || fallbackMessage;
 
   // ========== FUNCIONES PRINCIPALES ==========
 
@@ -142,18 +146,9 @@ const RecepcionPedidosCompra = () => {
         params.append('estado', '0'); // Solo pendientes
       }
       
-      const response = await fetch(`${url}?${params.toString()}`, {
-        headers: {
-          'usuario': user.UsuarioLogicNet,
-          'codigoempresa': user.CodigoEmpresa
-        }
+      const { data } = await API.get(url, {
+        params: Object.fromEntries(params.entries())
       });
-      
-      if (!response.ok) {
-        throw new Error(`Error ${response.status} al cargar pedidos`);
-      }
-      
-      const data = await response.json();
       
       if (data.success) {
         console.log(`✅ ${data.pedidos.length} pedidos cargados`);
@@ -173,7 +168,7 @@ const RecepcionPedidosCompra = () => {
       }
     } catch (err) {
       console.error('❌ Error cargando pedidos:', err);
-      setError(err.message);
+      setError(getApiErrorMessage(err, 'Error al cargar pedidos'));
     } finally {
       setLoading(false);
       setTimeout(() => {
@@ -202,18 +197,7 @@ const RecepcionPedidosCompra = () => {
       const serieParam = serie || '0';
       
       console.log(`🔍 Cargando detalles del pedido ${clave}...`);
-      const response = await fetch(`/pedidos-compra/${ejercicio}/${serieParam}/${numero}/detalle`, {
-        headers: {
-          'usuario': user.UsuarioLogicNet,
-          'codigoempresa': user.CodigoEmpresa
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Error ${response.status} al cargar detalles del pedido`);
-      }
-      
-      const data = await response.json();
+      const { data } = await API.get(`/pedidos-compra/${ejercicio}/${serieParam}/${numero}/detalle`);
       
       if (data.success) {
         console.log(`✅ Detalles cargados: ${data.lineas.length} líneas`);
@@ -240,7 +224,7 @@ const RecepcionPedidosCompra = () => {
       }
     } catch (err) {
       console.error(`❌ Error cargando detalles del pedido ${clave}:`, err);
-      setError(`Error cargando detalles: ${err.message}`);
+      setError(`Error cargando detalles: ${getApiErrorMessage(err, 'Error al cargar detalles del pedido')}`);
     } finally {
       setLoading(false);
     }
@@ -344,16 +328,7 @@ const RecepcionPedidosCompra = () => {
   const cargarVariantesArticulo = async (codigoArticulo) => {
     setLoadingVariantes(true);
     try {
-      const response = await fetch(`/articulos/${codigoArticulo}/variantes`, {
-        headers: {
-          'usuario': user.UsuarioLogicNet,
-          'codigoempresa': user.CodigoEmpresa
-        }
-      });
-      
-      if (!response.ok) throw new Error('Error al cargar variantes');
-      
-      const data = await response.json();
+      const { data } = await API.get(`/articulos/${codigoArticulo}/variantes`);
       
       if (data.success) {
         if (data.combinaciones && data.combinaciones.length > 0) {
@@ -401,21 +376,12 @@ const RecepcionPedidosCompra = () => {
   // Cargar almacenes disponibles
   const cargarAlmacenes = async () => {
     try {
-      const response = await fetch('/almacenes', {
-        headers: {
-          'usuario': user.UsuarioLogicNet,
-          'codigoempresa': user.CodigoEmpresa
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        const almacenesPermitidos = ['CEN', 'BCN', 'N5', 'N1', 'PK', '5'];
-        const almacenesFiltrados = data.filter(alm => 
-          almacenesPermitidos.includes(alm.CodigoAlmacen)
-        );
-        setAlmacenes(almacenesFiltrados);
-      }
+      const { data } = await API.get('/almacenes');
+      const almacenesPermitidos = ['CEN', 'BCN', 'N5', 'N1', 'PK', '5'];
+      const almacenesFiltrados = data.filter(alm => 
+        almacenesPermitidos.includes(alm.CodigoAlmacen)
+      );
+      setAlmacenes(almacenesFiltrados);
     } catch (err) {
       console.error('Error cargando almacenes:', err);
     }
@@ -430,17 +396,10 @@ const RecepcionPedidosCompra = () => {
     }
     
     try {
-      const response = await fetch(`/ubicaciones/${almacen}?incluirSinUbicacion=true`, {
-        headers: {
-          'usuario': user.UsuarioLogicNet,
-          'codigoempresa': user.CodigoEmpresa
-        }
+      const { data } = await API.get(`/ubicaciones/${almacen}`, {
+        params: { incluirSinUbicacion: 'true' }
       });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setUbicaciones(data);
-      }
+      setUbicaciones(data);
     } catch (err) {
       console.error('Error cargando ubicaciones:', err);
     }
@@ -492,24 +451,11 @@ const RecepcionPedidosCompra = () => {
         comentarioRecepcion: `Recepción manual por ${user.UsuarioLogicNet}`
       };
 
-      const response = await fetch(
+      const { data } = await API.post(
         `/pedidos-compra/${linea.EjercicioPedido}/${linea.SeriePedido || '0'}/${linea.NumeroPedido}/recepcionar`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'usuario': user.UsuarioLogicNet,
-            'codigoempresa': user.CodigoEmpresa
-          },
-          body: JSON.stringify(body)
-        }
+        body
       );
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.mensaje || 'Error en la recepción');
-      }
 
       if (data.success) {
         let mensajeExito = `Recepción exitosa: ${unidades} unidades de ${linea.CodigoArticulo} añadidas a ${selectedAlmacen} - ${selectedUbicacion}`;
@@ -676,27 +622,13 @@ const RecepcionPedidosCompra = () => {
         // ✅ GENERAR ALBARÁN PARA PROVEEDOR (NO ACUMULATIVO)
         console.log(`📦 Generando albarán NO ACUMULATIVO para proveedor ${pedidoAAlbaran.nombreProveedor}...`);
         
-        const response = await fetch(
+        const { data } = await API.post(
           `/proveedores/${pedidoAAlbaran.codigoProveedor}/generar-albaran`,
           {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'usuario': user.UsuarioLogicNet,
-              'codigoempresa': user.CodigoEmpresa
-            },
-            body: JSON.stringify({
-              pedidos: pedidoAAlbaran.pedidos
-              // ✅ NO ENVIAMOS LINEAS - EL BACKEND CALCULARÁ UNIDADES PENDIENTES
-            })
+            pedidos: pedidoAAlbaran.pedidos
+            // ✅ NO ENVIAMOS LINEAS - EL BACKEND CALCULARÁ UNIDADES PENDIENTES
           }
         );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.mensaje || 'Error al generar albarán');
-        }
 
         if (data.success) {
           setSuccess(`✅ Albarán NO ACUMULATIVO generado correctamente para ${pedidoAAlbaran.nombreProveedor}. Número: ${data.albaran.numero}`);
@@ -715,23 +647,9 @@ const RecepcionPedidosCompra = () => {
         // ✅ GENERAR ALBARÁN PARA PEDIDO INDIVIDUAL (NO ACUMULATIVO)
         console.log(`📦 Generando albarán NO ACUMULATIVO para pedido ${pedidoAAlbaran.NumeroPedido}...`);
         
-        const response = await fetch(
-          `/pedidos-compra/${pedidoAAlbaran.EjercicioPedido}/${pedidoAAlbaran.SeriePedido || '0'}/${pedidoAAlbaran.NumeroPedido}/generar-albaran`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'usuario': user.UsuarioLogicNet,
-              'codigoempresa': user.CodigoEmpresa
-            }
-          }
+        const { data } = await API.post(
+          `/pedidos-compra/${pedidoAAlbaran.EjercicioPedido}/${pedidoAAlbaran.SeriePedido || '0'}/${pedidoAAlbaran.NumeroPedido}/generar-albaran`
         );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.mensaje || 'Error al generar albarán');
-        }
 
         if (data.success) {
           setSuccess(`✅ Albarán NO ACUMULATIVO generado correctamente. Número: ${data.albaran.numero} (Ejercicio: ${data.albaran.ejercicio})`);
@@ -749,7 +667,7 @@ const RecepcionPedidosCompra = () => {
       }
     } catch (err) {
       console.error('[ERROR GENERAR ALBARÁN]', err);
-      setError(`Error al generar albarán: ${err.message}`);
+      setError(`Error al generar albarán: ${getApiErrorMessage(err, 'Error al generar albarán')}`);
     } finally {
       setLoading(false);
     }
@@ -769,26 +687,12 @@ const RecepcionPedidosCompra = () => {
     setError(null);
 
     try {
-      const response = await fetch(
+      const { data } = await API.post(
         `/pedidos-compra/${pedidoAFinalizar.EjercicioPedido}/${pedidoAFinalizar.SeriePedido || '0'}/${pedidoAFinalizar.NumeroPedido}/finalizar`,
         {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'usuario': user.UsuarioLogicNet,
-            'codigoempresa': user.CodigoEmpresa
-          },
-          body: JSON.stringify({
-            motivo: `Finalizado manualmente por ${user.UsuarioLogicNet}`
-          })
+          motivo: `Finalizado manualmente por ${user.UsuarioLogicNet}`
         }
       );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.mensaje || 'Error al finalizar pedido');
-      }
 
       if (data.success) {
         setSuccess(`✅ Pedido #${pedidoAFinalizar.NumeroPedido} finalizado correctamente como servido.`);
@@ -802,7 +706,7 @@ const RecepcionPedidosCompra = () => {
       }
     } catch (err) {
       console.error('[ERROR FINALIZAR PEDIDO]', err);
-      setError(`Error al finalizar pedido: ${err.message}`);
+      setError(`Error al finalizar pedido: ${getApiErrorMessage(err, 'Error al finalizar pedido')}`);
     } finally {
       setLoading(false);
     }

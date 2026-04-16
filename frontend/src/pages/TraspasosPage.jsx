@@ -156,6 +156,44 @@ const TraspasosPage = () => {
     return unidad;
   };
 
+  const getCantidadBase = (item) => {
+    const cantidadBase = parseFloat(item?.CantidadBase);
+    if (!isNaN(cantidadBase)) {
+      return cantidadBase;
+    }
+
+    const cantidad = parseFloat(item?.Cantidad);
+    const factorConversion = parseFloat(item?.FactorConversion);
+    const unidadMedida = String(item?.UnidadMedida || '').trim();
+    const unidadAlternativa = String(item?.UnidadAlternativa || '').trim();
+
+    if (
+      unidadMedida &&
+      unidadAlternativa &&
+      unidadMedida === unidadAlternativa &&
+      !isNaN(cantidad) &&
+      !isNaN(factorConversion) &&
+      factorConversion > 0
+    ) {
+      return cantidad * factorConversion;
+    }
+
+    return isNaN(cantidad) ? 0 : cantidad;
+  };
+
+  const formatStockDisponible = (item) => {
+    const cantidad = parseFloat(item?.Cantidad || 0);
+    const unidad = item?.UnidadMedida || '';
+    const unidadBase = item?.UnidadBase || '';
+    const cantidadBase = getCantidadBase(item);
+
+    if (unidadBase && unidad && unidad !== unidadBase) {
+      return `${formatearUnidad(cantidad, unidad)} (${formatearUnidad(cantidadBase, unidadBase)})`;
+    }
+
+    return formatearUnidad(cantidad, unidad);
+  };
+
   const getNombreAlmacen = (codigo) => {
     if (!codigo || codigo === 'undefined') return 'Almacén no disponible';
     if (codigo === 'SIN-UBICACION') return 'Stock Sin Ubicación';
@@ -295,7 +333,7 @@ const TraspasosPage = () => {
       
       if (stockNormalizado.length > 0) {
         const almacenConMasStock = stockNormalizado.reduce((max, item) => 
-          item.Cantidad > max.Cantidad ? item : max
+          getCantidadBase(item) > getCantidadBase(max) ? item : max
         );
         
         setAlmacenOrigen(almacenConMasStock.CodigoAlmacen);
@@ -305,7 +343,7 @@ const TraspasosPage = () => {
         setPartida(almacenConMasStock.Partida || '');
         setTallaOrigen(almacenConMasStock.Talla || '');
         setColorOrigen(almacenConMasStock.CodigoColor_ || '');
-        setStockDisponibleInfo(`${almacenConMasStock.Cantidad} ${almacenConMasStock.UnidadMedida}`);
+        setStockDisponibleInfo(formatStockDisponible(almacenConMasStock));
       }
     } catch (error) {
       console.error('❌ [TRASPASOS] Error cargando stock:', error);
@@ -344,7 +382,7 @@ const TraspasosPage = () => {
         
         if (stockNormalizado.length > 0) {
           const almacenConMasStock = stockNormalizado.reduce((max, item) => 
-            item.Cantidad > max.Cantidad ? item : max
+            getCantidadBase(item) > getCantidadBase(max) ? item : max
           );
           
           setAlmacenOrigen(almacenConMasStock.CodigoAlmacen);
@@ -354,7 +392,7 @@ const TraspasosPage = () => {
           setPartida(almacenConMasStock.Partida || '');
           setTallaOrigen(almacenConMasStock.Talla || '');
           setColorOrigen(almacenConMasStock.CodigoColor_ || '');
-          setStockDisponibleInfo(`${almacenConMasStock.Cantidad} ${almacenConMasStock.UnidadMedida}`);
+          setStockDisponibleInfo(formatStockDisponible(almacenConMasStock));
         }
       } catch (fallbackError) {
         console.error('❌ [TRASPASOS] Error en fallback:', fallbackError);
@@ -525,7 +563,7 @@ const TraspasosPage = () => {
           label += ` - Talla/Color: ${tallaColor}`;
         }
         
-        label += ` - ${formatearUnidad(item.Cantidad || 0, item.UnidadMedida || '')}`;
+        label += ` - ${formatStockDisponible(item)}`;
         
         if (item.Partida) {
           label += ` (Lote: ${item.Partida})`;
@@ -643,7 +681,7 @@ const TraspasosPage = () => {
     
     if (ubicacionesEnAlmacen.length > 0) {
       const ubicacionConMasStock = ubicacionesEnAlmacen.reduce((max, item) => 
-        item.Cantidad > max.Cantidad ? item : max
+        getCantidadBase(item) > getCantidadBase(max) ? item : max
       );
       
       setUbicacionOrigen(ubicacionConMasStock.Ubicacion);
@@ -652,7 +690,7 @@ const TraspasosPage = () => {
       setPartida(ubicacionConMasStock.Partida || '');
       setTallaOrigen(ubicacionConMasStock.Talla || '');
       setColorOrigen(ubicacionConMasStock.CodigoColor_ || '');
-      setStockDisponibleInfo(`${ubicacionConMasStock.Cantidad} ${ubicacionConMasStock.UnidadMedida}`);
+      setStockDisponibleInfo(formatStockDisponible(ubicacionConMasStock));
     }
   };
 
@@ -664,7 +702,7 @@ const TraspasosPage = () => {
     setTallaOrigen(item.Talla || '');
     setColorOrigen(item.CodigoColor_ || '');
     setGrupoUnicoOrigen(item.GrupoUnico || '');
-    setStockDisponibleInfo(`${item.Cantidad} ${item.UnidadMedida}`);
+    setStockDisponibleInfo(formatStockDisponible(item));
     cargarUbicacionesDestino(item.Ubicacion);
   };
 

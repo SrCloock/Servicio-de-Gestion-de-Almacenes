@@ -55,6 +55,8 @@ const InventarioPage = () => {
   const [unidadesDisponibles, setUnidadesDisponibles] = useState([]);
   const [tallasDisponibles, setTallasDisponibles] = useState([]);
   const [coloresDisponibles, setColoresDisponibles] = useState([]);
+  const [mostrarSelectorTalla, setMostrarSelectorTalla] = useState(false);
+  const [mostrarSelectorColor, setMostrarSelectorColor] = useState(false);
 
   // Estados para edición de cantidad existente
   const [unidadesDisponiblesEdit, setUnidadesDisponiblesEdit] = useState(['unidades']);
@@ -106,19 +108,21 @@ const InventarioPage = () => {
       
       // Obtener información básica del artículo
       const response = await API.get(
-        `/articulos/${articulo.CodigoArticulo}`,
+        `/articulos/${articulo.CodigoArticulo}/variantes-contexto`,
         { headers }
       );
+      const contexto = response.data;
+      const articuloContexto = contexto.articulo || {};
       
       setArticuloSeleccionado({
         ...articulo,
-        ...response.data
+        ...articuloContexto
       });
 
       // Cargar unidades de medida disponibles
       const unidades = [
-        response.data.UnidadMedida2_,
-        response.data.UnidadMedidaAlternativa_
+        articuloContexto.UnidadMedida2_,
+        articuloContexto.UnidadMedidaAlternativa_
       ].filter((unidad, index, self) => 
         unidad && 
         unidad.trim() !== '' && 
@@ -132,41 +136,21 @@ const InventarioPage = () => {
       setUnidadesDisponibles(unidades);
       setUnidadMedidaSeleccionada(unidades[0]);
 
-      // Cargar stock existente para extraer tallas y colores
-      const stockResponse = await API.get(
-        `/stock/por-articulo?codigoArticulo=${articulo.CodigoArticulo}&incluirSinUbicacion=true`,
-        { headers }
-      );
-      
-      const stockData = Array.isArray(stockResponse.data) ? stockResponse.data : [];
-      
+      // El contexto de variantes viene filtrado por articulo y empresa activa.
       // Extraer tallas únicas
-      const tallasUnicas = [...new Set(stockData
-        .filter(item => item.CodigoTalla01_ && item.CodigoTalla01_.trim() !== '')
-        .map(item => item.CodigoTalla01_)
-      )].sort();
-      
       // Extraer colores únicos
-      const coloresUnicos = [...new Set(stockData
-        .filter(item => item.CodigoColor_ && item.CodigoColor_.trim() !== '')
-        .map(item => item.CodigoColor_)
-      )].sort();
-      
-      setTallasDisponibles(tallasUnicas);
-      setColoresDisponibles(coloresUnicos);
-      
       // Seleccionar primera talla y color por defecto si existen
-      if (tallasUnicas.length > 0) {
-        setTallaSeleccionada(tallasUnicas[0]);
-      } else {
-        setTallaSeleccionada('');
-      }
-      
-      if (coloresUnicos.length > 0) {
-        setColorSeleccionado(coloresUnicos[0]);
-      } else {
-        setColorSeleccionado('');
-      }
+      const tallasContexto = Array.isArray(contexto.tallas) ? contexto.tallas : [];
+      const coloresContexto = Array.isArray(contexto.colores) ? contexto.colores : [];
+      const debeMostrarTalla = Boolean(contexto.usaTallas && tallasContexto.length > 0);
+      const debeMostrarColor = Boolean(contexto.usaColores && coloresContexto.length > 0);
+
+      setTallasDisponibles(tallasContexto);
+      setColoresDisponibles(coloresContexto);
+      setMostrarSelectorTalla(debeMostrarTalla);
+      setMostrarSelectorColor(debeMostrarColor);
+      setTallaSeleccionada(debeMostrarTalla && tallasContexto.length === 1 ? tallasContexto[0].codigo : '');
+      setColorSeleccionado(debeMostrarColor && coloresContexto.length === 1 ? coloresContexto[0].codigo : '');
 
       setResultadosBusqueda([]);
       setArticuloBusqueda(articulo.CodigoArticulo);
@@ -240,6 +224,8 @@ const InventarioPage = () => {
     setUnidadesDisponibles([]);
     setTallasDisponibles([]);
     setColoresDisponibles([]);
+    setMostrarSelectorTalla(false);
+    setMostrarSelectorColor(false);
   };
 
   // Efecto para buscar artículos cuando cambia el término de búsqueda
@@ -496,17 +482,14 @@ const InventarioPage = () => {
     const agrupado = {};
     
     data.forEach(item => {
-      const almacenesPermitidos = ['CEN', 'BCN', 'N5', 'N1', 'PK', '5'];
-      if (!almacenesPermitidos.includes(item.CodigoAlmacen)) {
-        return;
-      }
-      
       // 🔥 CORRECCIÓN: Generar clave única que incluya TODOS los campos relevantes
-      const claveUnica = `${item.CodigoArticulo}_${item.CodigoAlmacen}_${item.Ubicacion}_${item.UnidadStock || 'unidades'}_${item.Partida || ''}_${item.CodigoColor_ || ''}_${item.CodigoTalla01_ || ''}`;
+      const codigoArticuloStock = item.CodigoArticuloStock || item.CodigoArticulo;
+      const claveUnica = `${codigoArticuloStock}_${item.CodigoAlmacen}_${item.Ubicacion}_${item.UnidadStock || 'unidades'}_${item.Partida || ''}_${item.CodigoColor_ || ''}_${item.CodigoTalla01_ || ''}`;
       
       if (!agrupado[item.CodigoArticulo]) {
         agrupado[item.CodigoArticulo] = {
           CodigoArticulo: item.CodigoArticulo,
+          CodigoArticuloStock: codigoArticuloStock,
           DescripcionArticulo: item.DescripcionArticulo,
           Descripcion2Articulo: item.Descripcion2Articulo,
           CodigoFamilia: item.CodigoFamilia,
@@ -532,6 +515,7 @@ const InventarioPage = () => {
       
       const ubicacion = {
         clave: claveUnica,
+        CodigoArticuloStock: codigoArticuloStock,
         CodigoAlmacen: item.CodigoAlmacen,
         NombreAlmacen: item.NombreAlmacen,
         Ubicacion: item.Ubicacion,
@@ -804,7 +788,12 @@ const InventarioPage = () => {
   const stats = useMemo(() => {
     const totalArticulos = filteredInventario.length;
     const totalUnidades = filteredInventario.reduce((total, art) => total + (art.totalStockBase || 0), 0);
-    const totalUbicaciones = filteredInventario.reduce((total, art) => total + art.ubicaciones.length, 0);
+    const totalUbicaciones = filteredInventario.reduce((total, art) => {
+      const ubicacionesFisicas = new Set(
+        art.ubicaciones.map((ubic) => `${ubic.CodigoAlmacen || ''}_${ubic.Ubicacion || ''}`)
+      );
+      return total + ubicacionesFisicas.size;
+    }, 0);
     const stockSinUbicacion = filteredInventario.reduce((total, art) => 
       total + art.ubicaciones.filter(ubic => ubic.esSinUbicacion).reduce((sum, ubic) => sum + (ubic.CantidadBase || 0), 0), 0);
     
@@ -837,7 +826,9 @@ const InventarioPage = () => {
   };
 
   const iniciarEdicionCantidad = async (articulo, nombreAlmacen, cantidadActual, clave, codigoAlmacen, ubicacionStr, partida, unidadStock, codigoColor, codigoTalla01, esSinUbicacion) => {
-    const articuloCompleto = inventario.find(art => art.CodigoArticulo === articulo);
+    const articuloCompleto = inventario.find(
+      art => art.CodigoArticulo === articulo || art.CodigoArticuloStock === articulo
+    );
     
     await cargarVariantesArticulo(articulo, unidadStock);
     
@@ -1371,7 +1362,7 @@ const InventarioPage = () => {
                                   <button 
                                     className="inventario-btn-editar"
                                     onClick={() => iniciarEdicionCantidad(
-                                      articulo.CodigoArticulo,
+                                      ubicacion.CodigoArticuloStock || articulo.CodigoArticuloStock || articulo.CodigoArticulo,
                                       ubicacion.NombreAlmacen,
                                       ubicacion.Cantidad,
                                       ubicacion.clave,
@@ -1663,7 +1654,7 @@ const InventarioPage = () => {
             )}
 
             {/* Selector de talla (si hay tallas disponibles) */}
-            {tallasDisponibles.length > 0 && (
+            {mostrarSelectorTalla && (
               <div className="inventario-form-group">
                 <label>Talla:</label>
                 <select 
@@ -1673,8 +1664,8 @@ const InventarioPage = () => {
                 >
                   <option value="">Seleccionar talla</option>
                   {tallasDisponibles.map(talla => (
-                    <option key={talla} value={talla}>
-                      {talla}
+                    <option key={talla.codigo || talla} value={talla.codigo || talla}>
+                      {talla.descripcion ? `${talla.codigo} - ${talla.descripcion}` : talla}
                     </option>
                   ))}
                 </select>
@@ -1682,7 +1673,7 @@ const InventarioPage = () => {
             )}
 
             {/* Selector de color (si hay colores disponibles) */}
-            {coloresDisponibles.length > 0 && (
+            {mostrarSelectorColor && (
               <div className="inventario-form-group">
                 <label>Color:</label>
                 <select 
@@ -1692,8 +1683,8 @@ const InventarioPage = () => {
                 >
                   <option value="">Seleccionar color</option>
                   {coloresDisponibles.map(color => (
-                    <option key={color} value={color}>
-                      {color}
+                    <option key={color.codigo || color} value={color.codigo || color}>
+                      {color.nombre ? `${color.codigo} - ${color.nombre}` : color}
                     </option>
                   ))}
                 </select>
