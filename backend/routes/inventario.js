@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const cron = require('node-cron');
 
 module.exports = function createinventarioRouter({ sql, getPool }) {
@@ -157,12 +157,12 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
   }
 
 async function sincronizacionAutomatica() {
-  console.log('🔄 [SYNC AUTO] Iniciando sincronización automática...');
+  console.log('ðŸ”„ [SYNC AUTO] Iniciando sincronizaciÃ³n automÃ¡tica...');
   
   try {
-    // Verificar que getPool() esté conectado
+    // Verificar que getPool() estÃ© conectado
     if (!getPool() || !getPool().connected) {
-      console.log('⏳ [SYNC AUTO] Esperando conexión a BD...');
+      console.log('â³ [SYNC AUTO] Esperando conexiÃ³n a BD...');
       return;
     }
 
@@ -190,7 +190,7 @@ async function sincronizacionAutomatica() {
       const codigoEmpresa = empresa.CodigoEmpresa;
       
       try {
-        console.log(`🏢 [SYNC AUTO] Sincronizando empresa: ${codigoEmpresa}`);
+        console.log(`ðŸ¢ [SYNC AUTO] Sincronizando empresa: ${codigoEmpresa}`);
         
         // 1. IDENTIFICAR DISCREPANCIAS - CONSULTA MEJORADA
         const discrepancias = await getPool().request()
@@ -207,7 +207,7 @@ async function sincronizacionAutomatica() {
               ast.CodigoTalla01_,
               -- Stock oficial (AcumuladoStock)
               CAST(COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) AS DECIMAL(18, 4)) AS StockOficial,
-              -- Stock en ubicación (AcumuladoStockUbicacion)
+              -- Stock en ubicaciÃ³n (AcumuladoStockUbicacion)
               COALESCE(asu.UnidadSaldoTipo_, asu.UnidadSaldo, 0) AS StockUbicacion,
               -- Diferencia
               CAST(COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) AS DECIMAL(18, 4)) - COALESCE(asu.UnidadSaldoTipo_, asu.UnidadSaldo, 0) AS Diferencia
@@ -236,7 +236,7 @@ async function sincronizacionAutomatica() {
               ) > 0.001
           `);
 
-        console.log(`📊 [SYNC AUTO] Empresa ${codigoEmpresa}: ${discrepancias.recordset.length} discrepancias encontradas`);
+        console.log(`ðŸ“Š [SYNC AUTO] Empresa ${codigoEmpresa}: ${discrepancias.recordset.length} discrepancias encontradas`);
 
         // 2. CORREGIR CADA DISCREPANCIA
         for (const discrepancia of discrepancias.recordset) {
@@ -244,29 +244,29 @@ async function sincronizacionAutomatica() {
             await corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio);
             totalCorregidos++;
             
-            // Pequeña pausa para no saturar la BD
+            // PequeÃ±a pausa para no saturar la BD
             await new Promise(resolve => setTimeout(resolve, 10));
             
           } catch (error) {
-            console.error(`❌ [SYNC AUTO] Error corrigiendo discrepancia:`, error.message);
+            console.error(`âŒ [SYNC AUTO] Error corrigiendo discrepancia:`, error.message);
             totalErrores++;
           }
         }
 
       } catch (error) {
-        console.error(`❌ [SYNC AUTO] Error en empresa ${codigoEmpresa}:`, error.message);
+        console.error(`âŒ [SYNC AUTO] Error en empresa ${codigoEmpresa}:`, error.message);
         totalErrores++;
       }
     }
 
-    console.log(`✅ [SYNC AUTO] Sincronización completada: ${totalCorregidos} correcciones, ${totalErrores} errores`);
+    console.log(`âœ… [SYNC AUTO] SincronizaciÃ³n completada: ${totalCorregidos} correcciones, ${totalErrores} errores`);
     
   } catch (error) {
-    console.error('❌ [SYNC AUTO] Error general en sincronización:', error);
+    console.error('âŒ [SYNC AUTO] Error general en sincronizaciÃ³n:', error);
   }
 }
 
-// ✅ FUNCIÓN PARA CORREGIR UNA DISCREPANCIA INDIVIDUAL
+// âœ… FUNCIÃ“N PARA CORREGIR UNA DISCREPANCIA INDIVIDUAL
 async function corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio) {
   const transaction = new sql.Transaction(getPool());
   
@@ -286,7 +286,7 @@ async function corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio) {
       Diferencia
     } = discrepancia;
 
-    console.log(`🔧 [SYNC AUTO] Corrigiendo: ${CodigoArticulo} | ${CodigoAlmacen} | ${Ubicacion} | ${StockUbicacion} → ${StockOficial} (Diferencia: ${Diferencia})`);
+    console.log(`ðŸ”§ [SYNC AUTO] Corrigiendo: ${CodigoArticulo} | ${CodigoAlmacen} | ${Ubicacion} | ${StockUbicacion} â†’ ${StockOficial} (Diferencia: ${Diferencia})`);
 
     // 1. ELIMINAR REGISTRO EXISTENTE EN ACUMULADOSTOCKUBICACION (si existe)
     const requestEliminar = new sql.Request(transaction);
@@ -344,7 +344,7 @@ async function corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio) {
     }
 
     await transaction.commit();
-    console.log(`✅ [SYNC AUTO] Corregido: ${CodigoArticulo} | ${CodigoAlmacen} | ${Ubicacion}`);
+    console.log(`âœ… [SYNC AUTO] Corregido: ${CodigoArticulo} | ${CodigoAlmacen} | ${Ubicacion}`);
 
   } catch (error) {
     if (transaction._aborted === false) {
@@ -354,49 +354,342 @@ async function corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio) {
   }
 }
 
-// ✅ CONFIGURACIÓN DEL CRON JOB (CADA 3 HORAS)
+// âœ… CONFIGURACIÃ“N DEL CRON JOB (CADA 3 HORAS)
 
-// Función para iniciar la sincronización después de la conexión a BD
+// FunciÃ³n para iniciar la sincronizaciÃ³n despuÃ©s de la conexiÃ³n a BD
 function iniciarSincronizacionAutomatica() {
-  console.log('🚀 [SYNC AUTO] Configurando sistema de sincronización automática...');
+  console.log('ðŸš€ [SYNC AUTO] Configurando sistema de sincronizaciÃ³n automÃ¡tica...');
   
-  // Sincronización INMEDIATA al arrancar (5 segundos después de la conexión)
+  // SincronizaciÃ³n INMEDIATA al arrancar (5 segundos despuÃ©s de la conexiÃ³n)
   setTimeout(() => {
-    console.log('⏰ [SYNC AUTO] Ejecutando sincronización INICIAL inmediata...');
+    console.log('â° [SYNC AUTO] Ejecutando sincronizaciÃ³n INICIAL inmediata...');
     sincronizacionAutomatica();
   }, 5000);
 
-  // Programar ejecución cada 3 horas (0 */3 * * *)
+  // Programar ejecuciÃ³n cada 3 horas (0 */3 * * *)
   cron.schedule('0 */3 * * *', () => {
-    console.log('⏰ [SYNC AUTO] Ejecutando sincronización programada cada 3 horas...');
+    console.log('â° [SYNC AUTO] Ejecutando sincronizaciÃ³n programada cada 3 horas...');
     sincronizacionAutomatica();
   });
 
-  console.log('✅ [SYNC AUTO] Sistema configurado: Sincronización inicial en 5 segundos + cada 3 horas');
+  console.log('âœ… [SYNC AUTO] Sistema configurado: SincronizaciÃ³n inicial en 5 segundos + cada 3 horas');
 }
 
-// ✅ ENDPOINT MANUAL PARA FORZAR SINCRONIZACIÓN
+// âœ… ENDPOINT MANUAL PARA FORZAR SINCRONIZACIÃ“N
 router.post('/inventario/sincronizacion-automatica', async (req, res) => {
   try {
-    console.log('🔧 [SYNC MANUAL] Sincronización manual solicitada');
+    console.log('ðŸ”§ [SYNC MANUAL] SincronizaciÃ³n manual solicitada');
     
-    // Ejecutar sincronización inmediata
+    // Ejecutar sincronizaciÃ³n inmediata
     await sincronizacionAutomatica();
     
     res.json({
       success: true,
-      mensaje: 'Sincronización automática ejecutada manualmente'
+      mensaje: 'SincronizaciÃ³n automÃ¡tica ejecutada manualmente'
     });
     
   } catch (error) {
     console.error('[ERROR SYNC MANUAL]', error);
     res.status(500).json({
       success: false,
-      mensaje: 'Error en sincronización manual',
+      mensaje: 'Error en sincronizaciÃ³n manual',
       error: error.message
     });
   }
 });
+
+async function obtenerStockTotalLote(req, res) {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
+  }
+
+  const codigoEmpresa = req.user.CodigoEmpresa;
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), 100);
+  const codigo = String(req.query.codigo || req.query.search || '').trim();
+  const almacen = String(req.query.almacen || '').trim();
+  const ubicacion = String(req.query.ubicacion || '').trim();
+  const familia = String(req.query.familia || '').trim();
+  const subfamilia = String(req.query.subfamilia || '').trim();
+
+  try {
+    const contexto = await obtenerContextoBaseInventario(codigoEmpresa);
+    const codigoLike = `%${codigo}%`;
+    const familiaLike = `%${familia}%`;
+    const subfamiliaLike = `%${subfamilia}%`;
+    const almacenLike = `%${almacen}%`;
+    const ubicacionLike = `%${ubicacion}%`;
+
+    let queryCodigos = `
+      SELECT
+        a.CodigoArticulo,
+        ROW_NUMBER() OVER (ORDER BY a.CodigoArticulo) AS RowNum
+      FROM Articulos a
+      WHERE a.CodigoEmpresa = @codigoEmpresa
+        AND (@codigo = '' OR (
+          a.CodigoArticulo LIKE @codigoLike
+          OR a.DescripcionArticulo LIKE @codigoLike
+          OR ISNULL(a.Descripcion2Articulo, '') LIKE @codigoLike
+        ))
+        AND (@familia = '' OR ISNULL(a.CodigoFamilia, '') LIKE @familiaLike)
+        AND (@subfamilia = '' OR ISNULL(a.CodigoSubfamilia, '') LIKE @subfamiliaLike)
+    `;
+
+    if (almacen || ubicacion) {
+      queryCodigos += `
+        AND EXISTS (
+          SELECT 1
+          FROM AcumuladoStockUbicacion s
+          LEFT JOIN Almacenes alm
+            ON alm.CodigoEmpresa = s.CodigoEmpresa
+            AND alm.CodigoAlmacen = s.CodigoAlmacen
+          LEFT JOIN Ubicaciones u
+            ON u.CodigoEmpresa = s.CodigoEmpresa
+            AND u.CodigoAlmacen = s.CodigoAlmacen
+            AND u.Ubicacion = s.Ubicacion
+          WHERE s.CodigoEmpresa = a.CodigoEmpresa
+            AND s.Periodo = @periodoBase
+            AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+            AND LTRIM(RTRIM(s.CodigoArticulo)) = LTRIM(RTRIM(a.CodigoArticulo))
+            AND (@almacen = '' OR (
+              ISNULL(s.CodigoAlmacen, '') LIKE @almacenLike
+              OR ISNULL(alm.Almacen, '') LIKE @almacenLike
+            ))
+            AND (@ubicacion = '' OR (
+              ISNULL(s.Ubicacion, '') LIKE @ubicacionLike
+              OR ISNULL(u.DescripcionUbicacion, '') LIKE @ubicacionLike
+            ))
+        )
+      `;
+    }
+
+    queryCodigos = `
+      WITH ArticulosFiltrados AS (
+        ${queryCodigos}
+      )
+      SELECT CodigoArticulo, RowNum
+      FROM ArticulosFiltrados
+      WHERE RowNum > @offset
+        AND RowNum <= (@offset + @limit + 1)
+      ORDER BY RowNum
+    `;
+
+    const codigosResult = await agregarContextoInventario(
+      getPool().request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('offset', sql.Int, offset)
+        .input('limit', sql.Int, limit)
+        .input('codigo', sql.NVarChar(200), codigo)
+        .input('codigoLike', sql.NVarChar(210), codigoLike)
+        .input('almacen', sql.NVarChar(200), almacen)
+        .input('almacenLike', sql.NVarChar(210), almacenLike)
+        .input('ubicacion', sql.NVarChar(200), ubicacion)
+        .input('ubicacionLike', sql.NVarChar(210), ubicacionLike)
+        .input('familia', sql.NVarChar(100), familia)
+        .input('familiaLike', sql.NVarChar(110), familiaLike)
+        .input('subfamilia', sql.NVarChar(100), subfamilia)
+        .input('subfamiliaLike', sql.NVarChar(110), subfamiliaLike),
+      contexto
+    ).query(queryCodigos);
+
+    const codigoRows = codigosResult.recordset || [];
+    const hasMore = codigoRows.length > limit;
+    const codigosPagina = codigoRows.slice(0, limit).map((row) => String(row.CodigoArticulo || '').trim()).filter(Boolean);
+
+    if (codigosPagina.length === 0) {
+      return res.json({
+        items: [],
+        hasMore: false,
+        nextOffset: null
+      });
+    }
+
+    const codigoInputs = codigosPagina
+      .map((_, index) => `@codigoArticulo${index}`)
+      .join(', ');
+
+    const detalleRequest = agregarContextoInventario(
+      getPool().request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa),
+      contexto
+    );
+
+    codigosPagina.forEach((codigoArticulo, index) => {
+      detalleRequest.input(`codigoArticulo${index}`, sql.VarChar(50), codigoArticulo);
+    });
+
+    detalleRequest
+      .input('almacen', sql.NVarChar(200), almacen)
+      .input('almacenLike', sql.NVarChar(210), almacenLike)
+      .input('ubicacion', sql.NVarChar(200), ubicacion)
+      .input('ubicacionLike', sql.NVarChar(210), ubicacionLike);
+
+    const detalleQuery = `
+      ${getCteInventarioActual()},
+      AlmacenPlaceholder AS (
+        SELECT TOP 1
+          CodigoAlmacen,
+          Almacen AS NombreAlmacen
+        FROM Almacenes
+        WHERE CodigoEmpresa = @codigoEmpresa
+        ORDER BY CASE WHEN CodigoAlmacen = 'CEN' THEN 0 ELSE 1 END, CodigoAlmacen
+      ),
+      CodigosSeleccionados AS (
+        SELECT LTRIM(RTRIM(CodigoArticulo)) AS CodigoArticulo
+        FROM Articulos
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND LTRIM(RTRIM(CodigoArticulo)) IN (${codigoInputs})
+      ),
+      CodigosStockUbicacion AS (
+        SELECT DISTINCT LTRIM(RTRIM(CodigoArticulo)) AS CodigoArticulo
+        FROM StockUbicacionActual
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND LTRIM(RTRIM(CodigoArticulo)) IN (${codigoInputs})
+      ),
+      CodigosAcumuladoStock AS (
+        SELECT DISTINCT LTRIM(RTRIM(CodigoArticulo)) AS CodigoArticulo
+        FROM AcumuladoStockActual
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND LTRIM(RTRIM(CodigoArticulo)) IN (${codigoInputs})
+      ),
+      ArticulosSinStock AS (
+        SELECT
+          a.CodigoEmpresa,
+          a.CodigoArticulo,
+          a.DescripcionArticulo,
+          a.Descripcion2Articulo,
+          a.UnidadMedida2_,
+          a.UnidadMedidaAlternativa_,
+          a.FactorConversion_,
+          a.CodigoFamilia,
+          a.CodigoSubfamilia
+        FROM Articulos a
+        INNER JOIN CodigosSeleccionados cs
+          ON cs.CodigoArticulo = LTRIM(RTRIM(a.CodigoArticulo))
+        LEFT JOIN CodigosStockUbicacion su
+          ON su.CodigoArticulo = LTRIM(RTRIM(a.CodigoArticulo))
+        LEFT JOIN CodigosAcumuladoStock ast
+          ON ast.CodigoArticulo = LTRIM(RTRIM(a.CodigoArticulo))
+        WHERE a.CodigoEmpresa = @codigoEmpresa
+          AND su.CodigoArticulo IS NULL
+          AND ast.CodigoArticulo IS NULL
+      )
+      SELECT
+        COALESCE(a.CodigoArticulo, s.CodigoArticulo) AS CodigoArticulo,
+        s.CodigoArticulo AS CodigoArticuloStock,
+        COALESCE(a.DescripcionArticulo, s.CodigoArticulo) AS DescripcionArticulo,
+        COALESCE(a.Descripcion2Articulo, '') AS Descripcion2Articulo,
+        s.CodigoAlmacen,
+        alm.Almacen AS NombreAlmacen,
+        s.Ubicacion,
+        u.DescripcionUbicacion,
+        s.TipoUnidadMedida_ AS UnidadStock,
+        s.UnidadSaldoTipo_ AS CantidadBase,
+        s.UnidadSaldoTipo_ AS Cantidad,
+        s.Partida,
+        s.Periodo,
+        s.CodigoColor_,
+        s.CodigoTalla01_,
+        a.UnidadMedida2_ AS UnidadBase,
+        a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
+        COALESCE(a.FactorConversion_, 1) AS FactorConversion,
+        a.CodigoFamilia,
+        a.CodigoSubfamilia,
+        s.Ejercicio,
+        CASE WHEN s.Ubicacion = 'SIN-UBICACION' OR s.Ubicacion IS NULL THEN 1 ELSE 0 END AS EsSinUbicacion,
+        CONCAT(
+          s.CodigoArticulo, '_',
+          s.CodigoAlmacen, '_',
+          s.Ubicacion, '_',
+          s.TipoUnidadMedida_, '_',
+          ISNULL(s.Partida, ''), '_',
+          ISNULL(s.CodigoColor_, ''), '_',
+          ISNULL(s.CodigoTalla01_, '')
+        ) AS ClaveUnica,
+        NULL AS MovPosicionLinea,
+        0 AS SinRegistrosAcumuladoStock
+      FROM StockUbicacionActual s
+      ${getArticuloApply('s')}
+      LEFT JOIN Almacenes alm
+        ON alm.CodigoEmpresa = s.CodigoEmpresa
+        AND alm.CodigoAlmacen = s.CodigoAlmacen
+      LEFT JOIN Ubicaciones u
+        ON u.CodigoEmpresa = s.CodigoEmpresa
+        AND u.CodigoAlmacen = s.CodigoAlmacen
+        AND u.Ubicacion = s.Ubicacion
+      WHERE s.CodigoEmpresa = @codigoEmpresa
+        AND LTRIM(RTRIM(COALESCE(a.CodigoArticulo, s.CodigoArticulo))) IN (${codigoInputs})
+        AND (@almacen = '' OR (ISNULL(s.CodigoAlmacen, '') LIKE @almacenLike OR ISNULL(alm.Almacen, '') LIKE @almacenLike))
+        AND (@ubicacion = '' OR (ISNULL(s.Ubicacion, '') LIKE @ubicacionLike OR ISNULL(u.DescripcionUbicacion, '') LIKE @ubicacionLike))
+
+      UNION ALL
+
+      SELECT
+        a.CodigoArticulo AS CodigoArticulo,
+        a.CodigoArticulo AS CodigoArticuloStock,
+        a.DescripcionArticulo,
+        COALESCE(a.Descripcion2Articulo, '') AS Descripcion2Articulo,
+        ap.CodigoAlmacen,
+        ap.NombreAlmacen,
+        'SIN-UBICACION' AS Ubicacion,
+        'Stock sin ubicacion asignada' AS DescripcionUbicacion,
+        '' AS UnidadStock,
+        CAST(0 AS DECIMAL(18, 4)) AS CantidadBase,
+        CAST(0 AS DECIMAL(18, 4)) AS Cantidad,
+        '' AS Partida,
+        @periodoBase AS Periodo,
+        '' AS CodigoColor_,
+        '' AS CodigoTalla01_,
+        a.UnidadMedida2_ AS UnidadBase,
+        a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
+        COALESCE(a.FactorConversion_, 1) AS FactorConversion,
+        a.CodigoFamilia,
+        a.CodigoSubfamilia,
+        @ejercicioBase AS Ejercicio,
+        1 AS EsSinUbicacion,
+        CONCAT(a.CodigoArticulo, '_', ap.CodigoAlmacen, '_', 'SIN-UBICACION', '_', 'unidades', '_', '', '_', '', '_', '') AS ClaveUnica,
+        NULL AS MovPosicionLinea,
+        1 AS SinRegistrosAcumuladoStock
+      FROM ArticulosSinStock a
+      CROSS JOIN AlmacenPlaceholder ap
+      ORDER BY CodigoArticulo, CodigoAlmacen, Ubicacion, UnidadStock
+    `;
+
+    const detalleResult = await detalleRequest.query(detalleQuery);
+    const items = detalleResult.recordset || [];
+
+    items.forEach((row) => {
+      const unidadStock = String(row.UnidadStock || '').trim();
+      const unidadAlternativa = String(row.UnidadAlternativa || '').trim();
+      const cantidad = Number(row.Cantidad || 0);
+      const factorConversion = Number(row.FactorConversion || 1);
+
+      if (unidadStock && unidadAlternativa && unidadStock === unidadAlternativa && factorConversion > 0) {
+        row.CantidadBase = cantidad * factorConversion;
+      } else {
+        row.CantidadBase = Number(row.CantidadBase || cantidad || 0);
+      }
+    });
+
+    console.log(`[INVENTARIO] Lote rapido obtenido: ${codigosPagina.length} articulos, ${items.length} registros de detalle, hasMore=${hasMore}`);
+
+    return res.json({
+      items,
+      hasMore,
+      nextOffset: hasMore ? offset + codigosPagina.length : null
+    });
+  } catch (error) {
+    console.error('[ERROR STOCK TOTAL LOTE]', error);
+    return res.status(500).json({
+      success: false,
+      mensaje: 'Error al obtener el lote de inventario',
+      error: error.message
+    });
+  }
+}
+
+router.get('/inventario/stock-total-lote', obtenerStockTotalLote);
+router.get('/inventario/stock-total-completo', obtenerStockTotalLote);
 
 // ============================================
 
@@ -429,13 +722,47 @@ router.get('/buscar-articulos', async (req, res) => {
     console.error('[ERROR BUSCAR ARTICULOS]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al buscar artículos.',
+      mensaje: 'Error al buscar artÃ­culos.',
       error: err.message
     });
   }
 });
 
-// ✅ 9.3 OBTENER ARTÍCULOS POR UBICACIÓN (CORREGIDO)
+router.get('/inventario/almacenes-ajuste', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
+  if (!codigoEmpresa) {
+    return res.status(400).json({
+      success: false,
+      mensaje: 'CÃ³digo de empresa requerido.'
+    });
+  }
+
+  try {
+    const result = await getPool().request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT
+          CodigoAlmacen,
+          Almacen
+        FROM Almacenes
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND CodigoAlmacen IN ('CEN', 'BCN', 'N5', 'N1', 'PK', '5', '000', 'SEC')
+        ORDER BY CodigoAlmacen
+      `);
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[ERROR ALMACENES AJUSTE INVENTARIO]', err);
+    res.status(500).json({
+      success: false,
+      mensaje: 'Error al obtener almacenes para nuevo ajuste.',
+      error: err.message
+    });
+  }
+});
+
+// âœ… 9.3 OBTENER ARTÃCULOS POR UBICACIÃ“N (CORREGIDO)
 router.get('/stock/por-ubicacion', async (req, res) => {
   const { codigoAlmacen, ubicacion, page = 1, pageSize = 100 } = req.query;
   const codigoEmpresa = req.user.CodigoEmpresa;
@@ -443,7 +770,7 @@ router.get('/stock/por-ubicacion', async (req, res) => {
   if (!codigoEmpresa || !codigoAlmacen || !ubicacion) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Código de empresa, almacén y ubicación requeridos.' 
+      mensaje: 'CÃ³digo de empresa, almacÃ©n y ubicaciÃ³n requeridos.' 
     });
   }
 
@@ -518,13 +845,13 @@ router.get('/stock/por-ubicacion', async (req, res) => {
     console.error('[ERROR STOCK UBICACION]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener artículos por ubicación',
+      mensaje: 'Error al obtener artÃ­culos por ubicaciÃ³n',
       error: err.message 
     });
   }
 });
 
-// ✅ 9.4 OBTENER STOCK POR MÚLTIPLES ARTÍCULOS (CORREGIDO)
+// âœ… 9.4 OBTENER STOCK POR MÃšLTIPLES ARTÃCULOS (CORREGIDO)
 router.post('/ubicacionesMultiples', async (req, res) => {
   const { articulos } = req.body;
   const codigoEmpresa = req.user.CodigoEmpresa;
@@ -532,7 +859,7 @@ router.post('/ubicacionesMultiples', async (req, res) => {
   if (!articulos || !Array.isArray(articulos)) {
     return res.status(400).json({
       success: false,
-      mensaje: 'Lista de artículos requerida en formato array.'
+      mensaje: 'Lista de artÃ­culos requerida en formato array.'
     });
   }
 
@@ -582,17 +909,17 @@ router.post('/ubicacionesMultiples', async (req, res) => {
       contexto
     );
 
-    // Añadir parámetros para cada artículo
+    // AÃ±adir parÃ¡metros para cada artÃ­culo
     codigosArticulos.forEach((codigo, index) => {
       request.input(`articulo${index}`, sql.VarChar, codigo);
     });
 
     const result = await request.query(query);
 
-    console.log(`[DEBUG UBICACIONES] Consulta ejecutada para ${codigosArticulos.length} artículos`);
+    console.log(`[DEBUG UBICACIONES] Consulta ejecutada para ${codigosArticulos.length} artÃ­culos`);
     console.log(`[DEBUG UBICACIONES] Resultados encontrados:`, result.recordset.length);
 
-    // Agrupar por artículo
+    // Agrupar por artÃ­culo
     const grouped = {};
     result.recordset.forEach(row => {
       const articulo = row.CodigoArticulo;
@@ -613,7 +940,7 @@ router.post('/ubicacionesMultiples', async (req, res) => {
       });
     });
 
-    // Si no hay ubicaciones para algún artículo, agregar Zona descarga para todos los almacenes reales de la empresa
+    // Si no hay ubicaciones para algÃºn artÃ­culo, agregar Zona descarga para todos los almacenes reales de la empresa
     const almacenesResult = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(`
@@ -625,12 +952,12 @@ router.post('/ubicacionesMultiples', async (req, res) => {
 
     codigosArticulos.forEach(codigo => {
       if (!grouped[codigo] || grouped[codigo].length === 0) {
-        console.log(`[DEBUG UBICACIONES] Artículo ${codigo} sin stock - agregando Zona descarga para todos los almacenes`);
+        console.log(`[DEBUG UBICACIONES] ArtÃ­culo ${codigo} sin stock - agregando Zona descarga para todos los almacenes`);
         grouped[codigo] = almacenesResult.recordset.map(almacen => ({
           codigoAlmacen: almacen.CodigoAlmacen,
           nombreAlmacen: almacen.Almacen || almacen.CodigoAlmacen,
           ubicacion: "Zona descarga",
-          descripcionUbicacion: "Stock disponible para expedición directa",
+          descripcionUbicacion: "Stock disponible para expediciÃ³n directa",
           unidadSaldo: Infinity,
           unidadMedida: 'unidades',
           partida: null,
@@ -645,20 +972,20 @@ router.post('/ubicacionesMultiples', async (req, res) => {
     console.error('[ERROR UBICACIONES MULTIPLES]', err);
     res.status(500).json({
       success: false,
-      mensaje: 'Error al obtener ubicaciones múltiples',
+      mensaje: 'Error al obtener ubicaciones mÃºltiples',
       error: err.message
     });
   }
 });
 
-// ✅ 9.7 OBTENER STOCK SIN UBICACIÓN (CORREGIDO)
+// âœ… 9.7 OBTENER STOCK SIN UBICACIÃ“N (CORREGIDO)
 router.get('/inventario/stock-sin-ubicacion', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
 
   if (!codigoEmpresa) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Código de empresa requerido.' 
+      mensaje: 'CÃ³digo de empresa requerido.' 
     });
   }
 
@@ -760,13 +1087,154 @@ router.get('/inventario/stock-sin-ubicacion', async (req, res) => {
     console.error('[ERROR STOCK SIN UBICACION]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener stock sin ubicación',
+      mensaje: 'Error al obtener stock sin ubicaciÃ³n',
       error: err.message 
     });
   }
 });
 
-// ✅ 9.7 OBTENER HISTÓRICO DE AJUSTES DE INVENTARIO (VERSIÓN MEJORADA - INCLUYE INVENTARIOS)
+// âœ… 9.7 OBTENER HISTÃ“RICO DE AJUSTES DE INVENTARIO (VERSIÃ“N MEJORADA - INCLUYE INVENTARIOS)
+router.get('/inventario/historial-ajustes-v2', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({
+      success: false,
+      mensaje: 'No autenticado'
+    });
+  }
+
+  const codigoEmpresa = req.user.CodigoEmpresa;
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const requestedLimit = parseInt(req.query.limit, 10) || 20;
+  const limit = [20, 25].includes(requestedLimit) ? requestedLimit : 20;
+  const offset = (page - 1) * limit;
+
+  const hoy = new Date();
+  const haceTreintaDias = new Date(hoy);
+  haceTreintaDias.setDate(hoy.getDate() - 30);
+
+  const fechaDesde = req.query.fechaDesde || haceTreintaDias.toISOString().split('T')[0];
+  const fechaHasta = req.query.fechaHasta || hoy.toISOString().split('T')[0];
+
+  try {
+    console.log(
+      `[HISTORIAL INVENTARIO V2] Empresa ${codigoEmpresa} | desde ${fechaDesde} | hasta ${fechaHasta} | page ${page} | limit ${limit}`
+    );
+
+    const totalResult = await getPool().request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('fechaDesde', sql.Date, fechaDesde)
+      .input('fechaHasta', sql.Date, fechaHasta)
+      .query(`
+        SELECT COUNT(*) AS Total
+        FROM MovimientoStock m
+        WHERE m.CodigoEmpresa = @codigoEmpresa
+          AND m.TipoMovimiento = 5
+          AND CONVERT(date, m.FechaRegistro) BETWEEN @fechaDesde AND @fechaHasta
+          AND (
+            (m.Unidades IS NOT NULL AND m.Unidades <> 0)
+            OR ISNULL(m.Comentario, '') LIKE 'Inventario:%'
+          )
+      `);
+
+    const total = Number(totalResult.recordset[0]?.Total || 0);
+    const totalPages = Math.max(Math.ceil(total / limit), 1);
+
+    const movimientosResult = await getPool().request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('fechaDesde', sql.Date, fechaDesde)
+      .input('fechaHasta', sql.Date, fechaHasta)
+      .input('offset', sql.Int, offset)
+      .input('limit', sql.Int, limit)
+      .query(`
+        SELECT
+          m.Ejercicio,
+          m.Periodo,
+          m.CodigoArticulo,
+          COALESCE(a.DescripcionArticulo, m.CodigoArticulo) AS DescripcionArticulo,
+          m.CodigoAlmacen,
+          COALESCE(alm.Almacen, m.CodigoAlmacen) AS NombreAlmacen,
+          m.Ubicacion,
+          COALESCE(u.DescripcionUbicacion, '') AS DescripcionUbicacion,
+          ISNULL(m.Partida, '') AS Partida,
+          CAST(ISNULL(m.Unidades, 0) AS DECIMAL(18, 4)) AS Diferencia,
+          CASE
+            WHEN CHARINDEX(' por ', ISNULL(m.Comentario, '')) > 0
+              THEN LTRIM(RTRIM(LEFT(
+                ISNULL(m.Comentario, ''),
+                LEN(ISNULL(m.Comentario, '')) - LEN(SUBSTRING(
+                  ISNULL(m.Comentario, ''),
+                  CHARINDEX(' por ', ISNULL(m.Comentario, '')),
+                  LEN(ISNULL(m.Comentario, ''))
+                ))
+              )))
+            ELSE ISNULL(m.Comentario, '')
+          END AS Comentario,
+          CASE
+            WHEN NULLIF(LTRIM(RTRIM(ISNULL(m.UsuarioProceso, ''))), '') IS NOT NULL
+              AND LTRIM(RTRIM(ISNULL(m.UsuarioProceso, ''))) <> '0'
+              THEN LTRIM(RTRIM(ISNULL(m.UsuarioProceso, '')))
+            WHEN CHARINDEX(' por ', ISNULL(m.Comentario, '')) > 0
+              THEN NULLIF(LTRIM(RTRIM(SUBSTRING(
+                ISNULL(m.Comentario, ''),
+                CHARINDEX(' por ', ISNULL(m.Comentario, '')) + LEN(' por '),
+                LEN(ISNULL(m.Comentario, ''))
+              ))), '')
+            ELSE NULL
+          END AS Usuario,
+          m.FechaRegistro,
+          ISNULL(m.UnidadMedida1_, '') AS UnidadMedida,
+          ISNULL(m.CodigoColor_, '') AS CodigoColor,
+          ISNULL(m.CodigoTalla01_, '') AS CodigoTalla01,
+          'MOVIMIENTO' AS TipoRegistro
+        FROM MovimientoStock m
+        LEFT JOIN Articulos a
+          ON a.CodigoEmpresa = m.CodigoEmpresa
+          AND a.CodigoArticulo = m.CodigoArticulo
+        LEFT JOIN Almacenes alm
+          ON alm.CodigoEmpresa = m.CodigoEmpresa
+          AND alm.CodigoAlmacen = m.CodigoAlmacen
+        LEFT JOIN Ubicaciones u
+          ON u.CodigoEmpresa = m.CodigoEmpresa
+          AND u.CodigoAlmacen = m.CodigoAlmacen
+          AND u.Ubicacion = m.Ubicacion
+        WHERE m.CodigoEmpresa = @codigoEmpresa
+          AND m.TipoMovimiento = 5
+          AND CONVERT(date, m.FechaRegistro) BETWEEN @fechaDesde AND @fechaHasta
+          AND (
+            (m.Unidades IS NOT NULL AND m.Unidades <> 0)
+            OR ISNULL(m.Comentario, '') LIKE 'Inventario:%'
+          )
+        ORDER BY m.FechaRegistro DESC, m.CodigoArticulo ASC
+        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+      `);
+
+    res.json({
+      success: true,
+      items: movimientosResult.recordset,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasPrev: page > 1,
+        hasNext: page < totalPages
+      },
+      filtros: {
+        fechaDesde,
+        fechaHasta
+      }
+    });
+  } catch (err) {
+    console.error('[ERROR HISTORIAL AJUSTES V2]', err);
+    res.status(500).json({
+      success: false,
+      mensaje: 'Error al obtener historial de ajustes.',
+      error: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
+
 router.get('/inventario/historial-ajustes', async (req, res) => {
   // 1. Obtener empresa del usuario autenticado
   if (!req.user || !req.user.CodigoEmpresa) {
@@ -777,15 +1245,15 @@ router.get('/inventario/historial-ajustes', async (req, res) => {
   }
   
   const codigoEmpresa = req.user.CodigoEmpresa;
-  const añoActual = new Date().getFullYear();
+  const anioActual = new Date().getFullYear();
 
   try {
-    console.log(`📊 Obteniendo historial de ajustes para empresa: ${codigoEmpresa}, año: ${añoActual}`);
+    console.log(`ðŸ“Š Obteniendo historial de ajustes para empresa: ${codigoEmpresa}, aÃ±o: ${anioActual}`);
     
     // 2. Obtener fechas con ajustes - COMBINANDO MOVIMIENTOSTOCK E INVENTARIOS
     const fechasResult = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, añoActual)
+      .input('ejercicio', sql.SmallInt, anioActual)
       .query(`
         -- Fechas de MovimientoStock (ajustes)
         SELECT DISTINCT CONVERT(date, FechaRegistro) AS Fecha, 'MOVIMIENTO' AS Tipo
@@ -793,8 +1261,10 @@ router.get('/inventario/historial-ajustes', async (req, res) => {
         WHERE CodigoEmpresa = @codigoEmpresa
           AND Ejercicio = @ejercicio
           AND TipoMovimiento = 5  -- 5: Ajuste
-          AND Unidades IS NOT NULL
-          AND Unidades != 0
+          AND (
+            (Unidades IS NOT NULL AND Unidades != 0)
+            OR Comentario LIKE 'Inventario:%'
+          )
         
         UNION
         
@@ -809,7 +1279,7 @@ router.get('/inventario/historial-ajustes', async (req, res) => {
       `);
     
     const fechas = fechasResult.recordset;
-    console.log(`📅 Fechas con ajustes encontradas: ${fechas.length}`);
+    console.log(`ðŸ“… Fechas con ajustes encontradas: ${fechas.length}`);
     
     const historial = [];
     
@@ -817,12 +1287,12 @@ router.get('/inventario/historial-ajustes', async (req, res) => {
     for (const fecha of fechas) {
       const fechaStr = fecha.Fecha.toISOString().split('T')[0];
       
-      console.log(`🔍 Obteniendo ajustes para fecha: ${fechaStr}`);
+      console.log(`ðŸ” Obteniendo ajustes para fecha: ${fechaStr}`);
       
       // Obtener ajustes de MovimientoStock
       const movimientosResult = await getPool().request()
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .input('ejercicio', sql.SmallInt, añoActual)
+        .input('ejercicio', sql.SmallInt, anioActual)
         .input('fecha', sql.Date, fechaStr)
         .query(`
           SELECT 
@@ -855,8 +1325,10 @@ router.get('/inventario/historial-ajustes', async (req, res) => {
             AND m.Ejercicio = @ejercicio
             AND m.TipoMovimiento = 5  -- 5: Ajuste
             AND CONVERT(date, m.FechaRegistro) = @fecha
-            AND m.Unidades IS NOT NULL
-            AND m.Unidades != 0
+            AND (
+              (m.Unidades IS NOT NULL AND m.Unidades != 0)
+              OR m.Comentario LIKE 'Inventario:%'
+            )
         `);
       
       // Obtener ajustes de Inventarios
@@ -902,7 +1374,7 @@ router.get('/inventario/historial-ajustes', async (req, res) => {
         ...inventariosResult.recordset
       ];
       
-      console.log(`📋 Ajustes encontrados para ${fechaStr}: ${todosLosAjustes.length} (Movimientos: ${movimientosResult.recordset.length}, Inventarios: ${inventariosResult.recordset.length})`);
+      console.log(`ðŸ“‹ Ajustes encontrados para ${fechaStr}: ${todosLosAjustes.length} (Movimientos: ${movimientosResult.recordset.length}, Inventarios: ${inventariosResult.recordset.length})`);
       
       if (todosLosAjustes.length > 0) {
         historial.push({
@@ -910,7 +1382,7 @@ router.get('/inventario/historial-ajustes', async (req, res) => {
           totalAjustes: todosLosAjustes.length,
           detalles: todosLosAjustes.map(detalle => ({
             CodigoArticulo: detalle.CodigoArticulo,
-            DescripcionArticulo: detalle.DescripcionArticulo || 'Artículo no encontrado',
+            DescripcionArticulo: detalle.DescripcionArticulo || 'ArtÃ­culo no encontrado',
             CodigoAlmacen: detalle.CodigoAlmacen,
             NombreAlmacen: detalle.NombreAlmacen || detalle.CodigoAlmacen,
             Ubicacion: detalle.Ubicacion || 'N/A',
@@ -928,9 +1400,9 @@ router.get('/inventario/historial-ajustes', async (req, res) => {
       }
     }
     
-    console.log(`✅ Historial completo generado con ${historial.length} días de ajustes`);
+    console.log(`âœ… Historial completo generado con ${historial.length} dÃ­as de ajustes`);
     
-    // Ordenar por fecha más reciente primero
+    // Ordenar por fecha mÃ¡s reciente primero
     historial.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
     
     res.json(historial);
@@ -945,7 +1417,7 @@ router.get('/inventario/historial-ajustes', async (req, res) => {
   }
 });
 
-// ✅ 9.8 OBTENER DETALLES POR MOV_POSICION_LINEA (VERSIÓN MEJORADA)
+// âœ… 9.8 OBTENER DETALLES POR MOV_POSICION_LINEA (VERSIÃ“N MEJORADA)
 router.get('/stock/detalles', async (req, res) => {
   const { movPosicionLinea } = req.query;
   const codigoEmpresa = req.user.CodigoEmpresa;
@@ -953,7 +1425,7 @@ router.get('/stock/detalles', async (req, res) => {
   if (!codigoEmpresa || !movPosicionLinea) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Faltan parámetros requeridos.' 
+      mensaje: 'Faltan parÃ¡metros requeridos.' 
     });
   }
 
@@ -1037,14 +1509,14 @@ router.get('/stock/detalles', async (req, res) => {
   }
 });
 
-// ✅ 9.9 OBTENER FAMILIAS
+// âœ… 9.9 OBTENER FAMILIAS
 router.get('/familias', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
 
   if (!codigoEmpresa) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Código de empresa requerido.' 
+      mensaje: 'CÃ³digo de empresa requerido.' 
     });
   }
 
@@ -1073,14 +1545,14 @@ router.get('/familias', async (req, res) => {
   }
 });
 
-// ✅ 9.10 OBTENER SUBFAMILIAS
+// âœ… 9.10 OBTENER SUBFAMILIAS
 router.get('/subfamilias', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
 
   if (!codigoEmpresa) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Código de empresa requerido.' 
+      mensaje: 'CÃ³digo de empresa requerido.' 
     });
   }
 
@@ -1109,7 +1581,7 @@ router.get('/subfamilias', async (req, res) => {
   }
 });
 
-// ✅ 9.11 OBTENER ARTÍCULOS CON STOCK (CORREGIDO)
+// âœ… 9.11 OBTENER ARTÃCULOS CON STOCK (CORREGIDO)
 router.get('/stock/articulos-con-stock', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
   const page = parseInt(req.query.page) || 1;
@@ -1184,13 +1656,13 @@ router.get('/stock/articulos-con-stock', async (req, res) => {
     console.error('[ERROR ARTICULOS CON STOCK]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener artículos con stock',
+      mensaje: 'Error al obtener artÃ­culos con stock',
       error: err.message 
     });
   }
 });
 
-// ✅ 9.19 OBTENER UBICACIONES POR ALMACÉN (VERSIÓN CORREGIDA Y MEJORADA)
+// âœ… 9.19 OBTENER UBICACIONES POR ALMACÃ‰N (VERSIÃ“N CORREGIDA Y MEJORADA)
 router.get('/ubicaciones/:codigoAlmacen', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
   const { codigoAlmacen } = req.params;
@@ -1199,7 +1671,7 @@ router.get('/ubicaciones/:codigoAlmacen', async (req, res) => {
   if (!codigoEmpresa || !codigoAlmacen) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Código de empresa y almacén requeridos.' 
+      mensaje: 'CÃ³digo de empresa y almacÃ©n requeridos.' 
     });
   }
 
@@ -1225,14 +1697,14 @@ router.get('/ubicaciones/:codigoAlmacen', async (req, res) => {
         AND u.CodigoAlmacen = @codigoAlmacen
     `;
 
-    // Si se solicita incluir sin ubicación, agregar opción virtual
+    // Si se solicita incluir sin ubicaciÃ³n, agregar opciÃ³n virtual
     if (incluirSinUbicacion === 'true') {
       query = `
         ${query}
         UNION ALL
         SELECT 
           'SIN-UBICACION' AS Ubicacion,
-          'Stock sin ubicación asignada' AS DescripcionUbicacion,
+          'Stock sin ubicaciÃ³n asignada' AS DescripcionUbicacion,
           @codigoAlmacen AS CodigoAlmacen,
           alm.Almacen AS NombreAlmacen,
            (SELECT COUNT(DISTINCT s.CodigoArticulo)
@@ -1272,7 +1744,7 @@ router.get('/ubicaciones/:codigoAlmacen', async (req, res) => {
   }
 });
 
-// ✅ 9.20 OBTENER INFORMACIÓN DE ARTÍCULO (VERSIÓN CORREGIDA)
+// âœ… 9.20 OBTENER INFORMACIÃ“N DE ARTÃCULO (VERSIÃ“N CORREGIDA)
 router.get('/articulos/:codigoArticulo', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
   const { codigoArticulo } = req.params;
@@ -1294,17 +1766,17 @@ router.get('/articulos/:codigoArticulo', async (req, res) => {
       `);
       
     if (result.recordset.length === 0) {
-      return res.status(404).json({ error: 'Artículo no encontrado' });
+      return res.status(404).json({ error: 'ArtÃ­culo no encontrado' });
     }
     
     res.json(result.recordset[0]);
   } catch (err) {
     console.error('[ERROR ARTICULO]', err);
-    res.status(500).json({ error: 'Error al obtener artículo' });
+    res.status(500).json({ error: 'Error al obtener artÃ­culo' });
   }
 });
 
-// ✅ 9.21 BUSCAR UBICACIONES (NUEVO ENDPOINT)
+// âœ… 9.21 BUSCAR UBICACIONES (NUEVO ENDPOINT)
 router.get('/articulos/:codigoArticulo/variantes-contexto', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
   const { codigoArticulo } = req.params;
@@ -1478,7 +1950,7 @@ router.get('/buscar-ubicaciones', async (req, res) => {
   }
 });
 
-// ✅ 9.22 OBTENER STOCK POR ARTÍCULO
+// âœ… 9.22 OBTENER STOCK POR ARTÃCULO
 router.get('/stock/por-articulo', async (req, res) => {
   const { codigoArticulo, incluirSinUbicacion } = req.query;
   const codigoEmpresa = req.user.CodigoEmpresa;
@@ -1486,7 +1958,7 @@ router.get('/stock/por-articulo', async (req, res) => {
   if (!codigoEmpresa || !codigoArticulo) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Código de empresa y artículo requeridos.' 
+      mensaje: 'CÃ³digo de empresa y artÃ­culo requeridos.' 
     });
   }
 
@@ -1499,7 +1971,7 @@ router.get('/stock/por-articulo', async (req, res) => {
       contexto
     );
 
-    // Consulta principal para stock con ubicación - INCLUYENDO NEGATIVOS Y CERO
+    // Consulta principal para stock con ubicaciÃ³n - INCLUYENDO NEGATIVOS Y CERO
     let query = `
       ${getCteInventarioActual()}
       SELECT 
@@ -1507,7 +1979,7 @@ router.get('/stock/por-articulo', async (req, res) => {
         alm.Almacen AS NombreAlmacen,
         s.Ubicacion,
         u.DescripcionUbicacion,
-        -- 🔥 USAR UnidadSaldoTipo_ CUANDO HAY VARIANTES (color o talla)
+        -- ðŸ”¥ USAR UnidadSaldoTipo_ CUANDO HAY VARIANTES (color o talla)
         CASE 
           WHEN (s.CodigoColor_ IS NOT NULL AND s.CodigoColor_ != '') 
             OR (s.CodigoTalla01_ IS NOT NULL AND s.CodigoTalla01_ != '') 
@@ -1547,20 +2019,20 @@ router.get('/stock/por-articulo', async (req, res) => {
         AND c.CodigoColor_ = s.CodigoColor_
       WHERE s.CodigoEmpresa = @codigoEmpresa
         AND s.CodigoArticulo = @codigoArticulo
-        -- 🔥 CORRECCIÓN: QUITAR FILTRO QUE EXCLUYE NEGATIVOS Y CERO
+        -- ðŸ”¥ CORRECCIÃ“N: QUITAR FILTRO QUE EXCLUYE NEGATIVOS Y CERO
     `;
 
-    // Si se solicita incluir stock sin ubicación
+    // Si se solicita incluir stock sin ubicaciÃ³n
     if (incluirSinUbicacion === 'true') {
       query = `
         ${query}
         UNION ALL
-        -- Stock sin ubicación por almacén (sin variantes) - INCLUYENDO NEGATIVOS Y CERO
+        -- Stock sin ubicaciÃ³n por almacÃ©n (sin variantes) - INCLUYENDO NEGATIVOS Y CERO
         SELECT 
           s.CodigoAlmacen,
           alm.Almacen AS NombreAlmacen,
           'SIN-UBICACION' AS Ubicacion,
-          'Stock sin ubicación asignada' AS DescripcionUbicacion,
+          'Stock sin ubicaciÃ³n asignada' AS DescripcionUbicacion,
           (s.StockTotal - ISNULL(u.StockUbicado, 0)) AS Cantidad,
           'unidades' AS UnidadMedida,
           'unidades' AS TipoUnidadMedida_,
@@ -1596,7 +2068,7 @@ router.get('/stock/por-articulo', async (req, res) => {
             AND CodigoArticulo = @codigoArticulo
           GROUP BY CodigoAlmacen, CodigoArticulo
         ) u ON u.CodigoAlmacen = s.CodigoAlmacen AND u.CodigoArticulo = s.CodigoArticulo
-        -- 🔥 CORRECCIÓN: INCLUIR CERO Y NEGATIVOS EN STOCK SIN UBICACIÓN
+        -- ðŸ”¥ CORRECCIÃ“N: INCLUIR CERO Y NEGATIVOS EN STOCK SIN UBICACIÃ“N
         WHERE (s.StockTotal - ISNULL(u.StockUbicado, 0)) != 0
       `;
     }
@@ -1605,26 +2077,26 @@ router.get('/stock/por-articulo', async (req, res) => {
 
     const result = await request.query(query);
       
-    console.log(`[DEBUG STOCK POR ARTICULO] Artículo: ${codigoArticulo}, Registros: ${result.recordset.length} (incluyendo negativos y cero)`);
+    console.log(`[DEBUG STOCK POR ARTICULO] ArtÃ­culo: ${codigoArticulo}, Registros: ${result.recordset.length} (incluyendo negativos y cero)`);
     
     // Log para debugging de variantes (incluyendo negativos y cero)
     const registrosNegativos = result.recordset.filter(item => item.Cantidad < 0);
     const registrosCero = result.recordset.filter(item => item.Cantidad === 0);
     
-    console.log(`🔍 Artículo ${codigoArticulo}: ${registrosNegativos.length} negativos, ${registrosCero.length} cero`);
+    console.log(`ðŸ” ArtÃ­culo ${codigoArticulo}: ${registrosNegativos.length} negativos, ${registrosCero.length} cero`);
     
     if (registrosNegativos.length > 0) {
-      console.log('🔍 DEBUG Artículo con negativos encontrados:');
+      console.log('ðŸ” DEBUG ArtÃ­culo con negativos encontrados:');
       registrosNegativos.forEach((item, index) => {
-        console.log(`   ⚠️ NEGATIVO - ${index + 1}. Almacén: ${item.CodigoAlmacen}, Ubicación: ${item.Ubicacion}, ` +
+        console.log(`   âš ï¸ NEGATIVO - ${index + 1}. AlmacÃ©n: ${item.CodigoAlmacen}, UbicaciÃ³n: ${item.Ubicacion}, ` +
                    `Talla: ${item.Talla}, Cantidad: ${item.Cantidad}`);
       });
     }
     
     if (registrosCero.length > 0) {
-      console.log('🔍 DEBUG Artículo con ceros encontrados:');
+      console.log('ðŸ” DEBUG ArtÃ­culo con ceros encontrados:');
       registrosCero.forEach((item, index) => {
-        console.log(`   0️⃣ CERO - ${index + 1}. Almacén: ${item.CodigoAlmacen}, Ubicación: ${item.Ubicacion}, ` +
+        console.log(`   0ï¸âƒ£ CERO - ${index + 1}. AlmacÃ©n: ${item.CodigoAlmacen}, UbicaciÃ³n: ${item.Ubicacion}, ` +
                    `Talla: ${item.Talla}, Cantidad: ${item.Cantidad}`);
       });
     }
@@ -1634,13 +2106,13 @@ router.get('/stock/por-articulo', async (req, res) => {
     console.error('[ERROR STOCK POR ARTICULO]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener stock por artículo.',
+      mensaje: 'Error al obtener stock por artÃ­culo.',
       error: err.message 
     });
   }
 });
 
-// ✅ 9.12 OBTENER STOCK POR VARIANTE (CORREGIDO)
+// âœ… 9.12 OBTENER STOCK POR VARIANTE (CORREGIDO)
 router.get('/stock/por-variante', async (req, res) => {
   const { codigoArticulo, codigoColor, codigoTalla } = req.query;
   const codigoEmpresa = req.user.CodigoEmpresa;
@@ -1648,11 +2120,11 @@ router.get('/stock/por-variante', async (req, res) => {
   if (!codigoEmpresa || !codigoArticulo) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Código de empresa y artículo requeridos.' 
+      mensaje: 'CÃ³digo de empresa y artÃ­culo requeridos.' 
     });
   }
 
-  console.log('[STOCK POR VARIANTE DEBUG] Parámetros recibidos:', {
+  console.log('[STOCK POR VARIANTE DEBUG] ParÃ¡metros recibidos:', {
     codigoEmpresa,
     codigoArticulo,
     codigoColor,
@@ -1694,8 +2166,8 @@ router.get('/stock/por-variante', async (req, res) => {
         AND s.UnidadSaldo > 0
     `;
 
-    // 🔥 CORRECCIÓN CRÍTICA: FILTRO DINÁMICO POR COLOR Y TALLA
-    // Si se proporciona códigoColor, filtrar por ese color específico
+    // ðŸ”¥ CORRECCIÃ“N CRÃTICA: FILTRO DINÃMICO POR COLOR Y TALLA
+    // Si se proporciona cÃ³digoColor, filtrar por ese color especÃ­fico
     if (codigoColor !== undefined && codigoColor !== null && codigoColor !== '' && codigoColor !== 'null') {
       query += ` AND (
         s.CodigoColor_ = @codigoColor OR 
@@ -1708,8 +2180,8 @@ router.get('/stock/por-variante', async (req, res) => {
       query += ` AND (s.CodigoColor_ IS NULL OR s.CodigoColor_ = '')`;
     }
 
-    // 🔥 CORRECCIÓN CRÍTICA: FILTRO DINÁMICO POR TALLA
-    // Si se proporciona códigoTalla, filtrar por esa talla específica
+    // ðŸ”¥ CORRECCIÃ“N CRÃTICA: FILTRO DINÃMICO POR TALLA
+    // Si se proporciona cÃ³digoTalla, filtrar por esa talla especÃ­fica
     if (codigoTalla !== undefined && codigoTalla !== null && codigoTalla !== '' && codigoTalla !== 'null') {
       query += ` AND (
         s.CodigoTalla01_ = @codigoTalla OR 
@@ -1738,7 +2210,7 @@ router.get('/stock/por-variante', async (req, res) => {
       Talla: ${codigoTalla || 'Sin talla'},
       Ubicaciones encontradas: ${result.recordset.length}`);
     
-    // 🔥 DEBUG DETALLADO: Mostrar las primeras ubicaciones encontradas
+    // ðŸ”¥ DEBUG DETALLADO: Mostrar las primeras ubicaciones encontradas
     if (result.recordset.length > 0) {
       console.log('[STOCK POR VARIANTE DEBUG] Primeras ubicaciones encontradas:');
       result.recordset.slice(0, 3).forEach((ubic, idx) => {
@@ -1748,9 +2220,9 @@ router.get('/stock/por-variante', async (req, res) => {
           Stock: ${ubic.Cantidad}`);
       });
     } else {
-      console.log('[STOCK POR VARIANTE DEBUG] No se encontraron ubicaciones para esta combinación');
+      console.log('[STOCK POR VARIANTE DEBUG] No se encontraron ubicaciones para esta combinaciÃ³n');
       
-      // 🔥 OPCIÓN ALTERNATIVA: Buscar sin filtros de color/talla si no hay resultados
+      // ðŸ”¥ OPCIÃ“N ALTERNATIVA: Buscar sin filtros de color/talla si no hay resultados
       const requestAlternativo = agregarContextoInventario(
         getPool().request()
           .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -1786,7 +2258,7 @@ router.get('/stock/por-variante', async (req, res) => {
       `;
       
       const resultAlternativo = await requestAlternativo.query(queryAlternativa);
-      console.log(`[STOCK POR VARIANTE DEBUG] Búsqueda alternativa (sin filtros): ${resultAlternativo.recordset.length} resultados`);
+      console.log(`[STOCK POR VARIANTE DEBUG] BÃºsqueda alternativa (sin filtros): ${resultAlternativo.recordset.length} resultados`);
       
       if (resultAlternativo.recordset.length > 0) {
         // Filtrar en memoria las que coincidan en color y talla
@@ -1825,152 +2297,8 @@ router.get('/stock/por-variante', async (req, res) => {
   }
 });
 
-// ✅ 9.14 OBTENER STOCK TOTAL COMPLETO
-router.get('/inventario/stock-total-completo', async (req, res) => {
-  if (!req.user || !req.user.CodigoEmpresa) {
-    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
-  }
-
-  const codigoEmpresa = req.user.CodigoEmpresa;
-
-  try {
-    const contexto = await obtenerContextoBaseInventario(codigoEmpresa);
-    console.log(
-      `[INVENTARIO] Obteniendo stock completo para empresa ${codigoEmpresa}. Base: ${contexto.ejercicioBase}/${contexto.periodoBase}, overlay actual: ${contexto.ejercicioActual}`
-    );
-
-    const query = `
-      ${getCteInventarioActual()}
-      SELECT 
-        -- Información básica del artículo
-        COALESCE(a.CodigoArticulo, s.CodigoArticulo) AS CodigoArticulo,
-        s.CodigoArticulo AS CodigoArticuloStock,
-        COALESCE(a.DescripcionArticulo, s.CodigoArticulo) AS DescripcionArticulo,
-        COALESCE(a.Descripcion2Articulo, '') AS Descripcion2Articulo,
-        
-        -- Información de almacén y ubicación
-        s.CodigoAlmacen,
-        alm.Almacen AS NombreAlmacen,
-        s.Ubicacion,
-        u.DescripcionUbicacion,
-        
-        -- Información de stock y unidades
-        s.TipoUnidadMedida_ AS UnidadStock,
-        s.UnidadSaldoTipo_ AS CantidadBase,  -- 🔥 CORRECCIÓN: Usar UnidadSaldoTipo_ para cálculos
-        s.UnidadSaldoTipo_ AS Cantidad,           -- Cantidad en la unidad específica
-        s.Partida,
-        s.Periodo,
-        
-        -- Información de variantes
-        s.CodigoColor_,
-        s.CodigoTalla01_,
-        
-        -- Información de conversión de unidades
-        a.UnidadMedida2_ AS UnidadBase,
-        a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
-        COALESCE(a.FactorConversion_, 1) AS FactorConversion,
-        
-        -- Categorización
-        a.CodigoFamilia,
-        a.CodigoSubfamilia,
-        
-        -- Identificadores únicos
-        s.Ejercicio,
-        
-        -- Campos para lógica de la aplicación
-        CASE 
-          WHEN s.Ubicacion = 'SIN-UBICACION' OR s.Ubicacion IS NULL THEN 1
-          ELSE 0
-        END AS EsSinUbicacion,
-        
-        -- Generar clave única para agrupación
-        CONCAT(
-          s.CodigoArticulo, '_', 
-          s.CodigoAlmacen, '_', 
-          s.Ubicacion, '_', 
-          s.TipoUnidadMedida_, '_',
-          ISNULL(s.Partida, ''), '_',
-          ISNULL(s.CodigoColor_, ''), '_',
-          ISNULL(s.CodigoTalla01_, '')
-        ) AS ClaveUnica,
-
-        -- Campo para detalles (puede ser NULL)
-        NULL AS MovPosicionLinea
-
-      FROM StockUbicacionActual s
-      
-      -- Joins para información adicional
-      ${getArticuloApply('s')}
-      
-      LEFT JOIN Almacenes alm 
-        ON alm.CodigoEmpresa = s.CodigoEmpresa 
-        AND alm.CodigoAlmacen = s.CodigoAlmacen
-      
-      LEFT JOIN Ubicaciones u 
-        ON u.CodigoEmpresa = s.CodigoEmpresa 
-        AND u.CodigoAlmacen = s.CodigoAlmacen 
-        AND u.Ubicacion = s.Ubicacion
-      
-      WHERE s.CodigoEmpresa = @codigoEmpresa
-        AND (
-          s.UnidadSaldoTipo_ != 0  -- Incluir solo registros con cantidad
-          OR s.UnidadSaldo != 0    -- O con cantidad en unidad específica
-        )
-      
-      ORDER BY 
-        s.CodigoArticulo,
-        s.CodigoAlmacen,
-        s.Ubicacion,
-        s.TipoUnidadMedida_
-    `;
-
-    const result = await agregarContextoInventario(
-      getPool().request()
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa),
-      contexto
-    ).query(query);
-
-    console.log(`[INVENTARIO] Stock completo obtenido: ${result.recordset.length} registros`);
-
-    result.recordset.forEach((row) => {
-      const unidadStock = String(row.UnidadStock || '').trim();
-      const unidadAlternativa = String(row.UnidadAlternativa || '').trim();
-      const cantidad = Number(row.Cantidad || 0);
-      const factorConversion = Number(row.FactorConversion || 1);
-
-      if (unidadStock && unidadAlternativa && unidadStock === unidadAlternativa && factorConversion > 0) {
-        row.CantidadBase = cantidad * factorConversion;
-      } else {
-        row.CantidadBase = Number(row.CantidadBase || cantidad || 0);
-      }
-    });
-
-    // Log de sample para debugging
-    if (result.recordset.length > 0) {
-      const sample = result.recordset.slice(0, 3);
-      console.log('[INVENTARIO] Sample de registros:', sample.map(r => ({
-        articulo: r.CodigoArticulo,
-        almacen: r.CodigoAlmacen,
-        ubicacion: r.Ubicacion,
-        unidad: r.UnidadStock,
-        cantidadBase: r.CantidadBase,
-        cantidad: r.Cantidad
-      })));
-    }
-
-    res.json(result.recordset);
-
-  } catch (error) {
-    console.error('[ERROR STOCK TOTAL COMPLETO]', error);
-    res.status(500).json({ 
-      success: false, 
-      mensaje: 'Error al obtener el stock total completo',
-      error: error.message 
-    });
-  }
-});
-
-// ✅ 9.15 AJUSTAR INVENTARIO (VERSIÓN MEJORADA - INSERCIÓN EN AMBAS TABLAS)
+// âœ… 9.14 OBTENER STOCK TOTAL COMPLETO
+// âœ… 9.15 AJUSTAR INVENTARIO (VERSIÃ“N MEJORADA - INSERCIÃ“N EN AMBAS TABLAS)
 router.post('/inventario/ajustar-completo', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1979,11 +2307,12 @@ router.post('/inventario/ajustar-completo', async (req, res) => {
   const { ajustes } = req.body;
   const codigoEmpresa = req.user.CodigoEmpresa;
   const ejercicio = new Date().getFullYear();
+  const usuarioInventario = req.user.UsuarioLogicNet || req.user.CodigoCliente || req.user.CodigoUsuario || 'desconocido';
 
   if (!ajustes || !Array.isArray(ajustes) || ajustes.length === 0) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Lista de ajustes vacía o inválida.' 
+      mensaje: 'Lista de ajustes vacÃ­a o invÃ¡lida.' 
     });
   }
 
@@ -1993,6 +2322,105 @@ router.post('/inventario/ajustar-completo', async (req, res) => {
     await transaction.begin();
 
     console.log(`[AJUSTE MANUAL] Iniciando ${ajustes.length} ajustes para empresa ${codigoEmpresa}`);
+
+    for (const ajuste of ajustes) {
+      const ajusteDestino = normalizarAjusteInventario(ajuste);
+      const ajusteOrigen = normalizarAjusteInventario(
+        ajuste.combinacionOriginal || {
+          articulo: ajuste.articulo,
+          codigoAlmacen: ajuste.codigoAlmacen,
+          ubicacionStr: ajuste.ubicacionStr,
+          partida: ajuste.partida,
+          unidadStock: ajuste.unidadStock,
+          codigoColor: ajuste.codigoColor,
+          codigoTalla01: ajuste.codigoTalla01
+        }
+      );
+
+      console.log(`[AJUSTE MANUAL] Procesando: ${ajusteDestino.articulo} | ${ajusteDestino.codigoAlmacen} | ${ajusteDestino.ubicacionStr} | ${ajusteDestino.nuevaCantidad}`);
+
+      const esEdicion = Boolean(ajuste.combinacionOriginal);
+      const mismaCombinacion = esMismaCombinacionInventario(ajusteOrigen, ajusteDestino);
+      const registroOrigen = await obtenerRegistroVigenteAcumuladoStockUbicacionExacto(codigoEmpresa, ajusteOrigen, transaction);
+      const registroDestino = await obtenerRegistroVigenteAcumuladoStockUbicacionExacto(codigoEmpresa, ajusteDestino, transaction);
+      const permiteRecrearDesdeCero = esEdicion && mismaCombinacion && !registroOrigen;
+
+      if (!esEdicion && registroDestino) {
+        throw crearErrorInventario(409, 'Ese artÃ­culo/variante ya existe. EdÃ­talo manualmente desde el listado.');
+      }
+
+      if (esEdicion && !registroOrigen && !permiteRecrearDesdeCero) {
+        throw crearErrorInventario(409, 'No se encontrÃ³ la combinaciÃ³n origen para editar el inventario.');
+      }
+
+      if (esEdicion && !mismaCombinacion) {
+        const cantidadDestinoActual = parseFloat(registroDestino?.UnidadSaldo ?? 0) || 0;
+        const cantidadFinalDestino = cantidadDestinoActual + ajusteDestino.nuevaCantidad;
+
+        await eliminarCombinacionVigenteAcumuladoStockUbicacion(codigoEmpresa, ajusteOrigen, transaction);
+        await actualizarAcumuladoStockUbicacion(
+          { ...ajusteDestino, nuevaCantidad: cantidadFinalDestino },
+          codigoEmpresa,
+          ejercicio,
+          transaction
+        );
+        await sincronizarAcumuladoStockDesdeUbicaciones(
+          { ...ajusteOrigen, nuevaCantidad: 0 },
+          codigoEmpresa,
+          ejercicio,
+          transaction
+        );
+        await sincronizarAcumuladoStockDesdeUbicaciones(
+          { ...ajusteDestino, nuevaCantidad: cantidadFinalDestino },
+          codigoEmpresa,
+          ejercicio,
+          transaction
+        );
+
+        await registrarMovimientoInventario(
+          {
+            codigoEmpresa,
+            ejercicio,
+            usuarioInventario,
+            ajuste: { ...ajusteDestino, nuevaCantidad: cantidadFinalDestino },
+            unidades: ajusteDestino.nuevaCantidad,
+            comentario: registroDestino
+              ? `Inventario: fusion de variante ${ajusteOrigen.codigoTalla01 || '-'}${ajusteOrigen.codigoColor || ''} -> ${ajusteDestino.codigoTalla01 || '-'}${ajusteDestino.codigoColor || ''}`
+              : `Inventario: cambio de variante ${ajusteOrigen.codigoTalla01 || '-'}${ajusteOrigen.codigoColor || ''} -> ${ajusteDestino.codigoTalla01 || '-'}${ajusteDestino.codigoColor || ''}`
+          },
+          transaction
+        );
+
+        continue;
+      }
+
+      await actualizarAcumuladoStockUbicacion(ajusteDestino, codigoEmpresa, ejercicio, transaction);
+      await sincronizarAcumuladoStockDesdeUbicaciones(ajusteDestino, codigoEmpresa, ejercicio, transaction);
+
+      const cantidadAnterior = parseFloat(registroOrigen?.UnidadSaldo ?? registroDestino?.UnidadSaldo ?? 0) || 0;
+      const diferencia = ajusteDestino.nuevaCantidad - cantidadAnterior;
+
+      await registrarMovimientoInventario(
+        {
+          codigoEmpresa,
+          ejercicio,
+          usuarioInventario,
+          ajuste: ajusteDestino,
+          unidades: diferencia,
+          comentario: esEdicion
+            ? `Inventario: edicion manual${mismaCombinacion ? '' : ' de variante'}`
+            : 'Inventario: nuevo ajuste manual'
+        },
+        transaction
+      );
+    }
+
+    await transaction.commit();
+
+    return res.json({
+      success: true,
+      mensaje: `Ajustes realizados correctamente. ${ajustes.length} ubicaciones actualizadas en ambas tablas.`
+    });
 
     // 1. PRIMERO: Identificar y procesar cada ajuste individualmente
     for (const ajuste of ajustes) {
@@ -2007,19 +2435,19 @@ router.post('/inventario/ajustar-completo', async (req, res) => {
         codigoTalla01 
       } = ajuste;
 
-      const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+      const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÃ“N' ? 'SIN-UBICACION' : ubicacionStr;
       const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
 
       console.log(`[AJUSTE MANUAL] Procesando: ${articulo} | ${codigoAlmacen} | ${ubicacionNormalizada} | ${nuevaCantidad}`);
 
-      // 🔥 NUEVA LÓGICA: Verificar si ya existe en AcumuladoStock
+      // ðŸ”¥ NUEVA LÃ“GICA: Verificar si ya existe en AcumuladoStock
       const existeEnAcumuladoStock = await verificarExistenciaEnAcumuladoStock(
         codigoEmpresa, ejercicio, articulo, codigoAlmacen, 
         unidadStockNormalizada, partida, codigoColor, codigoTalla01, 
         transaction
       );
 
-      console.log(`[AJUSTE MANUAL] ${articulo} | ¿Existe en AcumuladoStock?: ${existeEnAcumuladoStock}`);
+      console.log(`[AJUSTE MANUAL] ${articulo} | Â¿Existe en AcumuladoStock?: ${existeEnAcumuladoStock}`);
 
       // 2. ACTUALIZAR AcumuladoStockUbicacion (SIEMPRE se actualiza)
       await actualizarAcumuladoStockUbicacion(
@@ -2048,17 +2476,89 @@ router.post('/inventario/ajustar-completo', async (req, res) => {
     });
 
   } catch (error) {
-    await transaction.rollback();
+    try {
+      if (!transaction._aborted) {
+        await transaction.rollback();
+      }
+    } catch (rollbackError) {
+      console.error('[ERROR ROLLBACK AJUSTE INVENTARIO]', rollbackError);
+    }
     console.error('[ERROR AJUSTAR INVENTARIO]', error);
-    res.status(500).json({ 
+    res.status(error.statusCode || 500).json({ 
       success: false, 
-      mensaje: 'Error al realizar los ajustes',
+      mensaje: error.publicMessage || 'Error al realizar los ajustes',
       error: error.message 
     });
   }
 });
 
-// 🔥 NUEVA FUNCIÓN: Verificar si existe en AcumuladoStock
+// ðŸ”¥ NUEVA FUNCIÃ“N: Verificar si existe en AcumuladoStock
+async function obtenerEjercicioVigenteAcumuladoStockUbicacion(
+  codigoEmpresa, articulo, codigoAlmacen, ubicacion, unidadStock,
+  partida, codigoColor, codigoTalla01, transaction
+) {
+  const result = await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('ubicacion', sql.VarChar, ubicacion)
+    .input('tipoUnidad', sql.VarChar, unidadStock || '')
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .query(`
+      SELECT MIN(Ejercicio) AS EjercicioVigente
+      FROM AcumuladoStockUbicacion
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND CodigoAlmacen = @codigoAlmacen
+        AND CodigoArticulo = @codigoArticulo
+        AND Ubicacion = @ubicacion
+        AND (
+          (TipoUnidadMedida_ = @tipoUnidad)
+          OR
+          (ISNULL(TipoUnidadMedida_, '') = @tipoUnidad)
+        )
+        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+        AND Periodo = 99
+    `);
+
+  return parseInt(result.recordset[0]?.EjercicioVigente, 10) || null;
+}
+
+async function obtenerEjercicioVigenteAcumuladoStock(
+  codigoEmpresa, articulo, codigoAlmacen, unidadStock,
+  partida, codigoColor, codigoTalla01, transaction
+) {
+  const result = await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('tipoUnidad', sql.VarChar, unidadStock || '')
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .query(`
+      SELECT MIN(Ejercicio) AS EjercicioVigente
+      FROM AcumuladoStock
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND CodigoAlmacen = @codigoAlmacen
+        AND CodigoArticulo = @codigoArticulo
+        AND (
+          (TipoUnidadMedida_ = @tipoUnidad)
+          OR
+          (ISNULL(TipoUnidadMedida_, '') = @tipoUnidad)
+        )
+        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+        AND Periodo = 99
+    `);
+
+  return parseInt(result.recordset[0]?.EjercicioVigente, 10) || null;
+}
+
 async function verificarExistenciaEnAcumuladoStock(
   codigoEmpresa, ejercicio, articulo, codigoAlmacen, 
   unidadStock, partida, codigoColor, codigoTalla01, 
@@ -2067,7 +2567,6 @@ async function verificarExistenciaEnAcumuladoStock(
   try {
     const result = await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
       .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
       .input('codigoArticulo', sql.VarChar, articulo)
       .input('tipoUnidad', sql.VarChar, unidadStock)
@@ -2078,7 +2577,6 @@ async function verificarExistenciaEnAcumuladoStock(
         SELECT COUNT(*) as Existe
         FROM AcumuladoStock
         WHERE CodigoEmpresa = @codigoEmpresa
-          AND Ejercicio = @ejercicio
           AND CodigoAlmacen = @codigoAlmacen
           AND CodigoArticulo = @codigoArticulo
           AND (
@@ -2099,34 +2597,113 @@ async function verificarExistenciaEnAcumuladoStock(
   }
 }
 
-// 🔥 NUEVA FUNCIÓN: Insertar en AcumuladoStock (para nuevos registros)
+// ðŸ”¥ NUEVA FUNCIÃ“N: Insertar en AcumuladoStock (para nuevos registros)
 async function insertarAcumuladoStock(ajuste, codigoEmpresa, ejercicio, transaction) {
-  const { 
-    articulo, 
-    codigoAlmacen, 
-    ubicacionStr, 
-    partida, 
-    unidadStock, 
-    nuevaCantidad,
-    codigoColor, 
-    codigoTalla01 
+  await sincronizarAcumuladoStockDesdeUbicaciones(ajuste, codigoEmpresa, ejercicio, transaction);
+}
+
+// ðŸ”¥ FUNCIÃ“N MODIFICADA: Actualizar AcumuladoStock (para registros existentes)
+async function actualizarAcumuladoStock(ajuste, codigoEmpresa, ejercicio, transaction) {
+  await sincronizarAcumuladoStockDesdeUbicaciones(ajuste, codigoEmpresa, ejercicio, transaction);
+}
+
+async function sincronizarAcumuladoStockDesdeUbicaciones(ajuste, codigoEmpresa, ejercicio, transaction) {
+  const {
+    articulo,
+    codigoAlmacen,
+    ubicacionStr,
+    partida,
+    unidadStock,
+    codigoColor,
+    codigoTalla01
   } = ajuste;
 
-  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÃ“N' ? 'SIN-UBICACION' : ubicacionStr;
   const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
+  const ejercicioAcumulado = (
+    await obtenerEjercicioVigenteAcumuladoStock(
+      codigoEmpresa,
+      articulo,
+      codigoAlmacen,
+      unidadStockNormalizada,
+      partida,
+      codigoColor,
+      codigoTalla01,
+      transaction
+    )
+  ) || ejercicio;
 
-  await new sql.Request(transaction)
+  const resumenResult = await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-    .input('ejercicio', sql.Int, ejercicio)
     .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
     .input('codigoArticulo', sql.VarChar, articulo)
-    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada)
+    .input('tipoUnidad', sql.VarChar, unidadStockNormalizada)
     .input('partida', sql.VarChar, partida || '')
     .input('codigoColor', sql.VarChar, codigoColor || '')
     .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
-    .input('unidadSaldo', sql.Decimal(18, 4), parseFloat(nuevaCantidad))
-    .input('unidadSaldoTipo', sql.Decimal(18, 4), parseFloat(nuevaCantidad))
+    .query(`
+      SELECT
+        SUM(ISNULL(UnidadSaldo, 0)) AS TotalUnidadSaldo,
+        SUM(ISNULL(UnidadSaldoTipo_, 0)) AS TotalUnidadSaldoTipo,
+        MIN(NULLIF(Ubicacion, '')) AS UbicacionPrincipal,
+        COUNT(*) AS TotalFilas
+      FROM AcumuladoStockUbicacion
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND CodigoAlmacen = @codigoAlmacen
+        AND CodigoArticulo = @codigoArticulo
+        AND (
+          (TipoUnidadMedida_ = @tipoUnidad)
+          OR
+          (TipoUnidadMedida_ = '' AND @tipoUnidad = '')
+        )
+        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+        AND Periodo = 99
+    `);
+
+  const resumen = resumenResult.recordset[0] || {};
+  const totalFilas = Number(resumen.TotalFilas || 0);
+  const totalUnidadSaldo = Number(resumen.TotalUnidadSaldo || 0);
+  const totalUnidadSaldoTipo = Number(resumen.TotalUnidadSaldoTipo || 0);
+  const ubicacionPrincipal = resumen.UbicacionPrincipal || ubicacionNormalizada;
+
+  await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('tipoUnidad', sql.VarChar, unidadStockNormalizada || '')
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .query(`
+      DELETE FROM AcumuladoStock
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND CodigoAlmacen = @codigoAlmacen
+        AND CodigoArticulo = @codigoArticulo
+        AND (
+          (TipoUnidadMedida_ = @tipoUnidad)
+          OR
+          (TipoUnidadMedida_ = '' AND @tipoUnidad = '')
+        )
+        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+        AND Periodo = 99
+    `);
+
+  await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicio', sql.Int, ejercicioAcumulado)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('ubicacion', sql.VarChar, ubicacionPrincipal)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada || '')
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .input('unidadSaldo', sql.Decimal(18, 4), totalUnidadSaldo)
+    .input('unidadSaldoTipo', sql.Decimal(18, 4), totalUnidadSaldoTipo)
     .query(`
       INSERT INTO AcumuladoStock (
         CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
@@ -2139,61 +2716,10 @@ async function insertarAcumuladoStock(ajuste, codigoEmpresa, ejercicio, transact
       )
     `);
 
-  console.log(`[AJUSTE MANUAL] AcumuladoStock INSERTADO (nuevo): ${articulo} | ${ubicacionNormalizada} -> ${nuevaCantidad}`);
+  console.log(`[AJUSTE MANUAL] AcumuladoStock sincronizado desde ubicaciones: ${articulo} | ${codigoAlmacen} -> ${totalUnidadSaldoTipo}`);
 }
 
-// 🔥 FUNCIÓN MODIFICADA: Actualizar AcumuladoStock (para registros existentes)
-async function actualizarAcumuladoStock(ajuste, codigoEmpresa, ejercicio, transaction) {
-  const { 
-    articulo, 
-    codigoAlmacen, 
-    ubicacionStr, 
-    partida, 
-    unidadStock, 
-    nuevaCantidad,
-    codigoColor, 
-    codigoTalla01 
-  } = ajuste;
-
-  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
-  const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
-
-  await new sql.Request(transaction)
-    .input('nuevaCantidad', sql.Decimal(18, 4), parseFloat(nuevaCantidad))
-    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-    .input('ejercicio', sql.SmallInt, ejercicio)
-    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-    .input('codigoArticulo', sql.VarChar, articulo)
-    .input('tipoUnidad', sql.VarChar, unidadStockNormalizada)
-    .input('partida', sql.VarChar, partida || '')
-    .input('codigoColor', sql.VarChar, codigoColor || '')
-    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
-    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
-    .query(`
-      UPDATE AcumuladoStock
-      SET 
-        UnidadSaldoTipo_ = @nuevaCantidad,
-        UnidadSaldo = @nuevaCantidad,
-        Ubicacion = @ubicacion
-      WHERE CodigoEmpresa = @codigoEmpresa
-        AND Ejercicio = @ejercicio
-        AND CodigoAlmacen = @codigoAlmacen
-        AND CodigoArticulo = @codigoArticulo
-        AND (
-          (TipoUnidadMedida_ = @tipoUnidad)
-          OR 
-          (TipoUnidadMedida_ = '' AND @tipoUnidad = '')
-        )
-        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-        AND Periodo = 99
-    `);
-
-  console.log(`[AJUSTE MANUAL] AcumuladoStock ACTUALIZADO (existente): ${articulo} | ${ubicacionNormalizada} -> ${nuevaCantidad}`);
-}
-
-// 🔥 FUNCIÓN MODIFICADA: Actualizar AcumuladoStockUbicacion
+// ðŸ”¥ FUNCIÃ“N MODIFICADA: Actualizar AcumuladoStockUbicacion
 async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercicio, transaction) {
   const { 
     articulo, 
@@ -2206,24 +2732,35 @@ async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercici
     codigoTalla01 
   } = ajuste;
 
-  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÃ“N' ? 'SIN-UBICACION' : ubicacionStr;
   const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
+  const ejercicioUbicacion = (
+    await obtenerEjercicioVigenteAcumuladoStockUbicacion(
+      codigoEmpresa,
+      articulo,
+      codigoAlmacen,
+      ubicacionNormalizada,
+      unidadStockNormalizada,
+      partida,
+      codigoColor,
+      codigoTalla01,
+      transaction
+    )
+  ) || ejercicio;
 
-  // 1. ELIMINAR registro existente en AcumuladoStockUbicacion
+  // 1. ELIMINAR cualquier fila vigente duplicada para la combinaciÃ³n funcional exacta
   await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-    .input('ejercicio', sql.Int, ejercicio)
     .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
     .input('codigoArticulo', sql.VarChar, articulo)
     .input('ubicacion', sql.VarChar, ubicacionNormalizada)
-    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada)
+    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada || '')
     .input('partida', sql.VarChar, partida || '')
     .input('codigoColor', sql.VarChar, codigoColor || '')
     .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
     .query(`
       DELETE FROM AcumuladoStockUbicacion
       WHERE CodigoEmpresa = @codigoEmpresa
-        AND Ejercicio = @ejercicio
         AND CodigoAlmacen = @codigoAlmacen
         AND CodigoArticulo = @codigoArticulo
         AND Ubicacion = @ubicacion
@@ -2234,37 +2771,34 @@ async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercici
         AND Periodo = 99
     `);
 
-  // 2. INSERTAR nuevo registro solo si la cantidad no es cero
-  if (parseFloat(nuevaCantidad) !== 0) {
-    await new sql.Request(transaction)
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.Int, ejercicio)
-      .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-      .input('ubicacion', sql.VarChar, ubicacionNormalizada)
-      .input('codigoArticulo', sql.VarChar, articulo)
-      .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada)
-      .input('partida', sql.VarChar, partida || '')
-      .input('codigoColor', sql.VarChar, codigoColor || '')
-      .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
-      .input('unidadSaldo', sql.Decimal(18, 4), parseFloat(nuevaCantidad))
-      .input('unidadSaldoTipo', sql.Decimal(18, 4), parseFloat(nuevaCantidad))
-      .query(`
-        INSERT INTO AcumuladoStockUbicacion (
-          CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
-          CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
-          UnidadSaldo, UnidadSaldoTipo_, Periodo
-        ) VALUES (
-          @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
-          @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
-          @unidadSaldo, @unidadSaldoTipo, 99
-        )
-      `);
-  }
+  await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicio', sql.Int, ejercicioUbicacion)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada || '')
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .input('unidadSaldo', sql.Decimal(18, 4), parseFloat(nuevaCantidad) || 0)
+    .input('unidadSaldoTipo', sql.Decimal(18, 4), parseFloat(nuevaCantidad) || 0)
+    .query(`
+      INSERT INTO AcumuladoStockUbicacion (
+        CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
+        CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
+        UnidadSaldo, UnidadSaldoTipo_, Periodo
+      ) VALUES (
+        @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
+        @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
+        @unidadSaldo, @unidadSaldoTipo, 99
+      )
+    `);
 
   console.log(`[AJUSTE MANUAL] AcumuladoStockUbicacion actualizado: ${articulo} | ${ubicacionNormalizada} -> ${nuevaCantidad}`);
 }
 
-// 🔥 NUEVA FUNCIÓN: Verificar si es ubicación principal en AcumuladoStock
+// ðŸ”¥ NUEVA FUNCIÃ“N: Verificar si es ubicaciÃ³n principal en AcumuladoStock
 async function esUbicacionPrincipalEnAcumuladoStock(
   codigoEmpresa, ejercicio, articulo, codigoAlmacen, 
   unidadStock, partida, codigoColor, codigoTalla01, 
@@ -2302,12 +2836,12 @@ async function esUbicacionPrincipalEnAcumuladoStock(
 
     return result.recordset[0].EsPrincipal > 0;
   } catch (error) {
-    console.error('[ERROR VERIFICANDO UBICACIÓN PRINCIPAL]', error);
+    console.error('[ERROR VERIFICANDO UBICACIÃ“N PRINCIPAL]', error);
     return false;
   }
 }
 
-// 🔥 NUEVA FUNCIÓN: Actualizar solo AcumuladoStockUbicacion
+// ðŸ”¥ NUEVA FUNCIÃ“N: Actualizar solo AcumuladoStockUbicacion
 async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercicio, transaction) {
   const { 
     articulo, 
@@ -2320,24 +2854,35 @@ async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercici
     codigoTalla01 
   } = ajuste;
 
-  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÃ“N' ? 'SIN-UBICACION' : ubicacionStr;
   const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
+  const ejercicioUbicacion = (
+    await obtenerEjercicioVigenteAcumuladoStockUbicacion(
+      codigoEmpresa,
+      articulo,
+      codigoAlmacen,
+      ubicacionNormalizada,
+      unidadStockNormalizada,
+      partida,
+      codigoColor,
+      codigoTalla01,
+      transaction
+    )
+  ) || ejercicio;
 
-  // 1. ELIMINAR registro existente en AcumuladoStockUbicacion
+  // 1. ELIMINAR cualquier fila vigente duplicada para la combinaciÃ³n funcional exacta
   await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-    .input('ejercicio', sql.Int, ejercicio)
     .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
     .input('codigoArticulo', sql.VarChar, articulo)
     .input('ubicacion', sql.VarChar, ubicacionNormalizada)
-    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada)
+    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada || '')
     .input('partida', sql.VarChar, partida || '')
     .input('codigoColor', sql.VarChar, codigoColor || '')
     .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
     .query(`
       DELETE FROM AcumuladoStockUbicacion
       WHERE CodigoEmpresa = @codigoEmpresa
-        AND Ejercicio = @ejercicio
         AND CodigoAlmacen = @codigoAlmacen
         AND CodigoArticulo = @codigoArticulo
         AND Ubicacion = @ubicacion
@@ -2348,37 +2893,34 @@ async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercici
         AND Periodo = 99
     `);
 
-  // 2. INSERTAR nuevo registro solo si la cantidad no es cero
-  if (parseFloat(nuevaCantidad) !== 0) {
-    await new sql.Request(transaction)
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.Int, ejercicio)
-      .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-      .input('ubicacion', sql.VarChar, ubicacionNormalizada)
-      .input('codigoArticulo', sql.VarChar, articulo)
-      .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada)
-      .input('partida', sql.VarChar, partida || '')
-      .input('codigoColor', sql.VarChar, codigoColor || '')
-      .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
-      .input('unidadSaldo', sql.Decimal(18, 4), parseFloat(nuevaCantidad))
-      .input('unidadSaldoTipo', sql.Decimal(18, 4), parseFloat(nuevaCantidad))
-      .query(`
-        INSERT INTO AcumuladoStockUbicacion (
-          CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
-          CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
-          UnidadSaldo, UnidadSaldoTipo_, Periodo
-        ) VALUES (
-          @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
-          @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
-          @unidadSaldo, @unidadSaldoTipo, 99
-        )
-      `);
-  }
+  await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicio', sql.Int, ejercicioUbicacion)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada || '')
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .input('unidadSaldo', sql.Decimal(18, 4), parseFloat(nuevaCantidad) || 0)
+    .input('unidadSaldoTipo', sql.Decimal(18, 4), parseFloat(nuevaCantidad) || 0)
+    .query(`
+      INSERT INTO AcumuladoStockUbicacion (
+        CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
+        CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
+        UnidadSaldo, UnidadSaldoTipo_, Periodo
+      ) VALUES (
+        @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
+        @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
+        @unidadSaldo, @unidadSaldoTipo, 99
+      )
+    `);
 
   console.log(`[AJUSTE MANUAL] AcumuladoStockUbicacion actualizado: ${articulo} | ${ubicacionNormalizada} -> ${nuevaCantidad}`);
 }
 
-// 🔥 NUEVA FUNCIÓN: Actualizar AcumuladoStock (solo para ubicación principal)
+// ðŸ”¥ NUEVA FUNCIÃ“N: Actualizar AcumuladoStock (solo para ubicaciÃ³n principal)
 async function actualizarAcumuladoStockPrincipal(ajuste, codigoEmpresa, ejercicio, transaction) {
   const { 
     articulo, 
@@ -2391,7 +2933,7 @@ async function actualizarAcumuladoStockPrincipal(ajuste, codigoEmpresa, ejercici
     codigoTalla01 
   } = ajuste;
 
-  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÃ“N' ? 'SIN-UBICACION' : ubicacionStr;
   const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
 
   await new sql.Request(transaction)
@@ -2429,7 +2971,70 @@ async function actualizarAcumuladoStockPrincipal(ajuste, codigoEmpresa, ejercici
   console.log(`[AJUSTE MANUAL] AcumuladoStock actualizado (principal): ${articulo} | ${ubicacionNormalizada} -> ${nuevaCantidad}`);
 }
 
-// ✅ 10.6 OBTENER UBICACIONES POR ALMACÉN (CORRECCIÓN)
+// âœ… 10.6 OBTENER UBICACIONES POR ALMACÃ‰N (CORRECCIÃ“N)
+router.get('/inventario/ubicaciones-ajuste', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
+  const {
+    codigoAlmacen,
+    search = '',
+    offset = '0',
+    limit = '50'
+  } = req.query;
+
+  if (!codigoEmpresa || !codigoAlmacen) {
+    return res.status(400).json({
+      success: false,
+      mensaje: 'CÃƒÂ³digo de empresa y almacÃƒÂ©n requeridos.'
+    });
+  }
+
+  const searchValue = typeof search === 'string' ? search.trim() : '';
+  const offsetValue = Math.max(parseInt(offset, 10) || 0, 0);
+  const limitValue = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
+
+  try {
+    const result = await getPool().request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+      .input('search', sql.VarChar, searchValue ? `%${searchValue}%` : null)
+      .input('offset', sql.Int, offsetValue)
+      .input('fetchLimit', sql.Int, limitValue + 1)
+      .query(`
+        SELECT
+          u.Ubicacion,
+          COALESCE(u.DescripcionUbicacion, '') AS DescripcionUbicacion
+        FROM Ubicaciones u
+        WHERE u.CodigoEmpresa = @codigoEmpresa
+          AND u.CodigoAlmacen = @codigoAlmacen
+          AND (
+            @search IS NULL
+            OR u.Ubicacion LIKE @search
+            OR COALESCE(u.DescripcionUbicacion, '') LIKE @search
+          )
+        ORDER BY u.Ubicacion
+        OFFSET @offset ROWS
+        FETCH NEXT @fetchLimit ROWS ONLY
+      `);
+
+    const rows = Array.isArray(result.recordset) ? result.recordset : [];
+    const hasMore = rows.length > limitValue;
+    const items = hasMore ? rows.slice(0, limitValue) : rows;
+
+    res.json({
+      items,
+      hasMore,
+      nextOffset: hasMore ? offsetValue + items.length : null
+    });
+  } catch (err) {
+    console.error('[ERROR UBICACIONES AJUSTE INVENTARIO]', err);
+    res.status(500).json({
+      success: false,
+      mensaje: 'Error al obtener ubicaciones para nuevo ajuste.',
+      error: err.message
+    });
+  }
+});
+
 router.get('/ubicaciones-por-almacen/:codigoAlmacen', async (req, res) => {
   const { codigoAlmacen } = req.params;
   const codigoEmpresa = req.user.CodigoEmpresa;
@@ -2465,17 +3070,17 @@ router.get('/ubicaciones-por-almacen/:codigoAlmacen', async (req, res) => {
     console.error('[ERROR UBICACIONES POR ALMACEN]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener ubicaciones por almacén.',
+      mensaje: 'Error al obtener ubicaciones por almacÃ©n.',
       error: err.message 
     });
   }
 });
 
 // ============================================
-// ✅ PEDIDOS DE COMPRA Y RECEPCIÓN (PAGINADO)
+// âœ… PEDIDOS DE COMPRA Y RECEPCIÃ“N (PAGINADO)
 // ============================================
 
-// ✅ FUNCIÓN AUXILIAR PARA MANEJO SEGURO DE STRINGS (SIN .substring problemático)
+// âœ… FUNCIÃ“N AUXILIAR PARA MANEJO SEGURO DE STRINGS (SIN .substring problemÃ¡tico)
 const safeString = (value, maxLength = 10, defaultValue = '') => {
   try {
     // Si es null o undefined, devolver valor por defecto
@@ -2499,7 +3104,7 @@ const safeString = (value, maxLength = 10, defaultValue = '') => {
     // Trim
     str = str.trim();
     
-    // Si queda vacío o es 'null'/'undefined', devolver valor por defecto
+    // Si queda vacÃ­o o es 'null'/'undefined', devolver valor por defecto
     if (str === '' || str === 'null' || str === 'undefined') {
       return defaultValue;
     }
@@ -2507,7 +3112,7 @@ const safeString = (value, maxLength = 10, defaultValue = '') => {
     // Limpiar comas
     str = str.replace(/[,]/g, '').trim();
     
-    // Truncar si excede la longitud máxima (sin usar .substring si no es string)
+    // Truncar si excede la longitud mÃ¡xima (sin usar .substring si no es string)
     if (maxLength > 0 && str.length > maxLength) {
       // Usar slice en lugar de substring para mayor compatibilidad
       return str.slice(0, maxLength);
@@ -2520,5 +3125,160 @@ const safeString = (value, maxLength = 10, defaultValue = '') => {
   }
 };
 
+function normalizarAjusteInventario(ajuste = {}) {
+  return {
+    articulo: ajuste.articulo,
+    descripcionArticulo: ajuste.descripcionArticulo || '',
+    codigoAlmacen: ajuste.codigoAlmacen,
+    ubicacionStr: ajuste.ubicacionStr === 'SIN UBICACIÃ“N' ? 'SIN-UBICACION' : (ajuste.ubicacionStr || 'SIN-UBICACION'),
+    partida: ajuste.partida || '',
+    unidadStock: (!ajuste.unidadStock || ajuste.unidadStock === 'unidades') ? '' : ajuste.unidadStock,
+    nuevaCantidad: parseFloat(ajuste.nuevaCantidad) || 0,
+    codigoColor: ajuste.codigoColor || '',
+    codigoTalla01: ajuste.codigoTalla01 || ''
+  };
+}
+
+function esMismaCombinacionInventario(origen, destino) {
+  return (
+    origen.articulo === destino.articulo &&
+    origen.codigoAlmacen === destino.codigoAlmacen &&
+    origen.ubicacionStr === destino.ubicacionStr &&
+    (origen.partida || '') === (destino.partida || '') &&
+    (origen.unidadStock || '') === (destino.unidadStock || '') &&
+    (origen.codigoColor || '') === (destino.codigoColor || '') &&
+    (origen.codigoTalla01 || '') === (destino.codigoTalla01 || '')
+  );
+}
+
+function crearErrorInventario(statusCode, publicMessage) {
+  const error = new Error(publicMessage);
+  error.statusCode = statusCode;
+  error.publicMessage = publicMessage;
+  return error;
+}
+
+async function obtenerRegistroVigenteAcumuladoStockUbicacionExacto(codigoEmpresa, ajuste, transaction) {
+  const result = await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('codigoArticulo', sql.VarChar, ajuste.articulo)
+    .input('codigoAlmacen', sql.VarChar, ajuste.codigoAlmacen)
+    .input('ubicacion', sql.VarChar, ajuste.ubicacionStr)
+    .input('tipoUnidad', sql.VarChar, ajuste.unidadStock || '')
+    .input('partida', sql.VarChar, ajuste.partida || '')
+    .input('codigoColor', sql.VarChar, ajuste.codigoColor || '')
+    .input('codigoTalla', sql.VarChar, ajuste.codigoTalla01 || '')
+    .query(`
+      SELECT TOP 1
+        Ejercicio,
+        Periodo,
+        UnidadSaldo,
+        UnidadSaldoTipo_,
+        CodigoArticulo,
+        CodigoAlmacen,
+        Ubicacion,
+        TipoUnidadMedida_,
+        Partida,
+        CodigoColor_,
+        CodigoTalla01_
+      FROM AcumuladoStockUbicacion
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND CodigoArticulo = @codigoArticulo
+        AND CodigoAlmacen = @codigoAlmacen
+        AND Ubicacion = @ubicacion
+        AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+        AND ISNULL(Partida, '') = @partida
+        AND ISNULL(CodigoColor_, '') = @codigoColor
+        AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+        AND Periodo = 99
+      ORDER BY Ejercicio DESC
+    `);
+
+  return result.recordset[0] || null;
+}
+
+async function eliminarCombinacionVigenteAcumuladoStockUbicacion(codigoEmpresa, ajuste, transaction) {
+  await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('codigoArticulo', sql.VarChar, ajuste.articulo)
+    .input('codigoAlmacen', sql.VarChar, ajuste.codigoAlmacen)
+    .input('ubicacion', sql.VarChar, ajuste.ubicacionStr)
+    .input('tipoUnidad', sql.VarChar, ajuste.unidadStock || '')
+    .input('partida', sql.VarChar, ajuste.partida || '')
+    .input('codigoColor', sql.VarChar, ajuste.codigoColor || '')
+    .input('codigoTalla', sql.VarChar, ajuste.codigoTalla01 || '')
+    .query(`
+      DELETE FROM AcumuladoStockUbicacion
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND CodigoArticulo = @codigoArticulo
+        AND CodigoAlmacen = @codigoAlmacen
+        AND Ubicacion = @ubicacion
+        AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+        AND ISNULL(Partida, '') = @partida
+        AND ISNULL(CodigoColor_, '') = @codigoColor
+        AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+        AND Periodo = 99
+    `);
+}
+
+async function registrarMovimientoInventario(payload, transaction) {
+  const ahora = new Date();
+  const periodo = ahora.getMonth() + 1;
+  const comentario = safeString(`${payload.comentario} por ${payload.usuarioInventario}`, 40);
+  const codigoUsuario = safeString(payload.usuarioInventario, 20, '');
+  const codigoArticulo = safeString(payload.ajuste.articulo, 20);
+  const codigoAlmacen = safeString(payload.ajuste.codigoAlmacen, 4);
+  const ubicacion = safeString(payload.ajuste.ubicacionStr, 15);
+  const unidadMedida = safeString(payload.ajuste.unidadStock || '', 10);
+  const partida = safeString(payload.ajuste.partida || '', 15);
+  const codigoColor = safeString(payload.ajuste.codigoColor || '', 10);
+  const codigoTalla = safeString(payload.ajuste.codigoTalla01 || '', 10);
+
+  console.log('[AJUSTE MANUAL] Registro historial inventario:', {
+    codigoArticulo,
+    codigoAlmacen,
+    ubicacion,
+    comentario,
+    unidadMedida,
+    partida,
+    codigoColor,
+    codigoTalla,
+    unidades: payload.unidades
+  });
+
+  await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, payload.codigoEmpresa)
+    .input('ejercicio', sql.SmallInt, payload.ejercicio)
+    .input('periodo', sql.SmallInt, periodo)
+    .input('fecha', sql.Date, ahora)
+    .input('fechaRegistro', sql.DateTime, ahora)
+    .input('tipoMovimiento', sql.SmallInt, 5)
+    .input('codigoArticulo', sql.VarChar(20), codigoArticulo)
+    .input('codigoAlmacen', sql.VarChar(4), codigoAlmacen)
+    .input('ubicacion', sql.VarChar(15), ubicacion)
+    .input('unidades', sql.Decimal(18, 4), payload.unidades)
+    .input('comentario', sql.VarChar(40), comentario)
+    .input('codigoCliente', sql.VarChar(20), codigoUsuario)
+    .input('unidadMedida', sql.VarChar(10), unidadMedida)
+    .input('partida', sql.VarChar(15), partida)
+    .input('codigoColor', sql.VarChar(10), codigoColor)
+    .input('codigoTalla', sql.VarChar(10), codigoTalla)
+    .query(`
+      INSERT INTO MovimientoStock (
+        CodigoEmpresa, Ejercicio, Periodo, Fecha, FechaRegistro, TipoMovimiento,
+        CodigoArticulo, CodigoAlmacen, Ubicacion,
+        Unidades, Comentario, CodigoCliente, UnidadMedida1_, Partida,
+        CodigoColor_, CodigoTalla01_
+      ) VALUES (
+        @codigoEmpresa, @ejercicio, @periodo, @fecha, @fechaRegistro, @tipoMovimiento,
+        @codigoArticulo, @codigoAlmacen, @ubicacion,
+        @unidades, @comentario, @codigoCliente, @unidadMedida, @partida,
+        @codigoColor, @codigoTalla
+      )
+    `);
+}
+
   return router;
 };
+
+

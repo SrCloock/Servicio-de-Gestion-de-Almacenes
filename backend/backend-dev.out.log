@@ -1,0 +1,15 @@
+🌍 Entorno: DESARROLLO
+🎯 Orígenes permitidos: [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://80.24.244.68:3000'
+]
+Conexion a SQL Server establecida.
+🚀 Servidor backend corriendo en http://0.0.0.0:3000
+📱 Accesible desde: http://80.24.244.68:3000
+🔧 Entorno: production
+🎯 Orígenes CORS permitidos: [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://80.24.244.68:3000'
+]

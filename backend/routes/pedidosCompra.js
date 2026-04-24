@@ -2,6 +2,103 @@ const express = require('express');
 
 module.exports = function createpedidosCompraRouter({ sql, getPool }) {
   const router = express.Router();
+  const ALMACEN_RECEPCION_TEMPORAL = 'PTO';
+  const UBICACION_RECEPCION_TEMPORAL = 'RECEPCION';
+
+  function safeString(value, maxLength = 10, defaultValue = '') {
+    if (value === null || value === undefined || value === 'null' || value === 'undefined') {
+      return defaultValue;
+    }
+
+    let str = String(value).trim();
+
+    if (str.length > 0 && str.length % 2 === 0) {
+      const mitad = Math.floor(str.length / 2);
+      const primeraMitad = str.substring(0, mitad);
+      const segundaMitad = str.substring(mitad);
+
+      if (primeraMitad === segundaMitad) {
+        str = primeraMitad;
+      }
+    }
+
+    if (str === 'BOLSAS' || str === 'BOLSASBOLSAS') {
+      str = 'BOLSA';
+    }
+
+    const cleaned = str.replace(/[,]/g, '').trim();
+
+    if (maxLength > 0 && cleaned.length > maxLength) {
+      return cleaned.substring(0, maxLength);
+    }
+
+    return cleaned === '' ? defaultValue : cleaned;
+  }
+
+  function safeDecimal(value, defaultValue = 0) {
+    if (value === null || value === undefined || value === 'null' || value === 'undefined') {
+      return defaultValue;
+    }
+
+    const num = parseFloat(value);
+    return Number.isNaN(num) ? defaultValue : num;
+  }
+
+  async function obtenerSiguienteNumeroAlbaranProveedor(transaction, codigoEmpresa) {
+    const ejercicioAlbaran = new Date().getFullYear();
+    const nombreContador = 'ALBARAN_PRO';
+
+    const contadorResult = await new sql.Request(transaction)
+      .input('ejercicio', sql.Int, ejercicioAlbaran)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT sysContadorValor
+        FROM lsysContadores
+        WHERE sysEjercicio = @ejercicio
+          AND sysNombreContador = '${nombreContador}'
+          AND sysGrupo = @codigoEmpresa
+      `);
+
+    const maximoResult = await new sql.Request(transaction)
+      .input('ejercicio', sql.SmallInt, ejercicioAlbaran)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT ISNULL(MAX(NumeroAlbaran), 0) AS maxNumero
+        FROM CabeceraAlbaranProveedor
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioAlbaran = @ejercicio
+      `);
+
+    const siguientePorCabecera = (parseInt(maximoResult.recordset[0]?.maxNumero, 10) || 0) + 1;
+    const siguientePorContador = parseInt(contadorResult.recordset[0]?.sysContadorValor, 10) || 0;
+    const numeroAlbaran = Math.max(siguientePorContador, siguientePorCabecera, 1);
+    const nuevoValorContador = numeroAlbaran + 1;
+
+    if (contadorResult.recordset.length === 0) {
+      await new sql.Request(transaction)
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('ejercicio', sql.Int, ejercicioAlbaran)
+        .input('nuevoValorContador', sql.Int, nuevoValorContador)
+        .query(`
+          INSERT INTO lsysContadores (sysGrupo, sysEjercicio, sysNombreContador, sysContadorValor)
+          VALUES (@codigoEmpresa, @ejercicio, '${nombreContador}', @nuevoValorContador)
+        `);
+    } else {
+      await new sql.Request(transaction)
+        .input('nuevoValorContador', sql.Int, nuevoValorContador)
+        .input('ejercicio', sql.Int, ejercicioAlbaran)
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .query(`
+          UPDATE lsysContadores
+          SET sysContadorValor = @nuevoValorContador
+          WHERE sysEjercicio = @ejercicio
+            AND sysNombreContador = '${nombreContador}'
+            AND sysGrupo = @codigoEmpresa
+        `);
+    }
+
+    return { ejercicioAlbaran, numeroAlbaran };
+  }
 
 async function actualizarStockPorVariante(
   transaction, codigoEmpresa, codigoArticulo, almacen, ubicacion,
@@ -112,10 +209,10 @@ async function registrarMovimientoStock(
   
   // Calcular valores
   const unidadesNum = parseFloat(unidades) || 0;
-  const unidades2 = unidadesNum;
+  const factorConversionNum = parseFloat(factorConversion) || 1;
+  const unidades2 = unidadesNum * factorConversionNum;
   const precioNum = parseFloat(precio) || 0;
   const importe = precioNum * unidadesNum;
-  const factorConversionNum = parseFloat(factorConversion) || 1;
   
   console.log(`[MOVIMIENTO STOCK] Insertando: ${codigoArticulo}, Unidades: ${unidadesNum}, UnidadMedida: '${unidadMedida2Safe}'`);
   
@@ -580,9 +677,9 @@ router.get('/pedidos-compra/:ejercicio/:serie/:numero/detalle', async (req, res)
 });
 
 // ✅ 3. VARIANTES DISPONIBLES PARA ARTÍCULO
-router.get('/articulos/:codigoArticulo/variantes', async (req, res) => {
+router.get(['/articulos/variantes', '/articulos/:codigoArticulo/variantes'], async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
-  const { codigoArticulo } = req.params;
+  const codigoArticulo = req.params.codigoArticulo || req.query.codigoArticulo;
 
   if (!codigoEmpresa || !codigoArticulo) {
     return res.status(400).json({ 
@@ -710,17 +807,53 @@ router.get('/articulos/:codigoArticulo/variantes', async (req, res) => {
   }
 });
 
+router.get('/pedidos-compra/almacenes', async (req, res) => {
+  const codigoEmpresa = req.user.CodigoEmpresa;
+
+  if (!codigoEmpresa) {
+    return res.status(400).json({
+      success: false,
+      mensaje: 'Código de empresa requerido.'
+    });
+  }
+
+  try {
+    const result = await getPool().request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT CodigoAlmacen, Almacen
+        FROM Almacenes
+        WHERE CodigoEmpresa = @codigoEmpresa
+        ORDER BY
+          CASE WHEN CodigoAlmacen = '000' THEN 0 ELSE 1 END,
+          CodigoAlmacen
+      `);
+
+    res.json({
+      success: true,
+      almacenes: result.recordset
+    });
+  } catch (err) {
+    console.error('[ERROR ALMACENES PEDIDOS COMPRA]', err);
+    res.status(500).json({
+      success: false,
+      mensaje: 'Error al obtener almacenes para recepción de pedidos de compra.',
+      error: err.message
+    });
+  }
+});
+
 // ✅ 4. PROCESAR RECEPCIÓN DE PEDIDO - COMPLETO CON TODOS LOS CAMPOS (CORREGIDO)
 router.post('/pedidos-compra/:ejercicio/:serie/:numero/recepcionar', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
   const codigoCliente = req.user.CodigoCliente || req.user.UsuarioLogicNet || 'SISTEMA';
   const { ejercicio, serie, numero } = req.params;
   const { 
-    almacen, 
-    ubicacion, 
     lineasRecepcion, 
     comentarioRecepcion 
   } = req.body;
+  const almacen = ALMACEN_RECEPCION_TEMPORAL;
+  const ubicacion = UBICACION_RECEPCION_TEMPORAL;
 
   console.log('📥 DATOS RECIBIDOS EN BACKEND:');
   console.log('- Empresa:', codigoEmpresa);
@@ -735,13 +868,6 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/recepcionar', async (req,
     return res.status(400).json({ 
       success: false, 
       mensaje: 'Parámetros del pedido requeridos.' 
-    });
-  }
-
-  if (!almacen || !ubicacion) {
-    return res.status(400).json({ 
-      success: false, 
-      mensaje: 'Almacén y ubicación son obligatorios.' 
     });
   }
 
@@ -916,8 +1042,8 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/recepcionar', async (req,
           almacen,
           ubicacion,
           unidadesRecepcionarNum,
-          '',
-          '',
+          linea.CodigoColor_ || '',
+          linea.CodigoTalla01_ || '',
           `RECEPCIÓN PEDIDO ${numero}`,
           codigoCliente,
           precio,
@@ -968,17 +1094,57 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/recepcionar', async (req,
       });
     }
 
+    const pendientesResult = await new sql.Request(transaction)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('numero', sql.Int, numero)
+      .input('serie', sql.VarChar, serie || '0')
+      .query(`
+        SELECT ISNULL(SUM(UnidadesPendientes), 0) as totalPendientes
+        FROM LineasPedidoProveedor
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioPedido = @ejercicio
+          AND NumeroPedido = @numero
+          AND (SeriePedido = @serie OR (@serie = '0' AND (SeriePedido IS NULL OR SeriePedido = '' OR SeriePedido = '0')))
+      `);
+
+    const totalPendientes = safeDecimal(pendientesResult.recordset[0]?.totalPendientes, 0);
+    const pedidoCompleto = totalPendientes <= 0;
+
+    await new sql.Request(transaction)
+      .input('nuevoEstado', sql.SmallInt, pedidoCompleto ? 2 : 0)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('numero', sql.Int, numero)
+      .input('serie', sql.VarChar, serie || '0')
+      .query(`
+        UPDATE CabeceraPedidoProveedor
+        SET Estado = @nuevoEstado
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioPedido = @ejercicio
+          AND NumeroPedido = @numero
+          AND (SeriePedido = @serie OR (@serie = '0' AND (SeriePedido IS NULL OR SeriePedido = '' OR SeriePedido = '0')))
+      `);
+
     await transaction.commit();
 
     res.json({
       success: true,
       mensaje: 'Recepción procesada correctamente.',
       resultados: resultadosRecepcion,
+      autoGenerarAlbaran: pedidoCompleto,
       pedido: {
         ejercicio,
         serie: serie || '0',
         numero,
-        proveedor: pedido.RazonSocial
+        proveedor: pedido.RazonSocial,
+        estado: pedidoCompleto ? 2 : 0,
+        unidadesPendientes: totalPendientes
+      },
+      recepcion: {
+        almacen,
+        ubicacion,
+        pedidoCompleto
       }
     });
 
@@ -1142,14 +1308,10 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
   const codigoEmpresa = req.user.CodigoEmpresa;
   const { ejercicio, serie, numero } = req.params;
 
-  console.log('📦 GENERANDO NUEVO ALBARÁN PARA PEDIDO (SOLO UNIDADES NO ALBARANADAS):');
-  console.log('- Empresa:', codigoEmpresa);
-  console.log('- Pedido:', `${ejercicio}/${serie || '0'}/${numero}`);
-
   if (!codigoEmpresa || !ejercicio || !numero) {
-    return res.status(400).json({ 
-      success: false, 
-      mensaje: 'Parámetros del pedido requeridos.' 
+    return res.status(400).json({
+      success: false,
+      mensaje: 'Parametros del pedido requeridos.'
     });
   }
 
@@ -1157,26 +1319,19 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
 
   try {
     await transaction.begin();
-    console.log(`[ALBARÁN NUEVO] Iniciando para pedido ${ejercicio}/${serie || '0'}/${numero}`);
-
     const serieParam = (serie === 'undefined' || serie === 'null' || !serie) ? '0' : serie;
-    
-    // 1. OBTENER DATOS DEL PEDIDO
+
     const pedidoResult = await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
       .input('numero', sql.Int, numero)
       .input('serie', sql.VarChar, serieParam)
       .query(`
-        SELECT 
-          cp.*,
-          p.CifDni,
-          p.Domicilio,
-          p.CodigoPostal,
-          p.Municipio,
-          p.Provincia
+        SELECT
+          cp.*, 
+          p.CifDni
         FROM CabeceraPedidoProveedor cp
-        LEFT JOIN Proveedores p 
+        LEFT JOIN Proveedores p
           ON p.CodigoProveedor = cp.CodigoProveedor
           AND p.CodigoEmpresa = cp.CodigoEmpresa
         WHERE cp.CodigoEmpresa = @codigoEmpresa
@@ -1191,83 +1346,81 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
 
     const pedido = pedidoResult.recordset[0];
 
-    // 2. OBTENER LÍNEAS DEL PEDIDO CON UNIDADES RECIBIDAS Y CALCULAR PENDIENTES DE ALBARANAR
-    // IMPORTANTE: Agrupar por artículo para calcular correctamente las unidades pendientes
-    const lineasAgrupadasResult = await new sql.Request(transaction)
+    const lineasPedidoResult = await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
       .input('numero', sql.Int, numero)
       .input('serie', sql.VarChar, serieParam)
       .query(`
-        SELECT 
+        SELECT
+          lp.Orden,
+          lp.LineasPosicion,
           lp.CodigoArticulo,
-          MAX(lp.DescripcionArticulo) as DescripcionArticulo,
-          SUM(lp.UnidadesRecibidas) as UnidadesRecibidasTotales,
-          MAX(lp.UnidadMedida2_) as UnidadMedida2_,
-          MAX(lp.FactorConversion_) as FactorConversion_,
-          MAX(lp.GrupoIva) as GrupoIva,
-          MAX(lp.CodigoIva) as CodigoIva,
-          MAX(lp.IvaIncluido) as IvaIncluido,
-          MAX(lp.Precio) as Precio,
-          MAX(lp.CodigoColor_) as CodigoColor_,
-          MAX(lp.GrupoTalla_) as GrupoTalla_,
-          MAX(lp.CodigoTalla01_) as CodigoTalla01_
+          lp.DescripcionArticulo,
+          lp.UnidadesRecibidas,
+          lp.UnidadMedida2_,
+          lp.FactorConversion_,
+          lp.GrupoIva,
+          lp.CodigoIva,
+          lp.IvaIncluido,
+          lp.Precio,
+          lp.CodigoColor_,
+          lp.GrupoTalla_,
+          lp.CodigoTalla01_
         FROM LineasPedidoProveedor lp
         WHERE lp.CodigoEmpresa = @codigoEmpresa
           AND lp.EjercicioPedido = @ejercicio
           AND lp.NumeroPedido = @numero
           AND (lp.SeriePedido = @serie OR (@serie = '0' AND (lp.SeriePedido IS NULL OR lp.SeriePedido = '' OR lp.SeriePedido = '0')))
           AND lp.UnidadesRecibidas > 0
-        GROUP BY lp.CodigoArticulo
-        ORDER BY MIN(lp.Orden)
+        ORDER BY lp.Orden
       `);
 
-    if (lineasAgrupadasResult.recordset.length === 0) {
-      throw new Error('No hay líneas recepcionadas para generar albarán.');
+    if (lineasPedidoResult.recordset.length === 0) {
+      throw new Error('No hay lineas recepcionadas para generar albaran.');
     }
 
     const lineasConPendientes = [];
 
-    // Para cada artículo agrupado, calcular las unidades ya albaranadas
-    for (const linea of lineasAgrupadasResult.recordset) {
-      console.log(`[ALBARÁN] Procesando artículo: ${linea.CodigoArticulo}`);
-      
-      // Calcular unidades ya albaranadas para este artículo en este pedido
+    for (const linea of lineasPedidoResult.recordset) {
+      const codigoColor = safeString(linea.CodigoColor_, 10, '');
+      const codigoTalla = safeString(linea.CodigoTalla01_, 10, '');
+
       const albaranadasResult = await new sql.Request(transaction)
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('ejercicioPedido', sql.SmallInt, ejercicio)
         .input('seriePedido', sql.VarChar, serieParam)
         .input('numeroPedido', sql.Int, numero)
+        .input('ordenPedido', sql.SmallInt, linea.Orden)
         .input('codigoArticulo', sql.VarChar, linea.CodigoArticulo)
+        .input('codigoColor', sql.VarChar, codigoColor)
+        .input('codigoTalla', sql.VarChar, codigoTalla)
         .query(`
-          SELECT 
-            SUM(UnidadesRecibidas) as unidadesAlbaranadas
+          SELECT ISNULL(SUM(UnidadesRecibidas), 0) as unidadesAlbaranadas
           FROM LineasAlbaranProveedor
           WHERE CodigoEmpresa = @codigoEmpresa
             AND EjercicioPedido = @ejercicioPedido
             AND ISNULL(SeriePedido, '0') = @seriePedido
             AND NumeroPedido = @numeroPedido
+            AND Orden = @ordenPedido
             AND CodigoArticulo = @codigoArticulo
+            AND (CodigoColor_ = @codigoColor OR (@codigoColor = '' AND CodigoColor_ IS NULL))
+            AND (CodigoTalla01_ = @codigoTalla OR (@codigoTalla = '' AND CodigoTalla01_ IS NULL))
         `);
 
-      const unidadesAlbaranadas = parseFloat(albaranadasResult.recordset[0]?.unidadesAlbaranadas) || 0;
-      const unidadesRecibidasTotales = parseFloat(linea.UnidadesRecibidasTotales) || 0;
+      const unidadesRecibidasTotales = safeDecimal(linea.UnidadesRecibidas, 0);
+      const unidadesAlbaranadas = safeDecimal(albaranadasResult.recordset[0]?.unidadesAlbaranadas, 0);
       const unidadesPendientesAlbaranar = unidadesRecibidasTotales - unidadesAlbaranadas;
-
-      console.log(`[ALBARÁN] Artículo: ${linea.CodigoArticulo}`);
-      console.log(`  - Unidades recibidas totales: ${unidadesRecibidasTotales}`);
-      console.log(`  - Unidades ya albaranadas: ${unidadesAlbaranadas}`);
-      console.log(`  - Unidades pendientes de albaranar: ${unidadesPendientesAlbaranar}`);
 
       if (unidadesPendientesAlbaranar > 0) {
         lineasConPendientes.push({
           ...linea,
+          codigoColorSafe: codigoColor,
+          codigoTallaSafe: codigoTalla,
           unidadesRecibidasTotales,
           unidadesAlbaranadas,
           unidadesPendientesAlbaranar
         });
-      } else {
-        console.log(`[ALBARÁN] Artículo ${linea.CodigoArticulo} ya está completamente albaranado`);
       }
     }
 
@@ -1275,106 +1428,38 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
       throw new Error('No hay unidades pendientes de albaranar en este pedido.');
     }
 
-    console.log(`[ALBARÁN] Total líneas con unidades pendientes: ${lineasConPendientes.length}`);
-
-    // 3. OBTENER NUEVO NÚMERO DE ALBARÁN
-    const ejercicioAlbaran = new Date().getFullYear();
-    let numeroAlbaran;
-    
-    console.log(`[ALBARÁN NUEVO] Obteniendo nuevo número de albarán...`);
-    const contadorResult = await new sql.Request(transaction)
-      .input('ejercicio', sql.Int, ejercicioAlbaran)
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .query(`
-        SELECT sysContadorValor 
-        FROM lsysContadores 
-        WHERE sysEjercicio = @ejercicio 
-          AND sysNombreContador = 'ALBARAN_CLI' 
-          AND sysGrupo = @codigoEmpresa
-      `);
-
-    if (contadorResult.recordset.length === 0) {
-      console.log(`[ALBARÁN NUEVO] Contador no encontrado, creando nuevo...`);
-      await new sql.Request(transaction)
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .input('ejercicio', sql.Int, ejercicioAlbaran)
-        .input('valorInicial', sql.Int, 1)
-        .query(`
-          INSERT INTO lsysContadores (sysGrupo, sysEjercicio, sysNombreContador, sysContadorValor)
-          VALUES (@codigoEmpresa, @ejercicio, 'ALBARAN_CLI', @valorInicial)
-        `);
-      
-      numeroAlbaran = 1;
-    } else {
-      numeroAlbaran = contadorResult.recordset[0].sysContadorValor;
-      
-      const nuevoValor = numeroAlbaran + 1;
-      console.log(`[ALBARÁN NUEVO] Actualizando contador: ${numeroAlbaran} -> ${nuevoValor}`);
-      await new sql.Request(transaction)
-        .input('nuevoValor', sql.Int, nuevoValor)
-        .input('ejercicio', sql.Int, ejercicioAlbaran)
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .query(`
-          UPDATE lsysContadores 
-          SET sysContadorValor = @nuevoValor 
-          WHERE sysEjercicio = @ejercicio 
-            AND sysNombreContador = 'ALBARAN_CLI' 
-            AND sysGrupo = @codigoEmpresa
-        `);
-    }
-    
+    const { ejercicioAlbaran, numeroAlbaran } = await obtenerSiguienteNumeroAlbaranProveedor(transaction, codigoEmpresa);
     const serieAlbaran = '';
-    console.log(`[ALBARÁN NUEVO] Nuevo número de albarán: ${numeroAlbaran}`);
 
-    // 4. CALCULAR IMPORTES TOTALES CORRECTAMENTE (SOLO CON UNIDADES PENDIENTES)
-    let importeBrutoTotal = 0;
-    let importeLiquidoTotal = 0;
     let baseImponibleTotal = 0;
     let totalIva = 0;
+    let importeLiquidoTotal = 0;
 
-    const lineasProcesadas = [];
-
-    for (const linea of lineasConPendientes) {
-      const unidadesAAlbaranar = linea.unidadesPendientesAlbaranar; // Solo las unidades pendientes
-      const precio = parseFloat(linea.Precio) || 0;
+    const lineasProcesadas = lineasConPendientes.map((linea) => {
+      const unidadesAAlbaranar = safeDecimal(linea.unidadesPendientesAlbaranar, 0);
+      const precio = safeDecimal(linea.Precio, 0);
+      const porcentajeIva = safeDecimal(linea.CodigoIva, 21);
+      const factorConversion = safeDecimal(linea.FactorConversion_, 1);
       const importeNetoLinea = precio * unidadesAAlbaranar;
-      const porcentajeIva = parseFloat(linea.CodigoIva) || 21;
-      const factorIva = 1 + (porcentajeIva / 100);
-      const importeLiquidoLinea = importeNetoLinea * factorIva;
-      const importeIvaLinea = importeLiquidoLinea - importeNetoLinea;
-      const factorConversion = parseFloat(linea.FactorConversion_) || 1;
-      const unidades2 = unidadesAAlbaranar * factorConversion;
+      const importeIvaLinea = importeNetoLinea * (porcentajeIva / 100);
+      const importeLiquidoLinea = importeNetoLinea + importeIvaLinea;
 
-      lineasProcesadas.push({
-        ...linea,
-        unidadesAAlbaranar, // Solo las unidades que se van a albaranar ahora
-        unidades2,
-        precio,
-        factorConversion,
-        importeNetoLinea,
-        importeLiquidoLinea,
-        importeIvaLinea,
-        porcentajeIva,
-        baseImponibleLinea: importeNetoLinea,
-        baseIvaLinea: importeNetoLinea,
-        cuotaIva: importeIvaLinea
-      });
-
-      // Acumular totales (SOLO DE LAS UNIDADES PENDIENTES)
-      importeBrutoTotal += importeNetoLinea;
-      importeLiquidoTotal += importeLiquidoLinea;
       baseImponibleTotal += importeNetoLinea;
       totalIva += importeIvaLinea;
+      importeLiquidoTotal += importeLiquidoLinea;
 
-      console.log(`[ALBARÁN] Línea procesada: ${linea.CodigoArticulo}`);
-      console.log(`  - Unidades a albaranar: ${unidadesAAlbaranar} (de ${linea.unidadesRecibidasTotales} recibidas)`);
-      console.log(`  - Precio: ${precio}, Importe neto: ${importeNetoLinea}`);
-    }
+      return {
+        ...linea,
+        unidadesAAlbaranar,
+        precio,
+        porcentajeIva,
+        factorConversion,
+        importeNetoLinea,
+        importeIvaLinea,
+        importeLiquidoLinea
+      };
+    });
 
-    console.log(`[ALBARÁN NUEVO] Totales calculados: Neto: ${baseImponibleTotal}, IVA: ${totalIva}, Líquido: ${importeLiquidoTotal}`);
-
-    // 5. INSERTAR CABECERA DEL NUEVO ALBARÁN
-    console.log(`[ALBARÁN NUEVO] Insertando nueva cabecera...`);
     await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
@@ -1388,7 +1473,6 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
       .input('baseImponible', sql.Decimal(18, 4), baseImponibleTotal)
       .input('totalIva', sql.Decimal(18, 4), totalIva)
       .input('cifDni', sql.VarChar(13), safeString(pedido.CifDni, 13, ''))
-      .input('fechaAlbaran', sql.DateTime, new Date())
       .query(`
         INSERT INTO CabeceraAlbaranProveedor (
           CodigoEmpresa,
@@ -1417,92 +1501,47 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
           @baseImponible,
           @totalIva,
           @cifDni,
-          @fechaAlbaran
+          GETDATE()
         )
       `);
 
-    console.log(`[ALBARÁN NUEVO] Cabecera insertada: Ejercicio ${ejercicioAlbaran}, Número ${numeroAlbaran}`);
-
-    // 6. INSERTAR LÍNEAS DEL NUEVO ALBARÁN
-    console.log(`[ALBARÁN NUEVO] Insertando ${lineasProcesadas.length} líneas...`);
-    
-    for (let i = 0; i < lineasProcesadas.length; i++) {
-      const linea = lineasProcesadas[i];
-      
+    for (const linea of lineasProcesadas) {
       const unidadesAAlbaranar = safeDecimal(linea.unidadesAAlbaranar, 0);
       const factorConversion = safeDecimal(linea.factorConversion, 1);
-      const unidades2 = unidadesAAlbaranar * factorConversion;
-      const precio = safeDecimal(linea.precio, 0);
-      const importeNetoLinea = safeDecimal(linea.importeNetoLinea, 0);
-      const importeLiquidoLinea = safeDecimal(linea.importeLiquidoLinea, 0);
-      const importeIvaLinea = safeDecimal(linea.importeIvaLinea, 0);
-      const porcentajeIva = safeDecimal(linea.porcentajeIva, 21);
-      const grupoIva = safeDecimal(linea.GrupoIva, 1);
-      const ivaIncluido = safeDecimal(linea.IvaIncluido, 0);
-      
-      // Obtener unidad de medida - CORREGIR EL PROBLEMA DE DUPLICACIÓN
-      const unidadMedida2Original = linea.UnidadMedida2_ || '';
-      let unidadMedida2 = unidadMedida2Original;
-      
-      // CORRECCIÓN: Si el valor está duplicado (ej: "BOLSASBOLSAS"), corregir
-      if (unidadMedida2Original.length > 0) {
-        // Verificar si está duplicado
-        const mitad = Math.floor(unidadMedida2Original.length / 2);
-        const primeraMitad = unidadMedida2Original.substring(0, mitad);
-        const segundaMitad = unidadMedida2Original.substring(mitad);
-        
-        if (primeraMitad === segundaMitad) {
-          console.log(`[CORRECCIÓN] Unidad de medida duplicada: "${unidadMedida2Original}" -> "${primeraMitad}"`);
-          unidadMedida2 = primeraMitad;
-        }
-      }
-      
-      // Asegurar que no sea "BOLSASBOLSAS"
-      if (unidadMedida2 === 'BOLSASBOLSAS') {
-        unidadMedida2 = 'BOLSA';
-        console.log(`[CORRECCIÓN] Unidad de medida corregida a: "${unidadMedida2}"`);
-      }
-      
-      const unidadMedida2Limpia = safeString(unidadMedida2, 10, '');
-      const codigoColor = safeString(linea.CodigoColor_, 10, '');
-      const grupoTalla = safeDecimal(linea.GrupoTalla_, 0);
-      const codigoTalla = safeString(linea.CodigoTalla01_, 10, '');
-      
-      console.log(`[ALBARÁN NUEVO] Línea ${i+1}: ${linea.CodigoArticulo} - ${unidadesAAlbaranar} unidades (pendientes)`);
-      console.log(`  - Unidad medida: "${unidadMedida2Original}" -> "${unidadMedida2Limpia}"`);
-      
+      const unidadMedida = safeString(linea.UnidadMedida2_, 10, '');
+
       await new sql.Request(transaction)
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
         .input('numeroAlbaran', sql.Int, numeroAlbaran)
-        .input('serieAlbaran', sql.VarChar, serieAlbaran)
+        .input('serieAlbaran', sql.VarChar(10), safeString(serieAlbaran, 10, ''))
         .input('codigoArticulo', sql.VarChar(20), safeString(linea.CodigoArticulo, 20))
-        .input('descripcionArticulo', sql.VarChar(250), safeString(linea.DescripcionArticulo, 250))
-        .input('unidadMedida1', sql.VarChar, unidadMedida2Limpia)
-        .input('unidadMedida2', sql.VarChar, unidadMedida2Limpia)
+        .input('descripcionArticulo', sql.VarChar(50), safeString(linea.DescripcionArticulo, 50))
+        .input('unidadMedida1', sql.VarChar(10), safeString(unidadMedida, 10, ''))
+        .input('unidadMedida2', sql.VarChar(10), safeString(unidadMedida, 10, ''))
         .input('factorConversion', sql.Decimal(18, 4), factorConversion)
         .input('unidadesRecibidas', sql.Decimal(18, 4), unidadesAAlbaranar)
         .input('unidades', sql.Decimal(18, 4), unidadesAAlbaranar)
-        .input('unidades2', sql.Decimal(18, 4), unidades2)
-        .input('codigoColor', sql.VarChar, codigoColor)
-        .input('grupoTalla', sql.SmallInt, grupoTalla)
-        .input('codigoTalla', sql.VarChar, codigoTalla)
-        .input('grupoIva', sql.TinyInt, grupoIva)
-        .input('codigoIva', sql.SmallInt, porcentajeIva)
-        .input('ivaIncluido', sql.SmallInt, ivaIncluido)
-        .input('porcentajeIva', sql.Decimal(18, 4), porcentajeIva)
+        .input('unidades2', sql.Decimal(18, 4), unidadesAAlbaranar * factorConversion)
+        .input('codigoColor', sql.VarChar(10), safeString(linea.codigoColorSafe, 10, ''))
+        .input('grupoTalla', sql.SmallInt, safeDecimal(linea.GrupoTalla_, 0))
+        .input('codigoTalla', sql.VarChar(10), safeString(linea.codigoTallaSafe, 10, ''))
+        .input('grupoIva', sql.TinyInt, safeDecimal(linea.GrupoIva, 1))
+        .input('codigoIva', sql.SmallInt, safeDecimal(linea.CodigoIva, 21))
+        .input('ivaIncluido', sql.SmallInt, safeDecimal(linea.IvaIncluido, 0))
+        .input('porcentajeIva', sql.Decimal(18, 4), safeDecimal(linea.porcentajeIva, 21))
         .input('ejercicioPedido', sql.SmallInt, ejercicio)
         .input('seriePedido', sql.VarChar(10), safeString(serieParam, 10, '0'))
         .input('numeroPedido', sql.Int, numero)
-        .input('orden', sql.SmallInt, i + 1) // Orden dentro del albarán
-        .input('precio', sql.Decimal(18, 4), precio)
-        .input('importeBruto', sql.Decimal(18, 4), importeNetoLinea)
-        .input('importeNeto', sql.Decimal(18, 4), importeNetoLinea)
-        .input('baseImponible', sql.Decimal(18, 4), importeNetoLinea)
-        .input('baseIva', sql.Decimal(18, 4), importeNetoLinea)
-        .input('cuotaIva', sql.Decimal(18, 4), importeIvaLinea)
-        .input('totalIva', sql.Decimal(18, 4), importeIvaLinea)
-        .input('importeLiquido', sql.Decimal(18, 4), importeLiquidoLinea)
+        .input('orden', sql.SmallInt, linea.Orden)
+        .input('precio', sql.Decimal(18, 4), safeDecimal(linea.precio, 0))
+        .input('importeBruto', sql.Decimal(18, 4), safeDecimal(linea.importeNetoLinea, 0))
+        .input('importeNeto', sql.Decimal(18, 4), safeDecimal(linea.importeNetoLinea, 0))
+        .input('baseImponible', sql.Decimal(18, 4), safeDecimal(linea.importeNetoLinea, 0))
+        .input('baseIva', sql.Decimal(18, 4), safeDecimal(linea.importeNetoLinea, 0))
+        .input('cuotaIva', sql.Decimal(18, 4), safeDecimal(linea.importeIvaLinea, 0))
+        .input('totalIva', sql.Decimal(18, 4), safeDecimal(linea.importeIvaLinea, 0))
+        .input('importeLiquido', sql.Decimal(18, 4), safeDecimal(linea.importeLiquidoLinea, 0))
         .query(`
           INSERT INTO LineasAlbaranProveedor (
             CodigoEmpresa,
@@ -1576,9 +1615,6 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
         `);
     }
 
-    console.log(`[ALBARÁN NUEVO] ${lineasProcesadas.length} líneas insertadas correctamente`);
-
-    // 7. ACTUALIZAR ESTADO DEL PEDIDO SI ES NECESARIO
     const pendientesResult = await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -1593,7 +1629,7 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
           AND (SeriePedido = @serie OR (@serie = '0' AND (SeriePedido IS NULL OR SeriePedido = '' OR SeriePedido = '0')))
       `);
 
-    const totalPendientes = parseFloat(pendientesResult.recordset[0].totalPendientes) || 0;
+    const totalPendientes = safeDecimal(pendientesResult.recordset[0]?.totalPendientes, 0);
     const nuevoEstado = totalPendientes <= 0 ? 2 : 0;
 
     await new sql.Request(transaction)
@@ -1613,16 +1649,9 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
 
     await transaction.commit();
 
-    // 8. VERIFICAR QUÉ SE HA ALBARANADO
-    console.log(`[ALBARÁN NUEVO] Verificación final:`);
-    for (const linea of lineasConPendientes) {
-      console.log(`  - ${linea.CodigoArticulo}: ${linea.unidadesAAlbaranadas} ya albaranadas + ${linea.unidadesPendientesAlbaranar} nuevas = ${linea.unidadesRecibidasTotales} recibidas totales`);
-    }
-
-    // 9. RESPONDER
     res.json({
       success: true,
-      mensaje: 'Nuevo albarán generado correctamente (solo con unidades no albaranadas).',
+      mensaje: 'Nuevo albaran generado correctamente.',
       albaran: {
         ejercicio: ejercicioAlbaran,
         numero: numeroAlbaran,
@@ -1639,34 +1668,31 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
           liquido: importeLiquidoTotal
         },
         tipo: 'NUEVO',
-        unidadesIncluidas: lineasProcesadas.reduce((sum, l) => sum + l.unidadesAAlbaranar, 0),
-        unidadesYaAlbaranadas: lineasConPendientes.reduce((sum, l) => sum + l.unidadesAlbaranadas, 0)
+        unidadesIncluidas: lineasProcesadas.reduce((sum, l) => sum + safeDecimal(l.unidadesAAlbaranar, 0), 0),
+        unidadesYaAlbaranadas: lineasConPendientes.reduce((sum, l) => sum + safeDecimal(l.unidadesAlbaranadas, 0), 0)
       },
       pedido: {
-        ejercicio: parseInt(ejercicio),
-        numero: parseInt(numero),
+        ejercicio: parseInt(ejercicio, 10),
+        numero: parseInt(numero, 10),
         serie: serieParam,
         estado: nuevoEstado,
         unidadesPendientes: totalPendientes,
-        totalUnidadesRecibidas: lineasConPendientes.reduce((sum, l) => sum + l.unidadesRecibidasTotales, 0),
-        unidadesYaAlbaranadas: lineasConPendientes.reduce((sum, l) => sum + l.unidadesAlbaranadas, 0),
-        unidadesPorAlbaranar: lineasConPendientes.reduce((sum, l) => sum + l.unidadesPendientesAlbaranar, 0)
+        totalUnidadesRecibidas: lineasConPendientes.reduce((sum, l) => sum + safeDecimal(l.unidadesRecibidasTotales, 0), 0),
+        unidadesYaAlbaranadas: lineasConPendientes.reduce((sum, l) => sum + safeDecimal(l.unidadesAlbaranadas, 0), 0),
+        unidadesPorAlbaranar: lineasConPendientes.reduce((sum, l) => sum + safeDecimal(l.unidadesPendientesAlbaranar, 0), 0)
       }
     });
-
   } catch (err) {
+    console.error('[ERROR GENERAR NUEVO ALBARAN]', err);
     await transaction.rollback();
-    console.error('[ERROR GENERAR NUEVO ALBARÁN]', err);
-    res.status(500).json({ 
-      success: false, 
-      mensaje: 'Error al generar nuevo albarán.',
+    res.status(500).json({
+      success: false,
+      mensaje: `Error al generar nuevo albaran: ${err.message}`,
       error: err.message
     });
   }
 });
 
-
-// ✅ 8. FINALIZAR PEDIDO (MARCAR COMO SERVIDO)
 router.post('/pedidos-compra/:ejercicio/:serie/:numero/finalizar', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
   const { ejercicio, serie, numero } = req.params;
@@ -1883,51 +1909,7 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
     const proveedor = proveedorResult.recordset[0];
 
     // 2. OBTENER NUEVO NÚMERO DE ALBARÁN (SIEMPRE NUEVO)
-    const ejercicioAlbaran = new Date().getFullYear();
-    let numeroAlbaran;
-    
-    console.log(`[ALBARÁN NUEVO] Obteniendo nuevo número de albarán...`);
-    const contadorResult = await new sql.Request(transaction)
-      .input('ejercicio', sql.Int, ejercicioAlbaran)
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .query(`
-        SELECT sysContadorValor 
-        FROM lsysContadores 
-        WHERE sysEjercicio = @ejercicio 
-          AND sysNombreContador = 'ALBARAN_CLI' 
-          AND sysGrupo = @codigoEmpresa
-      `);
-
-    if (contadorResult.recordset.length === 0) {
-      console.log(`[ALBARÁN NUEVO] Contador no encontrado, creando nuevo...`);
-      await new sql.Request(transaction)
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .input('ejercicio', sql.Int, ejercicioAlbaran)
-        .input('valorInicial', sql.Int, 1)
-        .query(`
-          INSERT INTO lsysContadores (sysGrupo, sysEjercicio, sysNombreContador, sysContadorValor)
-          VALUES (@codigoEmpresa, @ejercicio, 'ALBARAN_CLI', @valorInicial)
-        `);
-      
-      numeroAlbaran = 1;
-    } else {
-      numeroAlbaran = contadorResult.recordset[0].sysContadorValor;
-      
-      const nuevoValor = numeroAlbaran + 1;
-      console.log(`[ALBARÁN NUEVO] Actualizando contador: ${numeroAlbaran} -> ${nuevoValor}`);
-      await new sql.Request(transaction)
-        .input('nuevoValor', sql.Int, nuevoValor)
-        .input('ejercicio', sql.Int, ejercicioAlbaran)
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .query(`
-          UPDATE lsysContadores 
-          SET sysContadorValor = @nuevoValor 
-          WHERE sysEjercicio = @ejercicio 
-            AND sysNombreContador = 'ALBARAN_CLI' 
-            AND sysGrupo = @codigoEmpresa
-        `);
-    }
-    
+    const { ejercicioAlbaran, numeroAlbaran } = await obtenerSiguienteNumeroAlbaranProveedor(transaction, codigoEmpresa);
     const serieAlbaran = '';
     console.log(`[ALBARÁN NUEVO] Nuevo número de albarán: ${numeroAlbaran}`);
 
@@ -2032,6 +2014,7 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
             .input('ejercicioPedido', sql.SmallInt, ejercicio)
             .input('seriePedido', sql.VarChar, serieParam)
             .input('numeroPedido', sql.Int, numero)
+            .input('ordenPedido', sql.SmallInt, linea.Orden)
             .input('codigoArticulo', sql.VarChar, linea.CodigoArticulo)
             .input('codigoColor', sql.VarChar, codigoColorValue) // ✅ Usar valor procesado
             .input('codigoTalla', sql.VarChar, codigoTallaValue) // ✅ Usar valor procesado
@@ -2042,6 +2025,7 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
                 AND EjercicioPedido = @ejercicioPedido
                 AND ISNULL(SeriePedido, '0') = @seriePedido
                 AND NumeroPedido = @numeroPedido
+                AND Orden = @ordenPedido
                 AND CodigoArticulo = @codigoArticulo
                 AND (CodigoColor_ = @codigoColor OR (@codigoColor = '' AND CodigoColor_ IS NULL))
                 AND (CodigoTalla01_ = @codigoTalla OR (@codigoTalla = '' AND CodigoTalla01_ IS NULL))
@@ -2079,6 +2063,7 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
               ejercicioPedido: ejercicio,
               seriePedido: serieParam,
               numeroPedido: numero,
+              ordenPedido: linea.Orden,
               unidadesRecibidasTotales,
               unidadesYaAlbaranadas: totalAlbaranado,
               unidadesParaAlbaranar: unidadesPendientesAlbaranar,  // ✅ Solo las pendientes
@@ -2193,18 +2178,18 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
         .input('numeroAlbaran', sql.Int, numeroAlbaran)
-        .input('serieAlbaran', sql.VarChar, serieAlbaran)
+        .input('serieAlbaran', sql.VarChar(10), safeString(serieAlbaran, 10, ''))
         .input('codigoArticulo', sql.VarChar(20), safeString(linea.CodigoArticulo, 20))
-        .input('descripcionArticulo', sql.VarChar(250), safeString(linea.DescripcionArticulo, 250))
-        .input('unidadMedida1', sql.VarChar, unidadMedida2)
-        .input('unidadMedida2', sql.VarChar, unidadMedida2)
+        .input('descripcionArticulo', sql.VarChar(50), safeString(linea.DescripcionArticulo, 50))
+        .input('unidadMedida1', sql.VarChar(10), safeString(unidadMedida2, 10, ''))
+        .input('unidadMedida2', sql.VarChar(10), safeString(unidadMedida2, 10, ''))
         .input('factorConversion', sql.Decimal(18, 4), factorConversion)
         .input('unidadesRecibidas', sql.Decimal(18, 4), unidadesParaAlbaranar)  // ✅ Solo pendientes
         .input('unidades', sql.Decimal(18, 4), unidadesParaAlbaranar)           // ✅ Solo pendientes
         .input('unidades2', sql.Decimal(18, 4), unidades2)
-        .input('codigoColor', sql.VarChar, codigoColor)
+        .input('codigoColor', sql.VarChar(10), safeString(codigoColor, 10, ''))
         .input('grupoTalla', sql.SmallInt, grupoTalla)
-        .input('codigoTalla', sql.VarChar, codigoTalla)
+        .input('codigoTalla', sql.VarChar(10), safeString(codigoTalla, 10, ''))
         .input('grupoIva', sql.TinyInt, grupoIva)
         .input('codigoIva', sql.SmallInt, porcentajeIva)
         .input('ivaIncluido', sql.SmallInt, ivaIncluido)
@@ -2212,7 +2197,7 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
         .input('ejercicioPedido', sql.SmallInt, linea.ejercicioPedido)
         .input('seriePedido', sql.VarChar(10), safeString(linea.seriePedido, 10, '0'))
         .input('numeroPedido', sql.Int, linea.numeroPedido)
-        .input('orden', sql.SmallInt, i + 1)            // Orden en este albarán
+        .input('orden', sql.SmallInt, linea.ordenPedido)
         .input('precio', sql.Decimal(18, 4), precio)
         .input('importeBruto', sql.Decimal(18, 4), importeNetoLinea)
         .input('importeNeto', sql.Decimal(18, 4), importeNetoLinea)
@@ -2340,12 +2325,26 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
     });
 
   } catch (err) {
-    await transaction.rollback();
     console.error('[ERROR GENERAR NUEVO ALBARÁN]', err);
+    try {
+      await transaction.rollback();
+    } catch (rollbackError) {
+      console.error('[ERROR ROLLBACK GENERAR NUEVO ALBARÁN]', rollbackError);
+    }
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al generar nuevo albarán.',
-      error: err.message
+      mensaje: `Error al generar nuevo albarán: ${err.message}`,
+      error: err.message,
+      detalle: {
+        codigoProveedor,
+        pedidos: Array.isArray(pedidos)
+          ? pedidos.map((pedido) => ({
+              ejercicio: pedido?.ejercicio,
+              serie: pedido?.serie || '0',
+              numero: pedido?.numero
+            }))
+          : []
+      }
     });
   }
 });

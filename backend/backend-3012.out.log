@@ -1,0 +1,45 @@
+🌍 Entorno: DESARROLLO
+🎯 Orígenes permitidos: [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://80.24.244.68:3012'
+]
+Conexion a SQL Server establecida.
+🚀 Servidor backend corriendo en http://0.0.0.0:3012
+📱 Accesible desde: http://80.24.244.68:3012
+🔧 Entorno: production
+🎯 Orígenes CORS permitidos: [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://80.24.244.68:3012'
+]
+[DEV] POST /pedidos-compra/2026/0/106/generar-albaran
+[PEDIDOS_COMPRA][GENERAR_ALBARAN_PEDIDO] INICIO empresa=9999 pedido=2026/0/106
+[DEV] GET /pedidos-compra?page=1&limit=15
+[PEDIDOS_COMPRA][LISTAR] INICIO empresa=9999 page=1 limit=15
+[PEDIDOS_COMPRA][LISTAR] Query total pedidos
+[PEDIDOS_COMPRA][GENERAR_ALBARAN_PEDIDO] Transaction iniciada
+[PEDIDOS_COMPRA][GENERAR_ALBARAN_PEDIDO] Query cabecera pedido
+[PEDIDOS_COMPRA][GENERAR_ALBARAN_PEDIDO] Query lineas pedido recepcionadas
+[PEDIDOS_COMPRA][GENERAR_ALBARAN_PEDIDO] Query albaranado previo orden=0 articulo=01.01.11
+[PEDIDOS_COMPRA][LISTAR] Query listado paginado
+[PEDIDOS_COMPRA][LISTAR] FIN ok pedidos=3 total=3 page=1/1
+[DEV] POST /proveedores/5002/generar-albaran
+📦 GENERANDO NUEVO ALBARÁN POR PROVEEDOR (CORREGIDO):
+- Empresa: 9999
+- Proveedor: 5002
+- Pedidos a incluir: 1
+[PEDIDOS_COMPRA][GENERAR_ALBARAN_PROVEEDOR] INICIO empresa=9999 proveedor=5002 pedidos=1
+[PEDIDOS_COMPRA][GENERAR_ALBARAN_PROVEEDOR] Transaction iniciada proveedor=5002
+[PEDIDOS_COMPRA][GENERAR_ALBARAN_PROVEEDOR] Query proveedor
+[PEDIDOS_COMPRA][GENERAR_ALBARAN_PROVEEDOR] Obtener siguiente numero albaran proveedor
+[ALBARÁN NUEVO] Nuevo número de albarán: 176
+[PEDIDOS_COMPRA][GENERAR_ALBARAN_PROVEEDOR] Procesando pedido 2026/0/106
+[PEDIDOS_COMPRA][GENERAR_ALBARAN_PROVEEDOR] Query lineas recibidas pedido 2026/0/106
+[PEDIDOS_COMPRA][GENERAR_ALBARAN_PROVEEDOR] Query albaranado previo pedido=2026/0/106 orden=0 articulo=01.01.11
+[ALBARÁN NUEVO] Artículo: 01.01.11
+  - Unidades recibidas totales: 98
+  - Unidades ya albaranadas: 188
+  - Unidades pendientes de albaranar: -90
+  - Color: "", Talla: ""
+[ALBARÁN NUEVO] OMITIENDO: 01.01.11 - Ya está totalmente albaranado

@@ -1,35 +1,115 @@
-﻿﻿import React, { useState, useEffect, useMemo, useCallback } from 'react';
+﻿﻿// src/pages/GestionRutas.jsx
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  Container,
+  Typography,
+  Box,
+  Paper,
+  Grid,
+  Card,
+  CardContent,
+  CardActions,
+  Chip,
+  Button,
+  TextField,
+  InputAdornment,
+  IconButton,
+  Stack,
+  Alert,
+  CircularProgress,
+  Pagination,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Tooltip,
+  useTheme,
+} from '@mui/material';
+import {
+  Refresh as RefreshIcon,
+  Search as SearchIcon,
+  Clear as ClearIcon,
+  FilterAlt as FilterIcon,
+  CheckCircle as CheckCircleIcon,
+  Visibility as VisibilityIcon,
+  Business as BusinessIcon,
+  Person as PersonIcon,
+  Phone as PhoneIcon,
+  LocationOn as LocationIcon,
+  Inventory as InventoryIcon,
+} from '@mui/icons-material';
 import API from '../helpers/api';
-import { getAuthHeader } from '../helpers/authHelper';
-import Navbar from '../components/Navbar';
 import { usePermissions } from '../PermissionsManager';
-import '../styles/GestionRutas.css';
-import { 
-  FaSearch, 
-  FaBox, 
-  FaExclamationTriangle, 
-  FaSync, 
-  FaCheck, 
-  FaFilter,
-  FaTimes,
-  FaBuilding,
-  FaUser,
-  FaPhone,
-  FaMapMarkerAlt
-} from 'react-icons/fa';
 
+// Componente auxiliar para mostrar una fila de información dentro de la tarjeta
+const CardInfoRow = ({ icon, label, value, color = 'text.primary' }) => {
+  const theme = useTheme();
+  return (
+    <Stack direction="row" spacing={1.25} alignItems="flex-start" sx={{ minWidth: 0 }}>
+      <Box
+        sx={{
+          width: 28,
+          height: 28,
+          borderRadius: 1.5,
+          bgcolor: 'rgba(15, 23, 42, 0.05)',
+          color: 'text.secondary',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          mt: 0.125,
+        }}
+      >
+        {icon}
+      </Box>
+      <Box sx={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
+        <Typography
+          sx={{
+            color: 'text.secondary',
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            lineHeight: 1.1,
+          }}
+        >
+          {label}
+        </Typography>
+        <Typography
+          sx={{
+            color,
+            fontSize: '0.9rem',
+            fontWeight: 500,
+            lineHeight: 1.25,
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
+            display: '-webkit-box',
+            WebkitBoxOrient: 'vertical',
+            WebkitLineClamp: 2,
+            overflow: 'hidden',
+          }}
+        >
+          {value || 'No especificado'}
+        </Typography>
+      </Box>
+    </Stack>
+  );
+};
+
+// Componente principal
 function GestionRutas() {
   const navigate = useNavigate();
+  const theme = useTheme();
+  const mensajeFirmasObligatorias = 'Debes registrar ambas firmas antes de completar el albarán';
   const user = JSON.parse(localStorage.getItem('user'));
   const [albaranes, setAlbaranes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
-  const itemsPerPage = 10;
-  
-  // Estados para los filtros de búsqueda
+  const [rangoFechas, setRangoFechas] = useState('mes');
+
+  // Filtros
   const [filtros, setFiltros] = useState({
     numeroAlbaran: '',
     nombreObra: '',
@@ -37,50 +117,55 @@ function GestionRutas() {
     cliente: '',
     contacto: '',
     telefono: '',
-    busquedaGeneral: ''
+    busquedaGeneral: '',
   });
-  
-  const { 
+
+  // Orden y paginación
+  const [orderBy, setOrderBy] = useState('fechaAlbaran');
+  const [order, setOrder] = useState('desc');
+  const [page, setPage] = useState(1);
+  const itemsPerPage = 10;
+
+  const {
     canViewGestionRutas,
     canPerformActionsInRutas,
-    isDelivery
+    isDelivery,
+    isAdmin,
+    isAdvancedUser,
   } = usePermissions();
-  
+
+  // Carga de datos
   const fetchAlbaranes = useCallback(async () => {
+    if (!canViewGestionRutas) return;
     try {
       setLoading(true);
       setError(null);
-      
-      const headers = getAuthHeader();
-      const response = await API.get('/api/albaranesPendientes', { 
-        headers
+      const response = await API.get('/api/albaranesPendientes', {
+        params: { rango: rangoFechas },
       });
-
-      const processedAlbaranes = response.data.map(albaran => ({
+      const processed = response.data.map((albaran) => ({
         ...albaran,
         repartidor: albaran.empleadoAsignado || 'Sin asignar',
         esParcial: albaran.EstadoPedido === 4,
         esVoluminoso: albaran.EsVoluminoso || albaran.EsVoluminosoPedido,
-        // Normalizar campos para búsqueda
-        albaranLower: albaran.albaran?.toLowerCase() || '',
+        albaranLower: (albaran.albaran || '').toLowerCase(),
         nombreObraLower: (albaran.nombreObra || albaran.obra || '').toLowerCase(),
         repartidorLower: (albaran.empleadoAsignado || '').toLowerCase(),
         clienteLower: (albaran.cliente || '').toLowerCase(),
         contactoLower: (albaran.contacto || '').toLowerCase(),
         telefonoLower: (albaran.telefonoContacto || '').toString().toLowerCase(),
-        municipioLower: (albaran.municipio || '').toLowerCase()
+        municipioLower: (albaran.municipio || '').toLowerCase(),
+        fechaSort: albaran.FechaAlbaran ? new Date(albaran.FechaAlbaran).getTime() : 0,
       }));
-
-      setAlbaranes(processedAlbaranes);
-      setCurrentPage(1);
+      setAlbaranes(processed);
+      setPage(1);
     } catch (err) {
-      console.error("Error cargando albaranes:", err);
       setError('Error al cargar albaranes: ' + (err.response?.data?.mensaje || err.message));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [canViewGestionRutas, rangoFechas]);
 
   useEffect(() => {
     if (!canViewGestionRutas) {
@@ -95,131 +180,9 @@ function GestionRutas() {
     fetchAlbaranes();
   };
 
-  // Filtrar albaranes con useMemo para mejor rendimiento
-  const albaranesFiltrados = useMemo(() => {
-    let filtered = albaranes.filter(albaran => 
-      isDelivery ? albaran.empleadoAsignado === user?.UsuarioLogicNet : true
-    );
-
-    // Búsqueda general
-    if (filtros.busquedaGeneral) {
-      const searchLower = filtros.busquedaGeneral.toLowerCase().trim();
-      filtered = filtered.filter(albaran => 
-        albaran.albaranLower.includes(searchLower) ||
-        albaran.nombreObraLower.includes(searchLower) ||
-        albaran.clienteLower.includes(searchLower) ||
-        albaran.contactoLower.includes(searchLower) ||
-        albaran.telefonoLower.includes(searchLower) ||
-        albaran.repartidorLower.includes(searchLower) ||
-        albaran.municipioLower.includes(searchLower)
-      );
-    }
-
-    // Filtros específicos
-    if (filtros.numeroAlbaran) {
-      const searchNum = filtros.numeroAlbaran.toLowerCase().trim();
-      filtered = filtered.filter(albaran => 
-        albaran.albaranLower.includes(searchNum)
-      );
-    }
-
-    if (filtros.nombreObra) {
-      const searchObra = filtros.nombreObra.toLowerCase().trim();
-      filtered = filtered.filter(albaran => 
-        albaran.nombreObraLower.includes(searchObra)
-      );
-    }
-
-    if (filtros.repartidor) {
-      const searchRep = filtros.repartidor.toLowerCase().trim();
-      filtered = filtered.filter(albaran => 
-        albaran.repartidorLower.includes(searchRep)
-      );
-    }
-
-    if (filtros.cliente) {
-      const searchCliente = filtros.cliente.toLowerCase().trim();
-      filtered = filtered.filter(albaran => 
-        albaran.clienteLower.includes(searchCliente)
-      );
-    }
-
-    if (filtros.contacto) {
-      const searchContacto = filtros.contacto.toLowerCase().trim();
-      filtered = filtered.filter(albaran => 
-        albaran.contactoLower.includes(searchContacto)
-      );
-    }
-
-    if (filtros.telefono) {
-      const searchTelefono = filtros.telefono.toLowerCase().trim();
-      filtered = filtered.filter(albaran => 
-        albaran.telefonoLower.includes(searchTelefono)
-      );
-    }
-
-    return filtered;
-  }, [albaranes, isDelivery, user, filtros]);
-
-  const currentAlbaranes = useMemo(() => {
-    const indexOfLastItem = currentPage * itemsPerPage;
-    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    return albaranesFiltrados.slice(indexOfFirstItem, indexOfLastItem);
-  }, [albaranesFiltrados, currentPage, itemsPerPage]);
-
-  const totalPages = Math.ceil(albaranesFiltrados.length / itemsPerPage);
-
-  const handleCompletarAlbaran = async (albaran) => {
-    if (!canPerformActionsInRutas) {
-      alert('No tienes permiso para completar albaranes');
-      return;
-    }
-    
-    // Verificar que el albarán esté asignado al usuario actual si es repartidor
-    if (isDelivery && albaran.empleadoAsignado !== user?.UsuarioLogicNet) {
-      alert('Solo puedes completar albaranes asignados a ti');
-      return;
-    }
-    
-    const observaciones = prompt('¿Alguna observación sobre la entrega? (Opcional)') || '';
-    
-    if (!window.confirm(`¿Estás seguro de que quieres marcar el albarán ${albaran.albaran} como entregado?`)) {
-      return;
-    }
-    
-    try {
-      const response = await API.post(
-        '/completar-albaran',
-        {
-          codigoEmpresa: albaran.codigoEmpresa,
-          ejercicio: albaran.ejercicio,
-          serie: albaran.serie,
-          numeroAlbaran: albaran.numero,
-          observaciones: observaciones
-        });
-
-      if (response.data.success) {
-        // Actualizar lista eliminando el albarán completado
-        setAlbaranes(prev => prev.filter(a => 
-          !(a.numero === albaran.numero && a.serie === albaran.serie && a.ejercicio === albaran.ejercicio)
-        ));
-        
-        alert(`Albarán ${albaran.albaran} marcado como entregado correctamente`);
-      } else {
-        alert(`Error: ${response.data.mensaje}`);
-      }
-    } catch (error) {
-      console.error('Error completando albarán:', error);
-      alert(`Error: ${error.response?.data?.mensaje || error.message}`);
-    }
-  };
-
   const handleFilterChange = (filterName, value) => {
-    setFiltros(prev => ({
-      ...prev,
-      [filterName]: value
-    }));
-    setCurrentPage(1);
+    setFiltros((prev) => ({ ...prev, [filterName]: value }));
+    setPage(1);
   };
 
   const resetFilters = () => {
@@ -230,414 +193,762 @@ function GestionRutas() {
       cliente: '',
       contacto: '',
       telefono: '',
-      busquedaGeneral: ''
+      busquedaGeneral: '',
     });
-    setCurrentPage(1);
+    setPage(1);
+  };
+
+  const handleSort = (field) => {
+    if (orderBy === field) {
+      setOrder(order === 'asc' ? 'desc' : 'asc');
+    } else {
+      setOrderBy(field);
+      setOrder('desc');
+    }
+    setPage(1);
+  };
+
+  // Filtrar albaranes
+  const albaranesFiltrados = useMemo(() => {
+    let filtered = albaranes.filter(
+      (albaran) =>
+        !isAdmin && !isAdvancedUser
+          ? albaran.empleadoAsignado === user?.UsuarioLogicNet
+          : true
+    );
+
+    // Búsqueda general
+    if (filtros.busquedaGeneral) {
+      const search = filtros.busquedaGeneral.toLowerCase().trim();
+      filtered = filtered.filter(
+        (a) =>
+          a.albaranLower.includes(search) ||
+          a.nombreObraLower.includes(search) ||
+          a.clienteLower.includes(search) ||
+          a.contactoLower.includes(search) ||
+          a.telefonoLower.includes(search) ||
+          a.repartidorLower.includes(search) ||
+          a.municipioLower.includes(search)
+      );
+    }
+    // Filtros específicos
+    if (filtros.numeroAlbaran) {
+      const val = filtros.numeroAlbaran.toLowerCase().trim();
+      filtered = filtered.filter((a) => a.albaranLower.includes(val));
+    }
+    if (filtros.nombreObra) {
+      const val = filtros.nombreObra.toLowerCase().trim();
+      filtered = filtered.filter((a) => a.nombreObraLower.includes(val));
+    }
+    if (filtros.repartidor && !isDelivery) {
+      const val = filtros.repartidor.toLowerCase().trim();
+      filtered = filtered.filter((a) => a.repartidorLower.includes(val));
+    }
+    if (filtros.cliente) {
+      const val = filtros.cliente.toLowerCase().trim();
+      filtered = filtered.filter((a) => a.clienteLower.includes(val));
+    }
+    if (filtros.contacto) {
+      const val = filtros.contacto.toLowerCase().trim();
+      filtered = filtered.filter((a) => a.contactoLower.includes(val));
+    }
+    if (filtros.telefono) {
+      const val = filtros.telefono.toLowerCase().trim();
+      filtered = filtered.filter((a) => a.telefonoLower.includes(val));
+    }
+    return filtered;
+  }, [albaranes, isDelivery, isAdmin, isAdvancedUser, user, filtros]);
+
+  // Ordenar
+  const albaranesOrdenados = useMemo(() => {
+    const sorted = [...albaranesFiltrados];
+    sorted.sort((a, b) => {
+      let aVal, bVal;
+      if (orderBy === 'fechaAlbaran') {
+        aVal = a.fechaSort;
+        bVal = b.fechaSort;
+      } else {
+        aVal = a.albaranLower;
+        bVal = b.albaranLower;
+      }
+      if (aVal < bVal) return order === 'asc' ? -1 : 1;
+      if (aVal > bVal) return order === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [albaranesFiltrados, orderBy, order]);
+
+  // Paginación
+  const totalPages = Math.ceil(albaranesOrdenados.length / itemsPerPage);
+  const paginatedAlbaranes = albaranesOrdenados.slice(
+    (page - 1) * itemsPerPage,
+    page * itemsPerPage
+  );
+
+  const handleCompletarAlbaran = async (albaran, e) => {
+    e.stopPropagation();
+    if (!canPerformActionsInRutas) {
+      alert('No tienes permiso para completar albaranes');
+      return;
+    }
+    if (isDelivery && albaran.empleadoAsignado !== user?.UsuarioLogicNet) {
+      alert('Solo puedes completar albaranes asignados a ti');
+      return;
+    }
+    if (!albaran.tieneFirmaCliente || !albaran.tieneFirmaRepartidor) {
+      alert(mensajeFirmasObligatorias);
+      return;
+    }
+    const observaciones = prompt('¿Alguna observación sobre la entrega? (Opcional)') || '';
+    if (!window.confirm(`¿Marcar albarán ${albaran.albaran} como entregado?`)) return;
+    try {
+      const response = await API.post('/completar-albaran', {
+        codigoEmpresa: albaran.codigoEmpresa,
+        ejercicio: albaran.ejercicio,
+        serie: albaran.serie,
+        numeroAlbaran: albaran.numero,
+        observaciones,
+      });
+      if (response.data.success) {
+        setAlbaranes((prev) =>
+          prev.filter(
+            (a) =>
+              !(
+                a.numero === albaran.numero &&
+                a.serie === albaran.serie &&
+                a.ejercicio === albaran.ejercicio
+              )
+          )
+        );
+        alert(`Albarán ${albaran.albaran} completado`);
+      } else {
+        alert(`Error: ${response.data.mensaje}`);
+      }
+    } catch (error) {
+      alert(`Error: ${error.response?.data?.mensaje || error.message}`);
+    }
   };
 
   const formatFecha = (fechaString) => {
-    if (!fechaString) return 'Fecha no disponible';
-    const fecha = new Date(fechaString);
-    return fecha.toLocaleDateString('es-ES', {
+    if (!fechaString) return 'N/A';
+    return new Date(fechaString).toLocaleDateString('es-ES', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     });
   };
 
-  const handleRetry = () => {
-    setError(null);
-    setLoading(true);
-    fetchAlbaranes();
+  const getEstadoText = (statusFacturado) => {
+    return statusFacturado === -1 ? 'Servido' : 'Pendiente';
   };
 
-  const getActiveFiltersCount = () => {
-    const { busquedaGeneral, ...specificFilters } = filtros;
-    return Object.values(specificFilters).filter(value => value.trim() !== '').length;
+  const getEstadoColor = (statusFacturado) => {
+    return statusFacturado === -1 ? 'success' : 'default';
   };
 
-  const getEstadoText = (estadoPedido) => {
-    switch(estadoPedido) {
-      case 4: return 'Parcial';
-      case 2: return 'Servido';
-      case 1: return 'Completado';
-      case 0: return 'Pendiente';
-      default: return 'Desconocido';
-    }
-  };
+  const activeFiltersCount = Object.entries(filtros)
+    .filter(([key, val]) => key !== 'busquedaGeneral' && val.trim() !== '')
+    .length;
 
   if (!canViewGestionRutas) {
     return (
-      <div className="gestion-rutas-screen">
-        <div className="no-permission">
-          <h2>Acceso restringido</h2>
-          <p>No tienes permiso para acceder a esta sección.</p>
-          <button onClick={() => navigate('/')} className="btn-volver">
+      <Container maxWidth="sm" sx={{ mt: 4, textAlign: 'center', px: { xs: 2, sm: 3 } }}>
+        <Alert severity="warning" sx={{ maxWidth: 500, mx: 'auto' }}>
+          <Typography variant="h6">Acceso restringido</Typography>
+          <Typography>No tienes permiso para acceder a esta sección.</Typography>
+          <Button onClick={() => navigate('/')} sx={{ mt: 1 }}>
             Volver al inicio
-          </button>
-        </div>
-        <Navbar />
-      </div>
+          </Button>
+        </Alert>
+      </Container>
     );
   }
 
   return (
-    <div className="gestion-rutas-screen">
-      <div className="rutas-content">
-        <div className="rutas-header">
-          <div className="rutas-title">
-            <h2>Gestión de Rutas</h2>
-            <div className="permiso-indicator">
-              {isDelivery ? 'Repartidor' : canPerformActionsInRutas ? 'Acceso completo' : 'Acceso limitado'}
-            </div>
-          </div>
-          <button 
-            onClick={handleRefresh} 
-            className="refresh-btn"
-            disabled={refreshing || loading}
+    <Container maxWidth={false} disableGutters sx={{ px: { xs: 1.5, sm: 2, md: 3 }, py: 2 }}>
+      {/* Cabecera */}
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.1rem' }}>
+            Gestión de Rutas
+          </Typography>
+          <Chip
+            label={isDelivery ? 'Repartidor' : canPerformActionsInRutas ? 'Acceso completo' : 'Acceso limitado'}
+            size="small"
+            color={isDelivery ? 'primary' : 'info'}
+            variant="outlined"
+          />
+        </Stack>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<RefreshIcon />}
+          onClick={handleRefresh}
+          disabled={refreshing}
+        >
+          {refreshing ? 'Actualizando...' : 'Actualizar'}
+        </Button>
+      </Stack>
+
+      {/* Subtítulo */}
+      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+        Albaranes Pendientes de Entrega (Solo Nuestros Medios)
+        {isDelivery && (
+          <Chip icon={<PersonIcon />} label="Solo tus albaranes" size="small" sx={{ ml: 1 }} />
+        )}
+      </Typography>
+
+      {/* Panel de filtros */}
+      <Paper variant="outlined" sx={{ p: 1.5, mb: 2, borderRadius: 2 }}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <FilterIcon fontSize="small" color="action" />
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              Filtros
+            </Typography>
+            {activeFiltersCount > 0 && (
+              <Chip
+                label={`${activeFiltersCount} activo${activeFiltersCount !== 1 ? 's' : ''}`}
+                size="small"
+              />
+            )}
+          </Stack>
+          <Button
+            size="small"
+            onClick={resetFilters}
+            disabled={activeFiltersCount === 0}
+            startIcon={<ClearIcon />}
           >
-            <FaSync className={refreshing ? 'refresh-spin' : ''} />
-            {refreshing ? ' Actualizando...' : ' Actualizar'}
-          </button>
-        </div>
+            Limpiar
+          </Button>
+        </Stack>
 
-        <div className="subtitle-container">
-          <h3>Albaranes Pendientes de Entrega (Solo Nuestros Medios)</h3>
-          {isDelivery && (
-            <p className="user-notice">
-              <FaUser /> Solo ves los albaranes asignados a tu usuario
-            </p>
-          )}
-        </div>
+        {/* Búsqueda general */}
+        <TextField
+          fullWidth
+          size="small"
+          placeholder="Búsqueda general: albarán, obra, cliente, contacto, teléfono, municipio..."
+          value={filtros.busquedaGeneral}
+          onChange={(e) => handleFilterChange('busquedaGeneral', e.target.value)}
+          sx={{ mb: 1.5 }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" />
+              </InputAdornment>
+            ),
+            endAdornment: filtros.busquedaGeneral && (
+              <InputAdornment position="end">
+                <IconButton
+                  size="small"
+                  onClick={() => handleFilterChange('busquedaGeneral', '')}
+                >
+                  <ClearIcon fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
+        />
 
-        {/* Panel de filtros */}
-        <div className="filters-panel">
-          <div className="filters-header">
-            <FaFilter className="filter-icon" />
-            <h4>Filtros de búsqueda</h4>
-            {getActiveFiltersCount() > 0 && (
-              <span className="active-filters-badge">
-                {getActiveFiltersCount()} filtro{getActiveFiltersCount() !== 1 ? 's' : ''}
-              </span>
-            )}
-            <button 
-              onClick={resetFilters} 
-              className="clear-filters-btn"
-              disabled={getActiveFiltersCount() === 0}
-            >
-              <FaTimes /> Limpiar filtros
-            </button>
-          </div>
-          
-          {/* Búsqueda general */}
-          <div className="search-bar">
-            <FaSearch className="search-icon" />
-            <input
-              type="text"
-              placeholder="Busqueda general: albarán, obra, cliente, contacto, teléfono, municipio..."
-              value={filtros.busquedaGeneral}
-              onChange={(e) => handleFilterChange('busquedaGeneral', e.target.value)}
+        {/* Filtros específicos */}
+        <Grid container spacing={1.5}>
+          <Grid item xs={12} sm={6} md={4}>
+            <FormControl size="small" fullWidth>
+              <InputLabel>Rango fechas</InputLabel>
+              <Select
+                label="Rango fechas"
+                value={rangoFechas}
+                onChange={(e) => {
+                  setRangoFechas(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <MenuItem value="dia">Hoy</MenuItem>
+                <MenuItem value="semana">Últimos 7 días</MenuItem>
+                <MenuItem value="mes">Últimos 30 días</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              size="small"
+              label="Nº Albarán"
+              fullWidth
+              value={filtros.numeroAlbaran}
+              onChange={(e) => handleFilterChange('numeroAlbaran', e.target.value)}
+              InputProps={{
+                endAdornment: filtros.numeroAlbaran && (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleFilterChange('numeroAlbaran', '')}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
             />
-          </div>
-          
-          {/* Filtros específicos */}
-          <div className="filters-grid">
-            <div className="filter-group">
-              <label>
-                <FaSearch /> Número de Albarán
-              </label>
-              <input
-                type="text"
-                placeholder="Ej: ALB-2024-00123"
-                value={filtros.numeroAlbaran}
-                onChange={(e) => handleFilterChange('numeroAlbaran', e.target.value)}
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              size="small"
+              label="Obra"
+              fullWidth
+              value={filtros.nombreObra}
+              onChange={(e) => handleFilterChange('nombreObra', e.target.value)}
+              InputProps={{
+                endAdornment: filtros.nombreObra && (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleFilterChange('nombreObra', '')}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              size="small"
+              label="Cliente"
+              fullWidth
+              value={filtros.cliente}
+              onChange={(e) => handleFilterChange('cliente', e.target.value)}
+              InputProps={{
+                endAdornment: filtros.cliente && (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleFilterChange('cliente', '')}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              size="small"
+              label="Contacto"
+              fullWidth
+              value={filtros.contacto}
+              onChange={(e) => handleFilterChange('contacto', e.target.value)}
+              InputProps={{
+                endAdornment: filtros.contacto && (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleFilterChange('contacto', '')}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              size="small"
+              label="Teléfono"
+              fullWidth
+              value={filtros.telefono}
+              onChange={(e) => handleFilterChange('telefono', e.target.value)}
+              InputProps={{
+                endAdornment: filtros.telefono && (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleFilterChange('telefono', '')}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Grid>
+          {!isDelivery && (
+            <Grid item xs={12} sm={6} md={4}>
+              <TextField
+                size="small"
+                label="Repartidor"
+                fullWidth
+                value={filtros.repartidor}
+                onChange={(e) => handleFilterChange('repartidor', e.target.value)}
+                InputProps={{
+                  endAdornment: filtros.repartidor && (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleFilterChange('repartidor', '')}
+                      >
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
               />
-            </div>
-            
-            <div className="filter-group">
-              <label>
-                <FaBuilding /> Nombre de Obra
-              </label>
-              <input
-                type="text"
-                placeholder="Buscar por obra"
-                value={filtros.nombreObra}
-                onChange={(e) => handleFilterChange('nombreObra', e.target.value)}
-              />
-            </div>
-            
-            <div className="filter-group">
-              <label>
-                <FaUser /> Cliente
-              </label>
-              <input
-                type="text"
-                placeholder="Buscar por cliente"
-                value={filtros.cliente}
-                onChange={(e) => handleFilterChange('cliente', e.target.value)}
-              />
-            </div>
-            
-            <div className="filter-group">
-              <label>
-                <FaUser /> Contacto
-              </label>
-              <input
-                type="text"
-                placeholder="Buscar por contacto"
-                value={filtros.contacto}
-                onChange={(e) => handleFilterChange('contacto', e.target.value)}
-              />
-            </div>
-            
-            <div className="filter-group">
-              <label>
-                <FaPhone /> Teléfono
-              </label>
-              <input
-                type="text"
-                placeholder="Buscar por teléfono"
-                value={filtros.telefono}
-                onChange={(e) => handleFilterChange('telefono', e.target.value)}
-              />
-            </div>
-            
-            {!isDelivery && (
-              <div className="filter-group">
-                <label>
-                  <FaUser /> Repartidor
-                </label>
-                <input
-                  type="text"
-                  placeholder="Buscar por repartidor"
-                  value={filtros.repartidor}
-                  onChange={(e) => handleFilterChange('repartidor', e.target.value)}
-                />
-              </div>
-            )}
-          </div>
-        </div>
+            </Grid>
+          )}
+        </Grid>
+      </Paper>
 
-        <div className="search-and-pagination">
-          <div className="pagination-controls">
-            <button 
-              disabled={currentPage === 1 || totalPages === 0}
-              onClick={() => setCurrentPage(currentPage - 1)}
-              className="pagination-btn"
-            >
-              &lt;
-            </button>
-            <span className="pagination-info">
-              {totalPages === 0 
-                ? '0 resultados' 
-                : `Página ${currentPage} de ${totalPages} (${albaranesFiltrados.length} resultados)`
-              }
-            </span>
-            <button 
-              disabled={currentPage === totalPages || totalPages === 0}
-              onClick={() => setCurrentPage(currentPage + 1)}
-              className="pagination-btn"
-            >
-              &gt;
-            </button>
-          </div>
-          
-          <div className="view-info">
-            {isDelivery ? (
-              <span className="delivery-view">
-                <FaUser /> Vista de repartidor: solo tus albaranes
-              </span>
-            ) : (
-              <span className="admin-view">
-                Vista completa: todos los albaranes
-              </span>
-            )}
-          </div>
-        </div>
+      {/* Controles de orden y paginación superior */}
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        justifyContent="space-between"
+        alignItems={{ xs: 'stretch', sm: 'center' }}
+        sx={{ mb: 2 }}
+        spacing={1}
+      >
+        <Stack direction="row" spacing={1}>
+          <Button
+            size="small"
+            variant={orderBy === 'fechaAlbaran' ? 'contained' : 'outlined'}
+            onClick={() => handleSort('fechaAlbaran')}
+          >
+            Fecha {orderBy === 'fechaAlbaran' && (order === 'asc' ? '↑' : '↓')}
+          </Button>
+          <Button
+            size="small"
+            variant={orderBy === 'albaran' ? 'contained' : 'outlined'}
+            onClick={() => handleSort('albaran')}
+          >
+            Albarán {orderBy === 'albaran' && (order === 'asc' ? '↑' : '↓')}
+          </Button>
+        </Stack>
+        <Typography variant="caption" color="text.secondary">
+          {albaranesOrdenados.length} resultados
+        </Typography>
+      </Stack>
 
-        {loading && !refreshing && (
-          <div className="loading-container">
-            <div className="loading-spinner"></div>
-            <p>Cargando albaranes...</p>
-          </div>
-        )}
-        
-        {error && (
-          <div className="error-message">
-            <FaExclamationTriangle className="error-icon" />
-            <p>{error}</p>
-            <button onClick={handleRetry} className="retry-btn">
-              <FaSync /> Reintentar
-            </button>
-          </div>
-        )}
+      {/* Estado de carga/error */}
+      {loading && !refreshing && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress />
+          <Typography sx={{ ml: 2 }}>Cargando albaranes...</Typography>
+        </Box>
+      )}
 
-        {!loading && !error && albaranesFiltrados.length === 0 && (
-          <div className="no-albaranes">
-            {getActiveFiltersCount() > 0 ? (
-              <>
-                <p>No se encontraron albaranes con los filtros aplicados</p>
-                <button onClick={resetFilters} className="clear-filters-small">
-                  Limpiar filtros
-                </button>
-              </>
-            ) : albaranes.length === 0 ? (
-              <p>No hay albaranes pendientes de entrega</p>
-            ) : isDelivery ? (
-              <p>No tienes albaranes asignados actualmente</p>
-            ) : (
-              <p>No hay albaranes pendientes de entrega (solo nuestros medios)</p>
-            )}
-          </div>
-        )}
+      {error && (
+        <Alert
+          severity="error"
+          action={
+            <Button color="inherit" size="small" onClick={() => fetchAlbaranes()}>
+              Reintentar
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
+      )}
 
-        <div className="albaranes-grid">
-          {currentAlbaranes.map((albaran) => (
-            <div 
-              key={`${albaran.ejercicio}-${albaran.serie}-${albaran.numero}`} 
-              className={`ruta-card ${albaran.esParcial ? 'albaran-parcial' : ''} ${albaran.esVoluminoso ? 'albaran-voluminoso' : ''}`}
-              onClick={() => navigate('/detalle-albaran', { state: { albaran } })}
-            >
-              <div className="card-header">
-                <div className="card-header-top">
-                  <div className="card-title-section">
-                    <h4>Albarán: {albaran.albaran}</h4>
-                    <div className="card-badges">
+      {!loading && !error && albaranesOrdenados.length === 0 && (
+        <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
+          <Typography color="text.secondary">
+            {activeFiltersCount > 0
+              ? 'No se encontraron albaranes con los filtros aplicados'
+              : albaranes.length === 0
+              ? 'No hay albaranes pendientes de entrega'
+              : isDelivery
+              ? 'No tienes albaranes asignados actualmente'
+              : 'No hay albaranes pendientes de entrega (solo nuestros medios)'}
+          </Typography>
+          {activeFiltersCount > 0 && (
+            <Button onClick={resetFilters} sx={{ mt: 1 }}>
+              Limpiar filtros
+            </Button>
+          )}
+        </Paper>
+      )}
+
+      {/* Grid de tarjetas */}
+      {!loading && !error && albaranesOrdenados.length > 0 && (
+        <>
+          <Box
+            sx={{
+              display: 'grid',
+              gap: 2,
+              gridTemplateColumns: {
+                xs: '1fr',
+                sm: 'repeat(2, 1fr)',
+                md: 'repeat(3, 1fr)',
+              },
+              alignItems: 'stretch',
+            }}
+          >
+            {paginatedAlbaranes.map((albaran) => (
+              <Card
+                key={`${albaran.ejercicio}-${albaran.serie}-${albaran.numero}`}
+                variant="outlined"
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  height: '100%',
+                  borderRadius: 3,
+                  borderTop: `4px solid ${
+                    albaran.esParcial
+                      ? theme.palette.warning.main
+                      : albaran.esVoluminoso
+                      ? theme.palette.secondary.main
+                      : theme.palette.primary.light
+                  }`,
+                  cursor: 'pointer',
+                  transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow: theme.shadows[4],
+                  },
+                }}
+                onClick={() => navigate('/detalle-albaran', { state: { albaran } })}
+              >
+                {/* Cabecera de la tarjeta */}
+                <CardContent sx={{ p: 2, pb: 1 }}>
+                  <Stack spacing={1}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography
+                          variant="subtitle1"
+                          sx={{ fontWeight: 700, lineHeight: 1.2, wordBreak: 'break-word' }}
+                        >
+                          {albaran.albaran}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                          {formatFecha(albaran.FechaAlbaran)}
+                        </Typography>
+                      </Box>
+                      <Chip
+                        label={getEstadoText(albaran.StatusFacturado)}
+                        size="small"
+                        color={getEstadoColor(albaran.StatusFacturado)}
+                        variant="outlined"
+                        sx={{ flexShrink: 0, fontWeight: 700 }}
+                      />
+                    </Stack>
+
+                    <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
                       {albaran.esParcial && (
-                        <span className="badge badge-parcial">Parcial</span>
+                        <Chip label="Parcial" size="small" color="warning" variant="outlined" />
                       )}
                       {albaran.esVoluminoso && (
-                        <span className="badge badge-voluminoso">
-                          <FaBox /> Voluminoso
-                        </span>
+                        <Chip
+                          icon={<InventoryIcon />}
+                          label="Voluminoso"
+                          size="small"
+                          color="secondary"
+                          variant="outlined"
+                        />
                       )}
-                      <span className="estado-badge estado-{getEstadoText(albaran.EstadoPedido).toLowerCase()}">
-                        {getEstadoText(albaran.EstadoPedido)}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="fecha-albaran">
-                    {formatFecha(albaran.FechaAlbaran)}
-                  </span>
-                </div>
-              </div>
-              
-              <div className="card-body">
-                <div className="info-row">
-                  <strong>Cliente:</strong>
-                  <span>{albaran.cliente}</span>
-                </div>
-                
-                {albaran.nombreObra && (
-                  <div className="info-row">
-                    <strong>Obra:</strong>
-                    <span>{albaran.nombreObra}</span>
-                  </div>
-                )}
-                
-                {albaran.municipio && (
-                  <div className="info-row">
-                    <strong><FaMapMarkerAlt /> Municipio:</strong>
-                    <span>{albaran.municipio}</span>
-                  </div>
-                )}
-                
-                <div className="info-row">
-                  <strong>Contacto:</strong>
-                  <span>{albaran.contacto || 'No especificado'}</span>
-                </div>
-                
-                <div className="info-row">
-                  <strong><FaPhone /> Teléfono:</strong>
-                  <span>{albaran.telefonoContacto || 'No especificado'}</span>
-                </div>
-                
-                <div className="info-row">
-                  <strong>Repartidor:</strong>
-                  <span className={albaran.empleadoAsignado ? 'repartidor-asignado' : 'sin-repartidor'}>
-                    {albaran.repartidor}
-                  </span>
-                </div>
+                      {albaran.municipio && (
+                        <Chip
+                          icon={<LocationIcon />}
+                          label={albaran.municipio}
+                          size="small"
+                          variant="outlined"
+                          sx={{ maxWidth: '100%' }}
+                        />
+                      )}
+                    </Stack>
+                  </Stack>
+                </CardContent>
 
-                {albaran.articulos && albaran.articulos.length > 0 && (
-                  <div className="articulos-section">
-                    <strong>Artículos ({albaran.articulos.length}):</strong>
-                    <div className="articulos-list">
-                      {albaran.articulos.slice(0, 3).map((articulo, index) => (
-                        <div key={index} className="articulo-item">
-                          <span className="articulo-nombre">{articulo.nombre}</span>
-                          <span className="articulo-cantidad">{articulo.cantidad} uds</span>
-                        </div>
-                      ))}
-                      {albaran.articulos.length > 3 && (
-                        <div className="articulo-mas">
-                          +{albaran.articulos.length - 3} más...
-                        </div>
+                {/* Datos principales */}
+                <CardContent sx={{ p: 2, pt: 0, pb: 1 }}>
+                  <Typography
+                    sx={{
+                      color: 'text.secondary',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      mb: 1,
+                    }}
+                  >
+                    Datos principales
+                  </Typography>
+                  <Stack spacing={0.75}>
+                    <CardInfoRow icon={<BusinessIcon fontSize="small" />} label="Cliente" value={albaran.cliente} />
+                    <CardInfoRow icon={<LocationIcon fontSize="small" />} label="Obra" value={albaran.nombreObra} />
+                    <CardInfoRow icon={<PersonIcon fontSize="small" />} label="Contacto" value={albaran.contacto} />
+                    <CardInfoRow icon={<PhoneIcon fontSize="small" />} label="Teléfono" value={albaran.telefonoContacto} />
+                    <CardInfoRow
+                      icon={<PersonIcon fontSize="small" />}
+                      label="Repartidor"
+                      value={albaran.repartidor}
+                      color={albaran.empleadoAsignado ? 'text.primary' : theme.palette.warning.main}
+                    />
+                  </Stack>
+                </CardContent>
+
+                {/* Artículos */}
+                <CardContent sx={{ p: 2, pt: 0, pb: 1 }}>
+                  <Box
+                    sx={{
+                      p: 1,
+                      borderRadius: 2,
+                      bgcolor: 'rgba(15, 23, 42, 0.03)',
+                      border: `1px solid rgba(15, 23, 42, 0.06)`,
+                    }}
+                  >
+                    <Stack spacing={0.75}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
+                        <Typography
+                          sx={{
+                            color: 'text.secondary',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            letterSpacing: '0.04em',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          Artículos
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {albaran.articulos?.length || 0}
+                        </Typography>
+                      </Stack>
+                      {albaran.articulos && albaran.articulos.length > 0 ? (
+                        <Stack direction="row" flexWrap="wrap" gap={0.5}>
+                          {albaran.articulos.slice(0, 1).map((art, idx) => (
+                            <Chip
+                              key={idx}
+                              label={`${art.nombre} (${art.cantidad})`}
+                              size="small"
+                              variant="outlined"
+                              sx={{
+                                maxWidth: '100%',
+                                '& .MuiChip-label': {
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                },
+                              }}
+                            />
+                          ))}
+                          {albaran.articulos.length > 1 && (
+                            <Chip
+                              label={`+${albaran.articulos.length - 1}`}
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                            />
+                          )}
+                        </Stack>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          Sin artículos visibles
+                        </Typography>
                       )}
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              <div className="card-footer">
+                    </Stack>
+                  </Box>
+                </CardContent>
+
+                {/* Aviso de firmas pendientes o espacio reservado */}
+                <Box sx={{ px: 2, pb: 1 }}>
+                  {(!albaran.tieneFirmaCliente || !albaran.tieneFirmaRepartidor) ? (
+                    <Alert
+                      severity="warning"
+                      sx={{
+                        py: 0,
+                        alignItems: 'center',
+                        '& .MuiAlert-icon': { py: 0.5 },
+                        '& .MuiAlert-message': { fontSize: '0.75rem', lineHeight: 1.2 },
+                      }}
+                    >
+                      {mensajeFirmasObligatorias}
+                    </Alert>
+                  ) : (
+                    <Box
+                      sx={{
+                        height: 40,
+                        borderRadius: 2,
+                        border: '1px dashed rgba(15, 23, 42, 0.08)',
+                        bgcolor: 'rgba(248, 250, 252, 0.45)',
+                      }}
+                    />
+                  )}
+                </Box>
+
+                {/* Acciones */}
                 {canPerformActionsInRutas && (
-                  <>
-                    <button 
-                      className="completar-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCompletarAlbaran(albaran);
-                      }}
-                      disabled={isDelivery && albaran.empleadoAsignado !== user?.UsuarioLogicNet}
-                      title={isDelivery && albaran.empleadoAsignado !== user?.UsuarioLogicNet ? 
-                        "Solo puedes completar tus albaranes" : 
-                        "Marcar como entregado"}
-                    >
-                      <FaCheck /> Marcar como entregado
-                    </button>
-                    
-                    <button 
-                      className="detalle-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate('/detalle-albaran', { state: { albaran } });
-                      }}
-                    >
-                      Ver detalle completo
-                    </button>
-                  </>
+                  <CardActions
+                    sx={{
+                      p: 2,
+                      pt: 0,
+                      justifyContent: 'space-between',
+                      borderTop: `1px solid ${theme.palette.divider}`,
+                      bgcolor: 'rgba(248, 250, 252, 0.8)',
+                    }}
+                  >
+                    <Typography variant="caption" color="text.secondary" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {albaran.esVoluminoso ? 'Entrega especial' : 'Acciones'}
+                    </Typography>
+                    <Stack direction="row" spacing={1}>
+                      <Tooltip
+                        title={
+                          isDelivery && albaran.empleadoAsignado !== user?.UsuarioLogicNet
+                            ? 'Solo tus albaranes'
+                            : !albaran.tieneFirmaCliente || !albaran.tieneFirmaRepartidor
+                            ? mensajeFirmasObligatorias
+                            : 'Marcar como entregado'
+                        }
+                      >
+                        <span>
+                          <Button
+                            size="small"
+                            startIcon={<CheckCircleIcon />}
+                            onClick={(e) => handleCompletarAlbaran(albaran, e)}
+                            disabled={
+                              (isDelivery && albaran.empleadoAsignado !== user?.UsuarioLogicNet) ||
+                              !albaran.tieneFirmaCliente ||
+                              !albaran.tieneFirmaRepartidor
+                            }
+                          >
+                            Completar
+                          </Button>
+                        </span>
+                      </Tooltip>
+                      <Button
+                        size="small"
+                        startIcon={<VisibilityIcon />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate('/detalle-albaran', { state: { albaran } });
+                        }}
+                      >
+                        Detalle
+                      </Button>
+                    </Stack>
+                  </CardActions>
                 )}
-              </div>
-            </div>
-          ))}
-        </div>
+              </Card>
+            ))}
+          </Box>
 
-        {totalPages > 1 && (
-          <div className="pagination-bottom">
-            <div className="pagination-controls">
-              <button 
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(currentPage - 1)}
-                className="pagination-btn"
-              >
-                &lt;
-              </button>
-              <span className="pagination-info">Página {currentPage} de {totalPages}</span>
-              <button 
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage(currentPage + 1)}
-                className="pagination-btn"
-              >
-                &gt;
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-      <Navbar />
-    </div>
+          {/* Paginación */}
+          {totalPages > 1 && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+              <Pagination
+                count={totalPages}
+                page={page}
+                onChange={(e, value) => setPage(value)}
+                color="primary"
+                size="small"
+              />
+            </Box>
+          )}
+        </>
+      )}
+    </Container>
   );
 }
 

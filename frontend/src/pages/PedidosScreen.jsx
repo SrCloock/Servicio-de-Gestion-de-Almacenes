@@ -1,17 +1,556 @@
-﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import '../styles/PedidosScreen.css';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
+import { Alert, Box, Button, Card, CardContent, CircularProgress, FormControlLabel, Grid, Paper, Stack, Switch, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
 import { Html5Qrcode } from 'html5-qrcode';
 import { usePermissions } from '../PermissionsManager';
-import '../styles/PedidosScreen.css';
-import { 
-  FaEllipsisV, FaCamera, FaQrcode, FaBarcode, FaCheck, FaTimes, 
-  FaExclamationTriangle, FaChevronDown, FaSearch, FaCalendarAlt, 
-  FaTruck, FaInfoCircle, FaSync, FaFilter, FaWeight, FaBox, 
-  FaUser, FaPhone, FaExclamation, FaBell 
-} from 'react-icons/fa';
+import { FaBarcode, FaBell, FaBox, FaCalendarAlt, FaCamera, FaCheck, FaChevronDown, FaEllipsisV, FaExclamation, FaExclamationTriangle, FaFilter, FaInfoCircle, FaPhone, FaQrcode, FaSearch, FaSync, FaTimes, FaTruck, FaUser, FaWeight } from 'react-icons/fa';
+
+const PedidosHeader = ({ title, subtitle }) => {
+  return (
+    <Paper elevation={0} className="ps-pedidos-header" sx={{ borderRadius: 3 }}>
+      <Stack className="ps-header-content">
+        <Typography component="h1" className="ps-header-title">
+          {title}
+        </Typography>
+        <Typography className="ps-header-subtitle">
+          {subtitle}
+        </Typography>
+      </Stack>
+    </Paper>
+  );
+};
+
+
+const PedidosFilters = ({
+  filtroBusqueda,
+  onFiltroBusquedaChange,
+  rangoFechas,
+  onRangoFechasChange,
+  filtroStatus,
+  onFiltroStatusChange,
+  opcionesStatus,
+  searchIcon,
+  calendarIcon,
+  chevronIcon
+}) => {
+  return (
+    <Paper elevation={1} className="ps-pedidos-controls" sx={{ borderRadius: 3 }}>
+      <div className="ps-filtros-container">
+        <div className="ps-filtro-group ps-search-group">
+          <label>{searchIcon} Buscar:</label>
+          <div className="ps-search-input-container">
+            <input
+              type="text"
+              placeholder="Nº pedido, cliente, obra, contacto..."
+              value={filtroBusqueda}
+              onChange={(e) => onFiltroBusquedaChange(e.target.value)}
+              className="ps-search-input"
+            />
+          </div>
+        </div>
+
+        <div className="ps-filtro-group ps-date-group">
+          <label>{calendarIcon} Rango de fechas:</label>
+          <div className="ps-select-container">
+            <select
+              value={rangoFechas}
+              onChange={(e) => onRangoFechasChange(e.target.value)}
+              className="ps-sort-select"
+            >
+              <option value="semana">Una semana</option>
+              <option value="dia">Un día</option>
+            </select>
+            <div className="ps-select-arrow">{chevronIcon}</div>
+          </div>
+        </div>
+
+        <div className="ps-filtro-group ps-status-group">
+          <label>Estado:</label>
+          <div className="ps-select-container">
+            <select
+              value={filtroStatus}
+              onChange={(e) => onFiltroStatusChange(e.target.value)}
+              className="ps-sort-select"
+            >
+              {opcionesStatus.map((estado) => (
+                <option key={estado.id} value={estado.id}>
+                  {estado.nombre}
+                </option>
+              ))}
+            </select>
+            <div className="ps-select-arrow">{chevronIcon}</div>
+          </div>
+        </div>
+      </div>
+    </Paper>
+  );
+};
+
+
+const SummaryCard = ({ label, value }) => (
+  <Card elevation={1} sx={{ borderRadius: 3 }}>
+    <CardContent>
+      <Stack spacing={0.5}>
+        <Typography variant="caption" color="text.secondary">
+          {label}
+        </Typography>
+        <Typography variant="h6" sx={{ fontWeight: 700 }}>
+          {value}
+        </Typography>
+      </Stack>
+    </CardContent>
+  </Card>
+);
+
+const PedidosSummaryBar = ({
+  totalPedidos,
+  pedidosPagina,
+  paginaActual,
+  totalPaginas,
+  voluminosos
+}) => {
+  return (
+    <Grid container spacing={2} sx={{ mb: 3 }}>
+      <Grid item xs={12} sm={6} md={3}>
+        <SummaryCard label="Pedidos filtrados" value={totalPedidos} />
+      </Grid>
+      <Grid item xs={12} sm={6} md={3}>
+        <SummaryCard label="En página" value={pedidosPagina} />
+      </Grid>
+      <Grid item xs={12} sm={6} md={3}>
+        <SummaryCard label="Página actual" value={`${paginaActual} / ${Math.max(totalPaginas, 1)}`} />
+      </Grid>
+      <Grid item xs={12} sm={6} md={3}>
+        <SummaryCard label="Voluminosos" value={voluminosos} />
+      </Grid>
+    </Grid>
+  );
+};
+
+
+const PedidosList = ({ topPagination, bottomPagination, children }) => {
+  return (
+    <>
+      <Box className="ps-pagination-container">
+        {topPagination}
+      </Box>
+      <Stack className="ps-pedidos-content" spacing={2.5}>
+        {children}
+      </Stack>
+      <Box className="ps-pagination-container">
+        {bottomPagination}
+      </Box>
+    </>
+  );
+};
+
+
+const PedidosStateView = ({
+  type = 'info',
+  title,
+  message,
+  buttonLabel,
+  onButtonClick,
+  buttonIcon
+}) => {
+  if (type === 'loading') {
+    return (
+      <Paper elevation={1} sx={{ p: 5, borderRadius: 3 }}>
+        <Stack spacing={2} alignItems="center">
+          <CircularProgress />
+          <Typography>{message || 'Cargando...'}</Typography>
+        </Stack>
+      </Paper>
+    );
+  }
+
+  return (
+    <Paper elevation={1} sx={{ p: 4, borderRadius: 3 }}>
+      <Stack spacing={2} alignItems="center">
+        <Alert severity={type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'info'} sx={{ width: '100%' }}>
+          {title && <strong>{title}</strong>}
+          {title && message ? ' ' : ''}
+          {message}
+        </Alert>
+        {buttonLabel && onButtonClick && (
+          <Button variant="contained" onClick={onButtonClick} startIcon={buttonIcon || null}>
+            {buttonLabel}
+          </Button>
+        )}
+      </Stack>
+    </Paper>
+  );
+};
+
+
+const PedidoCard = ({
+  pedido,
+  togglePedidoView,
+  pedidoViewModes,
+  generarAlbaranParcial,
+  generandoAlbaran,
+  canPerformActionsInPedidos,
+  onActualizarVoluminoso,
+  onCargarUbicaciones,
+  lineasContent,
+  menuIcon,
+  weightIcon,
+  exclamationIcon,
+  boxIcon,
+  userIcon,
+  phoneIcon,
+  infoIcon,
+  checkIcon,
+  ellipsisIcon
+}) => {
+  const [showMenu, setShowMenu] = useState(false);
+  const [actualizandoVoluminoso, setActualizandoVoluminoso] = useState(false);
+
+  const tieneLineasParciales = useMemo(() => {
+    return pedido.articulos.some((articulo) => {
+      const unidadesExpedidas = parseFloat(articulo.unidadesPedidas) - parseFloat(articulo.unidadesPendientes);
+      return unidadesExpedidas > 0 && unidadesExpedidas < parseFloat(articulo.unidadesPedidas);
+    });
+  }, [pedido.articulos]);
+
+  const estaCompletamenteExpedido = useMemo(() => {
+    return pedido.articulos.every((articulo) => parseFloat(articulo.unidadesPendientes) === 0);
+  }, [pedido.articulos]);
+
+  const esParcialBackend = pedido.Estado === 4;
+  const esServidoBackend = pedido.Estado === 2;
+  const parcial = esParcialBackend || (tieneLineasParciales && !esServidoBackend);
+  const completo = esServidoBackend || estaCompletamenteExpedido;
+  const mostrarOpcionParcial = parcial && !completo && canPerformActionsInPedidos;
+
+  const handleToggleVoluminoso = async () => {
+    if (!canPerformActionsInPedidos || actualizandoVoluminoso) return;
+
+    setActualizandoVoluminoso(true);
+    try {
+      await onActualizarVoluminoso(pedido, !pedido.EsVoluminoso);
+    } finally {
+      setActualizandoVoluminoso(false);
+    }
+  };
+
+  useEffect(() => {
+    if (pedidoViewModes[pedido.numeroPedido] === 'show' && onCargarUbicaciones) {
+      const articulos = pedido.articulos.map((art) => art.codigoArticulo);
+      onCargarUbicaciones(articulos);
+    }
+  }, [pedidoViewModes, pedido.numeroPedido, pedido.articulos, onCargarUbicaciones]);
+
+  return (
+    <Card
+      elevation={2}
+      className={`ps-pedido-card ${parcial ? 'ps-pedido-parcial' : ''} ${pedido.EsVoluminoso ? 'ps-pedido-voluminoso' : ''}`}
+      sx={{ borderRadius: 3 }}
+    >
+      <CardContent sx={{ p: 0 }}>
+        <div className="ps-pedido-header">
+          <div className="ps-pedido-header-left">
+            <div className="ps-pedido-info-top">
+              <span className="ps-numero-pedido">#{pedido.numeroPedido}</span>
+              <span className="ps-fecha-pedido">{new Date(pedido.fechaPedido).toLocaleDateString()}</span>
+              <span className="ps-fecha-entrega">
+                Entrega: {pedido.fechaEntrega ? new Date(pedido.fechaEntrega).toLocaleDateString() : 'Sin fecha'}
+              </span>
+              <span className={`ps-status-pedido ps-status-${pedido.Status?.toLowerCase() || 'revision'}`}>
+                {pedido.Status || 'Revision'}
+              </span>
+
+              {pedido.PesoTotal > 0 && (
+                <span className="ps-peso-total">
+                  {weightIcon} {pedido.PesoTotal.toFixed(2)} kg
+                </span>
+              )}
+
+              {pedido.EsVoluminoso && (
+                <span className="ps-voluminoso-badge ps-voluminoso-badge-prominente">
+                  {exclamationIcon} VOLUMINOSO
+                </span>
+              )}
+            </div>
+
+            <div className="ps-cliente-info">
+              <span className="ps-cliente">{pedido.razonSocial}</span>
+            </div>
+          </div>
+
+          <div className="ps-pedido-header-right">
+            <div className="ps-pedido-actions">
+              <button className="ps-btn-menu" onClick={() => setShowMenu(!showMenu)}>
+                {menuIcon}
+              </button>
+
+              {showMenu && (
+                <div className="ps-dropdown-menu">
+                  {canPerformActionsInPedidos && (
+                    <button
+                      onClick={() => {
+                        handleToggleVoluminoso();
+                        setShowMenu(false);
+                      }}
+                      className="ps-menu-item"
+                      disabled={actualizandoVoluminoso}
+                    >
+                      {actualizandoVoluminoso
+                        ? 'Actualizando...'
+                        : pedido.EsVoluminoso
+                          ? 'Desmarcar voluminoso'
+                          : 'Marcar como voluminoso'}
+                    </button>
+                  )}
+
+                  {mostrarOpcionParcial && (
+                    <button
+                      onClick={() => {
+                        generarAlbaranParcial(pedido);
+                        setShowMenu(false);
+                      }}
+                      className="ps-menu-item"
+                      disabled={generandoAlbaran}
+                    >
+                      {checkIcon} {generandoAlbaran ? 'Procesando...' : 'Generar albaran parcial'}
+                    </button>
+                  )}
+
+                  <button
+                    className="ps-menu-item"
+                    onClick={() => {
+                      togglePedidoView(pedido.numeroPedido);
+                      setShowMenu(false);
+                    }}
+                  >
+                    {ellipsisIcon}{' '}
+                    {pedidoViewModes[pedido.numeroPedido] === 'show'
+                      ? 'Ocultar lineas y detalles'
+                      : 'Mostrar lineas y detalles'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {pedidoViewModes[pedido.numeroPedido] === 'show' && (
+          <>
+            <Paper elevation={0} className="ps-pedido-details" sx={{ borderRadius: 0 }}>
+              <div className="ps-peso-voluminoso-info">
+                <div className="ps-peso-info">
+                  <strong>{weightIcon} Peso total estimado:</strong>{' '}
+                  {pedido.PesoTotal ? `${pedido.PesoTotal.toFixed(2)} kg` : '0 kg'}
+                </div>
+
+                <div className="ps-voluminoso-info">
+                  <strong>{boxIcon} Pedido voluminoso:</strong>
+                  <span className={`ps-voluminoso-estado ${pedido.EsVoluminoso ? 'activo' : 'inactivo'}`}>
+                    {pedido.EsVoluminoso ? 'SI' : 'NO'}
+                  </span>
+
+                  {canPerformActionsInPedidos && (
+                    <FormControlLabel
+                      className="ps-voluminoso-switch"
+                      control={
+                        <Switch
+                          checked={!!pedido.EsVoluminoso}
+                          onChange={handleToggleVoluminoso}
+                          disabled={actualizandoVoluminoso}
+                          color="warning"
+                        />
+                      }
+                      label={actualizandoVoluminoso ? 'Actualizando...' : pedido.EsVoluminoso ? 'Marcado' : 'No marcado'}
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="ps-contacto-info-grid">
+                <div className="ps-contacto-item">
+                  <div className="ps-contacto-label">{userIcon} Contacto:</div>
+                  <div className="ps-contacto-value">{pedido.Contacto || 'No especificado'}</div>
+                </div>
+
+                <div className="ps-contacto-item">
+                  <div className="ps-contacto-label">{phoneIcon} Telefono:</div>
+                  <div className="ps-contacto-value">{pedido.TelefonoContacto || 'No especificado'}</div>
+                </div>
+
+                <div className="ps-contacto-item">
+                  <div className="ps-contacto-label">{userIcon} Vendedor:</div>
+                  <div className="ps-contacto-value">{pedido.NombreVendedor || pedido.Vendedor || 'No especificado'}</div>
+                </div>
+
+                <div className="ps-contacto-item ps-observaciones-web">
+                  <div className="ps-contacto-label">{infoIcon} Observaciones Web:</div>
+                  <div className="ps-contacto-value">{pedido.observaciones || 'No hay observaciones'}</div>
+                </div>
+              </div>
+
+              <div className="ps-pedido-detail-item ps-obra-item">
+                <strong>Obra:</strong> {pedido.nombreObra || 'Sin obra especificada'}
+              </div>
+            </Paper>
+
+            {lineasContent}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+
+const PedidoLineasTable = ({ children }) => {
+  return (
+    <div className="ps-lineas-container">
+      <TableContainer
+        component={Paper}
+        elevation={1}
+        className="ps-table-responsive"
+        sx={{ borderRadius: 3, overflow: 'hidden' }}
+      >
+        <Table className="ps-lineas-table">
+          <TableHead>
+            <TableRow>
+              <TableCell>Artículo</TableCell>
+              <TableCell>Descripción</TableCell>
+              <TableCell>Pendiente</TableCell>
+              <TableCell>Peso</TableCell>
+              <TableCell>Ubicación</TableCell>
+              <TableCell>Cantidad</TableCell>
+              <TableCell>Acción</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>{children}</TableBody>
+        </Table>
+      </TableContainer>
+    </div>
+  );
+};
+
+
+const UbicacionesSelect = ({
+  value,
+  onChange,
+  canPerformActions,
+  isProcesando,
+  isUpdatingExpedicion,
+  ubicacionesCargadas,
+  ubicacionesConStock,
+  formatearInfoStock,
+  selectArrowIcon,
+  zonaDescargaClass = ''
+}) => {
+  return (
+    <div className="ps-ubicacion-select-container">
+      <select
+        value={value}
+        onChange={onChange}
+        className={`ps-ubicacion-select ${zonaDescargaClass}`.trim()}
+        disabled={!canPerformActions || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
+      >
+        {!ubicacionesCargadas ? (
+          <option value="">Cargando ubicaciones...</option>
+        ) : ubicacionesConStock.length === 0 ? (
+          <option value="">Sin ubicaciones disponibles</option>
+        ) : (
+          ubicacionesConStock.map((ubicacion, locIndex) => (
+            <option
+              key={`${ubicacion.codigoAlmacen}-${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
+              value={buildUbicacionOptionValue(ubicacion)}
+              className={ubicacion.ubicacion === 'Zona descarga' ? 'ps-zona-descarga-option' : ''}
+            >
+              {ubicacion.codigoAlmacen} - {ubicacion.ubicacion}
+              {ubicacion.partida ? ` (${ubicacion.partida})` : ''} - {formatearInfoStock(ubicacion)}
+            </option>
+          ))
+        )}
+      </select>
+
+      <div className="ps-select-arrow">{selectArrowIcon}</div>
+    </div>
+  );
+};
+
+
+const ExpedicionLineaPanel = ({
+  value,
+  onChange,
+  unidad,
+  zonaDescarga,
+  canPerformActions,
+  isProcesando,
+  isUpdatingExpedicion,
+  ubicacionesCargadas,
+  isScanning,
+  onEscanear,
+  cameraIcon,
+  mobile = false,
+  showInput = true,
+  showButton = true,
+  isValid = true,
+  helperText = ''
+}) => {
+  const disabledButton =
+    !canPerformActions ||
+    !isValid ||
+    parseFloat(value) <= 0 ||
+    isScanning ||
+    isProcesando ||
+    isUpdatingExpedicion ||
+    !ubicacionesCargadas;
+
+  return (
+    <Stack
+      direction={mobile ? 'column' : 'row'}
+      spacing={1}
+      alignItems={mobile ? 'stretch' : 'center'}
+      className="ps-expedicion-linea-panel"
+    >
+      {showInput && (
+        <div className="ps-cantidad-panel">
+          <div className="ps-cantidad-container">
+            <input
+              type="text"
+              value={value}
+              onChange={onChange}
+              className={`${zonaDescarga ? 'ps-zona-descarga-input' : ''} ${!isValid ? 'ps-cantidad-input-error' : ''}`.trim()}
+              disabled={!canPerformActions || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
+              placeholder="1"
+              inputMode="numeric"
+            />
+            <div className="ps-unidad-info">{unidad || 'ud'}</div>
+          </div>
+          {helperText && (
+            <Typography className={`ps-cantidad-helper ${!isValid ? 'error' : ''}`} variant="caption">
+              {helperText}
+            </Typography>
+          )}
+        </div>
+      )}
+
+      {showButton && (
+        <Button
+          className="ps-btn-expedir"
+          onClick={onEscanear}
+          disabled={disabledButton}
+          variant="contained"
+          startIcon={cameraIcon}
+          sx={{ whiteSpace: 'nowrap' }}
+        >
+          {isProcesando ? 'Procesando...' : isScanning ? 'Procesando...' : 'Escanear'}
+        </Button>
+      )}
+    </Stack>
+  );
+};
+
 
 // Custom hook para debounce
 const useDebounce = (value, delay) => {
@@ -120,6 +659,31 @@ const formatearUnidad = (cantidad, unidad) => {
     }
   }
 };
+
+const sanitizarCantidadEntera = (value) => {
+  if (value === null || value === undefined) return '';
+
+  const texto = String(value).trim();
+  if (texto === '') return '';
+  if (texto.includes('-')) return '';
+
+  const [parteEntera] = texto.split(/[.,]/);
+  const soloDigitos = (parteEntera || '').replace(/\D/g, '');
+
+  if (!soloDigitos) return '';
+
+  const normalizado = soloDigitos.replace(/^0+(?=\d)/, '');
+  return normalizado;
+};
+
+const buildUbicacionOptionValue = (ubicacion) => [
+  ubicacion?.codigoAlmacen ?? ubicacion?.CodigoAlmacen ?? '',
+  ubicacion?.ubicacion ?? ubicacion?.Ubicacion ?? '',
+  ubicacion?.partida ?? ubicacion?.Partida ?? '',
+  ubicacion?.unidadMedida ?? ubicacion?.UnidadMedida ?? '',
+  ubicacion?.codigoColor ?? ubicacion?.CodigoColor_ ?? '',
+  ubicacion?.codigoTalla ?? ubicacion?.CodigoTalla01_ ?? ''
+].join('||');
 
 // Componente de carga mejorado
 const LoadingSpinner = React.memo(({ message = "Cargando..." }) => (
@@ -325,7 +889,7 @@ const DetallesArticuloModal = React.memo(({
     const detalleKey = `${detalle.codigoArticulo}-${detalle.codigoColor || 'SIN_COLOR'}-${detalle.codigoTalla || 'SIN_TALLA'}`;
     const seleccion = selecciones[detalleKey];
 
-    if (!seleccion || !seleccion.ubicacion || !seleccion.cantidad) {
+    if (!seleccion || !seleccion.ubicacionKey || !seleccion.cantidad) {
       alert("Debes seleccionar ubicación y cantidad.");
       return;
     }
@@ -345,7 +909,9 @@ const DetallesArticuloModal = React.memo(({
     
     try {
       const ubicaciones = ubicacionesPorDetalle[detalleKey] || [];
-      const ubicacionSeleccionada = ubicaciones.find(ubic => ubic.Ubicacion === seleccion.ubicacion);
+      const ubicacionSeleccionada = ubicaciones.find(
+        (ubic) => buildUbicacionOptionValue(ubic) === seleccion.ubicacionKey
+      );
       
       if (!ubicacionSeleccionada) {
         alert("Error: No se encontró la ubicación seleccionada.");
@@ -368,10 +934,12 @@ const DetallesArticuloModal = React.memo(({
         color: detalle.codigoColor,
         talla: detalle.codigoTalla,
         cantidad: cantidad,
-        ubicacion: seleccion.ubicacion,
+        ubicacion: ubicacionSeleccionada.Ubicacion,
         almacen: ubicacionSeleccionada.CodigoAlmacen,
         partida: ubicacionSeleccionada.Partida || '',
         unidadMedida: ubicacionSeleccionada.UnidadMedida || linea.unidadBase,
+        codigoColor: ubicacionSeleccionada.CodigoColor_ || '',
+        codigoTalla: ubicacionSeleccionada.CodigoTalla01_ || '',
         movPosicionLinea: linea.movPosicionLinea
       });
 
@@ -453,15 +1021,15 @@ const DetallesArticuloModal = React.memo(({
                         ) : ubicaciones.length > 0 ? (
                           <div className="ps-ubicacion-select-container">
                             <select
-                              value={seleccion.ubicacion || ""}
-                              onChange={(e) => handleCambioSeleccion(key, "ubicacion", e.target.value)}
+                              value={seleccion.ubicacionKey || ""}
+                              onChange={(e) => handleCambioSeleccion(key, "ubicacionKey", e.target.value)}
                               disabled={!canPerformActions}
                               className="ps-ubicacion-select-detalle"
                             >
                               <option value="">Selecciona ubicación</option>
                               {ubicaciones.map((ubic, idx) => (
                                 <option key={`${ubic.CodigoAlmacen}-${ubic.Ubicacion}-${ubic.Partida || 'no-partida'}-${idx}`}
-                                        value={ubic.Ubicacion}>
+                                        value={buildUbicacionOptionValue(ubic)}>
                                   {getTextoOpcionUbicacion(ubic)}
                                 </option>
                               ))}
@@ -505,7 +1073,7 @@ const DetallesArticuloModal = React.memo(({
                           onClick={() => handleExpedir(detalle)}
                           disabled={
                             !canPerformActions || 
-                            !seleccion.ubicacion || 
+                            !seleccion.ubicacionKey || 
                             !seleccion.cantidad || 
                             parseFloat(seleccion.cantidad) <= 0 || 
                             parseFloat(seleccion.cantidad) > detalle.cantidadPendiente ||
@@ -580,23 +1148,6 @@ const LineaPedido = React.memo(({
       return tieneStock && unidadCoincide && noEsZonaDescarga;
     });
 
-    // Si no hay ubicaciones con stock, mostrar todas las disponibles (incluyendo sin stock)
-    if (ubicacionesConStockReal.length === 0) {
-      ubicacionesConStockReal = ubicacionesArticulo.filter(ubi => {
-        const unidadUbicacionNormalizada = normalizarUnidad(ubi.unidadMedida);
-        const unidadPedidoNormalizada = normalizarUnidad(linea.unidadPedido);
-        const unidadBaseNormalizada = normalizarUnidad(linea.unidadBase);
-        
-        const unidadCoincide = 
-          unidadUbicacionNormalizada === unidadPedidoNormalizada || 
-          unidadUbicacionNormalizada === unidadBaseNormalizada;
-        
-        const noEsZonaDescarga = ubi.ubicacion !== "Zona descarga";
-        
-        return unidadCoincide && noEsZonaDescarga;
-      });
-    }
-
     // Si aún no hay ubicaciones, usar zona descarga
     if (ubicacionesConStockReal.length === 0) {
       ubicacionesConStockReal = [{
@@ -605,6 +1156,8 @@ const LineaPedido = React.memo(({
         partida: null,
         unidadSaldo: Infinity,
         unidadMedida: linea.unidadPedido || linea.unidadBase || 'ud',
+        codigoColor: '',
+        codigoTalla: '',
         descripcionUbicacion: "Stock disponible para expedición directa"
       }];
     }
@@ -623,6 +1176,8 @@ const LineaPedido = React.memo(({
     ubicacion: ubicacionesConStock[0]?.ubicacion || '',
     partida: ubicacionesConStock[0]?.partida || null,
     unidadMedida: ubicacionesConStock[0]?.unidadMedida || linea.unidadPedido,
+    codigoColor: ubicacionesConStock[0]?.codigoColor || '',
+    codigoTalla: ubicacionesConStock[0]?.codigoTalla || '',
     cantidad: '0'
   };
   
@@ -631,7 +1186,12 @@ const LineaPedido = React.memo(({
     if (ubicacionesConStock.length === 0 || isUpdatingExpedicion) return;
 
     const ubicacionActual = ubicacionesConStock.find(
-      ubi => ubi.ubicacion === expedicion.ubicacion && ubi.codigoAlmacen === expedicion.almacen
+      (ubi) =>
+        ubi.ubicacion === expedicion.ubicacion &&
+        ubi.codigoAlmacen === expedicion.almacen &&
+        (ubi.partida || '') === (expedicion.partida || '') &&
+        (ubi.codigoColor || '') === (expedicion.codigoColor || '') &&
+        (ubi.codigoTalla || '') === (expedicion.codigoTalla || '')
     );
     
     if (!ubicacionActual) {
@@ -646,6 +1206,8 @@ const LineaPedido = React.memo(({
           handleExpedicionChange(key, 'almacen', primeraUbicacion.codigoAlmacen);
           handleExpedicionChange(key, 'partida', primeraUbicacion.partida || '');
           handleExpedicionChange(key, 'unidadMedida', primeraUbicacion.unidadMedida || linea.unidadPedido);
+          handleExpedicionChange(key, 'codigoColor', primeraUbicacion.codigoColor || '');
+          handleExpedicionChange(key, 'codigoTalla', primeraUbicacion.codigoTalla || '');
           
           const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
           let nuevaCantidad = 0;
@@ -665,7 +1227,7 @@ const LineaPedido = React.memo(({
 
       return () => clearTimeout(timeoutId);
     }
-  }, [ubicacionesConStock, expedicion.ubicacion, expedicion.almacen, handleExpedicionChange, key, linea.unidadesPendientes, linea.unidadPedido, isUpdatingExpedicion]);
+  }, [ubicacionesConStock, expedicion.ubicacion, expedicion.almacen, expedicion.partida, expedicion.codigoColor, expedicion.codigoTalla, handleExpedicionChange, key, linea.unidadesPendientes, linea.unidadPedido, isUpdatingExpedicion]);
 
   const formatted = useMemo(() => {
     const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
@@ -698,36 +1260,7 @@ const LineaPedido = React.memo(({
   }, [linea.pesoUnitario, linea.unidadesPendientes]);
   
   const validarCantidad = useCallback((value) => {
-    if (value === '') return '0';
-    
-    let newValue = value.replace(/[^\d.]/g, '');
-    
-    const parts = newValue.split('.');
-    if (parts.length > 2) {
-      newValue = parts[0] + '.' + parts.slice(1).join('');
-    }
-    
-    const cantidad = parseFloat(newValue) || 0;
-    const unidadesPendientes = parseFloat(linea.unidadesPendientes) || 0;
-    
-    const ubicacionSeleccionada = ubicacionesConStock.find(
-      ubi => ubi.ubicacion === expedicion.ubicacion && ubi.codigoAlmacen === expedicion.almacen
-    );
-    
-    let maxPermitido = unidadesPendientes;
-    
-    if (ubicacionSeleccionada && 
-        ubicacionSeleccionada.ubicacion !== "Zona descarga" && 
-        ubicacionSeleccionada.unidadSaldo !== Infinity) {
-      const stockDisponible = parseFloat(ubicacionSeleccionada.unidadSaldo) || 0;
-      maxPermitido = Math.min(unidadesPendientes, stockDisponible);
-    }
-    
-    if (cantidad > maxPermitido) {
-      return maxPermitido.toString();
-    }
-    
-    return newValue;
+    return sanitizarCantidadEntera(value);
   }, [expedicion.ubicacion, expedicion.almacen, linea.unidadesPendientes, ubicacionesConStock]);
   
   const handleCambioCantidad = useCallback((e) => {
@@ -743,7 +1276,7 @@ const LineaPedido = React.memo(({
     const nuevaUbicacion = e.target.value;
     
     const ubicacionSeleccionada = ubicacionesConStock.find(
-      ubi => ubi.ubicacion === nuevaUbicacion
+      (ubi) => buildUbicacionOptionValue(ubi) === nuevaUbicacion
     );
     
     if (!ubicacionSeleccionada) return;
@@ -758,10 +1291,12 @@ const LineaPedido = React.memo(({
       nuevaCantidad = Math.min(unidadesPendientes, stockDisponible);
     }
     
-    handleExpedicionChange(key, 'ubicacion', nuevaUbicacion);
+    handleExpedicionChange(key, 'ubicacion', ubicacionSeleccionada.ubicacion);
     handleExpedicionChange(key, 'almacen', ubicacionSeleccionada.codigoAlmacen);
     handleExpedicionChange(key, 'partida', ubicacionSeleccionada.partida || '');
     handleExpedicionChange(key, 'unidadMedida', ubicacionSeleccionada.unidadMedida || linea.unidadPedido);
+    handleExpedicionChange(key, 'codigoColor', ubicacionSeleccionada.codigoColor || '');
+    handleExpedicionChange(key, 'codigoTalla', ubicacionSeleccionada.codigoTalla || '');
     handleExpedicionChange(key, 'cantidad', nuevaCantidad.toString());
   }, [handleExpedicionChange, key, linea.unidadesPendientes, linea.unidadPedido, ubicacionesConStock]);
   
@@ -773,8 +1308,49 @@ const LineaPedido = React.memo(({
     const stock = parseFloat(ubicacion.unidadSaldo);
     if (isNaN(stock)) return "Stock no disponible";
     
-    return formatearUnidad(stock, ubicacion.unidadMedida);
+    return `Stock: ${formatearUnidad(stock, ubicacion.unidadMedida)}`;
   }, []);
+
+  const ubicacionSeleccionada = useMemo(() => (
+    ubicacionesConStock.find(
+      (ubi) =>
+        ubi.ubicacion === expedicion.ubicacion &&
+        ubi.codigoAlmacen === expedicion.almacen &&
+        (ubi.partida || '') === (expedicion.partida || '') &&
+        (ubi.codigoColor || '') === (expedicion.codigoColor || '') &&
+        (ubi.codigoTalla || '') === (expedicion.codigoTalla || '')
+    ) || null
+  ), [ubicacionesConStock, expedicion.ubicacion, expedicion.almacen, expedicion.partida, expedicion.codigoColor, expedicion.codigoTalla]);
+
+  const cantidadValidacion = useMemo(() => {
+    const cantidadTexto = sanitizarCantidadEntera(expedicion.cantidad);
+    const cantidad = parseInt(cantidadTexto, 10);
+    const unidadesPendientes = parseInt(parseFloat(linea.unidadesPendientes) || 0, 10);
+
+    if (!ubicacionSeleccionada) {
+      return { isValid: false, helperText: 'Seleccione una ubicación válida', cantidad: 0 };
+    }
+
+    if (!cantidadTexto || Number.isNaN(cantidad) || cantidad < 1) {
+      return { isValid: false, helperText: 'Cantidad mínima: 1', cantidad: 0 };
+    }
+
+    if (cantidad > unidadesPendientes) {
+      return { isValid: false, helperText: 'Supera pendiente', cantidad };
+    }
+
+    if (
+      ubicacionSeleccionada.ubicacion !== 'Zona descarga' &&
+      ubicacionSeleccionada.unidadSaldo !== Infinity
+    ) {
+      const stockDisponible = parseInt(parseFloat(ubicacionSeleccionada.unidadSaldo) || 0, 10);
+      if (cantidad > stockDisponible) {
+        return { isValid: false, helperText: 'Supera stock disponible', cantidad };
+      }
+    }
+
+    return { isValid: true, helperText: '', cantidad };
+  }, [expedicion.cantidad, linea.unidadesPendientes, ubicacionSeleccionada]);
 
   return (
     <>
@@ -827,59 +1403,58 @@ const LineaPedido = React.memo(({
           </div>
         </td>
         <td>
-          <div className="ps-ubicacion-select-container">
-            <select
-              value={expedicion.ubicacion}
-              onChange={handleCambioUbicacion}
-              className={`ps-ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga' : ''}`}
-              disabled={!canPerformActions || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
-            >
-              {!ubicacionesCargadas ? (
-                <option value="">Cargando ubicaciones...</option>
-              ) : ubicacionesConStock.length === 0 ? (
-                <option value="">Sin ubicaciones disponibles</option>
-              ) : (
-                ubicacionesConStock.map((ubicacion, locIndex) => (
-                  <option 
-                    key={`${ubicacion.codigoAlmacen}-${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
-                    value={ubicacion.ubicacion}
-                    className={ubicacion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-option' : ''}
-                  >
-                    {ubicacion.codigoAlmacen} - {ubicacion.ubicacion} 
-                    {ubicacion.partida ? ` (${ubicacion.partida})` : ''} - 
-                    {formatearInfoStock(ubicacion)}
-                  </option>
-                ))
-              )}
-            </select>
-            <div className="ps-select-arrow"><FaChevronDown /></div>
-          </div>
+          <UbicacionesSelect
+            value={ubicacionSeleccionada ? buildUbicacionOptionValue(ubicacionSeleccionada) : ''}
+            onChange={handleCambioUbicacion}
+            canPerformActions={canPerformActions}
+            isProcesando={isProcesando}
+            isUpdatingExpedicion={isUpdatingExpedicion}
+            ubicacionesCargadas={ubicacionesCargadas}
+            ubicacionesConStock={ubicacionesConStock}
+            formatearInfoStock={formatearInfoStock}
+            selectArrowIcon={<FaChevronDown />}
+            zonaDescargaClass={expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga' : ''}
+          />
         </td>
         <td>
-          <div className="ps-cantidad-container">
-            <input
-              type="text"
-              value={expedicion.cantidad}
-              onChange={handleCambioCantidad}
-              className={expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-input' : ''}
-              disabled={!canPerformActions || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
-              placeholder="0"
-            />
-            <div className="ps-unidad-info">{linea.unidadBase || 'ud'}</div>
-          </div>
+          <ExpedicionLineaPanel
+            value={expedicion.cantidad}
+            onChange={handleCambioCantidad}
+            unidad={linea.unidadBase || 'ud'}
+            zonaDescarga={expedicion.ubicacion === "Zona descarga"}
+            canPerformActions={canPerformActions}
+            isProcesando={isProcesando}
+            isUpdatingExpedicion={isUpdatingExpedicion}
+            ubicacionesCargadas={ubicacionesCargadas}
+            isScanning={isScanning}
+            onEscanear={(e) => {
+              e.stopPropagation();
+              if (canPerformActions && cantidadValidacion.isValid) iniciarEscaneo(linea, pedido);
+            }}
+            cameraIcon={<FaCamera />}
+            showButton={false}
+            isValid={cantidadValidacion.isValid}
+            helperText={cantidadValidacion.helperText}
+          />
         </td>
         <td className="ps-td-centrado">
-          <button
-            className="ps-btn-expedir"
-            onClick={(e) => {
+          <ExpedicionLineaPanel
+            value={expedicion.cantidad}
+            unidad={linea.unidadBase || 'ud'}
+            zonaDescarga={expedicion.ubicacion === "Zona descarga"}
+            canPerformActions={canPerformActions}
+            isProcesando={isProcesando}
+            isUpdatingExpedicion={isUpdatingExpedicion}
+            ubicacionesCargadas={ubicacionesCargadas}
+            isScanning={isScanning}
+            onEscanear={(e) => {
               e.stopPropagation();
-              if (canPerformActions) iniciarEscaneo(linea, pedido);
+              if (canPerformActions && cantidadValidacion.isValid) iniciarEscaneo(linea, pedido);
             }}
-            disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
-          >
-            <FaCamera /> 
-            {isProcesando ? 'Procesando...' : (isScanning ? 'Procesando...' : 'Escanear')}
-          </button>
+            cameraIcon={<FaCamera />}
+            showInput={false}
+            isValid={cantidadValidacion.isValid}
+          />
         </td>
       </tr>
       <tr className="ps-mobile-view">
@@ -925,325 +1500,46 @@ const LineaPedido = React.memo(({
               </div>
               <div className="ps-detail-item">
                 <span className="ps-detail-label">Ubicación:</span>
-                <div className="ps-ubicacion-select-container">
-                  <select
-                    value={expedicion.ubicacion}
-                    onChange={handleCambioUbicacion}
-                    className={`ps-ubicacion-select ${expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga' : ''}`}
-                    disabled={!canPerformActions || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
-                  >
-                    {!ubicacionesCargadas ? (
-                      <option value="">Cargando ubicaciones...</option>
-                    ) : ubicacionesConStock.length === 0 ? (
-                      <option value="">Sin ubicaciones disponibles</option>
-                    ) : (
-                      ubicacionesConStock.map((ubicacion, locIndex) => (
-                        <option 
-                          key={`${ubicacion.codigoAlmacen}-${ubicacion.ubicacion}-${ubicacion.partida || 'no-partida'}-${locIndex}`}
-                          value={ubicacion.ubicacion}
-                        >
-                          {ubicacion.codigoAlmacen} - {ubicacion.ubicacion} 
-                          {ubicacion.partida ? ` (${ubicacion.partida})` : ''} - 
-                          {formatearInfoStock(ubicacion)}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                  <div className="ps-select-arrow"><FaChevronDown /></div>
-                </div>
+                <UbicacionesSelect
+                  value={ubicacionSeleccionada ? buildUbicacionOptionValue(ubicacionSeleccionada) : ''}
+                  onChange={handleCambioUbicacion}
+                  canPerformActions={canPerformActions}
+                  isProcesando={isProcesando}
+                  isUpdatingExpedicion={isUpdatingExpedicion}
+                  ubicacionesCargadas={ubicacionesCargadas}
+                  ubicacionesConStock={ubicacionesConStock}
+                  formatearInfoStock={formatearInfoStock}
+                  selectArrowIcon={<FaChevronDown />}
+                  zonaDescargaClass={expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga' : ''}
+                />
               </div>
               <div className="ps-detail-item">
                 <span className="ps-detail-label">Cantidad:</span>
-                <div className="ps-cantidad-container">
-                  <input
-                    type="text"
-                    value={expedicion.cantidad}
-                    onChange={handleCambioCantidad}
-                    className={expedicion.ubicacion === "Zona descarga" ? 'ps-zona-descarga-input' : ''}
-                    disabled={!canPerformActions || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
-                    placeholder="0"
-                  />
-                  <div className="ps-unidad-info">{linea.unidadBase || 'ud'}</div>
-                </div>
-              </div>
-              <div className="ps-detail-item ps-acciones">
-                <button
-                  className="ps-btn-expedir"
-                  onClick={(e) => {
+                <ExpedicionLineaPanel
+                  value={expedicion.cantidad}
+                  onChange={handleCambioCantidad}
+                  unidad={linea.unidadBase || 'ud'}
+                  zonaDescarga={expedicion.ubicacion === "Zona descarga"}
+                  canPerformActions={canPerformActions}
+                  isProcesando={isProcesando}
+                  isUpdatingExpedicion={isUpdatingExpedicion}
+                  ubicacionesCargadas={ubicacionesCargadas}
+                  isScanning={isScanning}
+                  onEscanear={(e) => {
                     e.stopPropagation();
-                    if (canPerformActions) iniciarEscaneo(linea, pedido);
+                    if (canPerformActions && cantidadValidacion.isValid) iniciarEscaneo(linea, pedido);
                   }}
-                  disabled={!canPerformActions || parseFloat(expedicion.cantidad) <= 0 || isScanning || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
-                  style={{ whiteSpace: 'nowrap' }}
-                >
-                  <FaCamera /> 
-                  {isProcesando ? 'Procesando...' : (isScanning ? 'Procesando...' : 'Escanear')}
-                </button>
+                  cameraIcon={<FaCamera />}
+                  mobile
+                  isValid={cantidadValidacion.isValid}
+                  helperText={cantidadValidacion.helperText}
+                />
               </div>
             </div>
           </div>
         </td>
       </tr>
     </>
-  );
-});
-
-// Componente Tarjeta de Pedido - VERSIÓN OPTIMIZADA
-const PedidoCard = React.memo(({ 
-  pedido, 
-  togglePedidoView, 
-  pedidoViewModes, 
-  generarAlbaranParcial, 
-  generandoAlbaran, 
-  ubicaciones,
-  expediciones,
-  handleExpedicionChange,
-  iniciarEscaneo,
-  abrirModalDetalles,
-  canPerformActions,
-  canPerformActionsInPedidos,
-  isScanning,
-  onActualizarVoluminoso,
-  lineasProcesando,
-  onCargarUbicaciones
-}) => {
-  const [showMenu, setShowMenu] = useState(false);
-  const [actualizandoVoluminoso, setActualizandoVoluminoso] = useState(false);
-  const [ubicacionesCargando, setUbicacionesCargando] = useState(false);
-  
-  const tieneLineasParciales = useMemo(() => {
-    return pedido.articulos.some(articulo => {
-      const unidadesExpedidas = parseFloat(articulo.unidadesPedidas) - parseFloat(articulo.unidadesPendientes);
-      return unidadesExpedidas > 0 && unidadesExpedidas < parseFloat(articulo.unidadesPedidas);
-    });
-  }, [pedido.articulos]);
-
-  const estaCompletamenteExpedido = useMemo(() => {
-    return pedido.articulos.every(articulo => 
-      parseFloat(articulo.unidadesPendientes) === 0
-    );
-  }, [pedido.articulos]);
-
-  const esParcialBackend = pedido.Estado === 4;
-  const esServidoBackend = pedido.Estado === 2;
-  
-  const parcial = esParcialBackend || (tieneLineasParciales && !esServidoBackend);
-  const completo = esServidoBackend || estaCompletamenteExpedido;
-
-  const mostrarOpcionParcial = parcial && !completo && canPerformActionsInPedidos;
-
-  const handleToggleVoluminoso = async () => {
-    if (!canPerformActionsInPedidos || actualizandoVoluminoso) return;
-    
-    setActualizandoVoluminoso(true);
-    try {
-      await onActualizarVoluminoso(pedido, !pedido.EsVoluminoso);
-    } catch (error) {
-      console.error('Error al actualizar estado voluminoso:', error);
-    } finally {
-      setActualizandoVoluminoso(false);
-    }
-  };
-
-  // Cargar ubicaciones cuando se despliegue el pedido
-  useEffect(() => {
-    if (pedidoViewModes[pedido.numeroPedido] === 'show' && onCargarUbicaciones) {
-      const articulos = pedido.articulos.map(art => art.codigoArticulo);
-      onCargarUbicaciones(articulos);
-    }
-  }, [pedidoViewModes[pedido.numeroPedido], pedido.numeroPedido, pedido.articulos, onCargarUbicaciones]);
-
-  return (
-    <div className={`ps-pedido-card ${parcial ? 'ps-pedido-parcial' : ''} ${pedido.EsVoluminoso ? 'ps-pedido-voluminoso' : ''}`}>
-      <div className="ps-pedido-header">
-        <div className="ps-pedido-header-left">
-          <div className="ps-pedido-info-top">
-            <span className="ps-numero-pedido">#{pedido.numeroPedido}</span>
-            <span className="ps-fecha-pedido">{new Date(pedido.fechaPedido).toLocaleDateString()}</span>
-            <span className="ps-fecha-entrega">
-              Entrega: {pedido.fechaEntrega ? new Date(pedido.fechaEntrega).toLocaleDateString() : 'Sin fecha'}
-            </span>
-            
-            {/* ✅ Estado del pedido usando la columna Status */}
-            <span className={`ps-status-pedido ps-status-${pedido.Status?.toLowerCase() || 'revision'}`}>
-              {pedido.Status || 'Revisión'}
-            </span>
-            
-            {pedido.PesoTotal > 0 && (
-              <span className="ps-peso-total">
-                <FaWeight /> {pedido.PesoTotal.toFixed(2)} kg
-              </span>
-            )}
-            
-            {/* ✅ Indicador voluminoso más visible */}
-            {pedido.EsVoluminoso && (
-              <span className="ps-voluminoso-badge ps-voluminoso-badge-prominente">
-                <FaExclamation /> VOLUMINOSO
-              </span>
-            )}
-          </div>
-          <div className="ps-cliente-info">
-            <span className="ps-cliente">{pedido.razonSocial}</span>
-          </div>
-        </div>
-        
-        <div className="ps-pedido-header-right">
-          <div className="ps-pedido-actions">
-            <button 
-              className="ps-btn-menu"
-              onClick={() => setShowMenu(!showMenu)}
-            >
-              <FaEllipsisV />
-            </button>
-            
-            {showMenu && (
-              <div className="ps-dropdown-menu">
-                {canPerformActionsInPedidos && (
-                  <button 
-                    onClick={() => {
-                      handleToggleVoluminoso();
-                      setShowMenu(false);
-                    }}
-                    className="ps-menu-item"
-                    disabled={actualizandoVoluminoso}
-                  >
-                    {actualizandoVoluminoso ? 'Actualizando...' : 
-                     pedido.EsVoluminoso ? '❌ Desmarcar Voluminoso' : '⚠️ Marcar como Voluminoso'}
-                  </button>
-                )}
-                {mostrarOpcionParcial && (
-                  <button 
-                    onClick={() => {
-                      generarAlbaranParcial(pedido);
-                      setShowMenu(false);
-                    }}
-                    className="ps-menu-item"
-                    disabled={generandoAlbaran}
-                  >
-                    <FaCheck /> {generandoAlbaran ? 'Procesando...' : 'Generar Albarán Parcial'}
-                  </button>
-                )}
-                <button 
-                    className="ps-menu-item"
-                    onClick={() => {
-                      togglePedidoView(pedido.numeroPedido);
-                      setShowMenu(false);
-                    }}
-                >
-                  <FaEllipsisV /> 
-                  {pedidoViewModes[pedido.numeroPedido] === 'show' ? ' Ocultar líneas y detalles' : ' Mostrar líneas y detalles'}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-      
-      {pedidoViewModes[pedido.numeroPedido] === 'show' && (<>
-          <div className="ps-pedido-details">
-            <div className="ps-peso-voluminoso-info">
-              <div className="ps-peso-info">
-                <strong><FaWeight /> Peso total estimado:</strong> {pedido.PesoTotal ? `${pedido.PesoTotal.toFixed(2)} kg` : '0 kg'}
-              </div>
-              <div className="ps-voluminoso-info">
-                <strong><FaBox /> Pedido voluminoso:</strong> 
-                <span className={`ps-voluminoso-estado ${pedido.EsVoluminoso ? 'activo' : 'inactivo'}`}>
-                  {pedido.EsVoluminoso ? 'SÍ' : 'NO'}
-                </span>
-                {canPerformActionsInPedidos && (
-                  <button 
-                    className={`ps-btn-voluminoso ${pedido.EsVoluminoso ? 'activo' : ''}`}
-                    onClick={handleToggleVoluminoso}
-                    disabled={actualizandoVoluminoso}
-                  >
-                    {actualizandoVoluminoso ? '...' : (pedido.EsVoluminoso ? 'Desmarcar' : 'Marcar')}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* ✅ SECCIÓN CORREGIDA: Información de contacto con datos reales */}
-            <div className="ps-contacto-info-grid">
-              <div className="ps-contacto-item">
-                <div className="ps-contacto-label">
-                  <FaUser /> Contacto:
-                </div>
-                <div className="ps-contacto-value">
-                  {pedido.Contacto || 'No especificado'}
-                </div>
-              </div>
-              
-              <div className="ps-contacto-item">
-                <div className="ps-contacto-label">
-                  <FaPhone /> Teléfono:
-                </div>
-                <div className="ps-contacto-value">
-                  {pedido.TelefonoContacto || 'No especificado'}
-                </div>
-              </div>
-
-              <div className="ps-contacto-item">
-                <div className="ps-contacto-label">
-                  <FaUser /> Vendedor:
-                </div>
-                <div className="ps-contacto-value">
-                  {pedido.NombreVendedor || pedido.Vendedor || 'No especificado'}
-                </div>
-              </div>
-              
-              <div className="ps-contacto-item ps-observaciones-web">
-                <div className="ps-contacto-label">
-                  <FaInfoCircle /> Observaciones Web:
-                </div>
-                <div className="ps-contacto-value">
-                  {pedido.observaciones || 'No hay observaciones'}
-                </div>
-              </div>
-            </div>
-
-            {/* ✅ SECCIÓN CORREGIDA: Solo mostrar obra con datos reales */}
-            <div className="ps-pedido-detail-item ps-obra-item">
-              <strong>Obra:</strong> {pedido.nombreObra || 'Sin obra especificada'}
-            </div>
-          </div>
-          
-          <div className="ps-lineas-container">
-            <div className="ps-table-responsive">
-              <table className="ps-lineas-table">
-                <thead>
-                  <tr>
-                    <th>Artículo</th>
-                    <th>Descripcion</th>
-                    <th>Pendiente</th>
-                    <th>Peso</th>
-                    <th>Ubicación</th>
-                    <th>Cantidad</th>
-                    <th>Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pedido.articulos.map((linea, index) => (
-                    <LineaPedido 
-                      key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${linea.unidadPedido}-${index}`}
-                      linea={linea} 
-                      pedido={pedido} 
-                      expediciones={expediciones}
-                      handleExpedicionChange={handleExpedicionChange}
-                      ubicaciones={ubicaciones}
-                      ubicacionesCargadas={!!ubicaciones[linea.codigoArticulo]}
-                      iniciarEscaneo={iniciarEscaneo}
-                      abrirModalDetalles={abrirModalDetalles}
-                      canPerformActions={canPerformActions}
-                      isScanning={isScanning}
-                      isProcesando={lineasProcesando[linea.movPosicionLinea] || false}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>)}
-    </div>
   );
 });
 
@@ -1455,10 +1751,19 @@ const PedidosScreen = () => {
   const pedidosPorPagina = 20;
   
   const { 
-    canViewAllOrders, 
+    isAdmin,
+    isAdvancedUser,
+    canViewAllOrders,
     canPerformActions,
     canPerformActionsInPedidos
   } = usePermissions();
+  const currentUser = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('user') || 'null');
+    } catch {
+      return null;
+    }
+  }, []);
   
   const [pedidos, setPedidos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState({});
@@ -1725,6 +2030,8 @@ const PedidosScreen = () => {
                   partida: item.Partida || null,
                   unidadSaldo: item.Cantidad,
                   unidadMedida: item.UnidadStock || 'unidades',
+                  codigoColor: item.CodigoColor_ || '',
+                  codigoTalla: item.CodigoTalla01_ || '',
                   descripcionUbicacion: item.DescripcionUbicacion
                 }))
               };
@@ -1774,6 +2081,12 @@ const PedidosScreen = () => {
     if (!canPerformActions || isScanning) return;
     
     const key = linea.movPosicionLinea;
+    const validacion = validarExpedicionLinea(linea, expedicion);
+
+    if (!validacion.isValid) {
+      mostrarToastEnPagina('Cantidad no válida', validacion.message, 'error');
+      return;
+    }
     
     // Mostrar estado de carga en la línea específica
     setLineasProcesando(prev => ({
@@ -1788,31 +2101,27 @@ const PedidosScreen = () => {
         serie: pedido.seriePedido || '',
         numeroPedido: pedido.numeroPedido,
         codigoArticulo: linea.codigoArticulo,
-        cantidadExpedida: parseFloat(expedicion.cantidad),
+        cantidadExpedida: validacion.cantidad,
         almacen: expedicion.almacen,
         ubicacion: expedicion.ubicacion,
         partida: expedicion.partida || '',
         unidadMedida: expedicion.unidadMedida || linea.unidadPedido,
+        codigoColor: expedicion.codigoColor || '',
+        codigoTalla: expedicion.codigoTalla || '',
         esZonaDescarga: expedicion.ubicacion === "Zona descarga",
         movPosicionLinea: key
       }, { headers: getAuthHeader() });
 
       if (response.data.success) {
-        // 🔔 Verificar si se generó albarán automático
-        if (response.data.detalles?.albaranProgramado || 
-            response.data.detalles?.pedidoCompletado) {
-          
-          // Si el pedido se completó y se programó albarán
-          if (response.data.detalles.pedidoCompletado) {
-            // Esperar un momento para dar tiempo a que el backend genere el albarán
-            setTimeout(() => {
-              mostrarNotificacionNavegador(
-                'Pedido Completado',
-                `El pedido #${pedido.numeroPedido} se ha completado.\n` +
-                `Se generará albarán automáticamente en segundo plano.`
-              );
-            }, 1500);
-          }
+        if (response.data.detalles?.albaranProgramado) {
+          setTimeout(() => {
+            mostrarNotificacionNavegador(
+              response.data.detalles?.pedidoCompletado ? 'Pedido Completado' : 'Expedición Registrada',
+              response.data.detalles?.pedidoCompletado
+                ? `El pedido #${pedido.numeroPedido} se ha completado.\nSe está generando su albarán automáticamente.`
+                : `La expedición del pedido #${pedido.numeroPedido} se ha registrado.\nSe está generando un albarán parcial automáticamente.`
+            );
+          }, 1200);
         }
 
         // 🔥 ACTUALIZACIÓN LOCAL SIN RECARGAR TODO
@@ -1823,7 +2132,7 @@ const PedidosScreen = () => {
             if (p.numeroPedido === pedido.numeroPedido) {
               const articulosActualizados = p.articulos.map(art => {
                 if (art.movPosicionLinea === key) {
-                  const nuevasUnidadesPendientes = Math.max(0, parseFloat(art.unidadesPendientes) - parseFloat(expedicion.cantidad));
+                  const nuevasUnidadesPendientes = Math.max(0, parseFloat(art.unidadesPendientes) - validacion.cantidad);
                   return {
                     ...art,
                     unidadesPendientes: nuevasUnidadesPendientes
@@ -1842,6 +2151,8 @@ const PedidosScreen = () => {
 
               return {
                 ...p,
+                Estado: response.data.detalles?.pedidoParcial ? 4 : p.Estado,
+                Status: response.data.detalles?.statusPedido || (response.data.detalles?.pedidoParcial ? 'Parcial' : p.Status),
                 articulos: articulosActualizados
               };
             }
@@ -1858,10 +2169,13 @@ const PedidosScreen = () => {
             const ubicacionesActualizadas = ubicacionesArticulo.map(ubic => {
               if (ubic.ubicacion === expedicion.ubicacion && 
                   ubic.codigoAlmacen === expedicion.almacen &&
+                  (ubic.partida || '') === (expedicion.partida || '') &&
+                  (ubic.codigoColor || '') === (expedicion.codigoColor || '') &&
+                  (ubic.codigoTalla || '') === (expedicion.codigoTalla || '') &&
                   normalizarUnidad(ubic.unidadMedida) === normalizarUnidad(expedicion.unidadMedida)) {
                 
                 const stockActual = parseFloat(ubic.unidadSaldo) || 0;
-                const nuevoStock = Math.max(0, stockActual - parseFloat(expedicion.cantidad));
+                const nuevoStock = Math.max(0, stockActual - validacion.cantidad);
                 
                 return {
                   ...ubic,
@@ -1888,7 +2202,23 @@ const PedidosScreen = () => {
           return nuevasExpediciones;
         });
 
-        alert(`✅ Artículo expedido correctamente: ${expedicion.cantidad} ${linea.unidadBase || 'ud'}`);
+        const cantidadTexto = `${validacion.cantidad} ${linea.unidadBase || 'ud'}`;
+        const ubicacionTexto = `${expedicion.almacen} - ${expedicion.ubicacion}`;
+        const pedidoCompletado = !!response.data.detalles?.pedidoCompletado;
+
+        if (pedidoCompletado) {
+          mostrarToastEnPagina(
+            'Pedido completado',
+            `Servidas ${cantidadTexto} desde ${ubicacionTexto}.\nPedido completado. Se está generando el albarán.`,
+            'success'
+          );
+        } else {
+          mostrarToastEnPagina(
+            'Servicio registrado',
+            `Servidas ${cantidadTexto} desde ${ubicacionTexto}.\nServicio parcial registrado.`,
+            'success'
+          );
+        }
       }
     } catch (error) {
       console.error('Error al expedir artículo:', error);
@@ -1908,7 +2238,7 @@ const PedidosScreen = () => {
         [key]: false
       }));
     }
-  }, [canPerformActions, isScanning, mostrarNotificacionNavegador]);
+  }, [canPerformActions, isScanning, mostrarNotificacionNavegador, mostrarToastEnPagina, validarExpedicionLinea]);
 
   // Función para procesar expedición (común para escaneo y manual)
   const procesarExpedicion = useCallback((codigoVerificado, detalle = null) => {
@@ -2140,12 +2470,14 @@ const PedidosScreen = () => {
       
       if (signal.aborted) return;
       
-      setPedidos(response.data);
+      const pedidosVisibles = response.data;
+
+      setPedidos(pedidosVisibles);
       
       // 🔥 NO CARGAR UBICACIONES AQUÍ - Se cargarán bajo demanda
       
       const initialModes = {};
-      response.data.forEach(pedido => {
+      pedidosVisibles.forEach(pedido => {
         initialModes[pedido.numeroPedido] = 'show';
       });
       
@@ -2169,7 +2501,7 @@ const PedidosScreen = () => {
         setLoading(false);
       }
     }
-  }, [isScanning]);
+  }, [isScanning, canViewAllOrders, currentUser]);
 
   useEffect(() => {
     cargarPedidos();
@@ -2523,6 +2855,47 @@ const PedidosScreen = () => {
     }
   }, [canPerformActionsInPedidos, mostrarNotificacionNavegador]);
 
+  function validarExpedicionLinea(linea, expedicion) {
+    const cantidadTexto = sanitizarCantidadEntera(expedicion?.cantidad);
+    const cantidad = parseInt(cantidadTexto, 10);
+
+    if (!cantidadTexto || Number.isNaN(cantidad) || cantidad < 1) {
+      return { isValid: false, message: 'Cantidad mínima: 1' };
+    }
+
+    const unidadesPendientes = parseInt(parseFloat(linea.unidadesPendientes) || 0, 10);
+    if (cantidad > unidadesPendientes) {
+      return { isValid: false, message: 'Supera pendiente' };
+    }
+
+    if (!expedicion?.ubicacion || !expedicion?.almacen) {
+      return { isValid: false, message: 'Seleccione una ubicación válida' };
+    }
+
+    if (expedicion.ubicacion !== 'Zona descarga') {
+      const ubicacionActual = (ubicaciones[linea.codigoArticulo] || []).find(
+        (ubi) =>
+          ubi.ubicacion === expedicion.ubicacion &&
+          ubi.codigoAlmacen === expedicion.almacen &&
+          (ubi.partida || '') === (expedicion.partida || '') &&
+          (ubi.codigoColor || '') === (expedicion.codigoColor || '') &&
+          (ubi.codigoTalla || '') === (expedicion.codigoTalla || '') &&
+          normalizarUnidad(ubi.unidadMedida) === normalizarUnidad(expedicion.unidadMedida || linea.unidadPedido)
+      );
+
+      const stockDisponible = parseInt(parseFloat(ubicacionActual?.unidadSaldo) || 0, 10);
+      if (!ubicacionActual || stockDisponible <= 0) {
+        return { isValid: false, message: 'La ubicación no tiene stock disponible' };
+      }
+
+      if (cantidad > stockDisponible) {
+        return { isValid: false, message: 'Supera stock disponible' };
+      }
+    }
+
+    return { isValid: true, cantidad };
+  }
+
   // Filtrar pedidos con useMemo para evitar recálculos innecesarios
   const pedidosFiltrados = useMemo(() => {
     return pedidos.filter(pedido => {
@@ -2560,13 +2933,13 @@ const PedidosScreen = () => {
   if (!canViewAllOrders) {
     return (
       <div className="ps-pedidos-screen">
-        <div className="ps-no-permission">
-          <h2>Acceso restringido</h2>
-          <p>No tienes permiso para ver esta sección.</p>
-          <button onClick={() => navigate('/')} className="ps-btn-volver">
-            Volver al inicio
-          </button>
-        </div>
+        <PedidosStateView
+          type="warning"
+          title="Acceso restringido."
+          message="No tienes permiso para ver esta sección."
+          buttonLabel="Volver al inicio"
+          onButtonClick={() => navigate('/')}
+        />
         <Navbar />
       </div>
     );
@@ -2575,74 +2948,65 @@ const PedidosScreen = () => {
   return (
     <div className="ps-pedidos-screen">
       <div className="ps-pedidos-container">
-        <div className="ps-pedidos-controls">
-          <div className="ps-filtros-container">
-            <div className="ps-filtro-group ps-search-group">
-              <label><FaSearch /> Buscar:</label>
-              <div className="ps-search-input-container">
-                <input
-                  type="text"
-                  placeholder="Nº pedido, cliente, obra, contacto..."
-                  value={filtroBusqueda}
-                  onChange={e => setFiltroBusqueda(e.target.value)}
-                  className="ps-search-input"
-                />
-              </div>
-            </div>
-            <div className="ps-filtro-group ps-date-group">
-              <label><FaCalendarAlt /> Rango de fechas:</label>
-              <div className="ps-select-container">
-                <select
-                  value={rangoFechas}
-                  onChange={e => setRangoFechas(e.target.value)}
-                  className="ps-sort-select"
-                >
-                  <option value="semana">Una semana</option>
-                  <option value="dia">Un día</option>
-                </select>
-                <div className="ps-select-arrow"><FaChevronDown /></div>
-              </div>
-            </div>
-            
-            {/* ✅ NUEVO: Filtro por Estado del pedido */}
-            <div className="ps-filtro-group ps-status-group">
-              <label>Estado:</label>
-              <div className="ps-select-container">
-                <select
-                  value={filtroStatus}
-                  onChange={e => setFiltroStatus(e.target.value)}
-                  className="ps-sort-select"
-                >
-                  {opcionesStatus.map(estado => (
-                    <option key={estado.id} value={estado.id}>
-                      {estado.nombre}
-                    </option>
-                  ))}
-                </select>
-                <div className="ps-select-arrow"><FaChevronDown /></div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="ps-pagination-container">
-          <Paginacion 
-            totalPaginas={totalPaginas} 
-            paginaActual={paginaActual} 
-            cambiarPagina={cambiarPagina} 
-          />
-        </div>
-        <div className="ps-pedidos-content">
+        <PedidosHeader
+          title="Pedidos pendientes"
+          subtitle="Consulta, filtra y prepara pedidos manteniendo el flujo actual de expedición y generación de albaranes."
+        />
+
+        <PedidosFilters
+          filtroBusqueda={filtroBusqueda}
+          onFiltroBusquedaChange={setFiltroBusqueda}
+          rangoFechas={rangoFechas}
+          onRangoFechasChange={setRangoFechas}
+          filtroStatus={filtroStatus}
+          onFiltroStatusChange={setFiltroStatus}
+          opcionesStatus={opcionesStatus}
+          searchIcon={<FaSearch />}
+          calendarIcon={<FaCalendarAlt />}
+          chevronIcon={<FaChevronDown />}
+        />
+
+        <PedidosSummaryBar
+          totalPedidos={pedidosOrdenados.length}
+          pedidosPagina={pedidosActuales.length}
+          paginaActual={paginaActual}
+          totalPaginas={totalPaginas}
+          voluminosos={pedidosOrdenados.filter((pedido) => pedido.EsVoluminoso).length}
+        />
+
+        <PedidosList
+          topPagination={
+            <Paginacion
+              totalPaginas={totalPaginas}
+              paginaActual={paginaActual}
+              cambiarPagina={cambiarPagina}
+            />
+          }
+          bottomPagination={
+            <Paginacion
+              totalPaginas={totalPaginas}
+              paginaActual={paginaActual}
+              cambiarPagina={cambiarPagina}
+            />
+          }
+        >
           {error ? (
-            <ErrorMessage 
-              message={error} 
-              onRetry={cargarPedidos}
+            <PedidosStateView
+              type="error"
+              title="Error al cargar pedidos."
+              message={error}
+              buttonLabel="Reintentar"
+              onButtonClick={cargarPedidos}
+              buttonIcon={<FaSync />}
             />
           ) : loading ? (
-            <LoadingSpinner message="Cargando pedidos..." />
+            <PedidosStateView type="loading" message="Cargando pedidos..." />
           ) : pedidosOrdenados.length === 0 ? (
-            <div className="ps-no-pedidos">
-              <p>No hay pedidos pendientes</p>
-            </div>
+            <PedidosStateView
+              type="info"
+              title="No hay pedidos pendientes."
+              message="Prueba a ajustar los filtros o espera a que lleguen nuevos pedidos."
+            />
           ) : (<>
               {pedidosActuales.map(pedido => (
                 <PedidoCard 
@@ -2652,28 +3016,42 @@ const PedidosScreen = () => {
                   pedidoViewModes={pedidoViewModes}
                   generarAlbaranParcial={generarAlbaranParcial}
                   generandoAlbaran={generandoAlbaran}
-                  ubicaciones={ubicaciones}
-                  expediciones={expediciones}
-                  handleExpedicionChange={handleExpedicionChange}
-                  iniciarEscaneo={iniciarEscaneo}
-                  abrirModalDetalles={abrirModalDetalles}
-                  canPerformActions={canPerformActions}
                   canPerformActionsInPedidos={canPerformActionsInPedidos}
-                  isScanning={isScanning}
                   onActualizarVoluminoso={handleActualizarVoluminoso}
-                  lineasProcesando={lineasProcesando}
                   onCargarUbicaciones={cargarUbicacionesParaArticulos}
+                  menuIcon={<FaEllipsisV />}
+                  weightIcon={<FaWeight />}
+                  exclamationIcon={<FaExclamation />}
+                  boxIcon={<FaBox />}
+                  userIcon={<FaUser />}
+                  phoneIcon={<FaPhone />}
+                  infoIcon={<FaInfoCircle />}
+                  checkIcon={<FaCheck />}
+                  ellipsisIcon={<FaEllipsisV />}
+                  lineasContent={(
+                    <PedidoLineasTable>
+                      {pedido.articulos.map((linea, index) => (
+                        <LineaPedido 
+                          key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${linea.unidadPedido}-${index}`}
+                          linea={linea} 
+                          pedido={pedido} 
+                          expediciones={expediciones}
+                          handleExpedicionChange={handleExpedicionChange}
+                          ubicaciones={ubicaciones}
+                          ubicacionesCargadas={!!ubicaciones[linea.codigoArticulo]}
+                          iniciarEscaneo={iniciarEscaneo}
+                          abrirModalDetalles={abrirModalDetalles}
+                          canPerformActions={canPerformActions}
+                          isScanning={isScanning}
+                          isProcesando={lineasProcesando[linea.movPosicionLinea] || false}
+                        />
+                      ))}
+                    </PedidoLineasTable>
+                  )}
                 />
               ))}
             </>)}
-        </div>
-        <div className="ps-pagination-container">
-          <Paginacion 
-            totalPaginas={totalPaginas} 
-            paginaActual={paginaActual} 
-            cambiarPagina={cambiarPagina} 
-          />
-        </div>
+        </PedidosList>
         {detallesModal && (
           <DetallesArticuloModal 
             detalles={detallesModal.detalles}

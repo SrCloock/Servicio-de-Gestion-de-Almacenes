@@ -1,0 +1,60 @@
+🌍 Entorno: DESARROLLO
+🎯 Orígenes permitidos: [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://80.24.244.68:3011'
+]
+Conexion a SQL Server establecida.
+🚀 Servidor backend corriendo en http://0.0.0.0:3011
+📱 Accesible desde: http://80.24.244.68:3011
+🔧 Entorno: production
+🎯 Orígenes CORS permitidos: [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://80.24.244.68:3011'
+]
+[DEV] POST /proveedores/5002/generar-albaran
+📦 GENERANDO NUEVO ALBARÁN POR PROVEEDOR (CORREGIDO):
+- Empresa: 9999
+- Proveedor: 5002
+- Pedidos a incluir: 1
+[ALBARÁN NUEVO] Iniciando para proveedor 5002
+[ALBARÁN NUEVO] Nuevo número de albarán: 174
+[ALBARÁN NUEVO] Procesando pedido 2026/0/106
+[ALBARÁN NUEVO] Artículo: 01.01.11
+  - Unidades recibidas totales: 97
+  - Unidades ya albaranadas: 90
+  - Unidades pendientes de albaranar: 7
+  - Color: "", Talla: ""
+[ALBARÁN NUEVO] INCLUYENDO en nuevo albarán: 01.01.11, Unidades: 7
+[ALBARÁN NUEVO] Total líneas: 1, Unidades pendientes: 7, Importe: 3811.5
+[ALBARÁN NUEVO] Insertando nueva cabecera...
+[ALBARÁN NUEVO] Insertando 1 líneas...
+[CORRECCIÓN] Valor duplicado: "" -> usando: ""
+[CORRECCIÓN] Valor duplicado: "" -> usando: ""
+[CORRECCIÓN] Valor duplicado: "" -> usando: ""
+[ALBARÁN NUEVO] Línea 1: 01.01.11 - 7 unidades pendientes
+  - Color: "", Talla: "", Unidad: ""
+[DEV] POST /pedidos-compra/2026/0/106/generar-albaran
+[DEV] GET /pedidos-compra?page=1&limit=15
+[DEBUG] Cargando pedidos - Página: 1, Límite: 15
+[DEBUG] Pedidos encontrados: 3 (Página 1/1)
+[DEV] POST /pedidos-compra/2026/0/106/generar-albaran
+[DEV] GET /pedidos-compra?page=1&limit=15
+[DEBUG] Cargando pedidos - Página: 1, Límite: 15
+[DEBUG] Pedidos encontrados: 3 (Página 1/1)
+[DEV] POST /pedidos-compra/2026/0/106/generar-albaran
+[DEV] POST /proveedores/5002/generar-albaran
+📦 GENERANDO NUEVO ALBARÁN POR PROVEEDOR (CORREGIDO):
+- Empresa: 9999
+- Proveedor: 5002
+- Pedidos a incluir: 1
+[ALBARÁN NUEVO] Iniciando para proveedor 5002
+[ALBARÁN NUEVO] Nuevo número de albarán: 176
+[ALBARÁN NUEVO] Procesando pedido 2026/0/106
+[ALBARÁN NUEVO] Artículo: 01.01.11
+  - Unidades recibidas totales: 98
+  - Unidades ya albaranadas: 188
+  - Unidades pendientes de albaranar: -90
+  - Color: "", Talla: ""
+[ALBARÁN NUEVO] OMITIENDO: 01.01.11 - Ya está totalmente albaranado

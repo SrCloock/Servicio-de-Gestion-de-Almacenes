@@ -7,7 +7,17 @@ module.exports = function createCorsMiddleware({ allowedOrigins }) {
         return callback(null, true);
       }
 
-      if (allowedOrigins.indexOf(origin) === -1) {
+      let parsedOrigin;
+      try {
+        parsedOrigin = new URL(origin);
+      } catch {
+        parsedOrigin = null;
+      }
+
+      const isLocalDevOrigin = parsedOrigin
+        && ['localhost', '127.0.0.1'].includes(parsedOrigin.hostname);
+
+      if (!isLocalDevOrigin && allowedOrigins.indexOf(origin) === -1) {
         const msg = `Origen ${origin} no permitido por CORS`;
         console.warn('CORS blocked:', origin);
         return callback(new Error(msg), false);

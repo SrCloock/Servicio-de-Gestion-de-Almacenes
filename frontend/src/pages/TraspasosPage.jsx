@@ -1,10 +1,793 @@
-﻿import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import '../styles/TraspasosPage.css';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import { v4 as uuidv4 } from 'uuid';
 import Select from 'react-select';
 import AsyncSelect from 'react-select/async';
-import '../styles/TraspasosPage.css';
+import { Alert, Badge, Box, Button, Chip, CircularProgress, Paper, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, Typography } from '@mui/material';
+
+const TraspasosHeader = ({
+  activeSection,
+  onChangeSection,
+  pendientesCount
+}) => {
+  return (
+    <Stack spacing={3}>
+      <Typography
+        variant="h4"
+        component="h1"
+        sx={{
+          textAlign: 'center',
+          color: '#1a365d',
+          fontWeight: 700,
+          pb: 2,
+          borderBottom: '3px solid #2c5282'
+        }}
+      >
+        Traspaso entre Ubicaciones
+      </Typography>
+
+      <Paper elevation={1} sx={{ p: 2.5, borderRadius: 3 }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="center" flexWrap="wrap" useFlexGap>
+          <Button
+            variant={activeSection === 'traspasos' ? 'contained' : 'outlined'}
+            onClick={() => onChangeSection('traspasos')}
+            sx={{ minWidth: 180, fontWeight: 700 }}
+          >
+            Traspasos
+          </Button>
+
+          <Badge badgeContent={pendientesCount || 0} color="error" invisible={!pendientesCount}>
+            <Button
+              variant={activeSection === 'verificacion' ? 'contained' : 'outlined'}
+              onClick={() => onChangeSection('verificacion')}
+              sx={{ minWidth: 180, fontWeight: 700 }}
+            >
+              Verificacion
+            </Button>
+          </Badge>
+
+          <Button
+            variant={activeSection === 'historial' ? 'contained' : 'outlined'}
+            onClick={() => onChangeSection('historial')}
+            sx={{ minWidth: 180, fontWeight: 700 }}
+          >
+            Historial
+          </Button>
+        </Stack>
+      </Paper>
+    </Stack>
+  );
+};
+
+
+const TraspasosModeTabs = ({ activeTab, onChange }) => {
+  return (
+    <Paper elevation={1} sx={{ borderRadius: 3, overflow: 'hidden' }}>
+      <Tabs
+        value={activeTab}
+        onChange={(_, value) => onChange(value)}
+        variant="fullWidth"
+      >
+        <Tab label="Por Articulo" value="articulo" />
+        <Tab label="Por Ubicacion" value="ubicacion" />
+      </Tabs>
+    </Paper>
+  );
+};
+
+
+const ArticuloSearchPanel = ({
+  loadOptions,
+  onChange,
+  articuloSeleccionado,
+  AsyncSelect
+}) => {
+  return (
+    <Paper elevation={1} sx={{ p: 3, borderRadius: 3 }}>
+      <Stack spacing={2}>
+        <Typography variant="h6" sx={{ color: '#1a365d', fontWeight: 700 }}>
+          Articulos con Stock
+        </Typography>
+
+        <Box>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: '#2d3748' }}>
+            Buscar articulo:
+          </Typography>
+          <div className="search-container">
+            <AsyncSelect
+              cacheOptions
+              defaultOptions={[]}
+              loadOptions={loadOptions}
+              onChange={onChange}
+              placeholder="Escriba codigo o descripcion..."
+              noOptionsMessage={({ inputValue }) =>
+                inputValue.length < 2
+                  ? 'Escriba al menos 2 caracteres...'
+                  : 'No se encontraron articulos'
+              }
+              loadingMessage={() => 'Buscando...'}
+              styles={{
+                control: (base) => ({
+                  ...base,
+                  minHeight: '44px',
+                  borderColor: '#ddd',
+                  '&:hover': {
+                    borderColor: '#aaa'
+                  }
+                }),
+                menu: (base) => ({
+                  ...base,
+                  zIndex: 9999
+                })
+              }}
+            />
+          </div>
+        </Box>
+
+        {articuloSeleccionado && (
+          <Paper variant="outlined" sx={{ p: 2, backgroundColor: 'rgba(66, 153, 225, 0.08)' }}>
+            <Typography variant="body1" sx={{ fontWeight: 600 }}>
+              Articulo seleccionado: {articuloSeleccionado.DescripcionArticulo} ({articuloSeleccionado.CodigoArticulo})
+            </Typography>
+          </Paper>
+        )}
+      </Stack>
+    </Paper>
+  );
+};
+
+
+const StockInfoChip = ({ label, style = {}, color = 'default', variant = 'outlined', sx = {} }) => {
+  if (!label) {
+    return null;
+  }
+
+  return (
+    <Chip
+      label={label}
+      color={color}
+      variant={variant}
+      size="small"
+      sx={{
+        fontWeight: 600,
+        ...style,
+        ...sx
+      }}
+    />
+  );
+};
+
+
+const OrigenSelectorCard = ({
+  SelectComponent,
+  opcionesAlmacenes,
+  opcionesUbicacionesStock,
+  almacenOrigen,
+  grupoUnicoOrigen,
+  onAlmacenChange,
+  onUbicacionChange,
+  getNombreAlmacen,
+  ubicacionOrigen,
+  unidadMedida,
+  partida,
+  tallaOrigen,
+  colorOrigen,
+  getColorStyle,
+  stockDisponibleInfo,
+  mostrarUnidadMedida
+}) => {
+  return (
+    <Paper elevation={1} sx={{ p: 3, borderRadius: 3 }}>
+      <Stack spacing={2}>
+        <Typography variant="h6" sx={{ color: '#1a365d', fontWeight: 700 }}>
+          Origen
+        </Typography>
+
+        <Box>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: '#2d3748' }}>
+            Almacen:
+          </Typography>
+          <SelectComponent
+            className="react-select-container"
+            classNamePrefix="react-select"
+            value={opcionesAlmacenes.find((opt) => opt.value === almacenOrigen) || null}
+            onChange={onAlmacenChange}
+            options={opcionesAlmacenes}
+            placeholder="Seleccionar almacen..."
+            isSearchable
+            noOptionsMessage={() => 'No hay almacenes disponibles'}
+          />
+        </Box>
+
+        <Box>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: '#2d3748' }}>
+            Ubicacion y Variantes:
+          </Typography>
+          <SelectComponent
+            className="react-select-container"
+            classNamePrefix="react-select"
+            value={opcionesUbicacionesStock.find((opt) => opt.value === grupoUnicoOrigen) || null}
+            onChange={onUbicacionChange}
+            options={opcionesUbicacionesStock}
+            placeholder="Seleccionar ubicacion y variante..."
+            isSearchable
+            isDisabled={!almacenOrigen}
+            noOptionsMessage={() => 'No hay ubicaciones disponibles'}
+            filterOption={(option, inputValue) => {
+              if (!inputValue) return true;
+              return option.label.toLowerCase().includes(inputValue.toLowerCase());
+            }}
+          />
+        </Box>
+
+        {ubicacionOrigen && (
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <Stack spacing={1}>
+              <Typography variant="body2">
+                <strong>Unidad seleccionada:</strong> {mostrarUnidadMedida(unidadMedida)}
+                {partida && <span>, <strong>Lote:</strong> {partida}</span>}
+              </Typography>
+
+              {(tallaOrigen || colorOrigen) && (
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Typography variant="body2">
+                    <strong>Talla/Color:</strong>
+                  </Typography>
+                  <StockInfoChip
+                    label={`${tallaOrigen || ''}${colorOrigen || ''}`}
+                    style={getColorStyle(colorOrigen)}
+                  />
+                </Stack>
+              )}
+
+              {stockDisponibleInfo && (
+                <Typography variant="body2">
+                  <strong>Stock disponible:</strong> {stockDisponibleInfo}
+                  {ubicacionOrigen === 'SIN-UBICACION' && (
+                    <span className="sin-ubicacion-badge"> - Stock Sin Ubicación</span>
+                  )}
+                </Typography>
+              )}
+            </Stack>
+          </Paper>
+        )}
+      </Stack>
+    </Paper>
+  );
+};
+
+
+const DestinoSelectorCard = ({
+  title = 'Destino',
+  SelectComponent,
+  opcionesAlmacenes,
+  opcionesUbicacionesDestino,
+  almacenDestino,
+  ubicacionDestino,
+  onAlmacenChange,
+  onUbicacionChange,
+  onUbicacionInputChange,
+  onUbicacionMenuOpen,
+  onUbicacionMenuScrollToBottom,
+  cargandoUbicacionesDestino
+}) => {
+  return (
+    <Paper elevation={1} sx={{ p: 3, borderRadius: 3 }}>
+      <Stack spacing={2}>
+        <Typography variant="h6" sx={{ color: '#1a365d', fontWeight: 700 }}>
+          {title}
+        </Typography>
+
+        <Box>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: '#2d3748' }}>
+            Almacen:
+          </Typography>
+          <SelectComponent
+            className="react-select-container"
+            classNamePrefix="react-select"
+            value={opcionesAlmacenes.find((opt) => opt.value === almacenDestino) || null}
+            onChange={onAlmacenChange}
+            options={opcionesAlmacenes}
+            placeholder="Seleccionar almacen..."
+            isSearchable
+            noOptionsMessage={() => 'No hay almacenes disponibles'}
+          />
+        </Box>
+
+        <Box>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: '#2d3748' }}>
+            Ubicacion:
+          </Typography>
+          <SelectComponent
+            className="react-select-container"
+            classNamePrefix="react-select"
+            value={opcionesUbicacionesDestino.find((opt) => opt.value === ubicacionDestino) || null}
+            onChange={onUbicacionChange}
+            onInputChange={onUbicacionInputChange}
+            onMenuOpen={onUbicacionMenuOpen}
+            onMenuScrollToBottom={onUbicacionMenuScrollToBottom}
+            options={opcionesUbicacionesDestino}
+            placeholder="Seleccionar ubicacion..."
+            isSearchable
+            isDisabled={!almacenDestino}
+            isLoading={cargandoUbicacionesDestino}
+            noOptionsMessage={() => 'No hay ubicaciones disponibles'}
+          />
+        </Box>
+      </Stack>
+    </Paper>
+  );
+};
+
+
+const CantidadPanel = ({
+  title = 'Cantidad',
+  cantidad,
+  onCantidadChange,
+  stockInfo,
+  buttonLabel,
+  onSubmit,
+  loading,
+  max
+}) => {
+  return (
+    <Paper elevation={1} sx={{ p: 3, borderRadius: 3 }}>
+      <Stack spacing={2}>
+        <Typography variant="h6" sx={{ color: '#1a365d', fontWeight: 700 }}>
+          {title}
+        </Typography>
+
+        <Box>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: '#2d3748' }}>
+            Cantidad a traspasar:
+          </Typography>
+          <input
+            className="form-control-enhanced"
+            type="number"
+            value={cantidad}
+            onChange={onCantidadChange}
+            required
+            min="1"
+            step="any"
+            max={max}
+          />
+          {stockInfo && (
+            <div className="stock-info">
+              <strong>Stock disponible:</strong> {stockInfo}
+            </div>
+          )}
+        </Box>
+
+        <Stack direction="row" justifyContent="flex-end">
+          <Button variant="contained" onClick={onSubmit} disabled={loading}>
+            {loading ? 'Agregando...' : buttonLabel}
+          </Button>
+        </Stack>
+      </Stack>
+    </Paper>
+  );
+};
+
+
+const UbicacionesAgrupadasList = ({
+  AsyncSelect,
+  loadOptions,
+  onAsyncChange,
+  almacenes,
+  almacenesExpandidos,
+  ubicacionesCargadas,
+  onToggleAlmacen,
+  onSeleccionarUbicacion,
+  loading
+}) => {
+  return (
+    <Paper elevation={1} sx={{ p: 3, borderRadius: 3 }}>
+      <Stack spacing={2.5}>
+        <Typography variant="h6" sx={{ color: '#1a365d', fontWeight: 700 }}>
+          Seleccionar Ubicacion de Origen
+        </Typography>
+
+        <Box>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: '#2d3748' }}>
+            Buscar ubicacion:
+          </Typography>
+          <AsyncSelect
+            cacheOptions
+            defaultOptions={[]}
+            loadOptions={loadOptions}
+            onChange={onAsyncChange}
+            placeholder="Escriba codigo de ubicacion..."
+            noOptionsMessage={({ inputValue }) =>
+              inputValue.length < 2
+                ? 'Escriba al menos 2 caracteres...'
+                : 'No se encontraron ubicaciones'
+            }
+            loadingMessage={() => 'Buscando...'}
+            styles={{
+              control: (base) => ({
+                ...base,
+                minHeight: '44px',
+                borderColor: '#ddd',
+                '&:hover': {
+                  borderColor: '#aaa'
+                }
+              }),
+              menu: (base) => ({
+                ...base,
+                zIndex: 9999
+              })
+            }}
+          />
+        </Box>
+
+        <div className="almacenes-container">
+          {almacenes.map((almacen) => (
+            <div key={almacen.CodigoAlmacen} className="almacen-item">
+              <div className="almacen-header" onClick={() => onToggleAlmacen(almacen.CodigoAlmacen)}>
+                <span>{almacen.Almacen} ({almacen.CodigoAlmacen})</span>
+                <span>{almacenesExpandidos[almacen.CodigoAlmacen] ? '▲' : '▼'}</span>
+              </div>
+
+              {almacenesExpandidos[almacen.CodigoAlmacen] && (
+                <div className="ubicaciones-list">
+                  {loading ? (
+                    <div className="cargando-ubicaciones">Cargando ubicaciones...</div>
+                  ) : (
+                    ubicacionesCargadas[almacen.CodigoAlmacen]?.map((ubicacion, index) => (
+                      <div
+                        key={`${almacen.CodigoAlmacen}-${ubicacion.Ubicacion}-${index}`}
+                        className={`ubicacion-item ${ubicacion.Ubicacion === 'SIN-UBICACION' ? 'sin-ubicacion-option' : ''}`}
+                        onClick={() => onSeleccionarUbicacion(almacen.CodigoAlmacen, ubicacion.Ubicacion)}
+                      >
+                        <span className="ubicacion-codigo">
+                          {ubicacion.Ubicacion === 'SIN-UBICACION' ? '[SIN UBICACION]' : ubicacion.Ubicacion}
+                        </span>
+                        <span className="ubicacion-stock">
+                          {ubicacion.CantidadArticulos} artículos
+                        </span>
+                      </div>
+                    )) || <div className="sin-ubicaciones">No hay ubicaciones disponibles</div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Stack>
+    </Paper>
+  );
+};
+
+
+const TraspasosStateView = ({ type = 'info', title, message }) => {
+  if (type === 'loading') {
+    return (
+      <Paper elevation={1} sx={{ p: 4, borderRadius: 3 }}>
+        <Stack spacing={2} alignItems="center">
+          <CircularProgress />
+          <Typography variant="body1">{message || 'Cargando...'}</Typography>
+        </Stack>
+      </Paper>
+    );
+  }
+
+  return (
+    <Paper elevation={1} sx={{ p: 3, borderRadius: 3 }}>
+      <Alert severity={type === 'error' ? 'error' : 'info'}>
+        {title && <strong>{title}</strong>}
+        {title && message ? ' ' : ''}
+        {message}
+      </Alert>
+    </Paper>
+  );
+};
+
+
+const ArticulosUbicacionTable = ({
+  articulosUbicacion,
+  ubicacionSeleccionada,
+  articuloUbicacionSeleccionado,
+  setArticuloUbicacionSeleccionado,
+  formatTallaColor,
+  getColorStyle,
+  formatearUnidad,
+  mostrarUnidadMedida,
+  paginationUbicacion,
+  onPageChange
+}) => {
+  return (
+    <Stack spacing={2}>
+      <TableContainer component={Paper} elevation={1} sx={{ borderRadius: 3 }}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Codigo</TableCell>
+              <TableCell>Descripcion</TableCell>
+              <TableCell>Stock</TableCell>
+              <TableCell>Unidad</TableCell>
+              <TableCell>Talla y Color</TableCell>
+              <TableCell align="right">Acciones</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {articulosUbicacion.map((articulo, index) => {
+              const uniqueKey = [
+                articulo.CodigoArticulo,
+                ubicacionSeleccionada.ubicacion,
+                articulo.UnidadMedida,
+                articulo.Partida || '',
+                articulo.Talla || '',
+                articulo.CodigoColor_ || '',
+                index
+              ].join('|');
+
+              const tallaColor = formatTallaColor(articulo.Talla, articulo.CodigoColor_);
+              const selected = articuloUbicacionSeleccionado?.uniqueKey === uniqueKey;
+
+              return (
+                <TableRow
+                  key={uniqueKey}
+                  hover
+                  selected={selected}
+                  onClick={() =>
+                    setArticuloUbicacionSeleccionado({
+                      ...articulo,
+                      uniqueKey,
+                      tallaColorDisplay: tallaColor
+                    })
+                  }
+                  sx={{ cursor: 'pointer' }}
+                >
+                  <TableCell>{articulo.CodigoArticulo}</TableCell>
+                  <TableCell>{articulo.DescripcionArticulo}</TableCell>
+                  <TableCell>
+                    <Stack spacing={0.5}>
+                      <Typography variant="body2">
+                        {formatearUnidad(articulo.Cantidad, articulo.UnidadMedida)}
+                      </Typography>
+                      {articulo.UnidadMedida !== articulo.UnidadBase && articulo.FactorConversion && (
+                        <Typography variant="caption" color="text.secondary">
+                          ({formatearUnidad(articulo.Cantidad * articulo.FactorConversion, articulo.UnidadBase)})
+                        </Typography>
+                      )}
+                    </Stack>
+                  </TableCell>
+                  <TableCell>{mostrarUnidadMedida(articulo.UnidadMedida)}</TableCell>
+                  <TableCell>
+                    <Stack spacing={0.5}>
+                      {tallaColor && (
+                        <StockInfoChip
+                          label={tallaColor}
+                          style={getColorStyle(articulo.CodigoColor_)}
+                          sx={{ width: 'fit-content' }}
+                        />
+                      )}
+                      {articulo.NombreColor && (
+                        <Typography variant="caption" color="text.secondary">
+                          {articulo.NombreColor}
+                        </Typography>
+                      )}
+                    </Stack>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Button size="small" variant={selected ? 'contained' : 'outlined'}>
+                      Seleccionar
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      {paginationUbicacion.totalPages > 1 && (
+        <Paper elevation={1} sx={{ p: 2, borderRadius: 3 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems="center">
+            <Button
+              disabled={paginationUbicacion.page === 1}
+              onClick={() => onPageChange(paginationUbicacion.page - 1)}
+            >
+              Anterior
+            </Button>
+            <Typography variant="body2">
+              Pagina {paginationUbicacion.page} de {Math.ceil(paginationUbicacion.total / paginationUbicacion.pageSize)}
+            </Typography>
+            <Button
+              disabled={paginationUbicacion.page * paginationUbicacion.pageSize >= paginationUbicacion.total}
+              onClick={() => onPageChange(paginationUbicacion.page + 1)}
+            >
+              Siguiente
+            </Button>
+          </Stack>
+        </Paper>
+      )}
+    </Stack>
+  );
+};
+
+
+const TraspasosPendientesTable = ({
+  traspasosPendientes,
+  getNombreAlmacen,
+  formatearUnidad,
+  mostrarUnidadMedida,
+  getColorStyle,
+  onEliminar,
+  onConfirmar,
+  onVolver,
+  loading
+}) => {
+  return (
+    <Stack spacing={2.5}>
+      <TableContainer component={Paper} elevation={1} sx={{ borderRadius: 3 }}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Articulo</TableCell>
+              <TableCell>Origen</TableCell>
+              <TableCell>Destino</TableCell>
+              <TableCell>Cantidad</TableCell>
+              <TableCell>Variantes</TableCell>
+              <TableCell align="right">Acciones</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {traspasosPendientes.map((traspaso) => (
+              <TableRow key={traspaso.id} hover>
+                <TableCell>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {traspaso.articulo.CodigoArticulo}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {traspaso.articulo.DescripcionArticulo}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2">{getNombreAlmacen(traspaso.origen.almacen)}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {traspaso.origen.esSinUbicacion ? '[SIN UBICACION]' : traspaso.origen.ubicacion}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2">{getNombreAlmacen(traspaso.destino.almacen)}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {traspaso.destino.ubicacion}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  {formatearUnidad(traspaso.cantidad, mostrarUnidadMedida(traspaso.unidadMedida))}
+                </TableCell>
+                <TableCell>
+                  <Stack spacing={0.5}>
+                    {traspaso.partida && (
+                      <Typography variant="caption">
+                        <strong>Lote:</strong> {traspaso.partida}
+                      </Typography>
+                    )}
+                    {(traspaso.talla || traspaso.color) && (
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography variant="caption">
+                          <strong>Talla/Color:</strong>
+                        </Typography>
+                        <StockInfoChip
+                          label={`${traspaso.talla || ''}${traspaso.color || ''}`}
+                          style={getColorStyle(traspaso.color)}
+                        />
+                      </Stack>
+                    )}
+                  </Stack>
+                </TableCell>
+                <TableCell align="right">
+                  <Button color="error" variant="outlined" size="small" onClick={() => onEliminar(traspaso.id)}>
+                    Eliminar
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center">
+        <Button variant="contained" onClick={onConfirmar} disabled={loading}>
+          {loading ? 'Confirmando...' : 'Confirmar Todos los Traspasos'}
+        </Button>
+        <Button variant="outlined" onClick={onVolver}>
+          Volver a Traspasos
+        </Button>
+      </Stack>
+    </Stack>
+  );
+};
+
+
+const HistorialTraspasosTable = ({
+  historial,
+  formatFecha,
+  formatearUnidad,
+  mostrarUnidadMedida,
+  getColorStyle
+}) => {
+  return (
+    <TableContainer component={Paper} elevation={1} sx={{ borderRadius: 3 }}>
+      <Table>
+        <TableHead>
+          <TableRow>
+            <TableCell>Fecha</TableCell>
+            <TableCell>Articulo</TableCell>
+            <TableCell>Origen</TableCell>
+            <TableCell>Destino</TableCell>
+            <TableCell>Cantidad</TableCell>
+            <TableCell>Variantes</TableCell>
+            <TableCell>Usuario</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {historial.map((item, index) => {
+            const usuario = item.Usuario || 'Desconocido';
+            const tallaColor = item.CodigoTalla01_ && item.CodigoColor_
+              ? `${item.CodigoTalla01_}${item.CodigoColor_}`
+              : '';
+
+            return (
+              <TableRow key={`${item.FechaRegistro}-${index}-${item.CodigoArticulo}`} hover>
+                <TableCell>{item.FechaFormateada || formatFecha(item.FechaRegistro)}</TableCell>
+                <TableCell>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {item.CodigoArticulo}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {item.DescripcionArticulo}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2">{item.OrigenAlmacen}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {item.OrigenUbicacion === 'SIN-UBICACION' ? '[SIN UBICACION]' : item.OrigenUbicacion}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2">{item.DestinoAlmacen}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {item.DestinoUbicacion}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  {formatearUnidad(item.Cantidad, mostrarUnidadMedida(item.UnidadMedida))}
+                </TableCell>
+                <TableCell>
+                  <Stack spacing={0.5}>
+                    {item.Partida && (
+                      <Typography variant="caption">
+                        <strong>Lote:</strong> {item.Partida}
+                      </Typography>
+                    )}
+                    {tallaColor && (
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography variant="caption">
+                          <strong>Talla/Color:</strong>
+                        </Typography>
+                        <StockInfoChip
+                          label={tallaColor}
+                          style={getColorStyle(item.CodigoColor_)}
+                        />
+                      </Stack>
+                    )}
+                  </Stack>
+                </TableCell>
+                <TableCell>{usuario}</TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+};
+
 
 const TraspasosPage = () => {
   // =========== ESTADOS ===========
@@ -32,6 +815,10 @@ const TraspasosPage = () => {
   const [ubicacionOrigen, setUbicacionOrigen] = useState('');
   const [almacenDestino, setAlmacenDestino] = useState('');
   const [ubicacionDestino, setUbicacionDestino] = useState('');
+  const [ubicacionDestinoBusqueda, setUbicacionDestinoBusqueda] = useState('');
+  const [cargandoUbicacionesDestino, setCargandoUbicacionesDestino] = useState(false);
+  const [ubicacionesDestinoHasMore, setUbicacionesDestinoHasMore] = useState(false);
+  const [ubicacionesDestinoNextOffset, setUbicacionesDestinoNextOffset] = useState(0);
   const [cantidad, setCantidad] = useState('');
   const [unidadMedida, setUnidadMedida] = useState('');
   const [partida, setPartida] = useState('');
@@ -62,6 +849,8 @@ const TraspasosPage = () => {
   const searchTimer = useRef(null);
   const searchRef = useRef(null);
   const listaRef = useRef(null);
+  const ubicacionesDestinoRequestRef = useRef(0);
+  const UBICACIONES_DESTINO_BATCH_SIZE = 50;
 
   // =========== FUNCIONES DE UTILIDAD ===========
   const formatearUnidad = (cantidad, unidad) => {
@@ -314,6 +1103,7 @@ const TraspasosPage = () => {
         CodigoAlmacen: item.CodigoAlmacen,
         NombreAlmacen: item.NombreAlmacen,
         Ubicacion: item.Ubicacion,
+        UbicacionPrincipal: item.UbicacionPrincipal || '',
         DescripcionUbicacion: item.DescripcionUbicacion,
         Cantidad: item.Cantidad,
         UnidadMedida: item.UnidadStock,
@@ -322,6 +1112,7 @@ const TraspasosPage = () => {
         CodigoColor_: item.CodigoColor_ || '',
         Talla: item.CodigoTalla01_ || '',
         EsSinUbicacion: item.EsSinUbicacion === 1 || item.TipoStock === 'SIN_UBICACION',
+        EsUbicacionPrincipal: item.EsUbicacionPrincipal === 1,
         GrupoUnico: item.ClaveUnica || '',
         UnidadBase: item.UnidadBase,
         UnidadAlternativa: item.UnidadAlternativa,
@@ -332,18 +1123,19 @@ const TraspasosPage = () => {
       setStockDisponible(stockNormalizado);
       
       if (stockNormalizado.length > 0) {
-        const almacenConMasStock = stockNormalizado.reduce((max, item) => 
+        const ubicacionPorDefecto = stockNormalizado.find(item => item.EsUbicacionPrincipal) || stockNormalizado.reduce((max, item) => 
           getCantidadBase(item) > getCantidadBase(max) ? item : max
         );
         
-        setAlmacenOrigen(almacenConMasStock.CodigoAlmacen);
-        setUbicacionOrigen(almacenConMasStock.Ubicacion);
-        setUnidadMedida(almacenConMasStock.UnidadMedida);
-        setTipoUnidadMedida(almacenConMasStock.UnidadMedida);
-        setPartida(almacenConMasStock.Partida || '');
-        setTallaOrigen(almacenConMasStock.Talla || '');
-        setColorOrigen(almacenConMasStock.CodigoColor_ || '');
-        setStockDisponibleInfo(formatStockDisponible(almacenConMasStock));
+        setAlmacenOrigen(ubicacionPorDefecto.CodigoAlmacen);
+        setUbicacionOrigen(ubicacionPorDefecto.Ubicacion);
+        setUnidadMedida(ubicacionPorDefecto.UnidadMedida);
+        setTipoUnidadMedida(ubicacionPorDefecto.UnidadMedida);
+        setPartida(ubicacionPorDefecto.Partida || '');
+        setTallaOrigen(ubicacionPorDefecto.Talla || '');
+        setColorOrigen(ubicacionPorDefecto.CodigoColor_ || '');
+        setGrupoUnicoOrigen(ubicacionPorDefecto.GrupoUnico || '');
+        setStockDisponibleInfo(formatStockDisponible(ubicacionPorDefecto));
       }
     } catch (error) {
       console.error('❌ [TRASPASOS] Error cargando stock:', error);
@@ -367,6 +1159,7 @@ const TraspasosPage = () => {
           CodigoAlmacen: item.codigoAlmacen,
           NombreAlmacen: item.nombreAlmacen,
           Ubicacion: item.ubicacion,
+          UbicacionPrincipal: '',
           DescripcionUbicacion: item.descripcionUbicacion,
           Cantidad: item.unidadSaldo,
           UnidadMedida: item.unidadMedida || 'unidades',
@@ -375,24 +1168,26 @@ const TraspasosPage = () => {
           CodigoColor_: item.codigoColor || '',
           Talla: item.codigoTalla || '',
           EsSinUbicacion: false,
+          EsUbicacionPrincipal: false,
           GrupoUnico: `${item.codigoAlmacen}_${item.ubicacion}_${item.unidadMedida}_${item.partida || ''}_${item.codigoTalla || ''}_${item.codigoColor || ''}`
         }));
         
         setStockDisponible(stockNormalizado);
         
         if (stockNormalizado.length > 0) {
-          const almacenConMasStock = stockNormalizado.reduce((max, item) => 
+          const ubicacionPorDefecto = stockNormalizado.find(item => item.EsUbicacionPrincipal) || stockNormalizado.reduce((max, item) => 
             getCantidadBase(item) > getCantidadBase(max) ? item : max
           );
           
-          setAlmacenOrigen(almacenConMasStock.CodigoAlmacen);
-          setUbicacionOrigen(almacenConMasStock.Ubicacion);
-          setUnidadMedida(almacenConMasStock.UnidadMedida);
-          setTipoUnidadMedida(almacenConMasStock.UnidadMedida);
-          setPartida(almacenConMasStock.Partida || '');
-          setTallaOrigen(almacenConMasStock.Talla || '');
-          setColorOrigen(almacenConMasStock.CodigoColor_ || '');
-          setStockDisponibleInfo(formatStockDisponible(almacenConMasStock));
+          setAlmacenOrigen(ubicacionPorDefecto.CodigoAlmacen);
+          setUbicacionOrigen(ubicacionPorDefecto.Ubicacion);
+          setUnidadMedida(ubicacionPorDefecto.UnidadMedida);
+          setTipoUnidadMedida(ubicacionPorDefecto.UnidadMedida);
+          setPartida(ubicacionPorDefecto.Partida || '');
+          setTallaOrigen(ubicacionPorDefecto.Talla || '');
+          setColorOrigen(ubicacionPorDefecto.CodigoColor_ || '');
+          setGrupoUnicoOrigen(ubicacionPorDefecto.GrupoUnico || '');
+          setStockDisponibleInfo(formatStockDisponible(ubicacionPorDefecto));
         }
       } catch (fallbackError) {
         console.error('❌ [TRASPASOS] Error en fallback:', fallbackError);
@@ -499,10 +1294,19 @@ const TraspasosPage = () => {
     }
   }, [paginationUbicacion.pageSize]);
 
-  const cargarUbicacionesDestino = useCallback(async (excluirUbicacion = '') => {
+  const cargarUbicacionesDestino = useCallback(async ({
+    excluirUbicacion = '',
+    search = '',
+    offset = 0,
+    append = false
+  } = {}) => {
     if (!almacenDestino) return;
     
     try {
+      const requestId = Date.now() + Math.random();
+      ubicacionesDestinoRequestRef.current = requestId;
+      setCargandoUbicacionesDestino(true);
+
       const headers = getAuthHeader();
       const response = await API.get(
         '/ubicaciones-completas',
@@ -511,18 +1315,103 @@ const TraspasosPage = () => {
           params: {
             codigoAlmacen: almacenDestino,
             excluirUbicacion,
-            incluirSinUbicacion: 'true'
+            incluirSinUbicacion: 'true',
+            search,
+            offset,
+            limit: UBICACIONES_DESTINO_BATCH_SIZE
           }
         }
       );
-      
-      setUbicacionesDestino(response.data);
+
+      if (ubicacionesDestinoRequestRef.current !== requestId) {
+        return;
+      }
+
+      const payload = response.data || {};
+      const items = Array.isArray(payload.items) ? payload.items : [];
+
+      setUbicacionesDestino((prev) => {
+        if (!append) {
+          return items;
+        }
+
+        const existentes = new Set(prev.map((ubicacion) => ubicacion.Ubicacion));
+        const nuevas = items.filter((ubicacion) => !existentes.has(ubicacion.Ubicacion));
+        return [...prev, ...nuevas];
+      });
+      setUbicacionesDestinoHasMore(Boolean(payload.hasMore));
+      setUbicacionesDestinoNextOffset(Number(payload.nextOffset) || 0);
     } catch (error) {
       console.error('Error cargando ubicaciones destino:', error);
       setUbicacionesDestino([]);
+      setUbicacionesDestinoHasMore(false);
+      setUbicacionesDestinoNextOffset(0);
       alert(`Error cargando ubicaciones: ${error.response?.data?.mensaje || error.message}`);
+    } finally {
+      setCargandoUbicacionesDestino(false);
     }
-  }, [almacenDestino]);
+  }, [almacenDestino, UBICACIONES_DESTINO_BATCH_SIZE]);
+
+  const handleAlmacenDestinoChange = useCallback((selectedOption) => {
+    if (!selectedOption) return;
+
+    setAlmacenDestino(selectedOption.value);
+    setUbicacionDestino('');
+    setUbicacionDestinoBusqueda('');
+    setUbicacionesDestino([]);
+    setUbicacionesDestinoHasMore(false);
+    setUbicacionesDestinoNextOffset(0);
+  }, []);
+
+  const handleUbicacionDestinoInputChange = useCallback((inputValue, meta) => {
+    if (meta.action === 'input-change') {
+      setUbicacionDestino('');
+      setUbicacionDestinoBusqueda(inputValue);
+    }
+
+    if (meta.action === 'menu-close') {
+      return '';
+    }
+
+    return inputValue;
+  }, []);
+
+  const handleUbicacionesDestinoMenuOpen = useCallback(() => {
+    if (!almacenDestino || ubicacionesDestino.length > 0 || cargandoUbicacionesDestino) {
+      return;
+    }
+
+    cargarUbicacionesDestino({
+      search: ubicacionDestinoBusqueda.trim(),
+      offset: 0,
+      append: false
+    });
+  }, [
+    almacenDestino,
+    ubicacionesDestino.length,
+    cargandoUbicacionesDestino,
+    cargarUbicacionesDestino,
+    ubicacionDestinoBusqueda
+  ]);
+
+  const handleUbicacionesDestinoScroll = useCallback(() => {
+    if (!almacenDestino || cargandoUbicacionesDestino || !ubicacionesDestinoHasMore) {
+      return;
+    }
+
+    cargarUbicacionesDestino({
+      search: ubicacionDestinoBusqueda.trim(),
+      offset: ubicacionesDestinoNextOffset,
+      append: true
+    });
+  }, [
+    almacenDestino,
+    cargandoUbicacionesDestino,
+    ubicacionesDestinoHasMore,
+    ubicacionesDestinoNextOffset,
+    ubicacionDestinoBusqueda,
+    cargarUbicacionesDestino
+  ]);
 
   // =========== useMemo HOOKS ===========
   const opcionesAlmacenes = useMemo(() => {
@@ -560,7 +1449,7 @@ const TraspasosPage = () => {
         label += formatUbicacionDisplay(item.Ubicacion || '', item.EsSinUbicacion);
         
         if (tallaColor) {
-          label += ` - Talla/Color: ${tallaColor}`;
+          label += ` - ${tallaColor}`;
         }
         
         label += ` - ${formatStockDisponible(item)}`;
@@ -610,8 +1499,23 @@ const TraspasosPage = () => {
   }, [articuloSeleccionado]);
 
   useEffect(() => {
-    cargarUbicacionesDestino();
-  }, [almacenDestino, cargarUbicacionesDestino]);
+    if (!almacenDestino) {
+      setUbicacionesDestino([]);
+      setUbicacionesDestinoHasMore(false);
+      setUbicacionesDestinoNextOffset(0);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      cargarUbicacionesDestino({
+        search: ubicacionDestinoBusqueda.trim(),
+        offset: 0,
+        append: false
+      });
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [almacenDestino, ubicacionDestinoBusqueda, cargarUbicacionesDestino]);
 
   // =========== FUNCIONES DE INTERACCIÓN ===========
   const toggleAlmacenExpandido = async (codigoAlmacen) => {
@@ -668,6 +1572,7 @@ const TraspasosPage = () => {
   const cambiarAlmacenOrigen = (codigoAlmacen) => {
     setAlmacenOrigen(codigoAlmacen);
     setUbicacionOrigen('');
+    setGrupoUnicoOrigen('');
     setUnidadMedida('');
     setTipoUnidadMedida('');
     setPartida('');
@@ -680,17 +1585,18 @@ const TraspasosPage = () => {
     );
     
     if (ubicacionesEnAlmacen.length > 0) {
-      const ubicacionConMasStock = ubicacionesEnAlmacen.reduce((max, item) => 
+      const ubicacionPorDefecto = ubicacionesEnAlmacen.find(item => item.EsUbicacionPrincipal) || ubicacionesEnAlmacen.reduce((max, item) => 
         getCantidadBase(item) > getCantidadBase(max) ? item : max
       );
       
-      setUbicacionOrigen(ubicacionConMasStock.Ubicacion);
-      setUnidadMedida(ubicacionConMasStock.UnidadMedida);
-      setTipoUnidadMedida(ubicacionConMasStock.UnidadMedida);
-      setPartida(ubicacionConMasStock.Partida || '');
-      setTallaOrigen(ubicacionConMasStock.Talla || '');
-      setColorOrigen(ubicacionConMasStock.CodigoColor_ || '');
-      setStockDisponibleInfo(formatStockDisponible(ubicacionConMasStock));
+      setUbicacionOrigen(ubicacionPorDefecto.Ubicacion);
+      setUnidadMedida(ubicacionPorDefecto.UnidadMedida);
+      setTipoUnidadMedida(ubicacionPorDefecto.UnidadMedida);
+      setPartida(ubicacionPorDefecto.Partida || '');
+      setTallaOrigen(ubicacionPorDefecto.Talla || '');
+      setColorOrigen(ubicacionPorDefecto.CodigoColor_ || '');
+      setGrupoUnicoOrigen(ubicacionPorDefecto.GrupoUnico || '');
+      setStockDisponibleInfo(formatStockDisponible(ubicacionPorDefecto));
     }
   };
 
@@ -998,265 +1904,122 @@ const TraspasosPage = () => {
   // =========== RENDER ===========
   return (
     <div className="traspasos-container">
-      <h1>Traspaso entre Ubicaciones</h1>
-      
-      <div className="section-selector">
-        <button 
-          className={`section-btn ${activeSection === 'traspasos' ? 'active' : ''}`}
-          onClick={() => setActiveSection('traspasos')}
-        >
-          Traspasos
-        </button>
-        
-        <button 
-          className={`section-btn ${activeSection === 'verificacion' ? 'active' : ''}`}
-          onClick={() => traspasosPendientes.length > 0 
-            ? setActiveSection('verificacion') 
-            : alert('Agregue traspasos primero')
+      <TraspasosHeader
+        activeSection={activeSection}
+        pendientesCount={traspasosPendientes.length}
+        onChangeSection={(section) => {
+          if (section === 'verificacion' && traspasosPendientes.length === 0) {
+            alert('Agregue traspasos primero');
+            return;
           }
-        >
-          Verificación
-          {traspasosPendientes.length > 0 && (
-            <span className="badge">{traspasosPendientes.length}</span>
-          )}
-        </button>
-        
-        <button 
-          className={`section-btn ${activeSection === 'historial' ? 'active' : ''}`}
-          onClick={() => {
+
+          if (section === 'historial') {
             setActiveSection('historial');
             cargarHistorial();
-          }}
-        >
-          Historial
-        </button>
-      </div>
+            return;
+          }
+
+          setActiveSection(section);
+        }}
+      />
       
       {activeSection === 'traspasos' && (
         <div className="traspasos-section">
-          <div className="tabs-container">
-            <button 
-              className={`tab-btn ${activeTab === 'articulo' ? 'active' : ''}`}
-              onClick={() => {
-                setActiveTab('articulo');
+          <Stack spacing={3}>
+            <TraspasosModeTabs
+              activeTab={activeTab}
+              onChange={(value) => {
+                setActiveTab(value);
                 setVistaUbicacion('seleccion');
               }}
-            >
-              Por Artículo
-            </button>
-            
-            <button 
-              className={`tab-btn ${activeTab === 'ubicacion' ? 'active' : ''}`}
-              onClick={() => {
-                setActiveTab('ubicacion');
-                setVistaUbicacion('seleccion');
-              }}
-            >
-              Por Ubicación
-            </button>
-          </div>
+            />
           
           {activeTab === 'articulo' && (
             <div className="modo-articulo">
-              <div className="form-section">
-                <h2>Artículos con Stock</h2>
-                <div className="form-group">
-                  <label>Buscar artículo:</label>
-                  <div className="search-container">
-                    <AsyncSelect
-                      cacheOptions
-                      defaultOptions={[]}
-                      loadOptions={cargarOpcionesArticulos}
-                      onChange={(selectedOption) => {
-                        if (selectedOption) {
-                          seleccionarArticulo(selectedOption.data);
-                        } else {
-                          setArticuloSeleccionado(null);
-                        }
-                      }}
-                      placeholder="Escriba código o descripción..."
-                      noOptionsMessage={({ inputValue }) => 
-                        inputValue.length < 2 
-                          ? "Escriba al menos 2 caracteres..." 
-                          : "No se encontraron artículos"
-                      }
-                      loadingMessage={() => "Buscando..."}
-                      styles={{
-                        control: (base) => ({
-                          ...base,
-                          minHeight: '44px',
-                          borderColor: '#ddd',
-                          '&:hover': {
-                            borderColor: '#aaa'
-                          }
-                        }),
-                        menu: (base) => ({
-                          ...base,
-                          zIndex: 9999
-                        })
-                      }}
-                    />
-                  </div>
-                  
-                  {articuloSeleccionado && (
-                    <div className="articulo-seleccionado">
-                      <span>Artículo seleccionado: </span>
-                      {articuloSeleccionado.DescripcionArticulo} 
-                      ({articuloSeleccionado.CodigoArticulo})
-                    </div>
-                  )}
-                </div>
-              </div>
+              <ArticuloSearchPanel
+                AsyncSelect={AsyncSelect}
+                loadOptions={cargarOpcionesArticulos}
+                onChange={(selectedOption) => {
+                  if (selectedOption) {
+                    seleccionarArticulo(selectedOption.data);
+                  } else {
+                    setArticuloSeleccionado(null);
+                  }
+                }}
+                articuloSeleccionado={articuloSeleccionado}
+              />
+
+              {articuloSeleccionado && stockDisponible.length === 0 && !loading && (
+                <TraspasosStateView
+                  type="info"
+                  title="Sin stock disponible."
+                  message="Este articulo no tiene ubicaciones disponibles para traspaso."
+                />
+              )}
 
               {articuloSeleccionado && stockDisponible.length > 0 && (
                 <>
-                  <div className="form-section">
-                    <h2>Origen</h2>
-                    <div className="form-control-group">
-                      <label>Almacén:</label>
-                      <Select
-                        className="react-select-container"
-                        classNamePrefix="react-select"
-                        value={opcionesAlmacenes.find(opt => opt.value === almacenOrigen) || null}
-                        onChange={(selectedOption) => {
-                          if (selectedOption) {
-                            cambiarAlmacenOrigen(selectedOption.value);
-                          }
-                        }}
-                        options={[...new Set(stockDisponible.map(item => item.CodigoAlmacen))]
-                          .map((codigo) => ({
-                            value: codigo,
-                            label: getNombreAlmacen(codigo)
-                          }))}
-                        placeholder="Seleccionar almacén..."
-                        isSearchable={true}
-                        noOptionsMessage={() => "No hay almacenes disponibles"}
-                      />
-                    </div>
+                  <Stack spacing={3}>
+                    <OrigenSelectorCard
+                      SelectComponent={Select}
+                      opcionesAlmacenes={[...new Set(stockDisponible.map(item => item.CodigoAlmacen))]
+                        .map((codigo) => ({
+                          value: codigo,
+                          label: getNombreAlmacen(codigo)
+                        }))}
+                      opcionesUbicacionesStock={opcionesUbicacionesStock}
+                      almacenOrigen={almacenOrigen}
+                      grupoUnicoOrigen={grupoUnicoOrigen}
+                      onAlmacenChange={(selectedOption) => {
+                        if (selectedOption) {
+                          cambiarAlmacenOrigen(selectedOption.value);
+                        }
+                      }}
+                      onUbicacionChange={(selectedOption) => {
+                        if (selectedOption) {
+                          seleccionarUbicacionOrigen(selectedOption.data);
+                        }
+                      }}
+                      getNombreAlmacen={getNombreAlmacen}
+                      ubicacionOrigen={ubicacionOrigen}
+                      unidadMedida={unidadMedida}
+                      partida={partida}
+                      tallaOrigen={tallaOrigen}
+                      colorOrigen={colorOrigen}
+                      getColorStyle={getColorStyle}
+                      stockDisponibleInfo={stockDisponibleInfo}
+                      mostrarUnidadMedida={mostrarUnidadMedida}
+                    />
 
-                    <div className="form-control-group">
-                      <label>Ubicación y Variantes:</label>
-                      <Select
-                        className="react-select-container"
-                        classNamePrefix="react-select"
-                        value={opcionesUbicacionesStock.find(opt => opt.value === grupoUnicoOrigen) || null}
-                        onChange={(selectedOption) => {
-                          if (selectedOption) {
-                            seleccionarUbicacionOrigen(selectedOption.data);
-                          }
-                        }}
-                        options={opcionesUbicacionesStock}
-                        placeholder="Seleccionar ubicación y variante..."
-                        isSearchable={true}
-                        isDisabled={!almacenOrigen}
-                        noOptionsMessage={() => "No hay ubicaciones disponibles"}
-                        filterOption={(option, inputValue) => {
-                          if (!inputValue) return true;
-                          return option.label.toLowerCase().includes(inputValue.toLowerCase());
-                        }}
-                      />
-                    </div>
-                    
-                    {ubicacionOrigen && (
-                      <div className="unidad-info">
-                        <strong>Unidad seleccionada:</strong> {mostrarUnidadMedida(unidadMedida)}
-                        {partida && <span>, <strong>Lote:</strong> {partida}</span>}
-                        {(tallaOrigen || colorOrigen) && (
-                          <span>, 
-                            <strong>Talla/Color:</strong> 
-                            <span 
-                              className="talla-color-display destacado"
-                              style={getColorStyle(colorOrigen)}
-                            >
-                              {tallaOrigen}{colorOrigen}
-                            </span>
-                          </span>
-                        )}
-                        {stockDisponibleInfo && (
-                          <div className="stock-disponible-info">
-                            <strong>Stock disponible:</strong> {stockDisponibleInfo}
-                            {ubicacionOrigen === 'SIN-UBICACION' && (
-                              <span className="sin-ubicacion-badge"> - Stock Sin Ubicación</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="form-section">
-                    <h2>Destino</h2>
-                    <div className="form-control-group">
-                      <label>Almacén:</label>
-                      <Select
-                        className="react-select-container"
-                        classNamePrefix="react-select"
-                        value={opcionesAlmacenes.find(opt => opt.value === almacenDestino) || null}
-                        onChange={(selectedOption) => {
-                          if (selectedOption) {
-                            setAlmacenDestino(selectedOption.value);
-                            setUbicacionDestino('');
-                          }
-                        }}
-                        options={opcionesAlmacenes}
-                        placeholder="Seleccionar almacén..."
-                        isSearchable={true}
-                        noOptionsMessage={() => "No hay almacenes disponibles"}
-                      />
-                    </div>
-
-                    <div className="form-control-group">
-                      <label>Ubicación:</label>
-                      <Select
-                        className="react-select-container"
-                        classNamePrefix="react-select"
-                        value={opcionesUbicacionesDestino.find(opt => opt.value === ubicacionDestino) || null}
-                        onChange={(selectedOption) => {
-                          if (selectedOption) {
-                            setUbicacionDestino(selectedOption.value);
-                          }
-                        }}
-                        options={opcionesUbicacionesDestino.filter(ubicacion => 
-                          almacenDestino !== almacenOrigen || ubicacion.value !== ubicacionOrigen
-                        )}
-                        placeholder="Seleccionar ubicación..."
-                        isSearchable={true}
-                        isDisabled={!almacenDestino}
-                        noOptionsMessage={() => "No hay ubicaciones disponibles"}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-section">
-                    <h2>Cantidad</h2>
-                    <div className="form-control-group">
-                      <label>Cantidad a traspasar:</label>
-                      <input 
-                        className="form-control-enhanced"
-                        type="number" 
-                        value={cantidad}
-                        onChange={handleCantidadChange}
-                        required
-                        min="1"
-                        step="any"
-                      />
-                      {stockDisponibleInfo && (
-                        <div className="stock-info">
-                          <strong>Stock disponible:</strong> {stockDisponibleInfo}
-                        </div>
+                    <DestinoSelectorCard
+                      SelectComponent={Select}
+                      opcionesAlmacenes={opcionesAlmacenes}
+                      opcionesUbicacionesDestino={opcionesUbicacionesDestino.filter(ubicacion =>
+                        almacenDestino !== almacenOrigen || ubicacion.value !== ubicacionOrigen
                       )}
-                    </div>
-                  </div>
+                      almacenDestino={almacenDestino}
+                      ubicacionDestino={ubicacionDestino}
+                      onAlmacenChange={handleAlmacenDestinoChange}
+                      onUbicacionChange={(selectedOption) => {
+                        if (selectedOption) {
+                          setUbicacionDestino(selectedOption.value);
+                        }
+                      }}
+                      onUbicacionInputChange={handleUbicacionDestinoInputChange}
+                      onUbicacionMenuOpen={handleUbicacionesDestinoMenuOpen}
+                      onUbicacionMenuScrollToBottom={handleUbicacionesDestinoScroll}
+                      cargandoUbicacionesDestino={cargandoUbicacionesDestino}
+                    />
 
-                  <div className="form-actions">
-                    <button 
-                      className="btn-enviar"
-                      onClick={agregarTraspasoArticulo}
-                      disabled={loading}
-                    >
-                      {loading ? 'Agregando...' : 'Agregar Traspaso'}
-                    </button>
-                  </div>
+                    <CantidadPanel
+                      cantidad={cantidad}
+                      onCantidadChange={handleCantidadChange}
+                      stockInfo={stockDisponibleInfo}
+                      buttonLabel="Agregar Traspaso"
+                      onSubmit={agregarTraspasoArticulo}
+                      loading={loading}
+                    />
+                  </Stack>
                 </>
               )}
             </div>
@@ -1265,82 +2028,22 @@ const TraspasosPage = () => {
           {activeTab === 'ubicacion' && (
             <div className="modo-ubicacion">
               {vistaUbicacion === 'seleccion' ? (
-                <div className="form-section">
-                  <h2>Seleccionar Ubicación de Origen</h2>
-                  
-                  <div className="form-control-group">
-                    <label>Buscar ubicación:</label>
-                    <AsyncSelect
-                      cacheOptions
-                      defaultOptions={[]}
-                      loadOptions={cargarOpcionesUbicaciones}
-                      onChange={(selectedOption) => {
-                        if (selectedOption) {
-                          const [almacen, ubicacion] = selectedOption.value.split('|');
-                          cargarArticulosUbicacion(almacen, ubicacion);
-                        }
-                      }}
-                      placeholder="Escriba código de ubicación..."
-                      noOptionsMessage={({ inputValue }) => 
-                        inputValue.length < 2 
-                          ? "Escriba al menos 2 caracteres..." 
-                          : "No se encontraron ubicaciones"
-                      }
-                      loadingMessage={() => "Buscando..."}
-                      styles={{
-                        control: (base) => ({
-                          ...base,
-                          minHeight: '44px',
-                          borderColor: '#ddd',
-                          '&:hover': {
-                            borderColor: '#aaa'
-                          }
-                        }),
-                        menu: (base) => ({
-                          ...base,
-                          zIndex: 9999
-                        })
-                      }}
-                    />
-                  </div>
-                  
-                  <div className="almacenes-container">
-                    {almacenes.map(almacen => (
-                      <div key={almacen.CodigoAlmacen} className="almacen-item">
-                        <div 
-                          className="almacen-header"
-                          onClick={() => toggleAlmacenExpandido(almacen.CodigoAlmacen)}
-                        >
-                          <span>{almacen.Almacen} ({almacen.CodigoAlmacen})</span>
-                          <span>{almacenesExpandidos[almacen.CodigoAlmacen] ? '▲' : '▼'}</span>
-                        </div>
-                        
-                        {almacenesExpandidos[almacen.CodigoAlmacen] && (
-                          <div className="ubicaciones-list">
-                            {loading ? (
-                              <div className="cargando-ubicaciones">Cargando ubicaciones...</div>
-                            ) : (
-                              ubicacionesCargadas[almacen.CodigoAlmacen]?.map((ubicacion, index) => (
-                                <div 
-                                  key={`${almacen.CodigoAlmacen}-${ubicacion.Ubicacion}-${index}`}
-                                  className={`ubicacion-item ${ubicacion.Ubicacion === 'SIN-UBICACION' ? 'sin-ubicacion-option' : ''}`}
-                                  onClick={() => cargarArticulosUbicacion(almacen.CodigoAlmacen, ubicacion.Ubicacion)}
-                                >
-                                  <span className="ubicacion-codigo">
-                                    {ubicacion.Ubicacion === 'SIN-UBICACION' ? '[SIN UBICACIÓN]' : ubicacion.Ubicacion}
-                                  </span>
-                                  <span className="ubicacion-stock">
-                                    {ubicacion.CantidadArticulos} artículos
-                                  </span>
-                                </div>
-                              )) || <div className="sin-ubicaciones">No hay ubicaciones disponibles</div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <UbicacionesAgrupadasList
+                  AsyncSelect={AsyncSelect}
+                  loadOptions={cargarOpcionesUbicaciones}
+                  onAsyncChange={(selectedOption) => {
+                    if (selectedOption) {
+                      const [almacen, ubicacion] = selectedOption.value.split('|');
+                      cargarArticulosUbicacion(almacen, ubicacion);
+                    }
+                  }}
+                  almacenes={almacenes}
+                  almacenesExpandidos={almacenesExpandidos}
+                  ubicacionesCargadas={ubicacionesCargadas}
+                  onToggleAlmacen={toggleAlmacenExpandido}
+                  onSeleccionarUbicacion={cargarArticulosUbicacion}
+                  loading={loading}
+                />
               ) : (
                 <>
                   <div className="form-section-header">
@@ -1363,222 +2066,101 @@ const TraspasosPage = () => {
                       <span>Ubicación: {formatUbicacionDisplay(ubicacionSeleccionada.ubicacion, ubicacionSeleccionada.ubicacion === 'SIN-UBICACION')}</span>
                     </div>
                     
-                    <div className="articulos-ubicacion">
-                      <div className="responsive-table-container">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Código</th>
-                              <th>Descripción</th>
-                              <th>Stock</th>
-                              <th>Unidad</th>
-                              <th>Talla y Color</th>
-                              <th>Acciones</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {articulosUbicacion.map((articulo, index) => {
-                              const uniqueKey = [
-                                articulo.CodigoArticulo,
-                                ubicacionSeleccionada.ubicacion,
-                                articulo.UnidadMedida,
-                                articulo.Partida || '',
-                                articulo.Talla || '',
-                                articulo.CodigoColor_ || '',
-                                index
-                              ].join('|');
-                              
-                              const tallaColor = formatTallaColor(articulo.Talla, articulo.CodigoColor_);
-                              
-                              return (
-                                <tr 
-                                  key={uniqueKey}
-                                  className={
-                                    articuloUbicacionSeleccionado?.uniqueKey === uniqueKey 
-                                      ? 'seleccionado' 
-                                      : ''
-                                  }
-                                  onClick={() => setArticuloUbicacionSeleccionado({
-                                    ...articulo,
-                                    uniqueKey,
-                                    tallaColorDisplay: tallaColor
-                                  })}
-                                >
-                                  <td>{articulo.CodigoArticulo}</td>
-                                  <td>{articulo.DescripcionArticulo}</td>
-                                  <td>
-                                    {formatearUnidad(articulo.Cantidad, articulo.UnidadMedida)} 
-                                    {articulo.UnidadMedida !== articulo.UnidadBase && articulo.FactorConversion && (
-                                      <span className="unidad-base">
-                                        ({formatearUnidad(articulo.Cantidad * articulo.FactorConversion, articulo.UnidadBase)})
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td>{mostrarUnidadMedida(articulo.UnidadMedida)}</td>
-                                  <td>
-                                    {tallaColor && (
-                                      <span 
-                                        className="talla-color-display"
-                                        style={getColorStyle(articulo.CodigoColor_)}
-                                      >
-                                        {tallaColor}
-                                      </span>
-                                    )}
-                                    {articulo.NombreColor && (
-                                      <div className="nombre-color">
-                                        {articulo.NombreColor}
-                                      </div>
-                                    )}
-                                  </td>
-                                  <td>
-                                    <button className="btn-seleccionar">Seleccionar</button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      
-                      {paginationUbicacion.totalPages > 1 && (
-                        <div className="pagination-controls">
-                          <button
-                            disabled={paginationUbicacion.page === 1}
-                            onClick={() => cargarArticulosUbicacion(
-                              ubicacionSeleccionada.almacen, 
-                              ubicacionSeleccionada.ubicacion, 
-                              paginationUbicacion.page - 1
-                            )}
-                          >
-                            &larr; Anterior
-                          </button>
-                          
-                          <span>Página {paginationUbicacion.page} de {Math.ceil(paginationUbicacion.total / paginationUbicacion.pageSize)}</span>
-                          
-                          <button
-                            disabled={paginationUbicacion.page * paginationUbicacion.pageSize >= paginationUbicacion.total}
-                            onClick={() => cargarArticulosUbicacion(
-                              ubicacionSeleccionada.almacen, 
-                              ubicacionSeleccionada.ubicacion, 
-                              paginationUbicacion.page + 1
-                            )}
-                          >
-                            Siguiente &rarr;
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    <ArticulosUbicacionTable
+                      articulosUbicacion={articulosUbicacion}
+                      ubicacionSeleccionada={ubicacionSeleccionada}
+                      articuloUbicacionSeleccionado={articuloUbicacionSeleccionado}
+                      setArticuloUbicacionSeleccionado={setArticuloUbicacionSeleccionado}
+                      formatTallaColor={formatTallaColor}
+                      getColorStyle={getColorStyle}
+                      formatearUnidad={formatearUnidad}
+                      mostrarUnidadMedida={mostrarUnidadMedida}
+                      paginationUbicacion={paginationUbicacion}
+                      onPageChange={(page) =>
+                        cargarArticulosUbicacion(
+                          ubicacionSeleccionada.almacen,
+                          ubicacionSeleccionada.ubicacion,
+                          page
+                        )
+                      }
+                    />
                   </div>
                 </>
               )}
 
               {articuloUbicacionSeleccionado && (
-                <div className="detail-card">
-                  <div className="card-header">Detalles del Traspaso</div>
-                  <div className="card-body">
-                    <div className="articulo-seleccionado">
-                      <span>Artículo seleccionado: </span>
-                      {articuloUbicacionSeleccionado.DescripcionArticulo} 
-                      ({articuloUbicacionSeleccionado.CodigoArticulo})
-                      <div className="unidad-info">
-                        <strong>Unidad:</strong> {mostrarUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida)}
-                        {articuloUbicacionSeleccionado.Partida && <span>, <strong>Lote:</strong> {articuloUbicacionSeleccionado.Partida}</span>}
-                      </div>
-                      
-                      <div className="variantes-detalle">
-                        {articuloUbicacionSeleccionado.tallaColorDisplay && (
-                          <div>
-                            <strong>Talla/Color:</strong> 
-                            <span 
-                              style={getColorStyle(articuloUbicacionSeleccionado.CodigoColor_)}
-                              className="talla-color-display destacado"
-                            >
-                              {articuloUbicacionSeleccionado.tallaColorDisplay}
-                            </span>
-                          </div>
-                        )}
-                        
-                        {articuloUbicacionSeleccionado.NombreColor && (
-                          <div>
-                            <strong>Nombre Color:</strong> 
-                            {articuloUbicacionSeleccionado.NombreColor}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="form-control-group">
-                      <label>Almacén de destino:</label>
-                      <Select
-                        className="react-select-container"
-                        classNamePrefix="react-select"
-                        value={opcionesAlmacenes.find(opt => opt.value === almacenDestino) || null}
-                        onChange={(selectedOption) => {
-                          if (selectedOption) {
-                            setAlmacenDestino(selectedOption.value);
-                            setUbicacionDestino('');
-                          }
-                        }}
-                        options={opcionesAlmacenes}
-                        placeholder="Seleccionar almacén..."
-                        isSearchable={true}
-                        noOptionsMessage={() => "No hay almacenes disponibles"}
-                      />
-                    </div>
+                <Stack spacing={3}>
+                  <Paper elevation={1} sx={{ p: 3, borderRadius: 3 }}>
+                    <Stack spacing={2}>
+                      <Typography variant="h6" sx={{ color: '#1a365d', fontWeight: 700 }}>
+                        Detalles del Traspaso
+                      </Typography>
+                      <div className="articulo-seleccionado">
+                        <span>Artículo seleccionado: </span>
+                        {articuloUbicacionSeleccionado.DescripcionArticulo}
+                        ({articuloUbicacionSeleccionado.CodigoArticulo})
+                        <div className="unidad-info">
+                          <strong>Unidad:</strong> {mostrarUnidadMedida(articuloUbicacionSeleccionado.UnidadMedida)}
+                          {articuloUbicacionSeleccionado.Partida && <span>, <strong>Lote:</strong> {articuloUbicacionSeleccionado.Partida}</span>}
+                        </div>
 
-                    <div className="form-control-group">
-                      <label>Ubicación de destino:</label>
-                      <Select
-                        className="react-select-container"
-                        classNamePrefix="react-select"
-                        value={opcionesUbicacionesDestino.find(opt => opt.value === ubicacionDestino) || null}
-                        onChange={(selectedOption) => {
-                          if (selectedOption) {
-                            setUbicacionDestino(selectedOption.value);
-                          }
-                        }}
-                        options={opcionesUbicacionesDestino.filter(ubicacion => 
-                          almacenDestino !== ubicacionSeleccionada.almacen || 
-                          ubicacion.value !== ubicacionSeleccionada.ubicacion
-                        )}
-                        placeholder="Seleccionar ubicación..."
-                        isSearchable={true}
-                        isDisabled={!almacenDestino}
-                        noOptionsMessage={() => "No hay ubicaciones disponibles"}
-                      />
-                    </div>
+                        <Stack spacing={1} sx={{ mt: 1.5 }}>
+                          {articuloUbicacionSeleccionado.tallaColorDisplay && (
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <Typography variant="body2"><strong>Talla/Color:</strong></Typography>
+                              <StockInfoChip
+                                label={articuloUbicacionSeleccionado.tallaColorDisplay}
+                                style={getColorStyle(articuloUbicacionSeleccionado.CodigoColor_)}
+                              />
+                            </Stack>
+                          )}
 
-                    <div className="form-control-group">
-                      <label>Cantidad a traspasar:</label>
-                      <input 
-                        className="form-control-enhanced"
-                        type="number" 
-                        value={cantidad}
-                        onChange={handleCantidadChange}
-                        required
-                        min="1"
-                        step="any"
-                        max={articuloUbicacionSeleccionado.Cantidad}
-                      />
-                      <div className="stock-info">
-                        <strong>Stock disponible:</strong> {formatearUnidad(articuloUbicacionSeleccionado.Cantidad, articuloUbicacionSeleccionado.UnidadMedida)}
+                          {articuloUbicacionSeleccionado.NombreColor && (
+                            <Typography variant="body2">
+                              <strong>Nombre Color:</strong> {articuloUbicacionSeleccionado.NombreColor}
+                            </Typography>
+                          )}
+                        </Stack>
                       </div>
-                    </div>
+                    </Stack>
+                  </Paper>
 
-                    <div className="form-actions">
-                      <button 
-                        className="btn-agregar"
-                        onClick={agregarTraspasoUbicacion}
-                        disabled={loading}
-                      >
-                        {loading ? 'Agregando...' : 'Agregar Traspaso'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                  <DestinoSelectorCard
+                    title="Destino"
+                    SelectComponent={Select}
+                    opcionesAlmacenes={opcionesAlmacenes}
+                    opcionesUbicacionesDestino={opcionesUbicacionesDestino.filter(ubicacion =>
+                      almacenDestino !== ubicacionSeleccionada.almacen ||
+                      ubicacion.value !== ubicacionSeleccionada.ubicacion
+                    )}
+                    almacenDestino={almacenDestino}
+                    ubicacionDestino={ubicacionDestino}
+                    onAlmacenChange={handleAlmacenDestinoChange}
+                    onUbicacionChange={(selectedOption) => {
+                      if (selectedOption) {
+                        setUbicacionDestino(selectedOption.value);
+                      }
+                    }}
+                    onUbicacionInputChange={handleUbicacionDestinoInputChange}
+                    onUbicacionMenuOpen={handleUbicacionesDestinoMenuOpen}
+                    onUbicacionMenuScrollToBottom={handleUbicacionesDestinoScroll}
+                    cargandoUbicacionesDestino={cargandoUbicacionesDestino}
+                  />
+
+                  <CantidadPanel
+                    cantidad={cantidad}
+                    onCantidadChange={handleCantidadChange}
+                    stockInfo={formatearUnidad(articuloUbicacionSeleccionado.Cantidad, articuloUbicacionSeleccionado.UnidadMedida)}
+                    buttonLabel="Agregar Traspaso"
+                    onSubmit={agregarTraspasoUbicacion}
+                    loading={loading}
+                    max={articuloUbicacionSeleccionado.Cantidad}
+                  />
+                </Stack>
               )}
             </div>
           )}
+          </Stack>
         </div>
       )}
       
@@ -1587,90 +2169,25 @@ const TraspasosPage = () => {
           <h2>Traspasos Pendientes de Confirmación</h2>
           
           {traspasosPendientes.length === 0 ? (
-            <div className="sin-traspasos">No hay traspasos pendientes</div>
+            <TraspasosStateView
+              type="info"
+              title="No hay traspasos pendientes."
+              message="Agrega traspasos antes de pasar a verificacion."
+            />
           ) : (
-            <>
-              <div className="responsive-table-container">
-                <table className="tabla-verificacion">
-                  <thead>
-                    <tr>
-                      <th>Artículo</th>
-                      <th>Origen</th>
-                      <th>Destino</th>
-                      <th>Cantidad</th>
-                      <th>Variantes</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {traspasosPendientes.map(traspaso => (
-                      <tr key={traspaso.id}>
-                        <td>
-                          <div className="articulo-info">
-                            <strong>{traspaso.articulo.CodigoArticulo}</strong>
-                            <div>{traspaso.articulo.DescripcionArticulo}</div>
-                          </div>
-                        </td>
-                        <td>
-                          {getNombreAlmacen(traspaso.origen.almacen)}
-                          <br />
-                          {traspaso.origen.esSinUbicacion ? '[SIN UBICACIÓN]' : traspaso.origen.ubicacion}
-                        </td>
-                        <td>
-                          {getNombreAlmacen(traspaso.destino.almacen)}
-                          <br />{traspaso.destino.ubicacion}
-                        </td>
-                        <td className="cantidad-td">
-                          {formatearUnidad(traspaso.cantidad, mostrarUnidadMedida(traspaso.unidadMedida))}
-                        </td>
-                        <td>
-                          <div className="variantes-info">
-                            {traspaso.partida && <div><strong>Lote:</strong> {traspaso.partida}</div>}
-                            {(traspaso.talla || traspaso.color) && (
-                              <div>
-                                <strong>Talla/Color:</strong> 
-                                <span 
-                                  className="talla-color-display"
-                                  style={getColorStyle(traspaso.color)}
-                                >
-                                  {traspaso.talla}{traspaso.color}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <button 
-                            className="btn-eliminar"
-                            onClick={() => setTraspasosPendientes(
-                              traspasosPendientes.filter(item => item.id !== traspaso.id)
-                            )}
-                          >
-                            Eliminar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              
-              <div className="acciones-verificacion">
-                <button 
-                  className="btn-confirmar" 
-                  onClick={confirmarTraspasos}
-                  disabled={loading}
-                >
-                  {loading ? 'Confirmando...' : 'Confirmar Todos los Traspasos'}
-                </button>
-                <button 
-                  className="btn-cancelar" 
-                  onClick={() => setActiveSection('traspasos')}
-                >
-                  Volver a Traspasos
-                </button>
-              </div>
-            </>
+            <TraspasosPendientesTable
+              traspasosPendientes={traspasosPendientes}
+              getNombreAlmacen={getNombreAlmacen}
+              formatearUnidad={formatearUnidad}
+              mostrarUnidadMedida={mostrarUnidadMedida}
+              getColorStyle={getColorStyle}
+              onEliminar={(id) =>
+                setTraspasosPendientes(traspasosPendientes.filter((item) => item.id !== id))
+              }
+              onConfirmar={confirmarTraspasos}
+              onVolver={() => setActiveSection('traspasos')}
+              loading={loading}
+            />
           )}
         </div>
       )}
@@ -1680,69 +2197,19 @@ const TraspasosPage = () => {
           <h2>Historial de Traspasos</h2>
           
           {historial.length === 0 ? (
-            <div className="sin-historial">No hay traspasos registrados</div>
+            <TraspasosStateView
+              type="info"
+              title="No hay traspasos registrados."
+              message="Todavia no hay movimientos en el historial."
+            />
           ) : (
-            <div className="responsive-table-container">
-              <table className="tabla-historial">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Artículo</th>
-                    <th>Origen</th>
-                    <th>Destino</th>
-                    <th>Cantidad</th>
-                    <th>Variantes</th>
-                    <th>Usuario</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {historial.map((item, index) => {
-                    const usuario = item.Comentario?.split(': ')[1] || 'Desconocido';
-                    const tallaColor = item.CodigoTalla01_ && item.CodigoColor_ 
-                      ? `${item.CodigoTalla01_}${item.CodigoColor_}` 
-                      : '';
-                    
-                    return (
-                      <tr key={`${item.FechaRegistro}-${index}-${item.CodigoArticulo}`}>
-                        <td>{item.FechaFormateada || formatFecha(item.FechaRegistro)}</td>
-                        <td>
-                          <strong>{item.CodigoArticulo}</strong>
-                          <div>{item.DescripcionArticulo}</div>
-                        </td>
-                        <td>
-                          {item.OrigenAlmacen}<br />
-                          {item.OrigenUbicacion === 'SIN-UBICACION' ? '[SIN UBICACIÓN]' : item.OrigenUbicacion}
-                        </td>
-                        <td>
-                          {item.DestinoAlmacen}<br />
-                          {item.DestinoUbicacion}
-                        </td>
-                        <td>
-                          {formatearUnidad(item.Cantidad, mostrarUnidadMedida(item.UnidadMedida))}
-                        </td>
-                        <td>
-                          <div className="variantes-info">
-                            {item.Partida && <div><strong>Lote:</strong> {item.Partida}</div>}
-                            {tallaColor && (
-                              <div>
-                                <strong>Talla/Color:</strong> 
-                                <span 
-                                  className="talla-color-display"
-                                  style={getColorStyle(item.CodigoColor_)}
-                                >
-                                  {tallaColor}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td>{usuario}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <HistorialTraspasosTable
+              historial={historial}
+              formatFecha={formatFecha}
+              formatearUnidad={formatearUnidad}
+              mostrarUnidadMedida={mostrarUnidadMedida}
+              getColorStyle={getColorStyle}
+            />
           )}
         </div>
       )}

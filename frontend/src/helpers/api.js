@@ -17,6 +17,11 @@ class ApiService {
 
   getBaseURL() {
     const configuredApiUrl = (import.meta.env.VITE_API_URL || '').trim();
+    const isViteDevServer = window.location.port === '5173';
+
+    if (isViteDevServer) {
+      return '/api';
+    }
 
     if (configuredApiUrl) {
       return configuredApiUrl;
@@ -42,6 +47,10 @@ class ApiService {
     this.api.interceptors.response.use(
       (response) => response,
       (error) => {
+        if (error.code === 'ERR_CANCELED' || error.message === 'canceled') {
+          return Promise.reject(error);
+        }
+
         console.error('[API Response Error]', {
           url: error.config?.url,
           baseURL: error.config?.baseURL,
@@ -74,7 +83,7 @@ class ApiService {
 
   async diagnostic() {
     try {
-      const response = await this.api.get('/api/diagnostic');
+      const response = await this.api.get('/diagnostic');
       return response.data;
     } catch (error) {
       console.error('Error en diagnostico:', error);

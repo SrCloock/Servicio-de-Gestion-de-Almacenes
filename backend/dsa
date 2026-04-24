@@ -1,0 +1,280 @@
+// ✅ GENERAR ALBARÁN PARCIAL (ACTUALIZADO)
+app.post('/generarAlbaranParcial', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
+  }
+
+  const { codigoEmpresa, ejercicio, serie, numeroPedido } = req.body;
+  const usuario = req.user.UsuarioLogicNet;
+
+  if (!codigoEmpresa || !ejercicio || !numeroPedido) {
+    return res.status(400).json({ 
+      success: false, 
+      mensaje: 'Faltan datos requeridos: empresa, ejercicio y número de pedido.' 
+    });
+  }
+
+  const transaction = new sql.Transaction(poolGlobal);
+  
+  try {
+    await transaction.begin();
+
+    // 1. Verificar permisos del usuario
+    const permisoResult = await poolGlobal.request()
+      .input('usuario', sql.VarChar, usuario)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT StatusDesignarRutas
+        FROM Clientes
+        WHERE UsuarioLogicNet = @usuario
+          AND CodigoEmpresa = @codigoEmpresa
+      `);
+    
+    if (permisoResult.recordset.length === 0 || permisoResult.recordset[0].StatusDesignarRutas !== -1) {
+      await transaction.rollback();
+      return res.status(403).json({ 
+        success: false, 
+        mensaje: 'No tienes permiso para generar albaranes' 
+      });
+    }
+
+    // 2. Obtener el pedido con datos completos
+    const pedidoResult = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .query(`
+        SELECT 
+          cpc.*,
+          cli.NombreObra,
+          cli.Vendedor,
+          cli.Contacto,
+          cli.Telefono,
+          cli.ObservacionesWeb
+        FROM CabeceraPedidoCliente cpc
+        LEFT JOIN Clientes cli ON cpc.CodigoCliente = cli.CodigoCliente 
+          AND cpc.CodigoEmpresa = cli.CodigoEmpresa
+        WHERE cpc.CodigoEmpresa = @codigoEmpresa
+          AND cpc.EjercicioPedido = @ejercicio
+          AND (cpc.SeriePedido = @serie OR (@serie = '' AND cpc.SeriePedido IS NULL))
+          AND cpc.NumeroPedido = @numeroPedido
+      `);
+
+    if (pedidoResult.recordset.length === 0) {
+      await transaction.rollback();
+      return res.status(404).json({ 
+        success: false, 
+        mensaje: 'Pedido no encontrado' 
+      });
+    }
+
+    const pedido = pedidoResult.recordset[0];
+
+    // 3. Obtener TODAS las líneas del pedido (incluyendo completadas y parciales)
+    const lineasResult = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .query(`
+        SELECT 
+          lpc.*,
+          a.UnidadBase,
+          a.UnidadAlternativa,
+          a.FactorConversion
+        FROM LineasPedidoCliente lpc
+        LEFT JOIN Articulos a ON lpc.CodigoArticulo = a.CodigoArticulo 
+          AND lpc.CodigoEmpresa = a.CodigoEmpresa
+        WHERE lpc.CodigoEmpresa = @codigoEmpresa
+          AND lpc.EjercicioPedido = @ejercicio
+          AND (lpc.SeriePedido = @serie OR (@serie = '' AND lpc.SeriePedido IS NULL))
+          AND lpc.NumeroPedido = @numeroPedido
+          AND (lpc.UnidadesServidas > 0 OR lpc.UnidadesPendientes > 0)  -- Incluir líneas con expediciones
+      `);
+
+    if (lineasResult.recordset.length === 0) {
+      await transaction.rollback();
+      return res.status(400).json({ 
+        success: false, 
+        mensaje: 'No hay líneas con expediciones para generar albarán parcial' 
+      });
+    }
+
+    // 4. Verificar si hay líneas completadas (para determinar si es parcial)
+    const lineasCompletadas = lineasResult.recordset.filter(linea => 
+      parseFloat(linea.UnidadesServidas) > 0
+    ).length;
+
+    const esAlbaranParcial = lineasCompletadas > 0;
+
+    // 5. Generar número de albarán
+    const nextAlbaran = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .query(`
+        SELECT ISNULL(MAX(NumeroAlbaran), 0) + 1 AS SiguienteNumero
+        FROM CabeceraAlbaranCliente
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioAlbaran = @ejercicio
+          AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
+      `);
+
+    const numeroAlbaran = nextAlbaran.recordset[0].SiguienteNumero;
+    const fechaActual = new Date();
+
+    // 6. Crear cabecera del albarán
+    await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .input('numeroAlbaran', sql.Int, numeroAlbaran)
+      .input('codigoCliente', sql.VarChar, pedido.CodigoCliente)
+      .input('razonSocial', sql.VarChar, pedido.RazonSocial)
+      .input('domicilio', sql.VarChar, pedido.Domicilio)
+      .input('municipio', sql.VarChar, pedido.Municipio)
+      .input('fecha', sql.DateTime, fechaActual)
+      .input('numeroLineas', sql.Int, lineasResult.recordset.length)
+      .input('importeLiquido', sql.Decimal(18,4), pedido.ImporteLiquido || 0)
+      .input('empleadoAsignado', sql.VarChar, pedido.CodigoEmpleadoAsignado || usuario)
+      .input('contacto', sql.VarChar, pedido.Contacto || '')
+      .input('telefonoContacto', sql.VarChar, pedido.Telefono || '')
+      .input('observacionesWeb', sql.VarChar, pedido.ObservacionesWeb || '')
+      .input('nombreObra', sql.VarChar, pedido.NombreObra || '')
+      .input('vendedor', sql.VarChar, pedido.Vendedor || '')
+      .input('statusFacturado', sql.SmallInt, 0)
+      .input('esVoluminoso', sql.Bit, pedido.EsVoluminoso || 0)
+      .input('esParcial', sql.Bit, esAlbaranParcial ? 1 : 0)
+      .input('ejercicioPedido', sql.SmallInt, ejercicio)
+      .input('seriePedido', sql.VarChar, serie || '')
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .query(`
+        INSERT INTO CabeceraAlbaranCliente (
+          CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+          CodigoCliente, RazonSocial, Domicilio, Municipio, FechaAlbaran,
+          NumeroLineas, ImporteLiquido, EmpleadoAsignado,
+          Contacto, Telefono, ObservacionesWeb, NombreObra, Vendedor,
+          StatusFacturado, EsVoluminoso, EsParcial,
+          EjercicioPedido, SeriePedido, NumeroPedido
+        ) VALUES (
+          @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
+          @codigoCliente, @razonSocial, @domicilio, @municipio, @fecha,
+          @numeroLineas, @importeLiquido, @empleadoAsignado,
+          @contacto, @telefonoContacto, @observacionesWeb, @nombreObra, @vendedor,
+          @statusFacturado, @esVoluminoso, @esParcial,
+          @ejercicioPedido, @seriePedido, @numeroPedido
+        )
+      `);
+
+    // 7. Copiar las líneas al albarán (usar unidades servidas si existen, sino pendientes)
+    for (const [index, linea] of lineasResult.recordset.entries()) {
+      // Para albarán parcial, usar unidades servidas; para completo, usar pendientes
+      const unidadesAExpedir = linea.UnidadesServidas > 0 ? linea.UnidadesServidas : linea.UnidadesPendientes;
+      
+      await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('ejercicio', sql.SmallInt, ejercicio)
+        .input('serie', sql.VarChar, serie || '')
+        .input('numeroAlbaran', sql.Int, numeroAlbaran)
+        .input('orden', sql.SmallInt, index + 1)
+        .input('codigoArticulo', sql.VarChar, linea.CodigoArticulo)
+        .input('descripcionArticulo', sql.VarChar, linea.DescripcionArticulo)
+        .input('unidades', sql.Decimal(18,4), unidadesAExpedir)
+        .input('precio', sql.Decimal(18,4), linea.Precio)
+        .input('codigoAlmacen', sql.VarChar, linea.CodigoAlmacen || '')
+        .input('partida', sql.VarChar, linea.Partida || '')
+        .input('unidadMedida', sql.VarChar, linea.UnidadPedido || linea.UnidadBase || '')
+        .input('unidadBase', sql.VarChar, linea.UnidadBase || '')
+        .input('unidadAlternativa', sql.VarChar, linea.UnidadAlternativa || '')
+        .input('factorConversion', sql.Decimal(18,4), linea.FactorConversion || 1)
+        .query(`
+          INSERT INTO LineasAlbaranCliente (
+            CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+            Orden, CodigoArticulo, DescripcionArticulo, Unidades, Precio,
+            CodigoAlmacen, Partida, UnidadMedida, UnidadBase, UnidadAlternativa, FactorConversion
+          ) VALUES (
+            @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
+            @orden, @codigoArticulo, @descripcionArticulo, @unidades, @precio,
+            @codigoAlmacen, @partida, @unidadMedida, @unidadBase, @unidadAlternativa, @factorConversion
+          )
+        `);
+    }
+
+    // 8. Actualizar estado del pedido
+    // Verificar si quedan líneas pendientes después de la expedición
+    const lineasPendientesResult = await poolGlobal.request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .input('numeroPedido', sql.Int, numeroPedido)
+      .query(`
+        SELECT COUNT(*) as TotalPendientes
+        FROM LineasPedidoCliente
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioPedido = @ejercicio
+          AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+          AND NumeroPedido = @numeroPedido
+          AND UnidadesPendientes > 0
+      `);
+
+    const totalPendientes = lineasPendientesResult.recordset[0].TotalPendientes;
+
+    if (totalPendientes > 0) {
+      // Si quedan pendientes, marcar como parcial (Estado = 4)
+      await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('ejercicio', sql.SmallInt, ejercicio)
+        .input('serie', sql.VarChar, serie || '')
+        .input('numeroPedido', sql.Int, numeroPedido)
+        .query(`
+          UPDATE CabeceraPedidoCliente
+          SET Estado = 4,  -- Parcial
+              Status = 'Parcial'
+          WHERE CodigoEmpresa = @codigoEmpresa
+            AND EjercicioPedido = @ejercicio
+            AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+            AND NumeroPedido = @numeroPedido
+        `);
+    } else {
+      // Si no quedan pendientes, marcar como completado (Estado = 1)
+      await poolGlobal.request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('ejercicio', sql.SmallInt, ejercicio)
+        .input('serie', sql.VarChar, serie || '')
+        .input('numeroPedido', sql.Int, numeroPedido)
+        .query(`
+          UPDATE CabeceraPedidoCliente
+          SET Estado = 1,  -- Completado
+              Status = 'Completado',
+              FechaCompletado = GETDATE()
+          WHERE CodigoEmpresa = @codigoEmpresa
+            AND EjercicioPedido = @ejercicio
+            AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+            AND NumeroPedido = @numeroPedido
+        `);
+    }
+
+    await transaction.commit();
+
+    res.json({ 
+      success: true,
+      mensaje: esAlbaranParcial ? 'Albarán parcial generado correctamente' : 'Albarán completo generado correctamente',
+      albaran: {
+        ejercicio: ejercicio,
+        serie: serie || '',
+        numero: numeroAlbaran,
+        esParcial: esAlbaranParcial,
+        lineasProcesadas: lineasResult.recordset.length
+      }
+    });
+  } catch (err) {
+    await transaction.rollback();
+    console.error('[ERROR GENERAR ALBARAN PARCIAL]', err);
+    res.status(500).json({ 
+      success: false, 
+      mensaje: 'Error al generar albarán parcial',
+      error: err.message 
+    });
+  }
+});

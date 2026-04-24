@@ -10,6 +10,7 @@ const GestionDocumentalScreen = () => {
   const [albaranes, setAlbaranes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [rangoFechas, setRangoFechas] = useState('mes');
   const [modalFirmas, setModalFirmas] = useState({
     isOpen: false,
     albaran: null,
@@ -24,14 +25,17 @@ const GestionDocumentalScreen = () => {
       setLoading(true);
       setError(null);
       const headers = getAuthHeader();
-      const response = await API.get('/albaranesCompletados', { headers });
+      const response = await API.get('/albaranesCompletados', {
+        headers,
+        params: { rango: rangoFechas }
+      });
       setAlbaranes(response.data);
     } catch (err) {
       setError('Error: ' + (err.response?.data?.mensaje || err.message));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [rangoFechas]);
 
   useEffect(() => {
     fetchAlbaranesCompletados();
@@ -58,7 +62,7 @@ const GestionDocumentalScreen = () => {
       
       if (response.data.success) {
         setAlbaranes(albaranes.filter(a => a.id !== albaran.id));
-        alert('Albarán revertido correctamente');
+        alert('Albarán revertido correctamente. Volverá a aparecer en Albaranes y Asignación de albaranes.');
       } else {
         alert('Error al revertir: ' + response.data.mensaje);
       }
@@ -219,6 +223,22 @@ const GestionDocumentalScreen = () => {
         <p>Albaranes entregados y firmados (Solo nuestros medios - últimos 30 días)</p>
       </div>
       
+      <div style={{ margin: '0 0 16px 0' }}>
+        <label htmlFor="gd-rango-fechas" style={{ marginRight: '8px', fontWeight: 600 }}>
+          Rango de fechas:
+        </label>
+        <select
+          id="gd-rango-fechas"
+          value={rangoFechas}
+          onChange={(e) => setRangoFechas(e.target.value)}
+          style={{ padding: '6px 10px', borderRadius: '6px' }}
+        >
+          <option value="dia">Hoy</option>
+          <option value="semana">Ultimos 7 dias</option>
+          <option value="mes">Ultimos 30 dias</option>
+        </select>
+      </div>
+
       {error && (
         <div className="GD-error">
           <FaExclamationTriangle />

@@ -1,0 +1,629 @@
+🌍 Entorno: DESARROLLO
+🎯 Orígenes permitidos: [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://80.24.244.68:3010'
+]
+Conexion a SQL Server establecida.
+🚀 Servidor backend corriendo en http://0.0.0.0:3010
+📱 Accesible desde: http://80.24.244.68:3010
+🔧 Entorno: production
+🎯 Orígenes CORS permitidos: [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://80.24.244.68:3010'
+]
+[DEV] GET /inventario/stock-total-completo
+[DEV] GET /diagnostic
+[DEV] GET /empresas
+[INVENTARIO] Obteniendo stock completo para empresa 9999. Base: 2025/99, overlay actual: 2026
+[INVENTARIO] Stock completo obtenido: 877 registros
+[INVENTARIO] Sample de registros: [
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -2,
+    cantidad: -2
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 6',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  }
+]
+[DEV] GET /empresas
+[DEV] GET /diagnostic
+[DEV] GET /inventario/stock-total-completo
+[INVENTARIO] Obteniendo stock completo para empresa 9999. Base: 2025/99, overlay actual: 2026
+[INVENTARIO] Stock completo obtenido: 877 registros
+[INVENTARIO] Sample de registros: [
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -2,
+    cantidad: -2
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 6',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  }
+]
+[DEV] GET /inventario/stock-total-completo
+[DEV] GET /empresas
+[INVENTARIO] Obteniendo stock completo para empresa 9999. Base: 2025/99, overlay actual: 2026
+[DEV] GET /empresas
+[INVENTARIO] Stock completo obtenido: 877 registros
+[INVENTARIO] Sample de registros: [
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -2,
+    cantidad: -2
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 6',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  }
+]
+[DEV] GET /inventario/stock-total-completo
+[INVENTARIO] Obteniendo stock completo para empresa 9999. Base: 2025/99, overlay actual: 2026
+[INVENTARIO] Stock completo obtenido: 877 registros
+[INVENTARIO] Sample de registros: [
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -2,
+    cantidad: -2
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 6',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  }
+]
+[DEV] GET /diagnostic
+[DEV] GET /inventario/stock-total-completo
+[INVENTARIO] Obteniendo stock completo para empresa 9999. Base: 2025/99, overlay actual: 2026
+[DEV] GET /empresas
+[DEV] GET /empresas
+[INVENTARIO] Stock completo obtenido: 877 registros
+[INVENTARIO] Sample de registros: [
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -2,
+    cantidad: -2
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 6',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  }
+]
+[DEV] GET /inventario/stock-total-completo
+[INVENTARIO] Obteniendo stock completo para empresa 9999. Base: 2025/99, overlay actual: 2026
+[INVENTARIO] Stock completo obtenido: 877 registros
+[INVENTARIO] Sample de registros: [
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -2,
+    cantidad: -2
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 6',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  }
+]
+[DEV] GET /articulos/52323X203
+[DEV] GET /stock/por-articulo?codigoArticulo=52323X203&incluirSinUbicacion=true
+[DEBUG STOCK POR ARTICULO] Artículo: 52323X203, Registros: 9 (incluyendo negativos y cero)
+🔍 Artículo 52323X203: 2 negativos, 1 cero
+🔍 DEBUG Artículo con negativos encontrados:
+   ⚠️ NEGATIVO - 1. Almacén: , Ubicación: Zona descarga, Talla: , Cantidad: -10
+   ⚠️ NEGATIVO - 2. Almacén: CEN, Ubicación: SIN-UBICACION, Talla: , Cantidad: -2003
+🔍 DEBUG Artículo con ceros encontrados:
+   0️⃣ CERO - 1. Almacén: CEN, Ubicación: CALLE 1, Talla: , Cantidad: 0
+[DEV] POST /inventario/ajustar-completo
+[AJUSTE MANUAL] Iniciando 1 ajustes para empresa 9999
+[AJUSTE MANUAL] Procesando: 52323X203 | CEN | CALLE 1 | 3
+[AJUSTE MANUAL] 52323X203 | ¿Existe en AcumuladoStock?: true
+[AJUSTE MANUAL] AcumuladoStockUbicacion actualizado: 52323X203 | CALLE 1 -> 3
+[AJUSTE MANUAL] Actualizando AcumuladoStock (existente): 52323X203
+[AJUSTE MANUAL] AcumuladoStock sincronizado desde ubicaciones: 52323X203 | CEN -> 2006
+[DEV] GET /inventario/historial-ajustes
+📊 Obteniendo historial de ajustes para empresa: 9999, año: 2026
+📅 Fechas con ajustes encontradas: 1
+🔍 Obteniendo ajustes para fecha: 2026-02-22
+📋 Ajustes encontrados para 2026-02-22: 0 (Movimientos: 0, Inventarios: 0)
+✅ Historial completo generado con 0 días de ajustes
+[DEV] GET /inventario/stock-total-completo
+[INVENTARIO] Obteniendo stock completo para empresa 9999. Base: 2025/99, overlay actual: 2026
+[INVENTARIO] Stock completo obtenido: 877 registros
+[INVENTARIO] Sample de registros: [
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -2,
+    cantidad: -2
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 6',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  }
+]
+[DEV] GET /articulos/52323X203
+[DEV] GET /stock/por-articulo?codigoArticulo=52323X203&incluirSinUbicacion=true
+[DEBUG STOCK POR ARTICULO] Artículo: 52323X203, Registros: 9 (incluyendo negativos y cero)
+🔍 Artículo 52323X203: 2 negativos, 0 cero
+🔍 DEBUG Artículo con negativos encontrados:
+   ⚠️ NEGATIVO - 1. Almacén: , Ubicación: Zona descarga, Talla: , Cantidad: -10
+   ⚠️ NEGATIVO - 2. Almacén: CEN, Ubicación: SIN-UBICACION, Talla: , Cantidad: -2006
+[DEV] POST /inventario/ajustar-completo
+[AJUSTE MANUAL] Iniciando 1 ajustes para empresa 9999
+[AJUSTE MANUAL] Procesando: 52323X203 | CEN | CALLE 2 | 0
+[AJUSTE MANUAL] 52323X203 | ¿Existe en AcumuladoStock?: true
+[AJUSTE MANUAL] AcumuladoStockUbicacion actualizado: 52323X203 | CALLE 2 -> 0
+[AJUSTE MANUAL] Actualizando AcumuladoStock (existente): 52323X203
+[AJUSTE MANUAL] AcumuladoStock sincronizado desde ubicaciones: 52323X203 | CEN -> 16087
+[DEV] GET /inventario/stock-total-completo
+[INVENTARIO] Obteniendo stock completo para empresa 9999. Base: 2025/99, overlay actual: 2026
+[INVENTARIO] Stock completo obtenido: 877 registros
+[INVENTARIO] Sample de registros: [
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -2,
+    cantidad: -2
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 6',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  }
+]
+[DEV] GET /inventario/historial-ajustes
+📊 Obteniendo historial de ajustes para empresa: 9999, año: 2026
+📅 Fechas con ajustes encontradas: 1
+🔍 Obteniendo ajustes para fecha: 2026-02-22
+📋 Ajustes encontrados para 2026-02-22: 0 (Movimientos: 0, Inventarios: 0)
+✅ Historial completo generado con 0 días de ajustes
+[DEV] GET /articulos/52323X203
+[DEV] GET /stock/por-articulo?codigoArticulo=52323X203&incluirSinUbicacion=true
+[DEBUG STOCK POR ARTICULO] Artículo: 52323X203, Registros: 9 (incluyendo negativos y cero)
+🔍 Artículo 52323X203: 2 negativos, 1 cero
+🔍 DEBUG Artículo con negativos encontrados:
+   ⚠️ NEGATIVO - 1. Almacén: , Ubicación: Zona descarga, Talla: , Cantidad: -10
+   ⚠️ NEGATIVO - 2. Almacén: CEN, Ubicación: SIN-UBICACION, Talla: , Cantidad: -2006
+🔍 DEBUG Artículo con ceros encontrados:
+   0️⃣ CERO - 1. Almacén: CEN, Ubicación: CALLE 2, Talla: , Cantidad: 0
+[DEV] POST /inventario/ajustar-completo
+[AJUSTE MANUAL] Iniciando 1 ajustes para empresa 9999
+[AJUSTE MANUAL] Procesando: 52323X203 | CEN | CALLE 2 | 100
+[AJUSTE MANUAL] 52323X203 | ¿Existe en AcumuladoStock?: true
+[AJUSTE MANUAL] AcumuladoStockUbicacion actualizado: 52323X203 | CALLE 2 -> 100
+[AJUSTE MANUAL] Actualizando AcumuladoStock (existente): 52323X203
+[AJUSTE MANUAL] AcumuladoStock sincronizado desde ubicaciones: 52323X203 | CEN -> 16187
+[DEV] GET /inventario/stock-total-completo
+[DEV] GET /inventario/historial-ajustes
+[INVENTARIO] Obteniendo stock completo para empresa 9999. Base: 2025/99, overlay actual: 2026
+📊 Obteniendo historial de ajustes para empresa: 9999, año: 2026
+[INVENTARIO] Stock completo obtenido: 877 registros
+[INVENTARIO] Sample de registros: [
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -2,
+    cantidad: -2
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 6',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  }
+]
+📅 Fechas con ajustes encontradas: 1
+🔍 Obteniendo ajustes para fecha: 2026-02-22
+📋 Ajustes encontrados para 2026-02-22: 0 (Movimientos: 0, Inventarios: 0)
+✅ Historial completo generado con 0 días de ajustes
+[DEV] GET /articulos/52323X203
+[DEV] GET /stock/por-articulo?codigoArticulo=52323X203&incluirSinUbicacion=true
+[DEBUG STOCK POR ARTICULO] Artículo: 52323X203, Registros: 9 (incluyendo negativos y cero)
+🔍 Artículo 52323X203: 2 negativos, 0 cero
+🔍 DEBUG Artículo con negativos encontrados:
+   ⚠️ NEGATIVO - 1. Almacén: , Ubicación: Zona descarga, Talla: , Cantidad: -10
+   ⚠️ NEGATIVO - 2. Almacén: CEN, Ubicación: SIN-UBICACION, Talla: , Cantidad: -2006
+[DEV] POST /inventario/ajustar-completo
+[AJUSTE MANUAL] Iniciando 1 ajustes para empresa 9999
+[AJUSTE MANUAL] Procesando: 52323X203 | CEN | CALLE 2 | 0
+[AJUSTE MANUAL] 52323X203 | ¿Existe en AcumuladoStock?: true
+[AJUSTE MANUAL] AcumuladoStockUbicacion actualizado: 52323X203 | CALLE 2 -> 0
+[AJUSTE MANUAL] Actualizando AcumuladoStock (existente): 52323X203
+[AJUSTE MANUAL] AcumuladoStock sincronizado desde ubicaciones: 52323X203 | CEN -> 16087
+[DEV] GET /inventario/stock-total-completo
+[DEV] GET /inventario/historial-ajustes
+📊 Obteniendo historial de ajustes para empresa: 9999, año: 2026
+[INVENTARIO] Obteniendo stock completo para empresa 9999. Base: 2025/99, overlay actual: 2026
+📅 Fechas con ajustes encontradas: 1
+🔍 Obteniendo ajustes para fecha: 2026-02-22
+[INVENTARIO] Stock completo obtenido: 877 registros
+[INVENTARIO] Sample de registros: [
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -2,
+    cantidad: -2
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 6',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  }
+]
+📋 Ajustes encontrados para 2026-02-22: 0 (Movimientos: 0, Inventarios: 0)
+✅ Historial completo generado con 0 días de ajustes
+[DEV] GET /articulos/52323X203
+[DEV] GET /stock/por-articulo?codigoArticulo=52323X203&incluirSinUbicacion=true
+[DEBUG STOCK POR ARTICULO] Artículo: 52323X203, Registros: 9 (incluyendo negativos y cero)
+🔍 Artículo 52323X203: 2 negativos, 1 cero
+🔍 DEBUG Artículo con negativos encontrados:
+   ⚠️ NEGATIVO - 1. Almacén: , Ubicación: Zona descarga, Talla: , Cantidad: -10
+   ⚠️ NEGATIVO - 2. Almacén: CEN, Ubicación: SIN-UBICACION, Talla: , Cantidad: -2006
+🔍 DEBUG Artículo con ceros encontrados:
+   0️⃣ CERO - 1. Almacén: CEN, Ubicación: CALLE 2, Talla: , Cantidad: 0
+[DEV] POST /inventario/ajustar-completo
+[AJUSTE MANUAL] Iniciando 1 ajustes para empresa 9999
+[AJUSTE MANUAL] Procesando: 52323X203 | CEN | CALLE 2 | 100
+[AJUSTE MANUAL] 52323X203 | ¿Existe en AcumuladoStock?: true
+[AJUSTE MANUAL] AcumuladoStockUbicacion actualizado: 52323X203 | CALLE 2 -> 100
+[AJUSTE MANUAL] Actualizando AcumuladoStock (existente): 52323X203
+[AJUSTE MANUAL] AcumuladoStock sincronizado desde ubicaciones: 52323X203 | CEN -> 16187
+[DEV] GET /inventario/stock-total-completo
+[DEV] GET /inventario/historial-ajustes
+📊 Obteniendo historial de ajustes para empresa: 9999, año: 2026
+[INVENTARIO] Obteniendo stock completo para empresa 9999. Base: 2025/99, overlay actual: 2026
+📅 Fechas con ajustes encontradas: 1
+🔍 Obteniendo ajustes para fecha: 2026-02-22
+📋 Ajustes encontrados para 2026-02-22: 0 (Movimientos: 0, Inventarios: 0)
+✅ Historial completo generado con 0 días de ajustes
+[INVENTARIO] Stock completo obtenido: 877 registros
+[INVENTARIO] Sample de registros: [
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -2,
+    cantidad: -2
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 1',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  },
+  {
+    articulo: '0000000001',
+    almacen: '',
+    ubicacion: 'CALLE 6',
+    unidad: '',
+    cantidadBase: -1,
+    cantidad: -1
+  }
+]
+[DEV] GET /pedidos-compra?page=1&limit=15
+[DEBUG] Cargando pedidos - Página: 1, Límite: 15
+[DEBUG] Pedidos encontrados: 4 (Página 1/1)
+[DEV] GET /pedidos-compra/2026/0/106/detalle
+[DETALLE PEDIDO] Obteniendo detalle completo: 2026/0/106
+[DEV] GET /pedidos-compra/almacenes
+[DEV] GET /articulos/01.01.11/variantes
+[DEV] GET /ubicaciones/BCN?incluirSinUbicacion=true
+[DEV] POST /pedidos-compra/2026/0/106/recepcionar
+📥 DATOS RECIBIDOS EN BACKEND:
+- Empresa: 9999
+- Cliente: 0006
+- Pedido: 2026/0/106
+- Almacén: BCN
+- Ubicación: PASILLO 1
+- Comentario: Recepción manual por 0006
+- LineasRecepcion: [
+  {
+    "Orden": 0,
+    "codigoArticulo": "01.01.11",
+    "unidadesRecepcionar": 2,
+    "variantes": []
+  }
+]
+[RECEPCIÓN] Iniciando recepción para pedido 106
+[RECEPCIÓN] Procesando: Artículo 01.01.11, Orden 0, Unidades 2
+[STOCK] Actualizando stock: 01.01.11, Unidades: 2, UnidadMedida: ''
+[MOVIMIENTO STOCK] Insertando: 01.01.11, Unidades: 2, UnidadMedida: ''
+[MOVIMIENTO STOCK] Insertado correctamente: 01.01.11, Unidades: 2, UnidadMedida: ''
+[DEV] GET /pedidos-compra/2026/0/106/detalle
+[DETALLE PEDIDO] Obteniendo detalle completo: 2026/0/106
+[DEV] GET /pedidos-compra?page=1&limit=15
+[DEBUG] Cargando pedidos - Página: 1, Límite: 15
+[DEBUG] Pedidos encontrados: 4 (Página 1/1)
+[DEV] POST /proveedores/5002/generar-albaran
+📦 GENERANDO NUEVO ALBARÁN POR PROVEEDOR (CORREGIDO):
+- Empresa: 9999
+- Proveedor: 5002
+- Pedidos a incluir: 1
+[ALBARÁN NUEVO] Iniciando para proveedor 5002
+[DEV] POST /pedidos-compra/2026/0/106/generar-albaran
+[DEV] POST /pedidos-compra/2026/0/107/finalizar
+✅ FINALIZANDO PEDIDO:
+- Empresa: 9999
+- Pedido: 2026/0/107
+- Motivo: Finalizado manualmente por 0006
+[FINALIZAR PEDIDO] Iniciando transacción para pedido 107
+[FINALIZAR PEDIDO] Advertencia: Hay 60 unidades pendientes en el pedido
+[FINALIZAR PEDIDO] Actualizando estado del pedido a 2 (Servido)...
+[FINALIZAR PEDIDO] Actualizando estado en líneas...
+[DEV] GET /pedidos-compra?page=1&limit=15
+[DEBUG] Cargando pedidos - Página: 1, Límite: 15
+[DEBUG] Pedidos encontrados: 3 (Página 1/1)
+[DEV] GET /pedidos-compra/2026/0/113/detalle
+[DETALLE PEDIDO] Obteniendo detalle completo: 2026/0/113
+[DEV] GET /pedidos-compra/2026/0/108/detalle
+[DETALLE PEDIDO] Obteniendo detalle completo: 2026/0/108
+[DEV] POST /proveedores/5002/generar-albaran
+📦 GENERANDO NUEVO ALBARÁN POR PROVEEDOR (CORREGIDO):
+- Empresa: 9999
+- Proveedor: 5002
+- Pedidos a incluir: 1
+[ALBARÁN NUEVO] Iniciando para proveedor 5002
+[DEV] POST /proveedores/5002/generar-albaran
+📦 GENERANDO NUEVO ALBARÁN POR PROVEEDOR (CORREGIDO):
+- Empresa: 9999
+- Proveedor: 5002
+- Pedidos a incluir: 1
+[ALBARÁN NUEVO] Iniciando para proveedor 5002
+[DEV] POST /pedidos-compra/2026/0/106/generar-albaran
+[DEV] POST /proveedores/5002/generar-albaran
+📦 GENERANDO NUEVO ALBARÁN POR PROVEEDOR (CORREGIDO):
+- Empresa: 9999
+- Proveedor: 5002
+- Pedidos a incluir: 1
+[ALBARÁN NUEVO] Iniciando para proveedor 5002
+[DEV] POST /proveedores/5002/generar-albaran
+📦 GENERANDO NUEVO ALBARÁN POR PROVEEDOR (CORREGIDO):
+- Empresa: 9999
+- Proveedor: 5002
+- Pedidos a incluir: 1
+[ALBARÁN NUEVO] Iniciando para proveedor 5002
+[DEV] POST /proveedores/5002/generar-albaran
+[DEV] POST /proveedores/5002/generar-albaran
+[DEV] GET /pedidos-compra?page=1&limit=15
+[DEBUG] Cargando pedidos - Página: 1, Límite: 15
+[DEBUG] Pedidos encontrados: 3 (Página 1/1)
+[DEV] GET /empresas
+[DEV] GET /pedidos-compra/2026/0/106/detalle
+[DETALLE PEDIDO] Obteniendo detalle completo: 2026/0/106
+[DEV] GET /pedidos-compra/almacenes
+[DEV] GET /articulos/01.01.11/variantes
+[DEV] GET /ubicaciones/BCN?incluirSinUbicacion=true
+[DEV] POST /pedidos-compra/2026/0/106/recepcionar
+📥 DATOS RECIBIDOS EN BACKEND:
+- Empresa: 9999
+- Cliente: 0006
+- Pedido: 2026/0/106
+- Almacén: BCN
+- Ubicación: PASILLO 1
+- Comentario: Recepción manual por 0006
+- LineasRecepcion: [
+  {
+    "Orden": 0,
+    "codigoArticulo": "01.01.11",
+    "unidadesRecepcionar": 1,
+    "variantes": []
+  }
+]
+[RECEPCIÓN] Iniciando recepción para pedido 106
+[RECEPCIÓN] Procesando: Artículo 01.01.11, Orden 0, Unidades 1
+[STOCK] Actualizando stock: 01.01.11, Unidades: 1, UnidadMedida: ''
+[MOVIMIENTO STOCK] Insertando: 01.01.11, Unidades: 1, UnidadMedida: ''
+[MOVIMIENTO STOCK] Insertado correctamente: 01.01.11, Unidades: 1, UnidadMedida: ''
+[DEV] GET /pedidos-compra/2026/0/106/detalle
+[DETALLE PEDIDO] Obteniendo detalle completo: 2026/0/106
+[DEV] GET /pedidos-compra?page=1&limit=15
+[DEBUG] Cargando pedidos - Página: 1, Límite: 15
+[DEBUG] Pedidos encontrados: 3 (Página 1/1)
+[DEV] POST /proveedores/5002/generar-albaran
+📦 GENERANDO NUEVO ALBARÁN POR PROVEEDOR (CORREGIDO):
+- Empresa: 9999
+- Proveedor: 5002
+- Pedidos a incluir: 1
+[ALBARÁN NUEVO] Iniciando para proveedor 5002
+[DEV] POST /pedidos-compra/2026/0/106/generar-albaran
+[DEV] POST /proveedores/5002/generar-albaran
+📦 GENERANDO NUEVO ALBARÁN POR PROVEEDOR (CORREGIDO):
+- Empresa: 9999
+- Proveedor: 5002
+- Pedidos a incluir: 1
+[ALBARÁN NUEVO] Iniciando para proveedor 5002
+[DEV] POST /proveedores/5002/generar-albaran
+📦 GENERANDO NUEVO ALBARÁN POR PROVEEDOR (CORREGIDO):
+- Empresa: 9999
+- Proveedor: 5002
+- Pedidos a incluir: 1
+[DEV] POST /proveedores/5002/generar-albaran
+📦 GENERANDO NUEVO ALBARÁN POR PROVEEDOR (CORREGIDO):
+- Empresa: 9999
+- Proveedor: 5002
+- Pedidos a incluir: 1
+[DEV] POST /pedidos-compra/2026/0/106/generar-albaran
+[DEV] GET /pedidos-compra/almacenes
+[DEV] GET /pedidos-compra?page=1&limit=15
+[DEBUG] Cargando pedidos - Página: 1, Límite: 15
+[DEV] GET /empresas
+[DEV] GET /pedidos-compra?page=1&limit=15
+[DEBUG] Cargando pedidos - Página: 1, Límite: 15
+[DEV] GET /empresas
+[DEV] GET /pedidosPendientes?soloAprobados=false&rango=todo
+[DEV] GET /empleados/preparadores
+[DEV] GET /albaranes-asignacion
+[DEV] GET /repartidores
+[DEV] GET /pedidosPendientes?soloAprobados=false&rango=todo
+[DEV] GET /empleados/preparadores
+[DEV] GET /albaranes-asignacion
+[DEV] GET /repartidores
+[DEV] GET /api/diagnostic
+[DEV] GET /favicon.ico
+[DEV] GET /assets/index-ChofIolb.css
+[DEV] GET /.well-known/appspecific/com.chrome.devtools.json
+[DEV] GET /pedidos-compra?page=1&limit=15
+[DEV] GET /.well-known/appspecific/com.chrome.devtools.json
+[DEV] GET /empresas
+[DEV] GET /.well-known/appspecific/com.chrome.devtools.json
+[DEV] GET /empresas
+[DEV] GET /diagnostic
+[DEV] GET /empresas
+[DEV] GET /albaranes-asignacion
+[DEV] GET /repartidores
+[DEV] GET /inventario/stock-total-completo
+[DEV] GET /pedidos-compra?page=1&limit=15
+[DEBUG] Cargando pedidos - Página: 1, Límite: 15
+[DEV] GET /albaranes-asignacion
+[DEV] GET /empresas
+[DEV] GET /inventario/stock-total-completo
+[DEV] GET /pedidos-compra?page=1&limit=15
+[DEBUG] Cargando pedidos - Página: 1, Límite: 15
+[DEV] GET /empresas

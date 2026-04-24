@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box,
+  Container,
   Paper,
   Typography,
+  Button,
+  Stack,
+  Box,
   Table,
   TableBody,
   TableCell,
@@ -11,18 +14,21 @@ import {
   TableHead,
   TableRow,
   FormControl,
+  InputLabel,
   Select,
   MenuItem,
-  Button,
   CircularProgress,
   Alert,
-  Stack,
+  useTheme,
 } from '@mui/material';
-import { Save as SaveIcon, ArrowBack as ArrowBackIcon } from '@mui/icons-material';
-import { useTheme } from '@mui/material/styles';
+import { Save as SaveIcon, Home as HomeIcon } from '@mui/icons-material';
 import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import { usePermissions } from '../PermissionsManager';
+import Navbar from '../components/Navbar';
+
+const buildAlbaranKey = (albaran) =>
+  `albaran-${albaran.EjercicioAlbaran}-${albaran.SerieAlbaran || ''}-${albaran.NumeroAlbaran}`;
 
 const DesignarRutasScreen = () => {
   const navigate = useNavigate();
@@ -33,26 +39,37 @@ const DesignarRutasScreen = () => {
   const [albaranes, setAlbaranes] = useState([]);
   const [asignaciones, setAsignaciones] = useState({});
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const cargarDatos = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
-      const headers = getAuthHeader();
 
+      const headers = getAuthHeader();
       const [repResponse, albResponse] = await Promise.all([
         API.get('/repartidores', { headers }),
-        API.get('/albaranesPendientesUnicos', { headers }),
+        API.get('/albaranes-asignacion', { headers }),
       ]);
 
+      const albaranesNormalizados = albResponse.data.map((albaran) => ({
+        ...albaran,
+        id: buildAlbaranKey(albaran),
+        cliente: albaran.RazonSocial,
+        direccion: [albaran.Municipio, albaran.NombreObra].filter(Boolean).join(' - '),
+      }));
+
+      const asignacionesIniciales = {};
+      albaranesNormalizados.forEach((albaran) => {
+        asignacionesIniciales[albaran.id] = albaran.repartidorAsignado || '';
+      });
+
       setRepartidores(repResponse.data);
-      setAlbaranes(albResponse.data);
-      // Inicializar asignaciones vacías (sin cambios)
-      setAsignaciones({});
+      setAlbaranes(albaranesNormalizados);
+      setAsignaciones(asignacionesIniciales);
     } catch (err) {
-      setError('Error cargando datos: ' + err.message);
+      setError(`Error cargando datos: ${err.response?.data?.mensaje || err.message}`);
     } finally {
       setLoading(false);
     }
@@ -63,187 +80,162 @@ const DesignarRutasScreen = () => {
   }, [cargarDatos]);
 
   const handleAsignar = useCallback((albaranId, repartidorId) => {
-    setAsignaciones(prev => ({ ...prev, [albaranId]: repartidorId }));
+    setAsignaciones((prev) => ({ ...prev, [albaranId]: repartidorId }));
   }, []);
 
+  const asignacionesPendientes = useMemo(
+    () =>
+      albaranes.filter((albaran) => {
+        const asignado = asignaciones[albaran.id] || '';
+        return asignado && asignado !== (albaran.repartidorAsignado || '');
+      }),
+    [albaranes, asignaciones]
+  );
+
   const guardarAsignaciones = useCallback(async () => {
+    if (!asignacionesPendientes.length) {
+      alert('No hay cambios pendientes de guardar');
+      return;
+    }
+
     try {
       setSaving(true);
       setError('');
-
-      const asignacionesParaEnviar = Object.entries(asignaciones)
-        .filter(([_, repartidorId]) => repartidorId)
-        .map(([idUnico, repartidorId]) => {
-          const [serie, numeroAlbaran] = idUnico.split('-');
-          return {
-            serieAlbaran: serie,
-            numeroAlbaran: parseInt(numeroAlbaran, 10),
-            repartidorId,
-          };
-        });
-
-      if (asignacionesParaEnviar.length === 0) {
-        alert('No hay asignaciones para guardar');
-        return;
-      }
-
       const headers = getAuthHeader();
-      await API.post('/designar-rutas', { asignaciones: asignacionesParaEnviar }, { headers });
+
+      await Promise.all(
+        asignacionesPendientes.map((albaran) =>
+          API.post(
+            '/asignarAlbaranExistente',
+            {
+              codigoEmpresa: albaran.CodigoEmpresa,
+              ejercicio: albaran.EjercicioAlbaran,
+              serie: albaran.SerieAlbaran || '',
+              numeroAlbaran: albaran.NumeroAlbaran,
+              codigoRepartidor: asignaciones[albaran.id],
+            },
+            { headers }
+          )
+        )
+      );
 
       alert('Rutas asignadas correctamente');
-      // Recargar datos para refrescar la lista
       await cargarDatos();
     } catch (err) {
-      setError('Error guardando asignaciones: ' + err.message);
+      setError(`Error guardando asignaciones: ${err.response?.data?.mensaje || err.message}`);
     } finally {
       setSaving(false);
     }
-  }, [asignaciones, cargarDatos]);
+  }, [asignaciones, asignacionesPendientes, cargarDatos]);
 
-  const hayAsignacionesPendientes = useMemo(() => Object.keys(asignaciones).length > 0, [asignaciones]);
-
+  // Renderizado condicional de permisos
   if (!canAssignRoutes) {
     return (
-      <Box sx={{ p: 3, textAlign: 'center' }}>
-        <Alert severity="error" sx={{ mb: 2 }}>
-          No tienes permiso para acceder a esta sección.
-        </Alert>
-        <Button variant="contained" onClick={() => navigate('/')}>
-          Volver al inicio
-        </Button>
-      </Box>
+      <>
+        <Container maxWidth="sm" sx={{ mt: 4, textAlign: 'center' }}>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            <Typography variant="h6">Acceso restringido</Typography>
+            <Typography>No tienes permiso para acceder a esta sección.</Typography>
+          </Alert>
+          <Button variant="contained" onClick={() => navigate('/')} startIcon={<HomeIcon />}>
+            Volver al inicio
+          </Button>
+        </Container>
+        <Navbar />
+      </>
     );
   }
 
-  if (loading) {
+  // Carga inicial
+  if (loading && !saving) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
-        <CircularProgress />
-        <Typography sx={{ ml: 2 }}>Cargando datos...</Typography>
-      </Box>
+      <>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+            <CircularProgress />
+            <Typography sx={{ ml: 2 }}>Cargando albaranes y repartidores...</Typography>
+          </Box>
+        </Container>
+        <Navbar />
+      </>
     );
   }
 
   return (
-    <Box sx={{ maxWidth: 1400, mx: 'auto', py: 4, px: { xs: 2, sm: 3, md: 4 } }}>
-      <Paper elevation={2} sx={{ overflow: 'hidden' }}>
-        {/* Header con gradiente similar al original */}
-        <Box
-          sx={{
-            position: 'relative',
-            py: 3,
-            px: 3,
-            background: `linear-gradient(135deg, ${theme.palette.primary.dark}, ${theme.palette.primary.main})`,
-            color: theme.palette.primary.contrastText,
-          }}
-        >
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 600, position: 'relative', zIndex: 2 }}>
+    <>
+      <Container maxWidth="xl" sx={{ py: 3, px: { xs: 1.5, sm: 2, md: 3 } }}>
+        <Paper elevation={2} sx={{ p: { xs: 2, sm: 3, md: 4 }, borderRadius: 3 }}>
+          {/* Cabecera */}
+          <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 700, color: theme.palette.primary.main }}>
             Designar Albaranes a Repartidores
           </Typography>
-          {/* Burbujas decorativas */}
-          <Box
-            sx={{
-              position: 'absolute',
-              width: 120,
-              height: 120,
-              borderRadius: '50%',
-              background: 'rgba(255,255,255,0.05)',
-              top: -30,
-              left: -30,
-              zIndex: 1,
-            }}
-          />
-          <Box
-            sx={{
-              position: 'absolute',
-              width: 80,
-              height: 80,
-              borderRadius: '50%',
-              background: 'rgba(255,255,255,0.05)',
-              bottom: -20,
-              right: -20,
-              zIndex: 1,
-            }}
-          />
-        </Box>
 
-        {error && (
-          <Alert severity="error" sx={{ m: 2 }} onClose={() => setError('')}>
-            {error}
-          </Alert>
-        )}
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+              {error}
+            </Alert>
+          )}
 
-        <TableContainer component={Paper} sx={{ boxShadow: 'none' }}>
-          <Table>
-            <TableHead>
-              <TableRow sx={{ backgroundColor: theme.palette.grey[100] }}>
-                <TableCell sx={{ fontWeight: 600 }}>Albarán</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Cliente</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Dirección</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Repartidor</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {albaranes.map((albaran) => (
-                <TableRow key={albaran.id} hover>
-                  <TableCell>{albaran.albaran}</TableCell>
-                  <TableCell>{albaran.cliente}</TableCell>
-                  <TableCell>{albaran.direccion}</TableCell>
-                  <TableCell>
-                    <FormControl fullWidth size="small">
-                      <Select
-                        value={asignaciones[albaran.id] || ''}
-                        onChange={(e) => handleAsignar(albaran.id, e.target.value)}
-                        displayEmpty
-                        sx={{ minWidth: 150 }}
-                      >
-                        <MenuItem value="">Seleccionar repartidor</MenuItem>
-                        {repartidores.map((rep) => (
-                          <MenuItem key={rep.CodigoCliente} value={rep.CodigoCliente}>
-                            {rep.Nombre}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </TableCell>
+          {/* Tabla responsiva */}
+          <TableContainer component={Paper} variant="outlined" sx={{ mb: 3, borderRadius: 2, overflowX: 'auto' }}>
+            <Table size="small" sx={{ minWidth: 600 }}>
+              <TableHead>
+                <TableRow sx={{ bgcolor: 'rgba(0, 0, 0, 0.04)' }}>
+                  <TableCell sx={{ fontWeight: 700 }}>Albarán</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Cliente</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Dirección</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Repartidor</TableCell>
                 </TableRow>
-              ))}
-              {albaranes.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
-                    No hay albaranes pendientes de asignación
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+              </TableHead>
+              <TableBody>
+                {albaranes.map((albaran) => (
+                  <TableRow key={albaran.id}>
+                    <TableCell>{albaran.albaran}</TableCell>
+                    <TableCell>{albaran.cliente}</TableCell>
+                    <TableCell>{albaran.direccion || '-'}</TableCell>
+                    <TableCell>
+                      <FormControl size="small" fullWidth>
+                        <InputLabel id={`select-${albaran.id}`}>Repartidor</InputLabel>
+                        <Select
+                          labelId={`select-${albaran.id}`}
+                          value={asignaciones[albaran.id] || ''}
+                          label="Repartidor"
+                          onChange={(e) => handleAsignar(albaran.id, e.target.value)}
+                        >
+                          <MenuItem value="">Seleccionar repartidor</MenuItem>
+                          {repartidores.map((rep) => (
+                            <MenuItem key={rep.id} value={rep.id}>
+                              {rep.nombre}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
 
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          sx={{ p: 3, justifyContent: 'center', borderTop: 1, borderColor: 'divider' }}
-        >
-          <Button
-            variant="contained"
-            color="success"
-            startIcon={<SaveIcon />}
-            onClick={guardarAsignaciones}
-            disabled={!hayAsignacionesPendientes || saving}
-            sx={{ minWidth: 200 }}
-          >
-            {saving ? <CircularProgress size={24} color="inherit" /> : 'Guardar Asignaciones'}
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<ArrowBackIcon />}
-            onClick={() => navigate('/')}
-          >
-            Volver al Inicio
-          </Button>
-        </Stack>
-      </Paper>
-    </Box>
+          {/* Acciones */}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="flex-end">
+            <Button
+              variant="contained"
+              startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />}
+              onClick={guardarAsignaciones}
+              disabled={!asignacionesPendientes.length || saving}
+              sx={{ minWidth: 180 }}
+            >
+              {saving ? 'Guardando...' : 'Guardar Asignaciones'}
+            </Button>
+            <Button variant="outlined" startIcon={<HomeIcon />} onClick={() => navigate('/')}>
+              Volver al Inicio
+            </Button>
+          </Stack>
+        </Paper>
+      </Container>
+      <Navbar />
+    </>
   );
 };
 

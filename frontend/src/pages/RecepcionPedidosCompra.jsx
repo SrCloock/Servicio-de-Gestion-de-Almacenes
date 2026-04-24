@@ -1,7 +1,444 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import '../styles/RecepcionPedidosCompra.css';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePermissions } from '../PermissionsManager';
 import API from '../helpers/api';
-import '../styles/RecepcionPedidosCompra.css';
+import { Alert, AlertTitle, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Paper, Stack, TableContainer, TextField, Typography } from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+
+const ALMACEN_RECEPCION_FIJO = 'PTO';
+const UBICACION_RECEPCION_FIJA = 'RECEPCION';
+
+const RecepcionHeader = ({
+  title,
+  subtitle,
+  summary,
+  mostrarFiltros,
+  onToggleFiltros,
+  onRefresh,
+  loading
+}) => {
+  return (
+    <Paper elevation={2} className="RPC-header" sx={{ p: 3, borderRadius: 3 }}>
+      <Stack spacing={2}>
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          spacing={2}
+          justifyContent="space-between"
+          alignItems={{ xs: 'flex-start', md: 'center' }}
+        >
+          <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+            <Box className="RPC-title-icon">📋</Box>
+            <Stack spacing={0.5}>
+              <Typography variant="h4" component="h1" sx={{ color: 'var(--color-primary)', fontWeight: 700 }}>
+                {title}
+              </Typography>
+              <Typography variant="body2" className="RPC-header-subtitle">
+                {subtitle}
+              </Typography>
+            </Stack>
+          </Stack>
+
+          <Box className="RPC-badge RPC-badge-info">{summary}</Box>
+        </Stack>
+
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} className="RPC-action-buttons">
+          <Button variant="outlined" color="secondary" onClick={onToggleFiltros}>
+            {mostrarFiltros ? 'Ocultar filtros' : 'Filtrar pedidos'}
+          </Button>
+          <Button variant="contained" onClick={onRefresh} disabled={loading}>
+            {loading ? 'Cargando...' : 'Actualizar'}
+          </Button>
+        </Stack>
+      </Stack>
+    </Paper>
+  );
+};
+
+
+const RecepcionFilters = ({ visible, filtros, onFiltrosChange, onClear, onApply }) => {
+  if (!visible) return null;
+
+  const updateField = (field, value) => {
+    onFiltrosChange({
+      ...filtros,
+      [field]: value
+    });
+  };
+
+  return (
+    <Paper elevation={1} className="RPC-filtros-panel" sx={{ p: 3, borderRadius: 3, mb: 3 }}>
+      <Stack spacing={3}>
+        <Typography variant="h6" component="h3">
+          Filtrar pedidos
+        </Typography>
+
+        <Box
+          className="RPC-filtros-grid"
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(4, 1fr)' },
+            gap: 2
+          }}
+        >
+          <TextField
+            label="Proveedor"
+            placeholder="Código o nombre"
+            value={filtros.proveedor}
+            onChange={(e) => updateField('proveedor', e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Número pedido"
+            type="number"
+            placeholder="Número exacto"
+            value={filtros.numeroPedido}
+            onChange={(e) => updateField('numeroPedido', e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Desde"
+            type="date"
+            value={filtros.fechaDesde}
+            onChange={(e) => updateField('fechaDesde', e.target.value)}
+            fullWidth
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="Hasta"
+            type="date"
+            value={filtros.fechaHasta}
+            onChange={(e) => updateField('fechaHasta', e.target.value)}
+            fullWidth
+            InputLabelProps={{ shrink: true }}
+          />
+        </Box>
+
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="flex-end">
+          <Button variant="outlined" onClick={onClear}>
+            Limpiar filtros
+          </Button>
+          <Button variant="contained" onClick={onApply}>
+            Aplicar filtros
+          </Button>
+        </Stack>
+      </Stack>
+    </Paper>
+  );
+};
+
+
+const RecepcionAlerts = ({ error, success, onCloseError, onCloseSuccess }) => {
+  if (!error && !success) return null;
+
+  return (
+    <Stack spacing={2} sx={{ mb: 3 }}>
+      {error && (
+        <Alert severity="error" onClose={onCloseError}>
+          <AlertTitle>Error</AlertTitle>
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert severity="success" onClose={onCloseSuccess}>
+          <AlertTitle>Correcto</AlertTitle>
+          {success}
+        </Alert>
+      )}
+    </Stack>
+  );
+};
+
+
+const RecepcionPagination = ({ visible, page, totalPages, hasPrev, hasNext, loading, onPrev, onNext }) => {
+  if (!visible) return null;
+
+  return (
+    <Paper elevation={1} className="RPC-paginacion-controls" sx={{ p: 2, mt: 3, borderRadius: 3 }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center" alignItems="center">
+        <Button variant="outlined" onClick={onPrev} disabled={!hasPrev || loading}>
+          Anterior
+        </Button>
+        <Typography className="RPC-pagina-actual" fontWeight={600}>
+          Página {page} de {totalPages}
+        </Typography>
+        <Button variant="outlined" onClick={onNext} disabled={!hasNext || loading}>
+          Siguiente
+        </Button>
+      </Stack>
+    </Paper>
+  );
+};
+
+
+const RecepcionStateView = ({ type = 'info', title, message, buttonLabel, onButtonClick, buttonVariant = 'outlined' }) => {
+  if (type === 'loading') {
+    return (
+      <Paper elevation={1} sx={{ p: 4, borderRadius: 3, textAlign: 'center' }}>
+        <Stack spacing={2} alignItems="center">
+          <CircularProgress />
+          <Typography>{message || 'Cargando...'}</Typography>
+        </Stack>
+      </Paper>
+    );
+  }
+
+  const severity = type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'info';
+
+  return (
+    <Paper elevation={1} sx={{ p: 4, borderRadius: 3 }}>
+      <Alert severity={severity}>
+        {title && <AlertTitle>{title}</AlertTitle>}
+        {message}
+      </Alert>
+      {buttonLabel && onButtonClick && (
+        <Box sx={{ mt: 2 }}>
+          <Button variant={buttonVariant} onClick={onButtonClick}>
+            {buttonLabel}
+          </Button>
+        </Box>
+      )}
+    </Paper>
+  );
+};
+
+
+const ProveedorGroupCard = ({
+  grupo,
+  expandido,
+  onToggle,
+  loading,
+  onGenerarAlbaran,
+  children
+}) => {
+  return (
+    <Card elevation={2} className="RPC-grupo-proveedor" sx={{ borderRadius: 3, overflow: 'hidden' }}>
+      <Paper
+        elevation={0}
+        className={`RPC-proveedor-header ${expandido ? 'expanded' : ''}`}
+        onClick={onToggle}
+        sx={{ borderRadius: 0, cursor: 'pointer' }}
+      >
+        <div className="RPC-proveedor-header-content">
+          <div className="RPC-proveedor-info">
+            <div className="RPC-proveedor-expand">{expandido ? '▼' : '▶'}</div>
+            <div className="RPC-proveedor-codigo">{grupo.codigoProveedor}</div>
+            <div className="RPC-proveedor-nombre">{grupo.nombreProveedor}</div>
+            <div className="RPC-proveedor-stats">
+              <Chip className="RPC-stat-badge" label={`${grupo.totalPedidos} pedidos`} size="small" />
+              <Chip className="RPC-stat-badge RPC-stat-recepcionados" label={`${grupo.totalUnidadesRecibidas.toLocaleString()} recibidas`} size="small" />
+              <Chip className="RPC-stat-badge RPC-stat-pendientes" label={`${grupo.totalUnidadesPendientes.toLocaleString()} pendientes`} size="small" />
+              <Chip
+                className="RPC-stat-badge RPC-stat-importe"
+                label={grupo.totalImporte.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                size="small"
+              />
+            </div>
+          </div>
+
+          <div className="RPC-proveedor-acciones">
+            {grupo.tieneUnidadesParaAlbaran && (
+              <Button
+                variant="contained"
+                color="success"
+                size="small"
+                className="RPC-btn RPC-btn-success RPC-btn-sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onGenerarAlbaran();
+                }}
+                disabled={loading}
+              >
+                Generar albarán
+              </Button>
+            )}
+          </div>
+        </div>
+      </Paper>
+
+      <CardContent sx={{ p: 0 }}>{children}</CardContent>
+    </Card>
+  );
+};
+
+
+const PedidoCompraCard = ({
+  pedido,
+  expandido,
+  loading,
+  tieneUnidadesRecibidas,
+  onToggle,
+  onGenerarAlbaran,
+  onFinalizar,
+  children
+}) => {
+  return (
+    <Card elevation={1} className="RPC-pedido-item" sx={{ borderRadius: 3, overflow: 'hidden', mb: 2 }}>
+      <Paper
+        elevation={0}
+        className={`RPC-pedido-header ${expandido ? 'expanded' : ''}`}
+        onClick={onToggle}
+        sx={{ borderRadius: 0, cursor: 'pointer' }}
+      >
+        <div className="RPC-pedido-info">
+          <div className="RPC-pedido-expand">{expandido ? '▼' : '▶'}</div>
+          <div className="RPC-pedido-numero">
+            <strong>Pedido #{pedido.NumeroPedido}</strong>
+            <div className="RPC-pedido-fecha">
+              {new Date(pedido.FechaPedido).toLocaleDateString()} - Ejercicio: {pedido.EjercicioPedido}
+              {pedido.SeriePedido && pedido.SeriePedido !== '0' && ` - Serie: ${pedido.SeriePedido}`}
+            </div>
+          </div>
+          <div className="RPC-pedido-stats">
+            <div className="RPC-pedido-stat">
+              <span className="RPC-stat-label">Líneas:</span>
+              <span className="RPC-stat-value">{pedido.TotalLineas}</span>
+            </div>
+            <div className="RPC-pedido-stat">
+              <span className="RPC-stat-label">Pedidas:</span>
+              <span className="RPC-stat-value">{parseFloat(pedido.TotalUnidadesPedidas).toLocaleString()}</span>
+            </div>
+            <div className="RPC-pedido-stat">
+              <span className="RPC-stat-label">Recibidas:</span>
+              <span className="RPC-stat-value RPC-text-success">{parseFloat(pedido.TotalUnidadesRecibidas).toLocaleString()}</span>
+            </div>
+            <div className="RPC-pedido-stat">
+              <span className="RPC-stat-label">Pendientes:</span>
+              <span className="RPC-stat-value RPC-text-warning">{parseFloat(pedido.TotalUnidadesPendientes).toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="RPC-pedido-acciones">
+          {tieneUnidadesRecibidas ? (
+            <Button
+              variant="contained"
+              color="success"
+              size="small"
+              className="RPC-btn RPC-btn-success RPC-btn-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                onGenerarAlbaran();
+              }}
+              disabled={loading}
+            >
+              Albarán
+            </Button>
+          ) : (
+            <Chip className="RPC-estado-chip RPC-estado-pendiente" label="Pendiente" size="small" />
+          )}
+
+          <Button
+            variant="contained"
+            color="warning"
+            size="small"
+            className="RPC-btn RPC-btn-warning RPC-btn-xs"
+            onClick={(e) => {
+              e.stopPropagation();
+              onFinalizar();
+            }}
+            disabled={loading}
+          >
+            Finalizar
+          </Button>
+        </div>
+      </Paper>
+
+      {expandido && <CardContent className="RPC-pedido-detalles">{children}</CardContent>}
+    </Card>
+  );
+};
+
+
+const RecepcionLineasTable = ({ title, children }) => {
+  return (
+    <div className="RPC-lineas-container">
+      <Typography variant="h6" component="h4" sx={{ mb: 2 }}>
+        {title}
+      </Typography>
+      <TableContainer component={Paper} elevation={1} className="modal-table-container" sx={{ borderRadius: 2 }}>
+        {children}
+      </TableContainer>
+    </div>
+  );
+};
+
+
+const RecepcionVariantesPanel = ({ title = 'Desglose de Variantes', children }) => {
+  return (
+    <Paper elevation={0} className="RPC-variantes-detalle" sx={{ p: 2, borderRadius: 2 }}>
+      <Typography variant="subtitle1" component="h5" sx={{ mb: 2, fontWeight: 700 }}>
+        {title}
+      </Typography>
+      <TableContainer component={Paper} elevation={1} className="modal-table-container" sx={{ borderRadius: 2 }}>
+        {children}
+      </TableContainer>
+    </Paper>
+  );
+};
+
+
+const RecepcionDialog = ({ open, title, subtitle, onClose, maxWidth = 'md', footer, children }) => {
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth={maxWidth}>
+      <DialogTitle component="div" sx={{ pb: subtitle ? 1 : 2, pr: 7 }}>
+        <Typography variant="h6" component="div" sx={{ fontWeight: 700 }}>
+          {title}
+        </Typography>
+        {subtitle && (
+          <Typography variant="body2" component="div" color="text.secondary" sx={{ mt: 0.75, maxWidth: 'calc(100% - 24px)' }}>
+            {subtitle}
+          </Typography>
+        )}
+        <IconButton
+          aria-label="cerrar"
+          onClick={onClose}
+          sx={{ position: 'absolute', right: 12, top: 12 }}
+        >
+          <CloseIcon />
+        </IconButton>
+      </DialogTitle>
+      <DialogContent dividers sx={{ '& .RPC-modal-section:first-of-type': { mt: 0 } }}>
+        {children}
+      </DialogContent>
+      {footer && (
+        <DialogActions sx={{ p: 2, gap: 1, flexWrap: 'wrap' }}>
+          {footer}
+        </DialogActions>
+      )}
+    </Dialog>
+  );
+};
+
+
+const GenerarAlbaranDialog = ({ open, onClose, footer, children }) => {
+  return (
+    <RecepcionDialog
+      open={open}
+      onClose={onClose}
+      title="Generar Albarán NO ACUMULATIVO"
+      maxWidth="lg"
+      footer={footer}
+    >
+      {children}
+    </RecepcionDialog>
+  );
+};
+
+
+const FinalizarPedidoDialog = ({ open, onClose, footer, children }) => {
+  return (
+    <RecepcionDialog
+      open={open}
+      onClose={onClose}
+      title="Finalizar Pedido"
+      maxWidth="md"
+      footer={footer}
+    >
+      {children}
+    </RecepcionDialog>
+  );
+};
+
 
 const RecepcionPedidosCompra = () => {
   const permissions = usePermissions();
@@ -272,12 +709,17 @@ const RecepcionPedidosCompra = () => {
 
     setLineaARecepcionar({ linea, variante, talla, pedidoKey });
     setUnidadesARecepcionar(unidadesPendientes.toString());
-    setSelectedAlmacen('');
-    setSelectedUbicacion('');
+    setSelectedAlmacen(ALMACEN_RECEPCION_FIJO);
+    setSelectedUbicacion(UBICACION_RECEPCION_FIJA);
+    setAlmacenes([{
+      CodigoAlmacen: ALMACEN_RECEPCION_FIJO,
+      Almacen: 'Recepción temporal'
+    }]);
+    setUbicaciones([{
+      Ubicacion: UBICACION_RECEPCION_FIJA,
+      DescripcionUbicacion: 'Recepción temporal'
+    }]);
     setVariantesDistribucion([]);
-
-    // Cargar almacenes
-    await cargarAlmacenes();
     
     // Si es recepción de línea completa y tiene variantes
     if (!variante && !talla && linea.variantes && linea.variantes.length > 0) {
@@ -328,7 +770,7 @@ const RecepcionPedidosCompra = () => {
   const cargarVariantesArticulo = async (codigoArticulo) => {
     setLoadingVariantes(true);
     try {
-      const { data } = await API.get(`/articulos/${codigoArticulo}/variantes`);
+      const { data } = await API.get(`/articulos/${encodeURIComponent(codigoArticulo)}/variantes`);
       
       if (data.success) {
         if (data.combinaciones && data.combinaciones.length > 0) {
@@ -375,16 +817,10 @@ const RecepcionPedidosCompra = () => {
 
   // Cargar almacenes disponibles
   const cargarAlmacenes = async () => {
-    try {
-      const { data } = await API.get('/almacenes');
-      const almacenesPermitidos = ['CEN', 'BCN', 'N5', 'N1', 'PK', '5'];
-      const almacenesFiltrados = data.filter(alm => 
-        almacenesPermitidos.includes(alm.CodigoAlmacen)
-      );
-      setAlmacenes(almacenesFiltrados);
-    } catch (err) {
-      console.error('Error cargando almacenes:', err);
-    }
+    setAlmacenes([{
+      CodigoAlmacen: ALMACEN_RECEPCION_FIJO,
+      Almacen: 'Recepción temporal'
+    }]);
   };
 
   // Cargar ubicaciones para el almacén seleccionado
@@ -394,15 +830,12 @@ const RecepcionPedidosCompra = () => {
       setSelectedUbicacion('');
       return;
     }
-    
-    try {
-      const { data } = await API.get(`/ubicaciones/${almacen}`, {
-        params: { incluirSinUbicacion: 'true' }
-      });
-      setUbicaciones(data);
-    } catch (err) {
-      console.error('Error cargando ubicaciones:', err);
-    }
+
+    setUbicaciones([{
+      Ubicacion: UBICACION_RECEPCION_FIJA,
+      DescripcionUbicacion: 'Recepción temporal'
+    }]);
+    setSelectedUbicacion(UBICACION_RECEPCION_FIJA);
   };
 
   // Procesar recepción de línea
@@ -462,6 +895,23 @@ const RecepcionPedidosCompra = () => {
         if (variante) {
           mensajeExito += ` (${variante.nombreColor}${talla ? ' - ' + talla.nombre : ''})`;
         }
+
+        if (data.autoGenerarAlbaran) {
+          try {
+            const { data: albaranData } = await API.post(
+              `/pedidos-compra/${linea.EjercicioPedido}/${linea.SeriePedido || '0'}/${linea.NumeroPedido}/generar-albaran`,
+              {}
+            );
+
+            if (albaranData?.success && albaranData?.albaran) {
+              mensajeExito += `. Albarán generado automáticamente: ${albaranData.albaran.numero} (Ejercicio ${albaranData.albaran.ejercicio})`;
+            }
+          } catch (autoAlbaranError) {
+            mensajeExito += '. La recepción se guardó, pero la generación automática del albarán ha fallado.';
+            setError(getApiErrorMessage(autoAlbaranError, 'Error al generar el albarán automáticamente.'));
+          }
+        }
+
         setSuccess(mensajeExito);
         
         // Recargar detalles del pedido
@@ -752,8 +1202,11 @@ const RecepcionPedidosCompra = () => {
 
   // Cargar ubicaciones cuando cambia el almacén seleccionado
   useEffect(() => {
-    if (modalRecepcion && selectedAlmacen) {
-      cargarUbicaciones(selectedAlmacen);
+    if (modalRecepcion) {
+      cargarAlmacenes();
+      if (selectedAlmacen) {
+        cargarUbicaciones(selectedAlmacen);
+      }
     }
   }, [selectedAlmacen, modalRecepcion]);
 
@@ -797,141 +1250,53 @@ const RecepcionPedidosCompra = () => {
   if (!canViewInventory || !canReceivePurchaseOrders) {
     return (
       <div className="RPC-container">
-        <div className="RPC-acceso-denigado">
-          <div className="RPC-error-icon">✗</div>
-          <h2>Acceso Denegado</h2>
-          <p>No tiene permisos para acceder a la recepción de pedidos de compra.</p>
-        </div>
+        <RecepcionStateView
+          type="warning"
+          title="Acceso denegado"
+          message="No tiene permisos para acceder a la recepción de pedidos de compra."
+        />
       </div>
     );
   }
 
   return (
     <div className="RPC-container">
-      {/* Header */}
-      <div className="RPC-header">
-        <div className="RPC-header-title">
-          <div className="RPC-title-icon">📋</div>
-          <h1>Recepción de Pedidos de Compra</h1>
-          <span className="RPC-badge RPC-badge-info">
-            {pagination.total} pedidos • {Object.keys(pedidosAgrupados).length} proveedores • Página {pagination.page}/{pagination.totalPages}
-          </span>
-        </div>
-        
-        <p className="RPC-header-subtitle">
-          Visualice los pedidos agrupados por proveedor y recepcione artículos seleccionando almacén y ubicación.
-        </p>
-        
-        {/* Botones de acción */}
-        <div className="RPC-action-buttons">
-          <button
-            className="RPC-btn RPC-btn-secondary"
-            onClick={() => setMostrarFiltros(!mostrarFiltros)}
-          >
-            {mostrarFiltros ? '❌ Ocultar Filtros' : '🔍 Filtrar Pedidos'}
-          </button>
-          
-          <button
-            className="RPC-btn RPC-btn-primary"
-            onClick={() => cargarPedidos(pagination.page, true)}
-            disabled={loading}
-          >
-            {loading ? 'Cargando...' : '🔄 Actualizar'}
-          </button>
-        </div>
-      </div>
+      <RecepcionHeader
+        title="Recepción de Pedidos de Compra"
+        subtitle="Visualice los pedidos agrupados por proveedor y recepcione artículos seleccionando almacén y ubicación."
+        summary={`${pagination.total} pedidos • ${Object.keys(pedidosAgrupados).length} proveedores • Página ${pagination.page}/${pagination.totalPages}`}
+        mostrarFiltros={mostrarFiltros}
+        onToggleFiltros={() => setMostrarFiltros(!mostrarFiltros)}
+        onRefresh={() => cargarPedidos(pagination.page, true)}
+        loading={loading}
+      />
 
-      {/* Panel de filtros */}
-      {mostrarFiltros && (
-        <div className="RPC-filtros-panel">
-          <h3>Filtrar Pedidos</h3>
-          <div className="RPC-filtros-grid">
-            <div className="RPC-filtro-item">
-              <label>Proveedor:</label>
-              <input
-                type="text"
-                className="RPC-form-control"
-                placeholder="Código o nombre"
-                value={filtros.proveedor}
-                onChange={(e) => setFiltros({...filtros, proveedor: e.target.value})}
-              />
-            </div>
-            
-            <div className="RPC-filtro-item">
-              <label>Número Pedido:</label>
-              <input
-                type="number"
-                className="RPC-form-control"
-                placeholder="Número exacto"
-                value={filtros.numeroPedido}
-                onChange={(e) => setFiltros({...filtros, numeroPedido: e.target.value})}
-              />
-            </div>
-            
-            <div className="RPC-filtro-item">
-              <label>Desde:</label>
-              <input
-                type="date"
-                className="RPC-form-control"
-                value={filtros.fechaDesde}
-                onChange={(e) => setFiltros({...filtros, fechaDesde: e.target.value})}
-              />
-            </div>
-            
-            <div className="RPC-filtro-item">
-              <label>Hasta:</label>
-              <input
-                type="date"
-                className="RPC-form-control"
-                value={filtros.fechaHasta}
-                onChange={(e) => setFiltros({...filtros, fechaHasta: e.target.value})}
-              />
-            </div>
-          </div>
-          
-          <div className="RPC-filtros-acciones">
-            <button className="RPC-btn RPC-btn-secondary" onClick={limpiarFiltros}>
-              Limpiar Filtros
-            </button>
-            <button className="RPC-btn RPC-btn-primary" onClick={aplicarFiltros}>
-              Aplicar Filtros
-            </button>
-          </div>
-        </div>
-      )}
+      <RecepcionFilters
+        visible={mostrarFiltros}
+        filtros={filtros}
+        onFiltrosChange={setFiltros}
+        onClear={limpiarFiltros}
+        onApply={aplicarFiltros}
+      />
 
-      {/* Mensajes de error/éxito */}
-      {error && (
-        <div className="RPC-alert RPC-alert-error">
-          <div className="RPC-alert-icon">⚠️</div>
-          <div className="RPC-alert-content">{error}</div>
-          <button className="RPC-alert-close" onClick={() => setError(null)}>×</button>
-        </div>
-      )}
-      
-      {success && (
-        <div className="RPC-alert RPC-alert-success">
-          <div className="RPC-alert-icon">✅</div>
-          <div className="RPC-alert-content">{success}</div>
-          <button className="RPC-alert-close" onClick={() => setSuccess(null)}>×</button>
-        </div>
-      )}
+      <RecepcionAlerts
+        error={error}
+        success={success}
+        onCloseError={() => setError(null)}
+        onCloseSuccess={() => setSuccess(null)}
+      />
 
       {/* Lista de proveedores agrupados */}
       {loading && Object.keys(pedidosAgrupados).length === 0 ? (
-        <div className="RPC-loading-container">
-          <div className="RPC-loading-spinner"></div>
-          <p>Cargando pedidos...</p>
-        </div>
+        <RecepcionStateView type="loading" message="Cargando pedidos..." />
       ) : Object.keys(pedidosAgrupados).length === 0 ? (
-        <div className="RPC-empty-state">
-          <div className="RPC-empty-icon">📭</div>
-          <h3>No hay pedidos pendientes</h3>
-          <p>No se encontraron pedidos de compra con los filtros actuales.</p>
-          <button className="RPC-btn RPC-btn-secondary" onClick={limpiarFiltros}>
-            Limpiar filtros
-          </button>
-        </div>
+        <RecepcionStateView
+          type="info"
+          title="No hay pedidos pendientes"
+          message="No se encontraron pedidos de compra con los filtros actuales."
+          buttonLabel="Limpiar filtros"
+          onButtonClick={limpiarFiltros}
+        />
       ) : (
         <div className="RPC-proveedores-container">
           {Object.keys(pedidosAgrupados).map(claveProveedor => {
@@ -939,55 +1304,14 @@ const RecepcionPedidosCompra = () => {
             const proveedorExpandido = proveedoresExpandidos[claveProveedor] || false;
             
             return (
-              <div key={claveProveedor} className="RPC-grupo-proveedor">
-                {/* Cabecera del proveedor */}
-                <div 
-                  className={`RPC-proveedor-header ${proveedorExpandido ? 'expanded' : ''}`}
-                  onClick={() => toggleProveedorExpandido(claveProveedor)}
-                >
-                  <div className="RPC-proveedor-header-content">
-                    <div className="RPC-proveedor-info">
-                      <div className="RPC-proveedor-expand">
-                        {proveedorExpandido ? '▼' : '►'}
-                      </div>
-                      <div className="RPC-proveedor-codigo">{grupo.codigoProveedor}</div>
-                      <div className="RPC-proveedor-nombre">{grupo.nombreProveedor}</div>
-                      <div className="RPC-proveedor-stats">
-                        <span className="RPC-stat-badge">{grupo.totalPedidos} pedidos</span>
-                        <span className="RPC-stat-badge RPC-stat-recepcionados">
-                          {grupo.totalUnidadesRecibidas.toLocaleString()} recibidas
-                        </span>
-                        <span className="RPC-stat-badge RPC-stat-pendientes">
-                          {grupo.totalUnidadesPendientes.toLocaleString()} pendientes
-                        </span>
-                        <span className="RPC-stat-badge RPC-stat-importe">
-                          {grupo.totalImporte.toLocaleString('es-ES', {
-                            style: 'currency',
-                            currency: 'EUR'
-                          })}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <div className="RPC-proveedor-acciones">
-                      {grupo.tieneUnidadesParaAlbaran && (
-                        <button
-                          className="RPC-btn RPC-btn-success RPC-btn-sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            prepararGenerarAlbaranPorProveedor(claveProveedor);
-                          }}
-                          disabled={loading}
-                          title="Generar albarán NO ACUMULATIVO con todas las recepciones de este proveedor"
-                        >
-                          📄 Generar Albarán
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* PEDIDOS DEL PROVEEDOR */}
+              <ProveedorGroupCard
+                key={claveProveedor}
+                grupo={grupo}
+                expandido={proveedorExpandido}
+                onToggle={() => toggleProveedorExpandido(claveProveedor)}
+                loading={loading}
+                onGenerarAlbaran={() => prepararGenerarAlbaranPorProveedor(claveProveedor)}
+              >
                 <div className={`RPC-pedidos-container ${proveedorExpandido ? 'visible' : 'hidden'}`}>
                   {grupo.pedidos.map((pedido) => {
                     const clavePedido = `${pedido.EjercicioPedido}_${pedido.SeriePedido || '0'}_${pedido.NumeroPedido}`;
@@ -996,92 +1320,23 @@ const RecepcionPedidosCompra = () => {
                     const tieneUnidadesRecibidas = parseFloat(pedido.TotalUnidadesRecibidas) > 0;
                     
                     return (
-                      <div key={clavePedido} className="RPC-pedido-item">
-                        {/* Cabecera del pedido */}
-                        <div 
-                          className={`RPC-pedido-header ${pedidoExpandido ? 'expanded' : ''}`}
-                          onClick={() => cargarDetallesPedido(
-                            pedido.EjercicioPedido, 
-                            pedido.SeriePedido || '0', 
-                            pedido.NumeroPedido
-                          )}
-                        >
-                          <div className="RPC-pedido-info">
-                            <div className="RPC-pedido-expand">
-                              {pedidoExpandido ? '▼' : '►'}
-                            </div>
-                            <div className="RPC-pedido-numero">
-                              <strong>Pedido #{pedido.NumeroPedido}</strong>
-                              <div className="RPC-pedido-fecha">
-                                {new Date(pedido.FechaPedido).toLocaleDateString()} - 
-                                Ejercicio: {pedido.EjercicioPedido}
-                                {pedido.SeriePedido && pedido.SeriePedido !== '0' && ` - Serie: ${pedido.SeriePedido}`}
-                              </div>
-                            </div>
-                            <div className="RPC-pedido-stats">
-                              <div className="RPC-pedido-stat">
-                                <span className="RPC-stat-label">Líneas:</span>
-                                <span className="RPC-stat-value">{pedido.TotalLineas}</span>
-                              </div>
-                              <div className="RPC-pedido-stat">
-                                <span className="RPC-stat-label">Pedidas:</span>
-                                <span className="RPC-stat-value">{parseFloat(pedido.TotalUnidadesPedidas).toLocaleString()}</span>
-                              </div>
-                              <div className="RPC-pedido-stat">
-                                <span className="RPC-stat-label">Recibidas:</span>
-                                <span className="RPC-stat-value RPC-text-success">
-                                  {parseFloat(pedido.TotalUnidadesRecibidas).toLocaleString()}
-                                </span>
-                              </div>
-                              <div className="RPC-pedido-stat">
-                                <span className="RPC-stat-label">Pendientes:</span>
-                                <span className="RPC-stat-value RPC-text-warning">
-                                  {parseFloat(pedido.TotalUnidadesPendientes).toLocaleString()}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <div className="RPC-pedido-acciones">
-                            {tieneUnidadesRecibidas ? (
-                              <button
-                                className="RPC-btn RPC-btn-success RPC-btn-xs"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  prepararGenerarAlbaran(pedido);
-                                }}
-                                disabled={loading}
-                                title="Generar albarán NO ACUMULATIVO para este pedido"
-                              >
-                                📄 Albarán
-                              </button>
-                            ) : (
-                              <span className="RPC-estado-chip RPC-estado-pendiente">⏳ Pendiente</span>
-                            )}
-                            
-                            <button
-                              className="RPC-btn RPC-btn-warning RPC-btn-xs"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                prepararFinalizarPedido(pedido);
-                              }}
-                              disabled={loading}
-                              title="Finalizar pedido como servido"
-                            >
-                              ✓ Finalizar
-                            </button>
-                          </div>
-                        </div>
-                        
-                        {/* Detalles del pedido */}
-                        {pedidoExpandido && detalles && (
-                          <div className="RPC-pedido-detalles">
-                            {/* Líneas del pedido */}
-                            <div className="RPC-lineas-container">
-                              <h4>Líneas del Pedido ({detalles.lineas.length})</h4>
-                              
-                              <div className="modal-table-container">
-                                <table className="modal-table">
+                      <PedidoCompraCard
+                        key={clavePedido}
+                        pedido={pedido}
+                        expandido={pedidoExpandido}
+                        loading={loading}
+                        tieneUnidadesRecibidas={tieneUnidadesRecibidas}
+                        onToggle={() => cargarDetallesPedido(
+                          pedido.EjercicioPedido,
+                          pedido.SeriePedido || '0',
+                          pedido.NumeroPedido
+                        )}
+                        onGenerarAlbaran={() => prepararGenerarAlbaran(pedido)}
+                        onFinalizar={() => prepararFinalizarPedido(pedido)}
+                      >
+                        {detalles && (
+                          <RecepcionLineasTable title={`Líneas del Pedido (${detalles.lineas.length})`}>
+                            <table className="modal-table">
                                   <thead>
                                     <tr>
                                       <th width="40px"></th>
@@ -1155,9 +1410,7 @@ const RecepcionPedidosCompra = () => {
                                           {tieneVariantes && lineaExpandida && (
                                             <tr className="RPC-variantes-row">
                                               <td colSpan="9">
-                                                <div className="RPC-variantes-detalle">
-                                                  <h5>Desglose de Variantes</h5>
-                                                  <div className="modal-table-container">
+                                                <RecepcionVariantesPanel>
                                                     <table className="modal-table">
                                                       <thead>
                                                         <tr>
@@ -1252,8 +1505,7 @@ const RecepcionPedidosCompra = () => {
                                                         ))}
                                                       </tbody>
                                                     </table>
-                                                  </div>
-                                                </div>
+                                                </RecepcionVariantesPanel>
                                               </td>
                                             </tr>
                                           )}
@@ -1262,44 +1514,29 @@ const RecepcionPedidosCompra = () => {
                                     })}
                                   </tbody>
                                 </table>
-                              </div>
-                            </div>
-                          </div>
+                          </RecepcionLineasTable>
                         )}
-                      </div>
+                      </PedidoCompraCard>
                     );
                   })}
                 </div>
-              </div>
+              </ProveedorGroupCard>
             );
           })}
         </div>
       )}
 
       {/* Paginación */}
-      {Object.keys(pedidosAgrupados).length > 0 && (
-        <div className="RPC-paginacion-controls">
-          <button
-            className="RPC-btn RPC-btn-sm"
-            onClick={() => cambiarPagina(pagination.page - 1)}
-            disabled={!pagination.hasPrev || loading}
-          >
-            ‹ Anterior
-          </button>
-          
-          <span className="RPC-pagina-actual">
-            Página {pagination.page} de {pagination.totalPages}
-          </span>
-          
-          <button
-            className="RPC-btn RPC-btn-sm"
-            onClick={() => cambiarPagina(pagination.page + 1)}
-            disabled={!pagination.hasNext || loading}
-          >
-            Siguiente ›
-          </button>
-        </div>
-      )}
+      <RecepcionPagination
+        visible={Object.keys(pedidosAgrupados).length > 0}
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        hasPrev={pagination.hasPrev}
+        hasNext={pagination.hasNext}
+        loading={loading}
+        onPrev={() => cambiarPagina(pagination.page - 1)}
+        onNext={() => cambiarPagina(pagination.page + 1)}
+      />
 
       {/* ============================================
          MODALES CENTRADOS
@@ -1307,17 +1544,31 @@ const RecepcionPedidosCompra = () => {
 
       {/* Modal para recepción de línea */}
       {modalRecepcion && lineaARecepcionar && (
-        <div className="RPC-modal-overlay">
-          <div className="RPC-modal RPC-modal-recepcion">
-            <div className="RPC-modal-header">
-              <h3>Recepcionar Artículo</h3>
-              <p className="RPC-modal-subtitle">
-                {lineaARecepcionar.linea.CodigoArticulo} - {lineaARecepcionar.linea.DescripcionArticulo}
-              </p>
-              <button className="RPC-modal-close" onClick={() => setModalRecepcion(false)}>×</button>
-            </div>
-            
-            <div className="RPC-modal-content">
+        <RecepcionDialog
+          open={modalRecepcion && !!lineaARecepcionar}
+          onClose={() => setModalRecepcion(false)}
+          title="Recepcionar Artículo"
+          subtitle={`${lineaARecepcionar.linea.CodigoArticulo} - ${lineaARecepcionar.linea.DescripcionArticulo}`}
+          maxWidth="md"
+          footer={
+            <>
+              <button
+                className="RPC-btn RPC-btn-secondary"
+                onClick={() => setModalRecepcion(false)}
+                disabled={loading}
+              >
+                Cancelar
+              </button>
+              <button
+                className="RPC-btn RPC-btn-primary"
+                onClick={procesarRecepcionLinea}
+                disabled={!selectedAlmacen || !selectedUbicacion || loading}
+              >
+                {loading ? 'Procesando...' : '✓ Confirmar Recepción'}
+              </button>
+            </>
+          }
+        >
               {/* Información de variante específica (si aplica) */}
               {lineaARecepcionar.variante && (
                 <div className="RPC-modal-section">
@@ -1367,15 +1618,15 @@ const RecepcionPedidosCompra = () => {
                       value={selectedAlmacen}
                       onChange={(e) => setSelectedAlmacen(e.target.value)}
                       className="modal-form-control"
-                      disabled={loading}
+                      disabled
                     >
-                      <option value="">Seleccione almacén</option>
                       {almacenes.map((almacen) => (
                         <option key={almacen.CodigoAlmacen} value={almacen.CodigoAlmacen}>
                           {almacen.CodigoAlmacen} - {almacen.Almacen}
                         </option>
                       ))}
                     </select>
+                    <small className="RPC-form-text">Almacén temporal fijado para recepción: PTO</small>
                   </div>
                   
                   <div className="modal-form-group">
@@ -1385,15 +1636,15 @@ const RecepcionPedidosCompra = () => {
                       value={selectedUbicacion}
                       onChange={(e) => setSelectedUbicacion(e.target.value)}
                       className="modal-form-control"
-                      disabled={!selectedAlmacen || loading}
+                      disabled
                     >
-                      <option value="">Seleccione ubicación</option>
                       {ubicaciones.map((ubicacion) => (
                         <option key={ubicacion.Ubicacion} value={ubicacion.Ubicacion}>
                           {ubicacion.Ubicacion} - {ubicacion.DescripcionUbicacion}
                         </option>
                       ))}
                     </select>
+                    <small className="RPC-form-text">Ubicación temporal fijada para recepción: RECEPCION</small>
                   </div>
                 </div>
               </div>
@@ -1541,38 +1792,33 @@ const RecepcionPedidosCompra = () => {
                   </div>
                 </div>
               )}
-            </div>
-            
-            <div className="RPC-modal-footer">
-              <button 
-                className="RPC-btn RPC-btn-secondary" 
-                onClick={() => setModalRecepcion(false)}
+        </RecepcionDialog>
+      )}
+
+      {/* Modal para generar albarán */}
+      {modalGenerarAlbaran && pedidoAAlbaran && (
+        <GenerarAlbaranDialog
+          open={modalGenerarAlbaran && !!pedidoAAlbaran}
+          onClose={() => setModalGenerarAlbaran(false)}
+          footer={
+            <>
+              <button
+                className="RPC-btn RPC-btn-secondary"
+                onClick={() => setModalGenerarAlbaran(false)}
                 disabled={loading}
               >
                 Cancelar
               </button>
               <button
-                className="RPC-btn RPC-btn-primary"
-                onClick={procesarRecepcionLinea}
-                disabled={!selectedAlmacen || !selectedUbicacion || loading}
+                className="RPC-btn RPC-btn-success"
+                onClick={generarAlbaran}
+                disabled={loading}
               >
-                {loading ? 'Procesando...' : '✓ Confirmar Recepción'}
+                {loading ? 'Generando...' : '📄 Generar Albarán Cerrado'}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal para generar albarán */}
-      {modalGenerarAlbaran && pedidoAAlbaran && (
-        <div className="RPC-modal-overlay">
-          <div className="RPC-modal RPC-modal-albaran">
-            <div className="RPC-modal-header">
-              <h3>📄 Generar Albarán NO ACUMULATIVO</h3>
-              <button className="RPC-modal-close" onClick={() => setModalGenerarAlbaran(false)}>×</button>
-            </div>
-            
-            <div className="RPC-modal-content">
+            </>
+          }
+        >
               <div className="modal-alert modal-alert-info">
                 <div className="modal-alert-icon">ℹ️</div>
                 <div className="modal-alert-content">
@@ -1701,38 +1947,33 @@ const RecepcionPedidosCompra = () => {
                   </p>
                 </div>
               </div>
-            </div>
-            
-            <div className="RPC-modal-footer">
-              <button 
-                className="RPC-btn RPC-btn-secondary" 
-                onClick={() => setModalGenerarAlbaran(false)}
+        </GenerarAlbaranDialog>
+      )}
+
+      {/* Modal para finalizar pedido */}
+      {modalFinalizarPedido && pedidoAFinalizar && (
+        <FinalizarPedidoDialog
+          open={modalFinalizarPedido && !!pedidoAFinalizar}
+          onClose={() => setModalFinalizarPedido(false)}
+          footer={
+            <>
+              <button
+                className="RPC-btn RPC-btn-secondary"
+                onClick={() => setModalFinalizarPedido(false)}
                 disabled={loading}
               >
                 Cancelar
               </button>
               <button
-                className="RPC-btn RPC-btn-success"
-                onClick={generarAlbaran}
+                className="RPC-btn RPC-btn-warning"
+                onClick={finalizarPedido}
                 disabled={loading}
               >
-                {loading ? 'Generando...' : '📄 Generar Albarán Cerrado'}
+                {loading ? 'Finalizando...' : '✅ Confirmar Finalización'}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal para finalizar pedido */}
-      {modalFinalizarPedido && pedidoAFinalizar && (
-        <div className="RPC-modal-overlay">
-          <div className="RPC-modal RPC-modal-finalizar">
-            <div className="RPC-modal-header">
-              <h3>✅ Finalizar Pedido</h3>
-              <button className="RPC-modal-close" onClick={() => setModalFinalizarPedido(false)}>×</button>
-            </div>
-            
-            <div className="RPC-modal-content">
+            </>
+          }
+        >
               <div className="modal-alert modal-alert-warning">
                 <div className="modal-alert-icon">⚠️</div>
                 <div className="modal-alert-content">
@@ -1803,26 +2044,7 @@ const RecepcionPedidosCompra = () => {
                   </div>
                 )}
               </div>
-            </div>
-            
-            <div className="RPC-modal-footer">
-              <button 
-                className="RPC-btn RPC-btn-secondary" 
-                onClick={() => setModalFinalizarPedido(false)}
-                disabled={loading}
-              >
-                Cancelar
-              </button>
-              <button
-                className="RPC-btn RPC-btn-warning"
-                onClick={finalizarPedido}
-                disabled={loading}
-              >
-                {loading ? 'Finalizando...' : '✅ Confirmar Finalización'}
-              </button>
-            </div>
-          </div>
-        </div>
+        </FinalizarPedidoDialog>
       )}
     </div>
   );

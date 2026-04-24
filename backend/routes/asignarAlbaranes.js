@@ -24,13 +24,26 @@ router.post('/asignarAlbaranExistente', async (req, res) => {
       .input('usuario', sql.VarChar, usuario)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(`
-        SELECT StatusDesignarRutas
+        SELECT StatusAdministrador, StatusUsuarioAvanzado, StatusDesignarRutas
         FROM Clientes
         WHERE UsuarioLogicNet = @usuario
           AND CodigoEmpresa = @codigoEmpresa
       `);
     
-    if (permisoResult.recordset.length === 0 || permisoResult.recordset[0].StatusDesignarRutas !== -1) {
+    if (permisoResult.recordset.length === 0) {
+      return res.status(403).json({
+        success: false,
+        mensaje: 'Usuario no encontrado'
+      });
+    }
+
+    const userPerms = permisoResult.recordset[0];
+    const puedeAsignar =
+      userPerms.StatusAdministrador === -1 ||
+      userPerms.StatusUsuarioAvanzado === -1 ||
+      userPerms.StatusDesignarRutas === -1;
+
+    if (!puedeAsignar) {
       return res.status(403).json({ 
         success: false, 
         mensaje: 'No tienes permiso para asignar repartos' 
@@ -103,8 +116,31 @@ router.get('/albaranes-asignacion', async (req, res) => {
   }
   
   const codigoEmpresa = req.user.CodigoEmpresa;
+  const usuario = req.user.UsuarioLogicNet;
   
   try {
+    const permisoResult = await getPool().request()
+      .input('usuario', sql.VarChar, usuario)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT StatusAdministrador, StatusUsuarioAvanzado
+        FROM Clientes
+        WHERE UsuarioLogicNet = @usuario
+          AND CodigoEmpresa = @codigoEmpresa
+      `);
+
+    if (permisoResult.recordset.length === 0) {
+      return res.status(403).json({
+        success: false,
+        mensaje: 'Usuario no encontrado'
+      });
+    }
+
+    const userPerms = permisoResult.recordset[0];
+    const puedeVerTodos = userPerms.StatusAdministrador === -1 ||
+                          userPerms.StatusUsuarioAvanzado === -1;
+    const usuarioCondition = puedeVerTodos ? '' : `AND cac.EmpleadoAsignado = '${usuario}'`;
+
     const query = `
       SELECT 
         cac.NumeroAlbaran, 
@@ -135,20 +171,46 @@ router.get('/albaranes-asignacion', async (req, res) => {
         AND cac.StatusFacturado = 0
         AND cac.FormaEnvio = 3  -- ✅ SOLO NUESTROS MEDIOS
         AND cac.FechaAlbaran >= DATEADD(DAY, -30, GETDATE())
+        ${usuarioCondition}
       ORDER BY cac.FechaAlbaran DESC
     `;
     
     const result = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(query);
-      
-    // Formatear albaran
-    const albaranesFormateados = result.recordset.map(albaran => ({
-      ...albaran,
-      albaran: `${albaran.SerieAlbaran || ''}${albaran.SerieAlbaran ? '-' : ''}${albaran.NumeroAlbaran}`,
-      obra: albaran.NombreObra, // Alias para compatibilidad
-      esParcial: albaran.EstadoPedido === 4,
-      Status: albaran.StatusPedido || 'Pendiente'
+
+    const albaranesFormateados = await Promise.all(result.recordset.map(async (albaran) => {
+      const lineasResult = await getPool().request()
+        .input('codigoEmpresa', sql.SmallInt, albaran.CodigoEmpresa)
+        .input('ejercicio', sql.SmallInt, albaran.EjercicioAlbaran)
+        .input('serie', sql.VarChar, albaran.SerieAlbaran || '')
+        .input('numeroAlbaran', sql.Int, albaran.NumeroAlbaran)
+        .query(`
+          SELECT
+            lac.Orden AS orden,
+            lac.CodigoArticulo AS codigo,
+            lac.DescripcionArticulo AS nombre,
+            lac.Unidades AS cantidad,
+            CAST(lac.Unidades * ISNULL(a.PesoBrutoUnitario_, 0) AS DECIMAL(18, 4)) AS pesoTotal
+          FROM LineasAlbaranCliente lac
+          LEFT JOIN Articulos a
+            ON a.CodigoEmpresa = lac.CodigoEmpresa
+            AND a.CodigoArticulo = lac.CodigoArticulo
+          WHERE lac.CodigoEmpresa = @codigoEmpresa
+            AND lac.EjercicioAlbaran = @ejercicio
+            AND (lac.SerieAlbaran = @serie OR (@serie = '' AND lac.SerieAlbaran IS NULL))
+            AND lac.NumeroAlbaran = @numeroAlbaran
+          ORDER BY lac.Orden ASC
+        `);
+
+      return {
+        ...albaran,
+        albaran: `${albaran.SerieAlbaran || ''}${albaran.SerieAlbaran ? '-' : ''}${albaran.NumeroAlbaran}`,
+        obra: albaran.NombreObra,
+        esParcial: albaran.EstadoPedido === 4,
+        Status: albaran.StatusPedido || 'Pendiente',
+        articulos: lineasResult.recordset
+      };
     }));
 
     res.json(albaranesFormateados);

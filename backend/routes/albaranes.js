@@ -1,7 +1,41 @@
+//a
 const express = require('express');
 
 module.exports = function createalbaranesRouter({ sql, getPool }) {
   const router = express.Router();
+
+  const MENSAJE_FIRMAS_OBLIGATORIAS = 'Debes registrar ambas firmas antes de completar el albarán';
+
+  const tieneFirmaValida = (firma) => {
+    return typeof firma === 'string'
+      && firma.startsWith('data:image/png')
+      && firma.length >= 1000;
+  };
+
+  const obtenerRangoFechas = (rango = 'mes') => {
+    const hoy = new Date();
+    const fechaInicio = new Date(hoy);
+    const fechaFinExclusiva = new Date(hoy);
+
+    if (rango === 'dia') {
+      fechaInicio.setHours(0, 0, 0, 0);
+      fechaFinExclusiva.setDate(hoy.getDate() + 1);
+      fechaFinExclusiva.setHours(0, 0, 0, 0);
+      return { fechaInicio, fechaFinExclusiva };
+    }
+
+    if (rango === 'semana') {
+      fechaInicio.setDate(hoy.getDate() - 7);
+    } else {
+      fechaInicio.setDate(hoy.getDate() - 30);
+    }
+
+    fechaInicio.setHours(0, 0, 0, 0);
+    fechaFinExclusiva.setDate(hoy.getDate() + 1);
+    fechaFinExclusiva.setHours(0, 0, 0, 0);
+
+    return { fechaInicio, fechaFinExclusiva };
+  };
 
 router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
@@ -28,13 +62,27 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
       .input('usuario', sql.VarChar, usuario)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(`
-        SELECT StatusDesignarRutas
+        SELECT StatusAdministrador, StatusUsuarioAvanzado, StatusDesignarRutas
         FROM Clientes
         WHERE UsuarioLogicNet = @usuario
           AND CodigoEmpresa = @codigoEmpresa
       `);
     
-    if (permisoResult.recordset.length === 0 || permisoResult.recordset[0].StatusDesignarRutas !== -1) {
+    if (permisoResult.recordset.length === 0) {
+      await transaction.rollback();
+      return res.status(403).json({
+        success: false,
+        mensaje: 'Usuario no encontrado'
+      });
+    }
+
+    const userPerms = permisoResult.recordset[0];
+    const puedeAsignar =
+      userPerms.StatusAdministrador === -1 ||
+      userPerms.StatusUsuarioAvanzado === -1 ||
+      userPerms.StatusDesignarRutas === -1;
+
+    if (!puedeAsignar) {
       await transaction.rollback();
       return res.status(403).json({ 
         success: false, 
@@ -473,37 +521,20 @@ router.get('/api/albaranesPendientes', async (req, res) => {
   }
   
   const codigoEmpresa = req.user.CodigoEmpresa;
-  const usuario = req.user.UsuarioLogicNet;
+  const rango = req.query.rango || 'mes';
   
   try {
+    const { fechaInicio, fechaFinExclusiva } = obtenerRangoFechas(rango);
     // 1. Verificar permisos del usuario
-    const userPermResult = await getPool().request()
-      .input('usuario', sql.VarChar, usuario)
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .query(`
-        SELECT StatusVerAlbaranesAsignados, StatusAdministrador, StatusUsuarioAvanzado
-        FROM Clientes
-        WHERE UsuarioLogicNet = @usuario
-          AND CodigoEmpresa = @codigoEmpresa
-      `);
     
-    if (userPermResult.recordset.length === 0) {
-      return res.status(403).json({ 
-        success: false, 
-        mensaje: 'Usuario no encontrado' 
-      });
-    }
     
-    const userPerms = userPermResult.recordset[0];
-    const puedeVerTodos = userPerms.StatusAdministrador === -1 || 
-                          userPerms.StatusUsuarioAvanzado === -1 ||
-                          userPerms.StatusVerAlbaranesAsignados === -1;
+    
+    
+    
     
     // 2. Construir condición según permisos
-    let usuarioCondition = '';
-    if (!puedeVerTodos) {
-      usuarioCondition = `AND cac.EmpleadoAsignado = '${usuario}'`;
-    }
+    
+    
     
     // 3. Obtener cabeceras de albaranes (SOLO FORMA ENVÍO 3 = Nuestros Medios)
     const queryCabeceras = `
@@ -525,6 +556,8 @@ router.get('/api/albaranesPendientes', async (req, res) => {
         cac.Telefono AS TelefonoContacto,
         cac.FormaEnvio,
         cac.EsVoluminoso,
+        ISNULL(cac.FirmaCliente, '') AS FirmaCliente,
+        ISNULL(cac.FirmaRepartidor, '') AS FirmaRepartidor,
         cac.EjercicioPedido,
         cac.SeriePedido,
         cac.NumeroPedido,
@@ -539,14 +572,16 @@ router.get('/api/albaranesPendientes', async (req, res) => {
         AND cac.NumeroPedido = cpc.NumeroPedido
       WHERE cac.CodigoEmpresa = @codigoEmpresa
         AND cac.StatusFacturado = 0  -- Pendientes de entrega
-        AND cac.FormaEnvio = 3  -- ✅ SOLO NUESTROS MEDIOS
-        AND cac.FechaAlbaran >= DATEADD(DAY, -30, GETDATE())
-        ${usuarioCondition}
+        AND ISNULL(cac.FormaEnvio, 3) = 3  -- Incluir también los generados con FormaEnvio vacío
+        AND cac.FechaAlbaran >= @fechaInicio
+        AND cac.FechaAlbaran < @fechaFinExclusiva
       ORDER BY cac.FechaAlbaran DESC
     `;
     
     const cabeceras = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('fechaInicio', sql.DateTime, fechaInicio)
+      .input('fechaFinExclusiva', sql.DateTime, fechaFinExclusiva)
       .query(queryCabeceras);
     
     // 4. Obtener artículos para cada albarán
@@ -589,6 +624,8 @@ router.get('/api/albaranesPendientes', async (req, res) => {
         telefonoContacto: cabecera.TelefonoContacto,
         formaentrega: cabecera.FormaEnvio, // Siempre será 3
         EsVoluminoso: cabecera.EsVoluminoso,
+        tieneFirmaCliente: cabecera.FirmaCliente && cabecera.FirmaCliente.length > 10,
+        tieneFirmaRepartidor: cabecera.FirmaRepartidor && cabecera.FirmaRepartidor.length > 10,
         NumeroPedido: cabecera.NumeroPedido,
         EstadoPedido: cabecera.EstadoPedido,
         StatusPedido: cabecera.StatusPedido,
@@ -676,6 +713,13 @@ const completarAlbaranHandler = async (req, res) => {
     });
   }
 
+  if (!tieneFirmaValida(firmaCliente) || !tieneFirmaValida(firmaRepartidor)) {
+    return res.status(400).json({
+      success: false,
+      mensaje: MENSAJE_FIRMAS_OBLIGATORIAS
+    });
+  }
+
   try {
     // 1. Verificar permisos
     const permisoResult = await getPool().request()
@@ -706,7 +750,9 @@ const completarAlbaranHandler = async (req, res) => {
       .input('serie', sql.VarChar, serie || '')
       .input('numeroAlbaran', sql.Int, numeroAlbaran)
       .query(`
-        SELECT EmpleadoAsignado
+        SELECT EmpleadoAsignado,
+               ISNULL(FirmaCliente, '') AS FirmaCliente,
+               ISNULL(FirmaRepartidor, '') AS FirmaRepartidor
         FROM CabeceraAlbaranCliente
         WHERE CodigoEmpresa = @codigoEmpresa
           AND EjercicioAlbaran = @ejercicio
@@ -722,6 +768,13 @@ const completarAlbaranHandler = async (req, res) => {
     }
 
     const albaran = albaranResult.recordset[0];
+
+    if (!tieneFirmaValida(albaran.FirmaCliente) || !tieneFirmaValida(albaran.FirmaRepartidor)) {
+      return res.status(400).json({
+        success: false,
+        mensaje: MENSAJE_FIRMAS_OBLIGATORIAS
+      });
+    }
     
     if (!esAdmin && !esUsuarioAvanzado) {
       if (albaran.EmpleadoAsignado !== usuario) {
@@ -982,8 +1035,10 @@ router.get('/albaranesCompletados', async (req, res) => {
   }
   
   const codigoEmpresa = req.user.CodigoEmpresa;
+  const rango = req.query.rango || 'mes';
   
   try {
+    const { fechaInicio, fechaFinExclusiva } = obtenerRangoFechas(rango);
     const query = `
       SELECT 
         cac.NumeroAlbaran, 
@@ -1009,13 +1064,16 @@ router.get('/albaranesCompletados', async (req, res) => {
       FROM CabeceraAlbaranCliente cac
       WHERE cac.CodigoEmpresa = @codigoEmpresa
         AND cac.StatusFacturado = -1
-        AND cac.FechaAlbaran >= DATEADD(DAY, -30, GETDATE())
-        AND cac.FormaEnvio = 3  -- Solo nuestros medios
+        AND cac.FechaAlbaran >= @fechaInicio
+        AND cac.FechaAlbaran < @fechaFinExclusiva
+        AND ISNULL(cac.FormaEnvio, 3) = 3  -- Solo nuestros medios
       ORDER BY cac.FechaAlbaran DESC
     `;
     
     const cabeceras = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('fechaInicio', sql.DateTime, fechaInicio)
+      .input('fechaFinExclusiva', sql.DateTime, fechaFinExclusiva)
       .query(query);
 
     const albaranesConLineas = await Promise.all(cabeceras.recordset.map(async (cabecera) => {
@@ -1161,7 +1219,7 @@ router.post('/revertirAlbaran', async (req, res) => {
 
     res.json({ 
       success: true, 
-      mensaje: 'Albarán revertido correctamente, ahora aparecerá en gestión de rutas'
+      mensaje: 'Albarán revertido correctamente; volverá a aparecer en Albaranes y Asignación de albaranes'
     });
   } catch (err) {
     console.error('[ERROR REVERTIR ALBARÁN]', err);
