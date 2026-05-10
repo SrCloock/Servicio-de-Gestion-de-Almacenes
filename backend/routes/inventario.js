@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const cron = require('node-cron');
 
 module.exports = function createinventarioRouter({ sql, getPool }) {
@@ -118,6 +118,70 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
     `;
   }
 
+  function getCteInventarioActualFiltrado(codigoParamsSql) {
+    const filtroCodigos = codigoParamsSql
+      ? `AND LTRIM(RTRIM(s.CodigoArticulo)) IN (${codigoParamsSql})`
+      : '';
+
+    return `
+      WITH StockUbicacionVersionado AS (
+        SELECT
+          s.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY
+              s.CodigoEmpresa,
+              s.CodigoAlmacen,
+              s.Ubicacion,
+              s.CodigoArticulo,
+              ISNULL(s.TipoUnidadMedida_, ''),
+              ISNULL(s.Partida, ''),
+              ISNULL(s.CodigoColor_, ''),
+              ISNULL(s.CodigoTalla01_, '')
+            ORDER BY
+              CASE WHEN s.Ejercicio = @ejercicioActual THEN 0 ELSE 1 END,
+              s.Ejercicio DESC
+          ) AS rn
+        FROM AcumuladoStockUbicacion s
+        WHERE s.CodigoEmpresa = @codigoEmpresa
+          AND s.Periodo = @periodoBase
+          AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+          ${filtroCodigos}
+      ),
+      StockUbicacionActual AS (
+        SELECT *
+        FROM StockUbicacionVersionado
+        WHERE rn = 1
+      ),
+      AcumuladoStockVersionado AS (
+        SELECT
+          s.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY
+              s.CodigoEmpresa,
+              s.CodigoAlmacen,
+              s.CodigoArticulo,
+              ISNULL(s.TipoUnidadMedida_, ''),
+              ISNULL(s.Partida, ''),
+              ISNULL(s.CodigoColor_, ''),
+              ISNULL(s.CodigoTalla01_, '')
+            ORDER BY
+              CASE WHEN s.Ejercicio = @ejercicioActual THEN 0 ELSE 1 END,
+              s.Ejercicio DESC
+          ) AS rn
+        FROM AcumuladoStock s
+        WHERE s.CodigoEmpresa = @codigoEmpresa
+          AND s.Periodo = @periodoBase
+          AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+          ${filtroCodigos}
+      ),
+      AcumuladoStockActual AS (
+        SELECT *
+        FROM AcumuladoStockVersionado
+        WHERE rn = 1
+      )
+    `;
+  }
+
   function getArticuloApply(stockAlias = 's') {
     return `
       OUTER APPLY (
@@ -157,16 +221,15 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
   }
 
 async function sincronizacionAutomatica() {
-  console.log('ðŸ”„ [SYNC AUTO] Iniciando sincronizaciÃ³n automÃ¡tica...');
+  console.log('[SYNC AUTO] Iniciando sincronización automática...');
   
   try {
-    // Verificar que getPool() estÃ© conectado
     if (!getPool() || !getPool().connected) {
-      console.log('â³ [SYNC AUTO] Esperando conexiÃ³n a BD...');
+      console.log('[SYNC AUTO] Esperando conexión a BD...');
       return;
     }
 
-    // Obtener todas las empresas - CORREGIDO: Sin columna Activa
+    // Obtener todas las empresas (sin filtro de almacenes)
     const empresasResult = await getPool().request()
       .query(`
         SELECT DISTINCT CodigoEmpresa 
@@ -181,92 +244,230 @@ async function sincronizacionAutomatica() {
 
     const empresas = empresasResult.recordset;
     const ejercicio = new Date().getFullYear();
-
     let totalCorregidos = 0;
     let totalErrores = 0;
 
-    // Procesar cada empresa
     for (const empresa of empresas) {
       const codigoEmpresa = empresa.CodigoEmpresa;
       
       try {
-        console.log(`ðŸ¢ [SYNC AUTO] Sincronizando empresa: ${codigoEmpresa}`);
+        console.log(`[SYNC AUTO] Sincronizando empresa: ${codigoEmpresa}`);
         
-        // 1. IDENTIFICAR DISCREPANCIAS - CONSULTA MEJORADA
+        // Consulta de discrepancias (sumando periodos 0 y 99)
         const discrepancias = await getPool().request()
           .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
           .input('ejercicio', sql.Int, ejercicio)
           .query(`
+            WITH StockOficialSumado AS (
+              SELECT 
+                CodigoArticulo,
+                CodigoAlmacen,
+                Ubicacion,
+                ISNULL(TipoUnidadMedida_, '') AS TipoUnidadMedida_,
+                ISNULL(Partida, '') AS Partida,
+                ISNULL(CodigoColor_, '') AS CodigoColor_,
+                ISNULL(CodigoTalla01_, '') AS CodigoTalla01_,
+                SUM(CAST(COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0) AS DECIMAL(18,4))) AS StockOficial
+              FROM AcumuladoStock
+              WHERE CodigoEmpresa = @codigoEmpresa
+                AND Periodo IN (0, 99)
+                AND Ejercicio = @ejercicio
+              GROUP BY 
+                CodigoArticulo, CodigoAlmacen, Ubicacion,
+                ISNULL(TipoUnidadMedida_, ''),
+                ISNULL(Partida, ''),
+                ISNULL(CodigoColor_, ''),
+                ISNULL(CodigoTalla01_, '')
+            ),
+            StockUbicacionSumado AS (
+              SELECT 
+                CodigoArticulo,
+                CodigoAlmacen,
+                Ubicacion,
+                ISNULL(TipoUnidadMedida_, '') AS TipoUnidadMedida_,
+                ISNULL(Partida, '') AS Partida,
+                ISNULL(CodigoColor_, '') AS CodigoColor_,
+                ISNULL(CodigoTalla01_, '') AS CodigoTalla01_,
+                SUM(CAST(COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0) AS DECIMAL(18,4))) AS StockUbicacion
+              FROM AcumuladoStockUbicacion
+              WHERE CodigoEmpresa = @codigoEmpresa
+                AND Periodo IN (0, 99)
+                AND Ejercicio = @ejercicio
+              GROUP BY 
+                CodigoArticulo, CodigoAlmacen, Ubicacion,
+                ISNULL(TipoUnidadMedida_, ''),
+                ISNULL(Partida, ''),
+                ISNULL(CodigoColor_, ''),
+                ISNULL(CodigoTalla01_, '')
+            )
             SELECT 
-              ast.CodigoArticulo,
-              ast.CodigoAlmacen,
-              ast.Ubicacion,
-              ast.TipoUnidadMedida_,
-              ast.Partida,
-              ast.CodigoColor_,
-              ast.CodigoTalla01_,
-              -- Stock oficial (AcumuladoStock)
-              CAST(COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) AS DECIMAL(18, 4)) AS StockOficial,
-              -- Stock en ubicaciÃ³n (AcumuladoStockUbicacion)
-              COALESCE(asu.UnidadSaldoTipo_, asu.UnidadSaldo, 0) AS StockUbicacion,
-              -- Diferencia
-              CAST(COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) AS DECIMAL(18, 4)) - COALESCE(asu.UnidadSaldoTipo_, asu.UnidadSaldo, 0) AS Diferencia
-            FROM AcumuladoStock ast
-            LEFT JOIN AcumuladoStockUbicacion asu 
-              ON asu.CodigoEmpresa = ast.CodigoEmpresa
-              AND asu.Ejercicio = ast.Ejercicio
-              AND asu.CodigoAlmacen = ast.CodigoAlmacen
-              AND asu.CodigoArticulo = ast.CodigoArticulo
-              AND asu.Ubicacion = ast.Ubicacion
-              AND ISNULL(asu.TipoUnidadMedida_, '') = ISNULL(ast.TipoUnidadMedida_, '')
-              AND ISNULL(asu.Partida, '') = ISNULL(ast.Partida, '')
-              AND ISNULL(asu.CodigoColor_, '') = ISNULL(ast.CodigoColor_, '')
-              AND ISNULL(asu.CodigoTalla01_, '') = ISNULL(ast.CodigoTalla01_, '')
-              AND asu.Periodo = 99
-            WHERE ast.CodigoEmpresa = @codigoEmpresa
-              AND ast.Ejercicio = @ejercicio
-              AND ast.Periodo = 99
-              AND ast.CodigoAlmacen IN ('CEN', 'BCN', 'N5', 'N1', 'PK', '5')
-              AND ast.Ubicacion IS NOT NULL 
-              AND ast.Ubicacion != ''
-              AND COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) > 0
-              -- Solo procesar discrepancias significativas
-              AND ABS(
-                CAST(COALESCE(ast.UnidadSaldoTipo_, ast.UnidadSaldo) AS DECIMAL(18, 4)) - COALESCE(asu.UnidadSaldoTipo_, asu.UnidadSaldo, 0)
-              ) > 0.001
+              s.CodigoArticulo,
+              s.CodigoAlmacen,
+              s.Ubicacion,
+              s.TipoUnidadMedida_,
+              s.Partida,
+              s.CodigoColor_,
+              s.CodigoTalla01_,
+              s.StockOficial,
+              ISNULL(u.StockUbicacion, 0) AS StockUbicacion,
+              s.StockOficial - ISNULL(u.StockUbicacion, 0) AS Diferencia
+            FROM StockOficialSumado s
+            LEFT JOIN StockUbicacionSumado u
+              ON u.CodigoArticulo = s.CodigoArticulo
+              AND u.CodigoAlmacen = s.CodigoAlmacen
+              AND u.Ubicacion = s.Ubicacion
+              AND u.TipoUnidadMedida_ = s.TipoUnidadMedida_
+              AND u.Partida = s.Partida
+              AND u.CodigoColor_ = s.CodigoColor_
+              AND u.CodigoTalla01_ = s.CodigoTalla01_
+            WHERE s.StockOficial > 0
+              AND ABS(s.StockOficial - ISNULL(u.StockUbicacion, 0)) > 0.001
           `);
 
-        console.log(`ðŸ“Š [SYNC AUTO] Empresa ${codigoEmpresa}: ${discrepancias.recordset.length} discrepancias encontradas`);
+        console.log(`[SYNC AUTO] Empresa ${codigoEmpresa}: ${discrepancias.recordset.length} discrepancias encontradas`);
 
-        // 2. CORREGIR CADA DISCREPANCIA
         for (const discrepancia of discrepancias.recordset) {
           try {
             await corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio);
             totalCorregidos++;
-            
-            // PequeÃ±a pausa para no saturar la BD
             await new Promise(resolve => setTimeout(resolve, 10));
-            
           } catch (error) {
-            console.error(`âŒ [SYNC AUTO] Error corrigiendo discrepancia:`, error.message);
+            console.error(`[SYNC AUTO] Error corrigiendo discrepancia:`, error.message);
             totalErrores++;
           }
         }
-
       } catch (error) {
-        console.error(`âŒ [SYNC AUTO] Error en empresa ${codigoEmpresa}:`, error.message);
+        console.error(`[SYNC AUTO] Error en empresa ${codigoEmpresa}:`, error.message);
         totalErrores++;
       }
     }
 
-    console.log(`âœ… [SYNC AUTO] SincronizaciÃ³n completada: ${totalCorregidos} correcciones, ${totalErrores} errores`);
-    
+    console.log(`[SYNC AUTO] Sincronización completada: ${totalCorregidos} correcciones, ${totalErrores} errores`);
   } catch (error) {
-    console.error('âŒ [SYNC AUTO] Error general en sincronizaciÃ³n:', error);
+    console.error('[SYNC AUTO] Error general en sincronización:', error);
   }
 }
 
-// âœ… FUNCIÃ“N PARA CORREGIR UNA DISCREPANCIA INDIVIDUAL
+/**
+ * Obtiene el stock histórico total (periodos distintos de 99) para una combinación específica.
+ * Suma los periodos 0, 1, 2... etc. (excluye 99) de los ejercicios base y actual.
+ */
+async function obtenerStockHistoricoTotal(codigoEmpresa, ajuste, contexto, transaction) {
+  const {
+    articulo,
+    codigoAlmacen,
+    ubicacionStr,
+    partida,
+    unidadStock,
+    codigoColor,
+    codigoTalla01
+  } = ajuste;
+
+  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+  const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
+
+  const result = await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicioBase', sql.SmallInt, contexto.ejercicioBase)
+    .input('ejercicioActual', sql.SmallInt, contexto.ejercicioActual)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
+    .input('tipoUnidad', sql.VarChar, unidadStockNormalizada)
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .query(`
+      SELECT SUM(CAST(COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0) AS DECIMAL(18,4))) AS StockHistorico
+      FROM AcumuladoStockUbicacion
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND Ejercicio IN (@ejercicioBase, @ejercicioActual)
+        AND CodigoAlmacen = @codigoAlmacen
+        AND CodigoArticulo = @codigoArticulo
+        AND Ubicacion = @ubicacion
+        AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+        AND ISNULL(Partida, '') = @partida
+        AND ISNULL(CodigoColor_, '') = @codigoColor
+        AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+        AND Periodo != 99
+    `);
+
+  return Number(result.recordset[0]?.StockHistorico || 0);
+}
+
+
+/**
+ * Crea un registro en AcumuladoStockUbicacion con periodo 99,
+ * asignándole el stock histórico proporcionado.
+ */
+async function crearRegistroPeriodo99(ajuste, codigoEmpresa, ejercicio, stockInicial, transaction) {
+  const {
+    articulo,
+    codigoAlmacen,
+    ubicacionStr,
+    partida,
+    unidadStock,
+    codigoColor,
+    codigoTalla01
+  } = ajuste;
+
+  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+  const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
+
+  // 1. Eliminar cualquier registro periodo 99 existente (por si acaso)
+  await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicio', sql.Int, ejercicio)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
+    .input('tipoUnidad', sql.VarChar, unidadStockNormalizada)
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .query(`
+      DELETE FROM AcumuladoStockUbicacion
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND Ejercicio = @ejercicio
+        AND CodigoAlmacen = @codigoAlmacen
+        AND CodigoArticulo = @codigoArticulo
+        AND Ubicacion = @ubicacion
+        AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+        AND ISNULL(Partida, '') = @partida
+        AND ISNULL(CodigoColor_, '') = @codigoColor
+        AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+        AND Periodo = 99
+    `);
+
+  // 2. Insertar nuevo registro con el stock inicial
+  await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicio', sql.Int, ejercicio)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada)
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .input('unidadSaldo', sql.Decimal(18,4), stockInicial)
+    .input('unidadSaldoTipo', sql.Decimal(18,4), stockInicial)
+    .query(`
+      INSERT INTO AcumuladoStockUbicacion (
+        CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
+        CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
+        UnidadSaldo, UnidadSaldoTipo_, Periodo
+      ) VALUES (
+        @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
+        @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
+        @unidadSaldo, @unidadSaldoTipo, 99
+      )
+    `);
+
+  console.log(`[INICIALIZAR] Periodo99 creado para ${articulo} en ${ubicacionNormalizada} con stock ${stockInicial}`);
+}
+
+// Función para corregir una discrepancia individual (usada en sincronización automática)
 async function corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio) {
   const transaction = new sql.Transaction(getPool());
   
@@ -281,16 +482,44 @@ async function corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio) {
       Partida,
       CodigoColor_,
       CodigoTalla01_,
-      StockOficial,
-      StockUbicacion,
-      Diferencia
+      StockOficial      // ← Este es el stock total deseado (periodo0+periodo99)
     } = discrepancia;
 
-    console.log(`ðŸ”§ [SYNC AUTO] Corrigiendo: ${CodigoArticulo} | ${CodigoAlmacen} | ${Ubicacion} | ${StockUbicacion} â†’ ${StockOficial} (Diferencia: ${Diferencia})`);
+    console.log(`[SYNC AUTO] Corrigiendo: ${CodigoArticulo} | ${CodigoAlmacen} | ${Ubicacion} | Stock oficial total: ${StockOficial}`);
 
-    // 1. ELIMINAR REGISTRO EXISTENTE EN ACUMULADOSTOCKUBICACION (si existe)
-    const requestEliminar = new sql.Request(transaction);
-    await requestEliminar
+    // 1. Obtener el stock actual del periodo 0 para esta combinación (si existe)
+    const periodo0Result = await new sql.Request(transaction)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.Int, ejercicio)
+      .input('codigoAlmacen', sql.VarChar, CodigoAlmacen)
+      .input('codigoArticulo', sql.VarChar, CodigoArticulo)
+      .input('ubicacion', sql.VarChar, Ubicacion)
+      .input('tipoUnidadMedida', sql.VarChar, TipoUnidadMedida_ || '')
+      .input('partida', sql.VarChar, Partida || '')
+      .input('codigoColor', sql.VarChar, CodigoColor_ || '')
+      .input('codigoTalla', sql.VarChar, CodigoTalla01_ || '')
+      .query(`
+        SELECT COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0) AS StockPeriodo0
+        FROM AcumuladoStockUbicacion
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND Ejercicio = @ejercicio
+          AND CodigoAlmacen = @codigoAlmacen
+          AND CodigoArticulo = @codigoArticulo
+          AND Ubicacion = @ubicacion
+          AND (TipoUnidadMedida_ = @tipoUnidadMedida OR (TipoUnidadMedida_ IS NULL AND @tipoUnidadMedida = ''))
+          AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+          AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+          AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+          AND Periodo = 0
+      `);
+
+    const stockPeriodo0 = periodo0Result.recordset[0]?.StockPeriodo0 || 0;
+    const nuevoPeriodo99 = parseFloat(StockOficial) - stockPeriodo0;
+
+    console.log(`[SYNC AUTO] Periodo0: ${stockPeriodo0}, Total oficial: ${StockOficial}, Nuevo periodo99: ${nuevoPeriodo99}`);
+
+    // 2. Eliminar el registro actual del periodo 99 (solo del ejercicio actual)
+    await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.Int, ejercicio)
       .input('codigoAlmacen', sql.VarChar, CodigoAlmacen)
@@ -314,11 +543,10 @@ async function corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio) {
           AND Periodo = 99
       `);
 
-    // 2. INSERTAR NUEVO REGISTRO CON EL STOCK CORRECTO
-    if (StockOficial > 0) {
-      const requestInsertar = new sql.Request(transaction);
-      
-      await requestInsertar
+    // 3. Insertar el nuevo periodo99 solo si el valor es distinto de cero (opcional)
+    //    Si se prefiere mantener siempre un registro (incluso cero), quita el if.
+    if (Math.abs(nuevoPeriodo99) > 0.001) {
+      await new sql.Request(transaction)
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('ejercicio', sql.Int, ejercicio)
         .input('codigoAlmacen', sql.VarChar, CodigoAlmacen)
@@ -328,8 +556,8 @@ async function corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio) {
         .input('partida', sql.VarChar, Partida || '')
         .input('codigoColor', sql.VarChar, CodigoColor_ || '')
         .input('codigoTalla', sql.VarChar, CodigoTalla01_ || '')
-        .input('unidadSaldo', sql.Decimal(18, 4), StockOficial)
-        .input('unidadSaldoTipo', sql.Decimal(18, 4), StockOficial)
+        .input('unidadSaldo', sql.Decimal(18,4), nuevoPeriodo99)
+        .input('unidadSaldoTipo', sql.Decimal(18,4), nuevoPeriodo99)
         .query(`
           INSERT INTO AcumuladoStockUbicacion (
             CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
@@ -341,14 +569,15 @@ async function corregirDiscrepancia(discrepancia, codigoEmpresa, ejercicio) {
             @unidadSaldo, @unidadSaldoTipo, 99
           )
         `);
+    } else {
+      console.log(`[SYNC AUTO] Nuevo periodo99 es prácticamente cero, se omite inserción. El stock total quedará en ${stockPeriodo0}`);
     }
 
     await transaction.commit();
-    console.log(`âœ… [SYNC AUTO] Corregido: ${CodigoArticulo} | ${CodigoAlmacen} | ${Ubicacion}`);
-
+    console.log(`[SYNC AUTO] Corregido: ${CodigoArticulo} | ${CodigoAlmacen} | ${Ubicacion}`);
   } catch (error) {
-    if (transaction._aborted === false) {
-      await transaction.rollback();
+    if (transaction && !transaction._aborted) {
+      try { await transaction.rollback(); } catch (e) { console.error('[SYNC AUTO] Error en rollback:', e); }
     }
     throw error;
   }
@@ -411,6 +640,7 @@ async function obtenerStockTotalLote(req, res) {
   const ubicacion = String(req.query.ubicacion || '').trim();
   const familia = String(req.query.familia || '').trim();
   const subfamilia = String(req.query.subfamilia || '').trim();
+  const requestStartedAt = Date.now();
 
   try {
     const contexto = await obtenerContextoBaseInventario(codigoEmpresa);
@@ -420,6 +650,7 @@ async function obtenerStockTotalLote(req, res) {
     const almacenLike = `%${almacen}%`;
     const ubicacionLike = `%${ubicacion}%`;
 
+    // 1. Obtener códigos de artículo paginados (misma lógica que antes)
     let queryCodigos = `
       SELECT
         a.CodigoArticulo,
@@ -448,7 +679,7 @@ async function obtenerStockTotalLote(req, res) {
             AND u.CodigoAlmacen = s.CodigoAlmacen
             AND u.Ubicacion = s.Ubicacion
           WHERE s.CodigoEmpresa = a.CodigoEmpresa
-            AND s.Periodo = @periodoBase
+            AND s.Periodo IN (0, 99)
             AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
             AND LTRIM(RTRIM(s.CodigoArticulo)) = LTRIM(RTRIM(a.CodigoArticulo))
             AND (@almacen = '' OR (
@@ -494,85 +725,132 @@ async function obtenerStockTotalLote(req, res) {
 
     const codigoRows = codigosResult.recordset || [];
     const hasMore = codigoRows.length > limit;
-    const codigosPagina = codigoRows.slice(0, limit).map((row) => String(row.CodigoArticulo || '').trim()).filter(Boolean);
+    const codigosPagina = codigoRows.slice(0, limit).map(row => String(row.CodigoArticulo || '').trim()).filter(Boolean);
 
     if (codigosPagina.length === 0) {
-      return res.json({
-        items: [],
-        hasMore: false,
-        nextOffset: null
-      });
+      return res.json({ items: [], hasMore: false, nextOffset: null });
     }
 
-    const codigoInputs = codigosPagina
-      .map((_, index) => `@codigoArticulo${index}`)
-      .join(', ');
-
+    const codigoInputs = codigosPagina.map((_, i) => `@codigoArticulo${i}`).join(', ');
     const detalleRequest = agregarContextoInventario(
-      getPool().request()
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa),
+      getPool().request().input('codigoEmpresa', sql.SmallInt, codigoEmpresa),
       contexto
     );
-
-    codigosPagina.forEach((codigoArticulo, index) => {
-      detalleRequest.input(`codigoArticulo${index}`, sql.VarChar(50), codigoArticulo);
+    codigosPagina.forEach((cod, i) => {
+      detalleRequest.input(`codigoArticulo${i}`, sql.VarChar(50), cod);
     });
-
     detalleRequest
       .input('almacen', sql.NVarChar(200), almacen)
       .input('almacenLike', sql.NVarChar(210), almacenLike)
       .input('ubicacion', sql.NVarChar(200), ubicacion)
       .input('ubicacionLike', sql.NVarChar(210), ubicacionLike);
 
+    // 🔥 CONSULTA PRINCIPAL CORREGIDA: se elimina s.Periodo y se asigna 99 como periodo fijo
     const detalleQuery = `
-      ${getCteInventarioActual()},
+      WITH StockUbicacionSumado AS (
+        SELECT
+          s.CodigoEmpresa,
+          s.CodigoAlmacen,
+          s.Ubicacion,
+          s.CodigoArticulo,
+          ISNULL(s.TipoUnidadMedida_, '') AS TipoUnidadMedida_,
+          ISNULL(s.Partida, '') AS Partida,
+          ISNULL(s.CodigoColor_, '') AS CodigoColor_,
+          ISNULL(s.CodigoTalla01_, '') AS CodigoTalla01_,
+          SUM(CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) AS DECIMAL(18,4))) AS UnidadSaldoTotal,
+          SUM(CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) AS DECIMAL(18,4))) AS UnidadSaldoTipoTotal,
+          MAX(s.Ejercicio) AS Ejercicio
+        FROM AcumuladoStockUbicacion s
+        WHERE s.CodigoEmpresa = @codigoEmpresa
+          AND s.Periodo IN (0, 99)
+          AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+          AND LTRIM(RTRIM(s.CodigoArticulo)) IN (${codigoInputs})
+        GROUP BY
+          s.CodigoEmpresa, s.CodigoAlmacen, s.Ubicacion, s.CodigoArticulo,
+          ISNULL(s.TipoUnidadMedida_, ''),
+          ISNULL(s.Partida, ''),
+          ISNULL(s.CodigoColor_, ''),
+          ISNULL(s.CodigoTalla01_, '')
+      ),
+      StockUbicacionVersionado AS (
+        SELECT
+          s.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY
+              s.CodigoEmpresa, s.CodigoAlmacen, s.Ubicacion, s.CodigoArticulo,
+              s.TipoUnidadMedida_, s.Partida, s.CodigoColor_, s.CodigoTalla01_
+            ORDER BY
+              CASE WHEN s.Ejercicio = @ejercicioActual THEN 0 ELSE 1 END,
+              s.Ejercicio DESC
+          ) AS rn
+        FROM StockUbicacionSumado s
+      ),
+      StockUbicacionActual AS (
+        SELECT * FROM StockUbicacionVersionado WHERE rn = 1
+      ),
+      AcumuladoStockSumado AS (
+        SELECT
+          s.CodigoEmpresa,
+          s.CodigoAlmacen,
+          s.CodigoArticulo,
+          ISNULL(s.TipoUnidadMedida_, '') AS TipoUnidadMedida_,
+          ISNULL(s.Partida, '') AS Partida,
+          ISNULL(s.CodigoColor_, '') AS CodigoColor_,
+          ISNULL(s.CodigoTalla01_, '') AS CodigoTalla01_,
+          SUM(CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) AS DECIMAL(18,4))) AS UnidadSaldoTotal,
+          SUM(CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) AS DECIMAL(18,4))) AS UnidadSaldoTipoTotal,
+          MAX(s.Ejercicio) AS Ejercicio
+        FROM AcumuladoStock s
+        WHERE s.CodigoEmpresa = @codigoEmpresa
+          AND s.Periodo IN (0, 99)
+          AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+          AND LTRIM(RTRIM(s.CodigoArticulo)) IN (${codigoInputs})
+        GROUP BY
+          s.CodigoEmpresa, s.CodigoAlmacen, s.CodigoArticulo,
+          ISNULL(s.TipoUnidadMedida_, ''),
+          ISNULL(s.Partida, ''),
+          ISNULL(s.CodigoColor_, ''),
+          ISNULL(s.CodigoTalla01_, '')
+      ),
+      AcumuladoStockVersionado AS (
+        SELECT
+          s.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY
+              s.CodigoEmpresa, s.CodigoAlmacen, s.CodigoArticulo,
+              s.TipoUnidadMedida_, s.Partida, s.CodigoColor_, s.CodigoTalla01_
+            ORDER BY
+              CASE WHEN s.Ejercicio = @ejercicioActual THEN 0 ELSE 1 END,
+              s.Ejercicio DESC
+          ) AS rn
+        FROM AcumuladoStockSumado s
+      ),
+      AcumuladoStockActual AS (
+        SELECT * FROM AcumuladoStockVersionado WHERE rn = 1
+      ),
       AlmacenPlaceholder AS (
-        SELECT TOP 1
-          CodigoAlmacen,
-          Almacen AS NombreAlmacen
-        FROM Almacenes
-        WHERE CodigoEmpresa = @codigoEmpresa
+        SELECT TOP 1 CodigoAlmacen, Almacen AS NombreAlmacen
+        FROM Almacenes WHERE CodigoEmpresa = @codigoEmpresa
         ORDER BY CASE WHEN CodigoAlmacen = 'CEN' THEN 0 ELSE 1 END, CodigoAlmacen
-      ),
-      CodigosSeleccionados AS (
-        SELECT LTRIM(RTRIM(CodigoArticulo)) AS CodigoArticulo
-        FROM Articulos
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND LTRIM(RTRIM(CodigoArticulo)) IN (${codigoInputs})
-      ),
-      CodigosStockUbicacion AS (
-        SELECT DISTINCT LTRIM(RTRIM(CodigoArticulo)) AS CodigoArticulo
-        FROM StockUbicacionActual
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND LTRIM(RTRIM(CodigoArticulo)) IN (${codigoInputs})
-      ),
-      CodigosAcumuladoStock AS (
-        SELECT DISTINCT LTRIM(RTRIM(CodigoArticulo)) AS CodigoArticulo
-        FROM AcumuladoStockActual
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND LTRIM(RTRIM(CodigoArticulo)) IN (${codigoInputs})
       ),
       ArticulosSinStock AS (
         SELECT
-          a.CodigoEmpresa,
-          a.CodigoArticulo,
-          a.DescripcionArticulo,
-          a.Descripcion2Articulo,
-          a.UnidadMedida2_,
-          a.UnidadMedidaAlternativa_,
-          a.FactorConversion_,
-          a.CodigoFamilia,
-          a.CodigoSubfamilia
+          a.CodigoEmpresa, a.CodigoArticulo, a.DescripcionArticulo,
+          a.Descripcion2Articulo, a.UnidadMedida2_, a.UnidadMedidaAlternativa_,
+          a.FactorConversion_, a.CodigoFamilia, a.CodigoSubfamilia
         FROM Articulos a
-        INNER JOIN CodigosSeleccionados cs
-          ON cs.CodigoArticulo = LTRIM(RTRIM(a.CodigoArticulo))
-        LEFT JOIN CodigosStockUbicacion su
-          ON su.CodigoArticulo = LTRIM(RTRIM(a.CodigoArticulo))
-        LEFT JOIN CodigosAcumuladoStock ast
-          ON ast.CodigoArticulo = LTRIM(RTRIM(a.CodigoArticulo))
         WHERE a.CodigoEmpresa = @codigoEmpresa
-          AND su.CodigoArticulo IS NULL
-          AND ast.CodigoArticulo IS NULL
+          AND LTRIM(RTRIM(a.CodigoArticulo)) IN (${codigoInputs})
+          AND NOT EXISTS (
+            SELECT 1 FROM StockUbicacionActual su
+            WHERE su.CodigoEmpresa = a.CodigoEmpresa
+              AND LTRIM(RTRIM(su.CodigoArticulo)) = LTRIM(RTRIM(a.CodigoArticulo))
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM AcumuladoStockActual ast
+            WHERE ast.CodigoEmpresa = a.CodigoEmpresa
+              AND LTRIM(RTRIM(ast.CodigoArticulo)) = LTRIM(RTRIM(a.CodigoArticulo))
+          )
       )
       SELECT
         COALESCE(a.CodigoArticulo, s.CodigoArticulo) AS CodigoArticulo,
@@ -584,10 +862,10 @@ async function obtenerStockTotalLote(req, res) {
         s.Ubicacion,
         u.DescripcionUbicacion,
         s.TipoUnidadMedida_ AS UnidadStock,
-        s.UnidadSaldoTipo_ AS CantidadBase,
-        s.UnidadSaldoTipo_ AS Cantidad,
+        s.UnidadSaldoTipoTotal AS CantidadBase,
+        s.UnidadSaldoTipoTotal AS Cantidad,
         s.Partida,
-        s.Periodo,
+        99 AS Periodo,                    -- ← Periodo fijo (stock actual)
         s.CodigoColor_,
         s.CodigoTalla01_,
         a.UnidadMedida2_ AS UnidadBase,
@@ -611,12 +889,9 @@ async function obtenerStockTotalLote(req, res) {
       FROM StockUbicacionActual s
       ${getArticuloApply('s')}
       LEFT JOIN Almacenes alm
-        ON alm.CodigoEmpresa = s.CodigoEmpresa
-        AND alm.CodigoAlmacen = s.CodigoAlmacen
+        ON alm.CodigoEmpresa = s.CodigoEmpresa AND alm.CodigoAlmacen = s.CodigoAlmacen
       LEFT JOIN Ubicaciones u
-        ON u.CodigoEmpresa = s.CodigoEmpresa
-        AND u.CodigoAlmacen = s.CodigoAlmacen
-        AND u.Ubicacion = s.Ubicacion
+        ON u.CodigoEmpresa = s.CodigoEmpresa AND u.CodigoAlmacen = s.CodigoAlmacen AND u.Ubicacion = s.Ubicacion
       WHERE s.CodigoEmpresa = @codigoEmpresa
         AND LTRIM(RTRIM(COALESCE(a.CodigoArticulo, s.CodigoArticulo))) IN (${codigoInputs})
         AND (@almacen = '' OR (ISNULL(s.CodigoAlmacen, '') LIKE @almacenLike OR ISNULL(alm.Almacen, '') LIKE @almacenLike))
@@ -625,19 +900,19 @@ async function obtenerStockTotalLote(req, res) {
       UNION ALL
 
       SELECT
-        a.CodigoArticulo AS CodigoArticulo,
-        a.CodigoArticulo AS CodigoArticuloStock,
+        a.CodigoArticulo,
+        a.CodigoArticulo,
         a.DescripcionArticulo,
-        COALESCE(a.Descripcion2Articulo, '') AS Descripcion2Articulo,
+        COALESCE(a.Descripcion2Articulo, ''),
         ap.CodigoAlmacen,
         ap.NombreAlmacen,
         'SIN-UBICACION' AS Ubicacion,
         'Stock sin ubicacion asignada' AS DescripcionUbicacion,
         '' AS UnidadStock,
-        CAST(0 AS DECIMAL(18, 4)) AS CantidadBase,
-        CAST(0 AS DECIMAL(18, 4)) AS Cantidad,
+        CAST(0 AS DECIMAL(18,4)) AS CantidadBase,
+        CAST(0 AS DECIMAL(18,4)) AS Cantidad,
         '' AS Partida,
-        @periodoBase AS Periodo,
+        99 AS Periodo,                     -- ← Periodo fijo
         '' AS CodigoColor_,
         '' AS CodigoTalla01_,
         a.UnidadMedida2_ AS UnidadBase,
@@ -658,20 +933,18 @@ async function obtenerStockTotalLote(req, res) {
     const detalleResult = await detalleRequest.query(detalleQuery);
     const items = detalleResult.recordset || [];
 
-    items.forEach((row) => {
+    // Conversión de unidades (se mantiene)
+    items.forEach(row => {
       const unidadStock = String(row.UnidadStock || '').trim();
       const unidadAlternativa = String(row.UnidadAlternativa || '').trim();
       const cantidad = Number(row.Cantidad || 0);
       const factorConversion = Number(row.FactorConversion || 1);
-
       if (unidadStock && unidadAlternativa && unidadStock === unidadAlternativa && factorConversion > 0) {
         row.CantidadBase = cantidad * factorConversion;
       } else {
         row.CantidadBase = Number(row.CantidadBase || cantidad || 0);
       }
     });
-
-    console.log(`[INVENTARIO] Lote rapido obtenido: ${codigosPagina.length} articulos, ${items.length} registros de detalle, hasMore=${hasMore}`);
 
     return res.json({
       items,
@@ -747,7 +1020,7 @@ router.get('/inventario/almacenes-ajuste', async (req, res) => {
           Almacen
         FROM Almacenes
         WHERE CodigoEmpresa = @codigoEmpresa
-          AND CodigoAlmacen IN ('CEN', 'BCN', 'N5', 'N1', 'PK', '5', '000', 'SEC')
+          AND CodigoAlmacen IN ('CEN', 'BCN', 'N5', 'N1', 'PK', '5', '000', 'SEC', 'R')
         ORDER BY CodigoAlmacen
       `);
 
@@ -762,90 +1035,116 @@ router.get('/inventario/almacenes-ajuste', async (req, res) => {
   }
 });
 
-// âœ… 9.3 OBTENER ARTÃCULOS POR UBICACIÃ“N (CORREGIDO)
+// ✅ 9.3 OBTENER ARTÃCULOS POR UBICACIÃ“N (CORREGIDO)
 router.get('/stock/por-ubicacion', async (req, res) => {
   const { codigoAlmacen, ubicacion, page = 1, pageSize = 100 } = req.query;
   const codigoEmpresa = req.user.CodigoEmpresa;
+  const ejercicioActual = new Date().getFullYear(); // 2026
+
+  console.log('================== STOCK POR UBICACIÓN ==================');
+  console.log(`[STOCK] Empresa: ${codigoEmpresa}, Almacén: ${codigoAlmacen}, Ubicación: ${ubicacion}`);
+  console.log(`[STOCK] Página: ${page}, Tamaño: ${pageSize}`);
+  console.log(`[STOCK] Ejercicio usado: ${ejercicioActual}, Periodo: 99`);
 
   if (!codigoEmpresa || !codigoAlmacen || !ubicacion) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'CÃ³digo de empresa, almacÃ©n y ubicaciÃ³n requeridos.' 
+      mensaje: 'Código de empresa, almacén y ubicación requeridos.' 
     });
   }
 
   try {
     const offset = (page - 1) * pageSize;
-    const contexto = await obtenerContextoBaseInventario(codigoEmpresa);
-    
-    // Consulta para obtener el total de registros
-    const countResult = await agregarContextoInventario(
-      getPool().request()
+    const pool = getPool();
+
+    // 1. Contar total de registros con stock > 0
+    const countRequest = pool.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-      .input('ubicacion', sql.VarChar, ubicacion),
-      contexto
-    )
-      .query(`
-        ${getCteInventarioActual()}
-        SELECT COUNT(*) AS TotalCount
-        FROM StockUbicacionActual s
-        WHERE s.CodigoEmpresa = @codigoEmpresa
-          AND s.CodigoAlmacen = @codigoAlmacen
-          AND s.Ubicacion = @ubicacion
-          AND s.UnidadSaldo > 0
-      `);
-    
+      .input('ubicacion', sql.VarChar, ubicacion)
+      .input('ejercicio', sql.Int, ejercicioActual)
+      .input('periodo', sql.Int, 99);
+
+    console.log('[STOCK] Ejecutando COUNT...');
+    const countResult = await countRequest.query(`
+      SELECT COUNT(*) AS TotalCount
+      FROM AcumuladoStockUbicacion
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND CodigoAlmacen = @codigoAlmacen
+        AND Ubicacion = @ubicacion
+        AND Ejercicio = @ejercicio
+        AND Periodo = @periodo
+        AND UnidadSaldo > 0
+    `);
     const total = countResult.recordset[0].TotalCount;
-    
-    // Consulta corregida - Incluye todos los almacenes
-    const result = await agregarContextoInventario(
-      getPool().request()
+    console.log(`[STOCK] Total registros con stock: ${total}`);
+
+    // 2. Obtener los artículos con paginación
+    const dataRequest = pool.request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-      .input('ubicacion', sql.VarChar, ubicacion),
-      contexto
-    )
-      .query(`
-        ${getCteInventarioActual()}
-        SELECT 
-          COALESCE(a.CodigoArticulo, s.CodigoArticulo) AS CodigoArticulo,
-          s.CodigoArticulo AS CodigoArticuloStock,
-          COALESCE(a.DescripcionArticulo, s.CodigoArticulo) AS DescripcionArticulo,
-          COALESCE(a.Descripcion2Articulo, '') AS Descripcion2Articulo,
-          s.UnidadSaldo AS Cantidad,
-          s.TipoUnidadMedida_ AS UnidadMedida,
-          a.UnidadMedida2_ AS UnidadBase,
-          a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
-          COALESCE(a.FactorConversion_, 1) AS FactorConversion,
-          s.Partida,
-          s.CodigoColor_,
-          c.Color_ AS NombreColor,
-          s.CodigoTalla01_ AS Talla
-        FROM StockUbicacionActual s
-        ${getArticuloApply('s')}
-        LEFT JOIN Colores_ c 
-          ON c.CodigoColor_ = s.CodigoColor_
-          AND c.CodigoEmpresa = s.CodigoEmpresa
-        WHERE s.CodigoEmpresa = @codigoEmpresa
-          AND s.CodigoAlmacen = @codigoAlmacen
-          AND s.Ubicacion = @ubicacion
-          AND s.UnidadSaldo > 0
-        ORDER BY COALESCE(a.DescripcionArticulo, s.CodigoArticulo)
-        OFFSET ${offset} ROWS
-        FETCH NEXT ${pageSize} ROWS ONLY
-      `);
-      
+      .input('ubicacion', sql.VarChar, ubicacion)
+      .input('ejercicio', sql.Int, ejercicioActual)
+      .input('periodo', sql.Int, 99)
+      .input('offset', sql.Int, offset)
+      .input('pageSize', sql.Int, pageSize);
+
+    console.log('[STOCK] Ejecutando consulta paginada...');
+    const result = await dataRequest.query(`
+      SELECT 
+        s.CodigoArticulo,
+        COALESCE(a.DescripcionArticulo, s.CodigoArticulo) AS DescripcionArticulo,
+        COALESCE(a.Descripcion2Articulo, '') AS Descripcion2Articulo,
+        s.UnidadSaldo AS Cantidad,
+        s.TipoUnidadMedida_ AS UnidadMedida,
+        a.UnidadMedida2_ AS UnidadBase,
+        a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
+        COALESCE(a.FactorConversion_, 1) AS FactorConversion,
+        s.Partida,
+        s.CodigoColor_,
+        c.Color_ AS NombreColor,
+        s.CodigoTalla01_ AS Talla
+      FROM AcumuladoStockUbicacion s
+      LEFT JOIN Articulos a 
+        ON a.CodigoArticulo = s.CodigoArticulo 
+        AND a.CodigoEmpresa = s.CodigoEmpresa
+      LEFT JOIN Colores_ c 
+        ON c.CodigoColor_ = s.CodigoColor_
+        AND c.CodigoEmpresa = s.CodigoEmpresa
+      WHERE s.CodigoEmpresa = @codigoEmpresa
+        AND s.CodigoAlmacen = @codigoAlmacen
+        AND s.Ubicacion = @ubicacion
+        AND s.Ejercicio = @ejercicio
+        AND s.Periodo = @periodo
+        AND s.UnidadSaldo > 0
+      ORDER BY COALESCE(a.DescripcionArticulo, s.CodigoArticulo)
+      OFFSET @offset ROWS
+      FETCH NEXT @pageSize ROWS ONLY
+    `);
+
+    console.log(`[STOCK] Filas devueltas: ${result.recordset.length}`);
+    if (result.recordset.length > 0) {
+      console.log('[STOCK] Primer artículo:', result.recordset[0]);
+    } else {
+      console.log('[STOCK] No se encontraron artículos con stock en esta ubicación');
+    }
+
     res.json({
       success: true,
       articulos: result.recordset,
-      total: total
+      total: total,
+      debug: {
+        ejercicio: ejercicioActual,
+        periodo: 99,
+        almacen: codigoAlmacen,
+        ubicacion: ubicacion
+      }
     });
   } catch (err) {
     console.error('[ERROR STOCK UBICACION]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener artÃ­culos por ubicaciÃ³n',
+      mensaje: 'Error al obtener artículos por ubicación',
       error: err.message 
     });
   }
@@ -985,7 +1284,7 @@ router.get('/inventario/stock-sin-ubicacion', async (req, res) => {
   if (!codigoEmpresa) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'CÃ³digo de empresa requerido.' 
+      mensaje: 'Código de empresa requerido.' 
     });
   }
 
@@ -997,35 +1296,42 @@ router.get('/inventario/stock-sin-ubicacion', async (req, res) => {
       contexto
     )
       .query(`
-        ${getCteInventarioActual()},
-        StockTotal AS (
+        -- Stock total por combinación (periodo 0 + 99, ejercicios base/actual)
+        WITH StockTotal AS (
           SELECT 
             CodigoArticulo,
             CodigoAlmacen,
-            TipoUnidadMedida_,
-            Partida,
-            CodigoColor_,
-            CodigoTalla01_,
-            SUM(CAST(UnidadSaldo AS DECIMAL(18, 0))) as StockTotal
-          FROM AcumuladoStockActual
+            ISNULL(TipoUnidadMedida_, '') AS TipoUnidadMedida_,
+            ISNULL(Partida, '') AS Partida,
+            ISNULL(CodigoColor_, '') AS CodigoColor_,
+            ISNULL(CodigoTalla01_, '') AS CodigoTalla01_,
+            SUM(CAST(COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0) AS DECIMAL(18, 4))) as StockTotal
+          FROM AcumuladoStock
           WHERE CodigoEmpresa = @codigoEmpresa
-            AND UnidadSaldo > 0
-          GROUP BY CodigoArticulo, CodigoAlmacen, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_
+            AND Periodo IN (0, 99)                    -- ← Sumar ambos periodos
+            AND Ejercicio IN (@ejercicioBase, @ejercicioActual)
+          GROUP BY CodigoArticulo, CodigoAlmacen, 
+                   ISNULL(TipoUnidadMedida_, ''), ISNULL(Partida, ''),
+                   ISNULL(CodigoColor_, ''), ISNULL(CodigoTalla01_, '')
         ),
 
+        -- Stock con ubicación (periodo 0 + 99, ejercicios base/actual)
         StockConUbicacion AS (
           SELECT 
             CodigoArticulo,
             CodigoAlmacen,
-            TipoUnidadMedida_,
-            Partida,
-            CodigoColor_,
-            CodigoTalla01_,
-            SUM(CAST(UnidadSaldo AS DECIMAL(18, 0))) as StockConUbicacion
-          FROM StockUbicacionActual
+            ISNULL(TipoUnidadMedida_, '') AS TipoUnidadMedida_,
+            ISNULL(Partida, '') AS Partida,
+            ISNULL(CodigoColor_, '') AS CodigoColor_,
+            ISNULL(CodigoTalla01_, '') AS CodigoTalla01_,
+            SUM(CAST(COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0) AS DECIMAL(18, 4))) as StockConUbicacion
+          FROM AcumuladoStockUbicacion
           WHERE CodigoEmpresa = @codigoEmpresa
-            AND UnidadSaldo > 0
-          GROUP BY CodigoArticulo, CodigoAlmacen, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_
+            AND Periodo IN (0, 99)                    -- ← Sumar ambos periodos
+            AND Ejercicio IN (@ejercicioBase, @ejercicioActual)
+          GROUP BY CodigoArticulo, CodigoAlmacen,
+                   ISNULL(TipoUnidadMedida_, ''), ISNULL(Partida, ''),
+                   ISNULL(CodigoColor_, ''), ISNULL(CodigoTalla01_, '')
         )
 
         SELECT 
@@ -1046,10 +1352,10 @@ router.get('/inventario/stock-sin-ubicacion', async (req, res) => {
           (st.StockTotal - ISNULL(sc.StockConUbicacion, 0)) AS Cantidad,
           CASE 
             WHEN st.TipoUnidadMedida_ = a.UnidadMedidaAlternativa_ 
-              THEN CAST((st.StockTotal - ISNULL(sc.StockConUbicacion, 0)) * a.FactorConversion_ AS DECIMAL(18, 0))
+              THEN (st.StockTotal - ISNULL(sc.StockConUbicacion, 0)) * a.FactorConversion_
             WHEN st.TipoUnidadMedida_ = a.UnidadMedida2_ 
-              THEN CAST((st.StockTotal - ISNULL(sc.StockConUbicacion, 0)) AS DECIMAL(18, 0))
-            ELSE CAST((st.StockTotal - ISNULL(sc.StockConUbicacion, 0)) * a.FactorConversion_ AS DECIMAL(18, 0))
+              THEN (st.StockTotal - ISNULL(sc.StockConUbicacion, 0))
+            ELSE (st.StockTotal - ISNULL(sc.StockConUbicacion, 0)) * a.FactorConversion_
           END AS CantidadBase,
           CONCAT(
             @codigoEmpresa, '_',
@@ -1061,7 +1367,7 @@ router.get('/inventario/stock-sin-ubicacion', async (req, res) => {
             ISNULL(st.Partida, ''), '_',
             ISNULL(st.CodigoColor_, ''), '_',
             ISNULL(st.CodigoTalla01_, ''), '_',
-            CAST((st.StockTotal - ISNULL(sc.StockConUbicacion, 0)) AS VARCHAR(20))
+            CAST(CAST((st.StockTotal - ISNULL(sc.StockConUbicacion, 0)) AS DECIMAL(18,4)) AS VARCHAR(20))
           ) AS ClaveUnica,
           0 AS MovPosicionLinea
         FROM StockTotal st
@@ -1075,10 +1381,10 @@ router.get('/inventario/stock-sin-ubicacion', async (req, res) => {
           ON sc.CodigoArticulo = st.CodigoArticulo
           AND sc.CodigoAlmacen = st.CodigoAlmacen
           AND sc.TipoUnidadMedida_ = st.TipoUnidadMedida_
-          AND ISNULL(sc.Partida, '') = ISNULL(st.Partida, '')
-          AND ISNULL(sc.CodigoColor_, '') = ISNULL(st.CodigoColor_, '')
-          AND ISNULL(sc.CodigoTalla01_, '') = ISNULL(st.CodigoTalla01_, '')
-        WHERE (st.StockTotal - ISNULL(sc.StockConUbicacion, 0)) > 0
+          AND sc.Partida = st.Partida
+          AND sc.CodigoColor_ = st.CodigoColor_
+          AND sc.CodigoTalla01_ = st.CodigoTalla01_
+        WHERE (st.StockTotal - ISNULL(sc.StockConUbicacion, 0)) != 0
         ORDER BY st.CodigoArticulo, st.CodigoAlmacen
       `);
       
@@ -1087,7 +1393,7 @@ router.get('/inventario/stock-sin-ubicacion', async (req, res) => {
     console.error('[ERROR STOCK SIN UBICACION]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener stock sin ubicaciÃ³n',
+      mensaje: 'Error al obtener stock sin ubicación',
       error: err.message 
     });
   }
@@ -1950,42 +2256,31 @@ router.get('/buscar-ubicaciones', async (req, res) => {
   }
 });
 
-// âœ… 9.22 OBTENER STOCK POR ARTÃCULO
+// ✅ ENDPOINT CORREGIDO: /stock/por-articulo
 router.get('/stock/por-articulo', async (req, res) => {
-  const { codigoArticulo, incluirSinUbicacion } = req.query;
+  const { codigoArticulo, incluirSinUbicacion = 'false' } = req.query;
   const codigoEmpresa = req.user.CodigoEmpresa;
 
   if (!codigoEmpresa || !codigoArticulo) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'CÃ³digo de empresa y artÃ­culo requeridos.' 
+      mensaje: 'Código de empresa y artículo requeridos.' 
     });
   }
 
   try {
+    // Obtener el contexto de inventario (ejercicioBase y ejercicioActual)
     const contexto = await obtenerContextoBaseInventario(codigoEmpresa);
-    const request = agregarContextoInventario(
-      getPool().request()
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .input('codigoArticulo', sql.VarChar, codigoArticulo),
-      contexto
-    );
 
-    // Consulta principal para stock con ubicaciÃ³n - INCLUYENDO NEGATIVOS Y CERO
+    // Construir la consulta principal (con o sin la parte de stock sin ubicación)
     let query = `
-      ${getCteInventarioActual()}
+      -- Stock con ubicación (periodos 0 y 99, ejercicios base y actual)
       SELECT 
         s.CodigoAlmacen,
         alm.Almacen AS NombreAlmacen,
         s.Ubicacion,
         u.DescripcionUbicacion,
-        -- ðŸ”¥ USAR UnidadSaldoTipo_ CUANDO HAY VARIANTES (color o talla)
-        CASE 
-          WHEN (s.CodigoColor_ IS NOT NULL AND s.CodigoColor_ != '') 
-            OR (s.CodigoTalla01_ IS NOT NULL AND s.CodigoTalla01_ != '') 
-            THEN CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo) AS DECIMAL(18, 2))
-          ELSE CAST(s.UnidadSaldo AS DECIMAL(18, 2))
-        END AS Cantidad,
+        SUM(CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) AS DECIMAL(18, 2))) AS Cantidad,
         COALESCE(NULLIF(s.TipoUnidadMedida_, ''), 'unidades') AS UnidadMedida,
         s.TipoUnidadMedida_,
         s.Partida,
@@ -1998,18 +2293,20 @@ router.get('/stock/por-articulo', async (req, res) => {
         CONCAT(
           s.CodigoAlmacen, '_', 
           s.Ubicacion, '_',
-          s.TipoUnidadMedida_, '_',
+          ISNULL(s.TipoUnidadMedida_, ''), '_',
           ISNULL(s.Partida, ''), '_',
           ISNULL(s.CodigoColor_, ''), '_',
           ISNULL(s.CodigoTalla01_, '')
         ) AS GrupoUnico,
-        CAST(s.UnidadSaldo AS DECIMAL(18, 2)) AS UnidadSaldo_Original,
-        CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo) AS DECIMAL(18, 2)) AS UnidadSaldoTipo_Corregido
-      FROM StockUbicacionActual s
+        CAST(SUM(COALESCE(s.UnidadSaldo, 0)) AS DECIMAL(18, 2)) AS UnidadSaldo_Original,
+        CAST(SUM(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0)) AS DECIMAL(18, 2)) AS UnidadSaldoTipo_Corregido
+      FROM AcumuladoStockUbicacion s
       LEFT JOIN Almacenes alm 
         ON alm.CodigoEmpresa = s.CodigoEmpresa 
         AND alm.CodigoAlmacen = s.CodigoAlmacen
-      ${getArticuloApply('s')}
+      LEFT JOIN Articulos a 
+        ON a.CodigoEmpresa = s.CodigoEmpresa 
+        AND a.CodigoArticulo = s.CodigoArticulo
       LEFT JOIN Ubicaciones u 
         ON u.CodigoEmpresa = s.CodigoEmpresa 
         AND u.CodigoAlmacen = s.CodigoAlmacen 
@@ -2019,20 +2316,28 @@ router.get('/stock/por-articulo', async (req, res) => {
         AND c.CodigoColor_ = s.CodigoColor_
       WHERE s.CodigoEmpresa = @codigoEmpresa
         AND s.CodigoArticulo = @codigoArticulo
-        -- ðŸ”¥ CORRECCIÃ“N: QUITAR FILTRO QUE EXCLUYE NEGATIVOS Y CERO
+        AND s.Periodo IN (0, 99)
+        AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+      GROUP BY
+        s.CodigoAlmacen, alm.Almacen,
+        s.Ubicacion, u.DescripcionUbicacion,
+        s.TipoUnidadMedida_, s.Partida,
+        s.CodigoColor_, s.CodigoTalla01_, c.Color_,
+        a.DescripcionArticulo, a.Descripcion2Articulo,
+        s.CodigoArticulo   -- ✅ Agregado para evitar error 8120
     `;
 
-    // Si se solicita incluir stock sin ubicaciÃ³n
+    // Si se solicita incluir stock sin ubicación, agregar UNION ALL
     if (incluirSinUbicacion === 'true') {
-      query = `
-        ${query}
+      query += `
         UNION ALL
-        -- Stock sin ubicaciÃ³n por almacÃ©n (sin variantes) - INCLUYENDO NEGATIVOS Y CERO
+
+        -- Stock sin ubicación (periodos 0 y 99, ejercicios base y actual)
         SELECT 
           s.CodigoAlmacen,
           alm.Almacen AS NombreAlmacen,
           'SIN-UBICACION' AS Ubicacion,
-          'Stock sin ubicaciÃ³n asignada' AS DescripcionUbicacion,
+          'Stock sin ubicación asignada' AS DescripcionUbicacion,
           (s.StockTotal - ISNULL(u.StockUbicado, 0)) AS Cantidad,
           'unidades' AS UnidadMedida,
           'unidades' AS TipoUnidadMedida_,
@@ -2051,54 +2356,57 @@ router.get('/stock/por-articulo', async (req, res) => {
             CodigoAlmacen, 
             CodigoArticulo,
             SUM(UnidadSaldo) AS StockTotal
-          FROM AcumuladoStockActual
+          FROM AcumuladoStock
           WHERE CodigoEmpresa = @codigoEmpresa
             AND CodigoArticulo = @codigoArticulo
+            AND Periodo IN (0, 99)
+            AND Ejercicio IN (@ejercicioBase, @ejercicioActual)
           GROUP BY CodigoAlmacen, CodigoArticulo
         ) s
-        LEFT JOIN Almacenes alm ON s.CodigoAlmacen = alm.CodigoAlmacen AND alm.CodigoEmpresa = @codigoEmpresa
-        LEFT JOIN Articulos a ON a.CodigoEmpresa = @codigoEmpresa AND a.CodigoArticulo = s.CodigoArticulo
+        LEFT JOIN Almacenes alm 
+          ON s.CodigoAlmacen = alm.CodigoAlmacen 
+          AND alm.CodigoEmpresa = @codigoEmpresa
+        LEFT JOIN Articulos a 
+          ON a.CodigoEmpresa = @codigoEmpresa 
+          AND a.CodigoArticulo = s.CodigoArticulo
         LEFT JOIN (
           SELECT 
             CodigoAlmacen,
             CodigoArticulo,
             SUM(UnidadSaldo) AS StockUbicado
-          FROM StockUbicacionActual
+          FROM AcumuladoStockUbicacion
           WHERE CodigoEmpresa = @codigoEmpresa
             AND CodigoArticulo = @codigoArticulo
+            AND Periodo IN (0, 99)
+            AND Ejercicio IN (@ejercicioBase, @ejercicioActual)
           GROUP BY CodigoAlmacen, CodigoArticulo
-        ) u ON u.CodigoAlmacen = s.CodigoAlmacen AND u.CodigoArticulo = s.CodigoArticulo
-        -- ðŸ”¥ CORRECCIÃ“N: INCLUIR CERO Y NEGATIVOS EN STOCK SIN UBICACIÃ“N
+        ) u 
+          ON u.CodigoAlmacen = s.CodigoAlmacen 
+          AND u.CodigoArticulo = s.CodigoArticulo
         WHERE (s.StockTotal - ISNULL(u.StockUbicado, 0)) != 0
       `;
     }
 
-    query += ' ORDER BY CodigoAlmacen, Ubicacion';
+    // Orden final
+    query += ` ORDER BY CodigoAlmacen, Ubicacion`;
+
+    // Ejecutar la consulta con los parámetros adecuados
+    const request = agregarContextoInventario(
+      getPool().request()
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('codigoArticulo', sql.VarChar, codigoArticulo),
+      contexto
+    );
 
     const result = await request.query(query);
       
-    console.log(`[DEBUG STOCK POR ARTICULO] ArtÃ­culo: ${codigoArticulo}, Registros: ${result.recordset.length} (incluyendo negativos y cero)`);
+    console.log(`[STOCK POR ARTICULO] Artículo: ${codigoArticulo}, Registros devueltos: ${result.recordset.length}`);
     
-    // Log para debugging de variantes (incluyendo negativos y cero)
+    // Opcional: depuración de cantidades negativas o cero
     const registrosNegativos = result.recordset.filter(item => item.Cantidad < 0);
     const registrosCero = result.recordset.filter(item => item.Cantidad === 0);
-    
-    console.log(`ðŸ” ArtÃ­culo ${codigoArticulo}: ${registrosNegativos.length} negativos, ${registrosCero.length} cero`);
-    
-    if (registrosNegativos.length > 0) {
-      console.log('ðŸ” DEBUG ArtÃ­culo con negativos encontrados:');
-      registrosNegativos.forEach((item, index) => {
-        console.log(`   âš ï¸ NEGATIVO - ${index + 1}. AlmacÃ©n: ${item.CodigoAlmacen}, UbicaciÃ³n: ${item.Ubicacion}, ` +
-                   `Talla: ${item.Talla}, Cantidad: ${item.Cantidad}`);
-      });
-    }
-    
-    if (registrosCero.length > 0) {
-      console.log('ðŸ” DEBUG ArtÃ­culo con ceros encontrados:');
-      registrosCero.forEach((item, index) => {
-        console.log(`   0ï¸âƒ£ CERO - ${index + 1}. AlmacÃ©n: ${item.CodigoAlmacen}, UbicaciÃ³n: ${item.Ubicacion}, ` +
-                   `Talla: ${item.Talla}, Cantidad: ${item.Cantidad}`);
-      });
+    if (registrosNegativos.length > 0 || registrosCero.length > 0) {
+      console.log(`🔍 Artículo ${codigoArticulo}: ${registrosNegativos.length} negativos, ${registrosCero.length} cero`);
     }
     
     res.json(result.recordset);
@@ -2106,7 +2414,7 @@ router.get('/stock/por-articulo', async (req, res) => {
     console.error('[ERROR STOCK POR ARTICULO]', err);
     res.status(500).json({ 
       success: false, 
-      mensaje: 'Error al obtener stock por artÃ­culo.',
+      mensaje: 'Error al obtener stock por artículo.',
       error: err.message 
     });
   }
@@ -2120,11 +2428,11 @@ router.get('/stock/por-variante', async (req, res) => {
   if (!codigoEmpresa || !codigoArticulo) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'CÃ³digo de empresa y artÃ­culo requeridos.' 
+      mensaje: 'Código de empresa y artículo requeridos.' 
     });
   }
 
-  console.log('[STOCK POR VARIANTE DEBUG] ParÃ¡metros recibidos:', {
+  console.log('[STOCK POR VARIANTE] Parámetros:', {
     codigoEmpresa,
     codigoArticulo,
     codigoColor,
@@ -2140,149 +2448,75 @@ router.get('/stock/por-variante', async (req, res) => {
       contexto
     );
 
-    let query = `
-      ${getCteInventarioActual()}
+    // Construcción dinámica de filtros para color y talla
+    let filtroColor = '';
+    let filtroTalla = '';
+
+    if (codigoColor && codigoColor !== '' && codigoColor !== 'null') {
+      filtroColor = `AND ISNULL(s.CodigoColor_, '') = @codigoColor`;
+      request.input('codigoColor', sql.VarChar(10), codigoColor);
+    } else {
+      // Si no se especifica color, incluir registros sin color o vacío
+      filtroColor = `AND ISNULL(s.CodigoColor_, '') = ''`;
+    }
+
+    if (codigoTalla && codigoTalla !== '' && codigoTalla !== 'null') {
+      filtroTalla = `AND ISNULL(s.CodigoTalla01_, '') = @codigoTalla`;
+      request.input('codigoTalla', sql.VarChar(10), codigoTalla);
+    } else {
+      filtroTalla = `AND ISNULL(s.CodigoTalla01_, '') = ''`;
+    }
+
+    const query = `
       SELECT 
         s.CodigoAlmacen,
         alm.Almacen AS NombreAlmacen,
         s.Ubicacion,
         u.DescripcionUbicacion,
-        CAST(s.UnidadSaldo AS DECIMAL(18, 2)) AS Cantidad,
+        SUM(CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) AS DECIMAL(18, 2))) AS Cantidad,
         COALESCE(NULLIF(s.TipoUnidadMedida_, ''), 'unidades') AS UnidadMedida,
         s.Partida,
         s.CodigoColor_,
         s.CodigoTalla01_,
-        s.UnidadSaldoTipo_
-      FROM StockUbicacionActual s
-      LEFT JOIN Almacenes alm ON 
-        alm.CodigoEmpresa = s.CodigoEmpresa 
+        SUM(CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) AS DECIMAL(18, 2))) AS UnidadSaldoTipo_Sum
+      FROM AcumuladoStockUbicacion s
+      LEFT JOIN Almacenes alm 
+        ON alm.CodigoEmpresa = s.CodigoEmpresa 
         AND alm.CodigoAlmacen = s.CodigoAlmacen
-      LEFT JOIN Ubicaciones u ON 
-        u.CodigoEmpresa = s.CodigoEmpresa 
+      LEFT JOIN Ubicaciones u 
+        ON u.CodigoEmpresa = s.CodigoEmpresa 
         AND u.CodigoAlmacen = s.CodigoAlmacen 
         AND u.Ubicacion = s.Ubicacion
       WHERE s.CodigoEmpresa = @codigoEmpresa
         AND s.CodigoArticulo = @codigoArticulo
-        AND s.UnidadSaldo > 0
+        AND s.Periodo IN (0, 99)                       -- ← Sumar ambos periodos
+        AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+        ${filtroColor}
+        ${filtroTalla}
+      GROUP BY
+        s.CodigoAlmacen, alm.Almacen,
+        s.Ubicacion, u.DescripcionUbicacion,
+        s.TipoUnidadMedida_, s.Partida,
+        s.CodigoColor_, s.CodigoTalla01_
+      HAVING SUM(CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) AS DECIMAL(18, 2))) != 0
+      ORDER BY s.CodigoAlmacen, s.Ubicacion
     `;
 
-    // ðŸ”¥ CORRECCIÃ“N CRÃTICA: FILTRO DINÃMICO POR COLOR Y TALLA
-    // Si se proporciona cÃ³digoColor, filtrar por ese color especÃ­fico
-    if (codigoColor !== undefined && codigoColor !== null && codigoColor !== '' && codigoColor !== 'null') {
-      query += ` AND (
-        s.CodigoColor_ = @codigoColor OR 
-        (s.CodigoColor_ IS NULL AND @codigoColor = '') OR
-        (s.CodigoColor_ = '' AND @codigoColor = '')
-      )`;
-      request.input('codigoColor', sql.VarChar(10), codigoColor);
-    } else {
-      // Si no se proporciona color, incluir solo ubicaciones sin color
-      query += ` AND (s.CodigoColor_ IS NULL OR s.CodigoColor_ = '')`;
-    }
-
-    // ðŸ”¥ CORRECCIÃ“N CRÃTICA: FILTRO DINÃMICO POR TALLA
-    // Si se proporciona cÃ³digoTalla, filtrar por esa talla especÃ­fica
-    if (codigoTalla !== undefined && codigoTalla !== null && codigoTalla !== '' && codigoTalla !== 'null') {
-      query += ` AND (
-        s.CodigoTalla01_ = @codigoTalla OR 
-        (s.CodigoTalla01_ IS NULL AND @codigoTalla = '') OR
-        (s.CodigoTalla01_ = '' AND @codigoTalla = '')
-      )`;
-      request.input('codigoTalla', sql.VarChar(10), codigoTalla);
-    } else {
-      // Si no se proporciona talla, incluir solo ubicaciones sin talla
-      query += ` AND (s.CodigoTalla01_ IS NULL OR s.CodigoTalla01_ = '')`;
-    }
-
-    query += ` ORDER BY s.CodigoAlmacen, s.Ubicacion`;
-
-    console.log('[STOCK POR VARIANTE DEBUG] Query ejecutado:', {
-      articulo: codigoArticulo,
-      color: codigoColor || 'NO ESPECIFICADO',
-      talla: codigoTalla || 'NO ESPECIFICADO',
-      query: query.substring(0, 500) + '...'
-    });
+    console.log('[STOCK POR VARIANTE] Query ejecutada con filtros:', { color: codigoColor || '(vacío)', talla: codigoTalla || '(vacío)' });
 
     const result = await request.query(query);
     
-    console.log(`[STOCK POR VARIANTE] Resultados para ${codigoArticulo}: 
-      Color: ${codigoColor || 'Sin color'}, 
-      Talla: ${codigoTalla || 'Sin talla'},
-      Ubicaciones encontradas: ${result.recordset.length}`);
+    console.log(`[STOCK POR VARIANTE] Resultados: ${result.recordset.length} ubicaciones encontradas`);
     
-    // ðŸ”¥ DEBUG DETALLADO: Mostrar las primeras ubicaciones encontradas
+    // Opcional: mostrar primeras filas para depuración
     if (result.recordset.length > 0) {
-      console.log('[STOCK POR VARIANTE DEBUG] Primeras ubicaciones encontradas:');
-      result.recordset.slice(0, 3).forEach((ubic, idx) => {
-        console.log(`  ${idx + 1}. ${ubic.CodigoAlmacen} - ${ubic.Ubicacion} - 
-          Color: ${ubic.CodigoColor_ || 'N/A'} - 
-          Talla: ${ubic.CodigoTalla01_ || 'N/A'} - 
-          Stock: ${ubic.Cantidad}`);
-      });
-    } else {
-      console.log('[STOCK POR VARIANTE DEBUG] No se encontraron ubicaciones para esta combinaciÃ³n');
-      
-      // ðŸ”¥ OPCIÃ“N ALTERNATIVA: Buscar sin filtros de color/talla si no hay resultados
-      const requestAlternativo = agregarContextoInventario(
-        getPool().request()
-          .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-          .input('codigoArticulo', sql.VarChar(20), codigoArticulo),
-        contexto
-      );
-      
-      const queryAlternativa = `
-        ${getCteInventarioActual()}
-        SELECT 
-          s.CodigoAlmacen,
-          alm.Almacen AS NombreAlmacen,
-          s.Ubicacion,
-          u.DescripcionUbicacion,
-          CAST(s.UnidadSaldo AS DECIMAL(18, 2)) AS Cantidad,
-          COALESCE(NULLIF(s.TipoUnidadMedida_, ''), 'unidades') AS UnidadMedida,
-          s.Partida,
-          s.CodigoColor_,
-          s.CodigoTalla01_,
-          s.UnidadSaldoTipo_
-        FROM StockUbicacionActual s
-        LEFT JOIN Almacenes alm ON 
-          alm.CodigoEmpresa = s.CodigoEmpresa 
-          AND alm.CodigoAlmacen = s.CodigoAlmacen
-        LEFT JOIN Ubicaciones u ON 
-          u.CodigoEmpresa = s.CodigoEmpresa 
-          AND u.CodigoAlmacen = s.CodigoAlmacen 
-          AND u.Ubicacion = s.Ubicacion
-        WHERE s.CodigoEmpresa = @codigoEmpresa
-          AND s.CodigoArticulo = @codigoArticulo
-          AND s.UnidadSaldo > 0
-        ORDER BY s.CodigoAlmacen, s.Ubicacion
-      `;
-      
-      const resultAlternativo = await requestAlternativo.query(queryAlternativa);
-      console.log(`[STOCK POR VARIANTE DEBUG] BÃºsqueda alternativa (sin filtros): ${resultAlternativo.recordset.length} resultados`);
-      
-      if (resultAlternativo.recordset.length > 0) {
-        // Filtrar en memoria las que coincidan en color y talla
-        const filtradosEnMemoria = resultAlternativo.recordset.filter(ubic => {
-          const colorCoincide = 
-            (!codigoColor || codigoColor === '' || codigoColor === 'null') ? 
-            (!ubic.CodigoColor_ || ubic.CodigoColor_ === '') : 
-            (ubic.CodigoColor_ === codigoColor);
-          
-          const tallaCoincide = 
-            (!codigoTalla || codigoTalla === '' || codigoTalla === 'null') ? 
-            (!ubic.CodigoTalla01_ || ubic.CodigoTalla01_ === '') : 
-            (ubic.CodigoTalla01_ === codigoTalla);
-          
-          return colorCoincide && tallaCoincide;
-        });
-        
-        console.log(`[STOCK POR VARIANTE DEBUG] Filtrado en memoria: ${filtradosEnMemoria.length} coincidencias`);
-        
-        // Si hay coincidencias en memoria, devolverlas
-        if (filtradosEnMemoria.length > 0) {
-          return res.json(filtradosEnMemoria);
-        }
-      }
+      console.log('[STOCK POR VARIANTE] Muestra:', result.recordset.slice(0, 3).map(r => ({
+        almacen: r.CodigoAlmacen,
+        ubicacion: r.Ubicacion,
+        cantidad: r.Cantidad,
+        color: r.CodigoColor_,
+        talla: r.CodigoTalla01_
+      })));
     }
       
     res.json(result.recordset);
@@ -2297,8 +2531,9 @@ router.get('/stock/por-variante', async (req, res) => {
   }
 });
 
-// âœ… 9.14 OBTENER STOCK TOTAL COMPLETO
-// âœ… 9.15 AJUSTAR INVENTARIO (VERSIÃ“N MEJORADA - INSERCIÃ“N EN AMBAS TABLAS)
+// ============================================
+// ✅ ENDPOINT COMPLETO Y CORREGIDO: AJUSTAR INVENTARIO
+// ============================================
 router.post('/inventario/ajustar-completo', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -2312,16 +2547,19 @@ router.post('/inventario/ajustar-completo', async (req, res) => {
   if (!ajustes || !Array.isArray(ajustes) || ajustes.length === 0) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Lista de ajustes vacÃ­a o invÃ¡lida.' 
+      mensaje: 'Lista de ajustes vacía o inválida.' 
     });
   }
 
+  // 1. Obtener contexto (ejercicioBase y ejercicioActual)
+  const contexto = await obtenerContextoBaseInventario(codigoEmpresa);
   const transaction = new sql.Transaction(getPool());
-  
+
   try {
     await transaction.begin();
 
     console.log(`[AJUSTE MANUAL] Iniciando ${ajustes.length} ajustes para empresa ${codigoEmpresa}`);
+    console.log(`[AJUSTE MANUAL] Contexto: ejercicioBase=${contexto.ejercicioBase}, ejercicioActual=${contexto.ejercicioActual}`);
 
     for (const ajuste of ajustes) {
       const ajusteDestino = normalizarAjusteInventario(ajuste);
@@ -2337,7 +2575,7 @@ router.post('/inventario/ajustar-completo', async (req, res) => {
         }
       );
 
-      console.log(`[AJUSTE MANUAL] Procesando: ${ajusteDestino.articulo} | ${ajusteDestino.codigoAlmacen} | ${ajusteDestino.ubicacionStr} | ${ajusteDestino.nuevaCantidad}`);
+      console.log(`[AJUSTE MANUAL] Procesando: ${ajusteDestino.articulo} | ${ajusteDestino.codigoAlmacen} | ${ajusteDestino.ubicacionStr} | Nueva cantidad: ${ajusteDestino.nuevaCantidad}`);
 
       const esEdicion = Boolean(ajuste.combinacionOriginal);
       const mismaCombinacion = esMismaCombinacionInventario(ajusteOrigen, ajusteDestino);
@@ -2345,35 +2583,83 @@ router.post('/inventario/ajustar-completo', async (req, res) => {
       const registroDestino = await obtenerRegistroVigenteAcumuladoStockUbicacionExacto(codigoEmpresa, ajusteDestino, transaction);
       const permiteRecrearDesdeCero = esEdicion && mismaCombinacion && !registroOrigen;
 
+      // Diagnóstico (ahora con contexto)
+      const diagnosticoDestino = await obtenerDiagnosticoStockVigenteAjuste(
+        codigoEmpresa,
+        ejercicio,
+        ajusteDestino,
+        contexto,
+        transaction
+      );
+
+      // ✅ INICIALIZACIÓN AUTOMÁTICA si falta periodo99 pero hay histórico
+      if (debeBloquearAjusteSinStockVigente(diagnosticoDestino)) {
+        console.log(`[AJUSTE MANUAL] Inicializando periodo 99 para ${ajusteDestino.articulo} basado en histórico`);
+        
+        const historicoTotal = await obtenerStockHistoricoTotal(codigoEmpresa, ajusteDestino, contexto, transaction);
+        await crearRegistroPeriodo99(ajusteDestino, codigoEmpresa, ejercicio, historicoTotal, transaction);
+        await sincronizarAcumuladoStockDesdeUbicaciones(ajusteDestino, codigoEmpresa, ejercicio, contexto, transaction);
+        
+        // Actualizar diagnóstico para que el flujo continúe
+        diagnosticoDestino.existeUbicacionPeriodo99 = true;
+        diagnosticoDestino.saldoAcumuladoPeriodo99 = historicoTotal;
+        
+        console.log(`[AJUSTE MANUAL] Periodo99 inicializado con stock ${historicoTotal}. Ahora puede ajustarse.`);
+      }
+      // Si no hay histórico ni periodo99, entonces bloqueamos
+      else if (!diagnosticoDestino.existeUbicacionPeriodo99 && !diagnosticoDestino.hayHistoricoOtrosPeriodos) {
+        throw crearErrorInventario(409, 'No existe stock histórico ni registro vigente. No se puede ajustar.');
+      }
+
+      // Validación de existencia (evitar duplicados en creación)
       if (!esEdicion && registroDestino) {
-        throw crearErrorInventario(409, 'Ese artÃ­culo/variante ya existe. EdÃ­talo manualmente desde el listado.');
+        throw crearErrorInventario(409, 'Ese artículo/variante ya existe. Edítalo manualmente desde el listado.');
       }
 
       if (esEdicion && !registroOrigen && !permiteRecrearDesdeCero) {
-        throw crearErrorInventario(409, 'No se encontrÃ³ la combinaciÃ³n origen para editar el inventario.');
+        throw crearErrorInventario(409, 'No se encontró la combinación origen para editar el inventario.');
       }
 
+      // Lógica de edición con cambio de combinación
       if (esEdicion && !mismaCombinacion) {
+        const diagnosticoOrigen = await obtenerDiagnosticoStockVigenteAjuste(
+          codigoEmpresa,
+          ejercicio,
+          ajusteOrigen,
+          contexto,
+          transaction
+        );
+
+        if (debeBloquearAjusteSinStockVigente(diagnosticoOrigen)) {
+          throw crearErrorInventario(
+            409,
+            'El artículo origen tiene stock histórico pero no tiene saldo vigente en periodo 99. Regulariza/consolida primero.'
+          );
+        }
+
         const cantidadDestinoActual = parseFloat(registroDestino?.UnidadSaldo ?? 0) || 0;
         const cantidadFinalDestino = cantidadDestinoActual + ajusteDestino.nuevaCantidad;
 
-        await eliminarCombinacionVigenteAcumuladoStockUbicacion(codigoEmpresa, ajusteOrigen, transaction);
+        await eliminarCombinacionVigenteAcumuladoStockUbicacion(codigoEmpresa, ajusteOrigen, ejercicio, transaction);
         await actualizarAcumuladoStockUbicacion(
           { ...ajusteDestino, nuevaCantidad: cantidadFinalDestino },
           codigoEmpresa,
           ejercicio,
+          contexto,
           transaction
         );
         await sincronizarAcumuladoStockDesdeUbicaciones(
           { ...ajusteOrigen, nuevaCantidad: 0 },
           codigoEmpresa,
           ejercicio,
+          contexto,
           transaction
         );
         await sincronizarAcumuladoStockDesdeUbicaciones(
           { ...ajusteDestino, nuevaCantidad: cantidadFinalDestino },
           codigoEmpresa,
           ejercicio,
+          contexto,
           transaction
         );
 
@@ -2390,12 +2676,12 @@ router.post('/inventario/ajustar-completo', async (req, res) => {
           },
           transaction
         );
-
         continue;
       }
 
-      await actualizarAcumuladoStockUbicacion(ajusteDestino, codigoEmpresa, ejercicio, transaction);
-      await sincronizarAcumuladoStockDesdeUbicaciones(ajusteDestino, codigoEmpresa, ejercicio, transaction);
+      // Actualización normal (misma combinación o creación)
+      await actualizarAcumuladoStockUbicacion(ajusteDestino, codigoEmpresa, ejercicio, contexto, transaction);
+      await sincronizarAcumuladoStockDesdeUbicaciones(ajusteDestino, codigoEmpresa, ejercicio, contexto, transaction);
 
       const cantidadAnterior = parseFloat(registroOrigen?.UnidadSaldo ?? registroDestino?.UnidadSaldo ?? 0) || 0;
       const diferencia = ajusteDestino.nuevaCantidad - cantidadAnterior;
@@ -2416,148 +2702,25 @@ router.post('/inventario/ajustar-completo', async (req, res) => {
     }
 
     await transaction.commit();
-
     return res.json({
       success: true,
-      mensaje: `Ajustes realizados correctamente. ${ajustes.length} ubicaciones actualizadas en ambas tablas.`
-    });
-
-    // 1. PRIMERO: Identificar y procesar cada ajuste individualmente
-    for (const ajuste of ajustes) {
-      const { 
-        articulo, 
-        codigoAlmacen, 
-        ubicacionStr, 
-        partida, 
-        unidadStock, 
-        nuevaCantidad,
-        codigoColor, 
-        codigoTalla01 
-      } = ajuste;
-
-      const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÃ“N' ? 'SIN-UBICACION' : ubicacionStr;
-      const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
-
-      console.log(`[AJUSTE MANUAL] Procesando: ${articulo} | ${codigoAlmacen} | ${ubicacionNormalizada} | ${nuevaCantidad}`);
-
-      // ðŸ”¥ NUEVA LÃ“GICA: Verificar si ya existe en AcumuladoStock
-      const existeEnAcumuladoStock = await verificarExistenciaEnAcumuladoStock(
-        codigoEmpresa, ejercicio, articulo, codigoAlmacen, 
-        unidadStockNormalizada, partida, codigoColor, codigoTalla01, 
-        transaction
-      );
-
-      console.log(`[AJUSTE MANUAL] ${articulo} | Â¿Existe en AcumuladoStock?: ${existeEnAcumuladoStock}`);
-
-      // 2. ACTUALIZAR AcumuladoStockUbicacion (SIEMPRE se actualiza)
-      await actualizarAcumuladoStockUbicacion(
-        ajuste, codigoEmpresa, ejercicio, transaction
-      );
-
-      // 3. ACTUALIZAR O INSERTAR en AcumuladoStock
-      if (existeEnAcumuladoStock) {
-        console.log(`[AJUSTE MANUAL] Actualizando AcumuladoStock (existente): ${articulo}`);
-        await actualizarAcumuladoStock(
-          ajuste, codigoEmpresa, ejercicio, transaction
-        );
-      } else {
-        console.log(`[AJUSTE MANUAL] Insertando nuevo registro en AcumuladoStock (principal): ${articulo}`);
-        await insertarAcumuladoStock(
-          ajuste, codigoEmpresa, ejercicio, transaction
-        );
-      }
-    }
-
-    await transaction.commit();
-
-    res.json({ 
-      success: true, 
-      mensaje: `Ajustes realizados correctamente. ${ajustes.length} ubicaciones actualizadas en ambas tablas.` 
+      mensaje: `Ajustes realizados correctamente. ${ajustes.length} ubicaciones actualizadas.`
     });
 
   } catch (error) {
     try {
-      if (!transaction._aborted) {
-        await transaction.rollback();
-      }
+      if (!transaction._aborted) await transaction.rollback();
     } catch (rollbackError) {
       console.error('[ERROR ROLLBACK AJUSTE INVENTARIO]', rollbackError);
     }
     console.error('[ERROR AJUSTAR INVENTARIO]', error);
-    res.status(error.statusCode || 500).json({ 
-      success: false, 
+    res.status(error.statusCode || 500).json({
+      success: false,
       mensaje: error.publicMessage || 'Error al realizar los ajustes',
-      error: error.message 
+      error: error.message
     });
   }
 });
-
-// ðŸ”¥ NUEVA FUNCIÃ“N: Verificar si existe en AcumuladoStock
-async function obtenerEjercicioVigenteAcumuladoStockUbicacion(
-  codigoEmpresa, articulo, codigoAlmacen, ubicacion, unidadStock,
-  partida, codigoColor, codigoTalla01, transaction
-) {
-  const result = await new sql.Request(transaction)
-    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-    .input('codigoArticulo', sql.VarChar, articulo)
-    .input('ubicacion', sql.VarChar, ubicacion)
-    .input('tipoUnidad', sql.VarChar, unidadStock || '')
-    .input('partida', sql.VarChar, partida || '')
-    .input('codigoColor', sql.VarChar, codigoColor || '')
-    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
-    .query(`
-      SELECT MIN(Ejercicio) AS EjercicioVigente
-      FROM AcumuladoStockUbicacion
-      WHERE CodigoEmpresa = @codigoEmpresa
-        AND CodigoAlmacen = @codigoAlmacen
-        AND CodigoArticulo = @codigoArticulo
-        AND Ubicacion = @ubicacion
-        AND (
-          (TipoUnidadMedida_ = @tipoUnidad)
-          OR
-          (ISNULL(TipoUnidadMedida_, '') = @tipoUnidad)
-        )
-        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-        AND Periodo = 99
-    `);
-
-  return parseInt(result.recordset[0]?.EjercicioVigente, 10) || null;
-}
-
-async function obtenerEjercicioVigenteAcumuladoStock(
-  codigoEmpresa, articulo, codigoAlmacen, unidadStock,
-  partida, codigoColor, codigoTalla01, transaction
-) {
-  const result = await new sql.Request(transaction)
-    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-    .input('codigoArticulo', sql.VarChar, articulo)
-    .input('tipoUnidad', sql.VarChar, unidadStock || '')
-    .input('partida', sql.VarChar, partida || '')
-    .input('codigoColor', sql.VarChar, codigoColor || '')
-    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
-    .query(`
-      SELECT MIN(Ejercicio) AS EjercicioVigente
-      FROM AcumuladoStock
-      WHERE CodigoEmpresa = @codigoEmpresa
-        AND CodigoAlmacen = @codigoAlmacen
-        AND CodigoArticulo = @codigoArticulo
-        AND (
-          (TipoUnidadMedida_ = @tipoUnidad)
-          OR
-          (ISNULL(TipoUnidadMedida_, '') = @tipoUnidad)
-        )
-        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-        AND Periodo = 99
-    `);
-
-  return parseInt(result.recordset[0]?.EjercicioVigente, 10) || null;
-}
 
 async function verificarExistenciaEnAcumuladoStock(
   codigoEmpresa, ejercicio, articulo, codigoAlmacen, 
@@ -2607,34 +2770,23 @@ async function actualizarAcumuladoStock(ajuste, codigoEmpresa, ejercicio, transa
   await sincronizarAcumuladoStockDesdeUbicaciones(ajuste, codigoEmpresa, ejercicio, transaction);
 }
 
-async function sincronizarAcumuladoStockDesdeUbicaciones(ajuste, codigoEmpresa, ejercicio, transaction) {
+async function sincronizarAcumuladoStockDesdeUbicaciones(ajuste, codigoEmpresa, ejercicio, contexto, transaction) {
   const {
     articulo,
     codigoAlmacen,
-    ubicacionStr,
     partida,
     unidadStock,
     codigoColor,
     codigoTalla01
   } = ajuste;
 
-  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÃ“N' ? 'SIN-UBICACION' : ubicacionStr;
   const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
-  const ejercicioAcumulado = (
-    await obtenerEjercicioVigenteAcumuladoStock(
-      codigoEmpresa,
-      articulo,
-      codigoAlmacen,
-      unidadStockNormalizada,
-      partida,
-      codigoColor,
-      codigoTalla01,
-      transaction
-    )
-  ) || ejercicio;
 
-  const resumenResult = await new sql.Request(transaction)
+  // Sumar el stock total de todas las ubicaciones (periodos 0 y 99, ejercicios base/actual)
+  const totalResult = await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicioBase', sql.SmallInt, contexto.ejercicioBase)
+    .input('ejercicioActual', sql.SmallInt, contexto.ejercicioActual)
     .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
     .input('codigoArticulo', sql.VarChar, articulo)
     .input('tipoUnidad', sql.VarChar, unidadStockNormalizada)
@@ -2642,115 +2794,129 @@ async function sincronizarAcumuladoStockDesdeUbicaciones(ajuste, codigoEmpresa, 
     .input('codigoColor', sql.VarChar, codigoColor || '')
     .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
     .query(`
-      SELECT
-        SUM(ISNULL(UnidadSaldo, 0)) AS TotalUnidadSaldo,
-        SUM(ISNULL(UnidadSaldoTipo_, 0)) AS TotalUnidadSaldoTipo,
-        MIN(NULLIF(Ubicacion, '')) AS UbicacionPrincipal,
-        COUNT(*) AS TotalFilas
+      SELECT SUM(CAST(COALESCE(UnidadSaldo, 0) AS DECIMAL(18,4))) AS TotalStock
       FROM AcumuladoStockUbicacion
       WHERE CodigoEmpresa = @codigoEmpresa
+        AND Ejercicio IN (@ejercicioBase, @ejercicioActual)
         AND CodigoAlmacen = @codigoAlmacen
         AND CodigoArticulo = @codigoArticulo
-        AND (
-          (TipoUnidadMedida_ = @tipoUnidad)
-          OR
-          (TipoUnidadMedida_ = '' AND @tipoUnidad = '')
-        )
-        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-        AND Periodo = 99
+        AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+        AND ISNULL(Partida, '') = @partida
+        AND ISNULL(CodigoColor_, '') = @codigoColor
+        AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+        AND Periodo IN (0, 99)
     `);
 
-  const resumen = resumenResult.recordset[0] || {};
-  const totalFilas = Number(resumen.TotalFilas || 0);
-  const totalUnidadSaldo = Number(resumen.TotalUnidadSaldo || 0);
-  const totalUnidadSaldoTipo = Number(resumen.TotalUnidadSaldoTipo || 0);
-  const ubicacionPrincipal = resumen.UbicacionPrincipal || ubicacionNormalizada;
+  const totalStock = Number(totalResult.recordset[0]?.TotalStock || 0);
 
+  console.log(`[SINCRONIZAR] Total stock calculado desde ubicaciones: ${totalStock} (ejercicios ${contexto.ejercicioBase}/${contexto.ejercicioActual})`);
+
+  // Eliminar el registro actual del periodo 99 en AcumuladoStock (solo ejercicio actual)
   await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicio', sql.Int, ejercicio)
     .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
     .input('codigoArticulo', sql.VarChar, articulo)
-    .input('tipoUnidad', sql.VarChar, unidadStockNormalizada || '')
+    .input('tipoUnidad', sql.VarChar, unidadStockNormalizada)
     .input('partida', sql.VarChar, partida || '')
     .input('codigoColor', sql.VarChar, codigoColor || '')
     .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
     .query(`
       DELETE FROM AcumuladoStock
       WHERE CodigoEmpresa = @codigoEmpresa
+        AND Ejercicio = @ejercicio
         AND CodigoAlmacen = @codigoAlmacen
         AND CodigoArticulo = @codigoArticulo
-        AND (
-          (TipoUnidadMedida_ = @tipoUnidad)
-          OR
-          (TipoUnidadMedida_ = '' AND @tipoUnidad = '')
-        )
-        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+        AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+        AND ISNULL(Partida, '') = @partida
+        AND ISNULL(CodigoColor_, '') = @codigoColor
+        AND ISNULL(CodigoTalla01_, '') = @codigoTalla
         AND Periodo = 99
     `);
 
-  await new sql.Request(transaction)
+  // Insertar nuevo registro en AcumuladoStock (periodo99) con el total calculado
+  if (Math.abs(totalStock) > 0.001) {
+    await new sql.Request(transaction)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.Int, ejercicio)
+      .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+      .input('ubicacion', sql.VarChar, 'SIN-UBICACION') // o la ubicación principal
+      .input('codigoArticulo', sql.VarChar, articulo)
+      .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada)
+      .input('partida', sql.VarChar, partida || '')
+      .input('codigoColor', sql.VarChar, codigoColor || '')
+      .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+      .input('unidadSaldo', sql.Decimal(18,4), totalStock)
+      .input('unidadSaldoTipo', sql.Decimal(18,4), totalStock)
+      .query(`
+        INSERT INTO AcumuladoStock (
+          CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
+          CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
+          UnidadSaldo, UnidadSaldoTipo_, Periodo
+        ) VALUES (
+          @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
+          @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
+          @unidadSaldo, @unidadSaldoTipo, 99
+        )
+      `);
+  } else {
+    // Si el total es cero, no insertamos (o insertamos cero según prefieras)
+    console.log(`[SINCRONIZAR] Total stock es cero, no se inserta registro en AcumuladoStock`);
+  }
+}
+
+// 🔥 FUNCIÓN CORREGIDA: Actualizar AcumuladoStockUbicacion usando el TOTAL deseado (nuevaCantidad es el stock final, suma de periodo0 + periodo99)
+async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercicio, contexto, transaction) {
+  const {
+    articulo,
+    codigoAlmacen,
+    ubicacionStr,
+    partida,
+    unidadStock,
+    nuevaCantidad,
+    codigoColor,
+    codigoTalla01
+  } = ajuste;
+
+  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+  const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
+
+  // 1. Obtener el Periodo0 TOTAL (de ambos ejercicios: base y actual)
+  const periodo0Result = await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-    .input('ejercicio', sql.Int, ejercicioAcumulado)
+    .input('ejercicioBase', sql.SmallInt, contexto.ejercicioBase)
+    .input('ejercicioActual', sql.SmallInt, contexto.ejercicioActual)
     .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-    .input('ubicacion', sql.VarChar, ubicacionPrincipal)
     .input('codigoArticulo', sql.VarChar, articulo)
+    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
     .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada || '')
     .input('partida', sql.VarChar, partida || '')
     .input('codigoColor', sql.VarChar, codigoColor || '')
     .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
-    .input('unidadSaldo', sql.Decimal(18, 4), totalUnidadSaldo)
-    .input('unidadSaldoTipo', sql.Decimal(18, 4), totalUnidadSaldoTipo)
     .query(`
-      INSERT INTO AcumuladoStock (
-        CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
-        CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
-        UnidadSaldo, UnidadSaldoTipo_, Periodo
-      ) VALUES (
-        @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
-        @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
-        @unidadSaldo, @unidadSaldoTipo, 99
-      )
+      SELECT SUM(CAST(COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0) AS DECIMAL(18,4))) AS StockPeriodo0
+      FROM AcumuladoStockUbicacion
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND Ejercicio IN (@ejercicioBase, @ejercicioActual)
+        AND CodigoAlmacen = @codigoAlmacen
+        AND CodigoArticulo = @codigoArticulo
+        AND Ubicacion = @ubicacion
+        AND (TipoUnidadMedida_ = @tipoUnidadMedida OR (TipoUnidadMedida_ IS NULL AND @tipoUnidadMedida = ''))
+        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+        AND Periodo = 0
     `);
 
-  console.log(`[AJUSTE MANUAL] AcumuladoStock sincronizado desde ubicaciones: ${articulo} | ${codigoAlmacen} -> ${totalUnidadSaldoTipo}`);
-}
+  const stockPeriodo0 = Number(periodo0Result.recordset[0]?.StockPeriodo0 || 0);
+  const nuevoPeriodo99 = parseFloat(nuevaCantidad) - stockPeriodo0;
 
-// ðŸ”¥ FUNCIÃ“N MODIFICADA: Actualizar AcumuladoStockUbicacion
-async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercicio, transaction) {
-  const { 
-    articulo, 
-    codigoAlmacen, 
-    ubicacionStr, 
-    partida, 
-    unidadStock, 
-    nuevaCantidad,
-    codigoColor, 
-    codigoTalla01 
-  } = ajuste;
+  console.log(`[AJUSTE] Periodo0 total = ${stockPeriodo0} | Total deseado = ${nuevaCantidad} | Nuevo Periodo99 = ${nuevoPeriodo99}`);
 
-  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÃ“N' ? 'SIN-UBICACION' : ubicacionStr;
-  const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
-  const ejercicioUbicacion = (
-    await obtenerEjercicioVigenteAcumuladoStockUbicacion(
-      codigoEmpresa,
-      articulo,
-      codigoAlmacen,
-      ubicacionNormalizada,
-      unidadStockNormalizada,
-      partida,
-      codigoColor,
-      codigoTalla01,
-      transaction
-    )
-  ) || ejercicio;
-
-  // 1. ELIMINAR cualquier fila vigente duplicada para la combinaciÃ³n funcional exacta
+  // 2. Eliminar el registro actual del periodo 99 (solo ejercicio actual)
   await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicio', sql.Int, ejercicio)
     .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
     .input('codigoArticulo', sql.VarChar, articulo)
     .input('ubicacion', sql.VarChar, ubicacionNormalizada)
@@ -2761,6 +2927,7 @@ async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercici
     .query(`
       DELETE FROM AcumuladoStockUbicacion
       WHERE CodigoEmpresa = @codigoEmpresa
+        AND Ejercicio = @ejercicio
         AND CodigoAlmacen = @codigoAlmacen
         AND CodigoArticulo = @codigoArticulo
         AND Ubicacion = @ubicacion
@@ -2771,9 +2938,10 @@ async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercici
         AND Periodo = 99
     `);
 
+  // 3. Insertar el nuevo periodo99 (incluso si es cero, para mantener coherencia)
   await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-    .input('ejercicio', sql.Int, ejercicioUbicacion)
+    .input('ejercicio', sql.Int, ejercicio)
     .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
     .input('ubicacion', sql.VarChar, ubicacionNormalizada)
     .input('codigoArticulo', sql.VarChar, articulo)
@@ -2781,8 +2949,8 @@ async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercici
     .input('partida', sql.VarChar, partida || '')
     .input('codigoColor', sql.VarChar, codigoColor || '')
     .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
-    .input('unidadSaldo', sql.Decimal(18, 4), parseFloat(nuevaCantidad) || 0)
-    .input('unidadSaldoTipo', sql.Decimal(18, 4), parseFloat(nuevaCantidad) || 0)
+    .input('unidadSaldo', sql.Decimal(18,4), nuevoPeriodo99)
+    .input('unidadSaldoTipo', sql.Decimal(18,4), nuevoPeriodo99)
     .query(`
       INSERT INTO AcumuladoStockUbicacion (
         CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
@@ -2794,8 +2962,6 @@ async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercici
         @unidadSaldo, @unidadSaldoTipo, 99
       )
     `);
-
-  console.log(`[AJUSTE MANUAL] AcumuladoStockUbicacion actualizado: ${articulo} | ${ubicacionNormalizada} -> ${nuevaCantidad}`);
 }
 
 // ðŸ”¥ NUEVA FUNCIÃ“N: Verificar si es ubicaciÃ³n principal en AcumuladoStock
@@ -2841,38 +3007,56 @@ async function esUbicacionPrincipalEnAcumuladoStock(
   }
 }
 
-// ðŸ”¥ NUEVA FUNCIÃ“N: Actualizar solo AcumuladoStockUbicacion
-async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercicio, transaction) {
-  const { 
-    articulo, 
-    codigoAlmacen, 
-    ubicacionStr, 
-    partida, 
-    unidadStock, 
+// 🔥 FUNCIÓN CORREGIDA: Actualizar AcumuladoStockUbicacion (sin borrar ejercicios ajenos y usando ejercicio actual)
+async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercicio, contexto, transaction) {
+  const {
+    articulo,
+    codigoAlmacen,
+    ubicacionStr,
+    partida,
+    unidadStock,
     nuevaCantidad,
-    codigoColor, 
-    codigoTalla01 
+    codigoColor,
+    codigoTalla01
   } = ajuste;
 
-  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÃ“N' ? 'SIN-UBICACION' : ubicacionStr;
+  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
   const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
-  const ejercicioUbicacion = (
-    await obtenerEjercicioVigenteAcumuladoStockUbicacion(
-      codigoEmpresa,
-      articulo,
-      codigoAlmacen,
-      ubicacionNormalizada,
-      unidadStockNormalizada,
-      partida,
-      codigoColor,
-      codigoTalla01,
-      transaction
-    )
-  ) || ejercicio;
 
-  // 1. ELIMINAR cualquier fila vigente duplicada para la combinaciÃ³n funcional exacta
+  // Obtener el Periodo0 total (de los ejercicios base y actual)
+  const periodo0Result = await new sql.Request(transaction)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicioBase', sql.SmallInt, contexto.ejercicioBase)
+    .input('ejercicioActual', sql.SmallInt, contexto.ejercicioActual)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
+    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada || '')
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+    .query(`
+      SELECT SUM(CAST(COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0) AS DECIMAL(18,4))) AS StockPeriodo0
+      FROM AcumuladoStockUbicacion
+      WHERE CodigoEmpresa = @codigoEmpresa
+        AND Ejercicio IN (@ejercicioBase, @ejercicioActual)
+        AND CodigoAlmacen = @codigoAlmacen
+        AND CodigoArticulo = @codigoArticulo
+        AND Ubicacion = @ubicacion
+        AND (TipoUnidadMedida_ = @tipoUnidadMedida OR (TipoUnidadMedida_ IS NULL AND @tipoUnidadMedida = ''))
+        AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
+        AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
+        AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
+        AND Periodo = 0
+    `);
+
+  const stockPeriodo0 = Number(periodo0Result.recordset[0]?.StockPeriodo0 || 0);
+  const nuevoPeriodo99 = parseFloat(nuevaCantidad) - stockPeriodo0;
+
+  // Eliminar el registro actual del periodo 99 (solo ejercicio actual)
   await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicio', sql.Int, ejercicio)
     .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
     .input('codigoArticulo', sql.VarChar, articulo)
     .input('ubicacion', sql.VarChar, ubicacionNormalizada)
@@ -2883,6 +3067,7 @@ async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercici
     .query(`
       DELETE FROM AcumuladoStockUbicacion
       WHERE CodigoEmpresa = @codigoEmpresa
+        AND Ejercicio = @ejercicio
         AND CodigoAlmacen = @codigoAlmacen
         AND CodigoArticulo = @codigoArticulo
         AND Ubicacion = @ubicacion
@@ -2893,31 +3078,34 @@ async function actualizarAcumuladoStockUbicacion(ajuste, codigoEmpresa, ejercici
         AND Periodo = 99
     `);
 
-  await new sql.Request(transaction)
-    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-    .input('ejercicio', sql.Int, ejercicioUbicacion)
-    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
-    .input('codigoArticulo', sql.VarChar, articulo)
-    .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada || '')
-    .input('partida', sql.VarChar, partida || '')
-    .input('codigoColor', sql.VarChar, codigoColor || '')
-    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
-    .input('unidadSaldo', sql.Decimal(18, 4), parseFloat(nuevaCantidad) || 0)
-    .input('unidadSaldoTipo', sql.Decimal(18, 4), parseFloat(nuevaCantidad) || 0)
-    .query(`
-      INSERT INTO AcumuladoStockUbicacion (
-        CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
-        CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
-        UnidadSaldo, UnidadSaldoTipo_, Periodo
-      ) VALUES (
-        @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
-        @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
-        @unidadSaldo, @unidadSaldoTipo, 99
-      )
-    `);
+  // Insertar el nuevo periodo99 (si es cero puedes omitirlo o mantenerlo según prefieras)
+  if (Math.abs(nuevoPeriodo99) > 0.001) {
+    await new sql.Request(transaction)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.Int, ejercicio)
+      .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+      .input('ubicacion', sql.VarChar, ubicacionNormalizada)
+      .input('codigoArticulo', sql.VarChar, articulo)
+      .input('tipoUnidadMedida', sql.VarChar, unidadStockNormalizada || '')
+      .input('partida', sql.VarChar, partida || '')
+      .input('codigoColor', sql.VarChar, codigoColor || '')
+      .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+      .input('unidadSaldo', sql.Decimal(18,4), nuevoPeriodo99)
+      .input('unidadSaldoTipo', sql.Decimal(18,4), nuevoPeriodo99)
+      .query(`
+        INSERT INTO AcumuladoStockUbicacion (
+          CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
+          CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
+          UnidadSaldo, UnidadSaldoTipo_, Periodo
+        ) VALUES (
+          @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
+          @codigoArticulo, @tipoUnidadMedida, @partida, @codigoColor, @codigoTalla,
+          @unidadSaldo, @unidadSaldoTipo, 99
+        )
+      `);
+  }
 
-  console.log(`[AJUSTE MANUAL] AcumuladoStockUbicacion actualizado: ${articulo} | ${ubicacionNormalizada} -> ${nuevaCantidad}`);
+  console.log(`[AJUSTE] Periodo0 total = ${stockPeriodo0} | Total deseado = ${nuevaCantidad} | Nuevo Periodo99 = ${nuevoPeriodo99}`);
 }
 
 // ðŸ”¥ NUEVA FUNCIÃ“N: Actualizar AcumuladoStock (solo para ubicaciÃ³n principal)
@@ -3125,12 +3313,13 @@ const safeString = (value, maxLength = 10, defaultValue = '') => {
   }
 };
 
+
 function normalizarAjusteInventario(ajuste = {}) {
   return {
     articulo: ajuste.articulo,
     descripcionArticulo: ajuste.descripcionArticulo || '',
     codigoAlmacen: ajuste.codigoAlmacen,
-    ubicacionStr: ajuste.ubicacionStr === 'SIN UBICACIÃ“N' ? 'SIN-UBICACION' : (ajuste.ubicacionStr || 'SIN-UBICACION'),
+    ubicacionStr: ajuste.ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : (ajuste.ubicacionStr || 'SIN-UBICACION'),
     partida: ajuste.partida || '',
     unidadStock: (!ajuste.unidadStock || ajuste.unidadStock === 'unidades') ? '' : ajuste.unidadStock,
     nuevaCantidad: parseFloat(ajuste.nuevaCantidad) || 0,
@@ -3138,6 +3327,7 @@ function normalizarAjusteInventario(ajuste = {}) {
     codigoTalla01: ajuste.codigoTalla01 || ''
   };
 }
+
 
 function esMismaCombinacionInventario(origen, destino) {
   return (
@@ -3156,6 +3346,102 @@ function crearErrorInventario(statusCode, publicMessage) {
   error.statusCode = statusCode;
   error.publicMessage = publicMessage;
   return error;
+}
+
+function debeBloquearAjusteSinStockVigente(diagnostico) {
+  return (
+    !diagnostico.existeUbicacionPeriodo99 &&
+    (!diagnostico.existeAcumuladoPeriodo99 || diagnostico.saldoAcumuladoPeriodo99 === 0) &&
+    diagnostico.hayHistoricoOtrosPeriodos
+  );
+}
+
+async function obtenerDiagnosticoStockVigenteAjuste(codigoEmpresa, ejercicio, ajuste, contexto, transaction) {
+  // 🛡️ Validar que transaction existe
+  if (!transaction || typeof transaction !== 'object') {
+    console.error('[ERROR] Transaction inválida en obtenerDiagnosticoStockVigenteAjuste', transaction);
+    throw new Error('Se requiere una transacción activa para el diagnóstico');
+  }
+
+  const request = new sql.Request(transaction);
+  request
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('ejercicioBase', sql.SmallInt, contexto.ejercicioBase)
+    .input('ejercicioActual', sql.SmallInt, contexto.ejercicioActual)
+    .input('codigoArticulo', sql.VarChar(50), ajuste.articulo)
+    .input('codigoAlmacen', sql.VarChar(10), ajuste.codigoAlmacen)
+    .input('ubicacion', sql.VarChar(50), ajuste.ubicacionStr)
+    .input('tipoUnidad', sql.VarChar(20), ajuste.unidadStock || '')
+    .input('partida', sql.VarChar(20), ajuste.partida || '')
+    .input('codigoColor', sql.VarChar(20), ajuste.codigoColor || '')
+    .input('codigoTalla', sql.VarChar(20), ajuste.codigoTalla01 || '');
+
+  const result = await request.query(`
+    SELECT
+      (SELECT COUNT(*) FROM AcumuladoStockUbicacion s
+       WHERE s.CodigoEmpresa = @codigoEmpresa
+         AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+         AND s.CodigoArticulo = @codigoArticulo
+         AND s.CodigoAlmacen = @codigoAlmacen
+         AND s.Ubicacion = @ubicacion
+         AND ISNULL(s.TipoUnidadMedida_, '') = @tipoUnidad
+         AND ISNULL(s.Partida, '') = @partida
+         AND ISNULL(s.CodigoColor_, '') = @codigoColor
+         AND ISNULL(s.CodigoTalla01_, '') = @codigoTalla
+         AND s.Periodo = 99) AS FilasUbicacionPeriodo99,
+      (SELECT COUNT(*) FROM AcumuladoStock s
+       WHERE s.CodigoEmpresa = @codigoEmpresa
+         AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+         AND s.CodigoArticulo = @codigoArticulo
+         AND s.CodigoAlmacen = @codigoAlmacen
+         AND ISNULL(s.TipoUnidadMedida_, '') = @tipoUnidad
+         AND ISNULL(s.Partida, '') = @partida
+         AND ISNULL(s.CodigoColor_, '') = @codigoColor
+         AND ISNULL(s.CodigoTalla01_, '') = @codigoTalla
+         AND s.Periodo = 99) AS FilasAcumuladoPeriodo99,
+      (SELECT COALESCE(SUM(ISNULL(s.UnidadSaldo, 0)), 0) FROM AcumuladoStock s
+       WHERE s.CodigoEmpresa = @codigoEmpresa
+         AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+         AND s.CodigoArticulo = @codigoArticulo
+         AND s.CodigoAlmacen = @codigoAlmacen
+         AND ISNULL(s.TipoUnidadMedida_, '') = @tipoUnidad
+         AND ISNULL(s.Partida, '') = @partida
+         AND ISNULL(s.CodigoColor_, '') = @codigoColor
+         AND ISNULL(s.CodigoTalla01_, '') = @codigoTalla
+         AND s.Periodo = 99) AS SaldoAcumuladoPeriodo99,
+      (SELECT COUNT(*) FROM AcumuladoStockUbicacion s
+       WHERE s.CodigoEmpresa = @codigoEmpresa
+         AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+         AND s.CodigoArticulo = @codigoArticulo
+         AND s.CodigoAlmacen = @codigoAlmacen
+         AND s.Ubicacion = @ubicacion
+         AND ISNULL(s.TipoUnidadMedida_, '') = @tipoUnidad
+         AND ISNULL(s.Partida, '') = @partida
+         AND ISNULL(s.CodigoColor_, '') = @codigoColor
+         AND ISNULL(s.CodigoTalla01_, '') = @codigoTalla
+         AND s.Periodo <> 99) AS HistoricoUbicacionOtrosPeriodos,
+      (SELECT COUNT(*) FROM AcumuladoStock s
+       WHERE s.CodigoEmpresa = @codigoEmpresa
+         AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+         AND s.CodigoArticulo = @codigoArticulo
+         AND s.CodigoAlmacen = @codigoAlmacen
+         AND ISNULL(s.TipoUnidadMedida_, '') = @tipoUnidad
+         AND ISNULL(s.Partida, '') = @partida
+         AND ISNULL(s.CodigoColor_, '') = @codigoColor
+         AND ISNULL(s.CodigoTalla01_, '') = @codigoTalla
+         AND s.Periodo <> 99) AS HistoricoAcumuladoOtrosPeriodos
+  `);
+
+  const row = result.recordset[0] || {};
+  const historicoUbicacion = Number(row.HistoricoUbicacionOtrosPeriodos || 0);
+  const historicoAcumulado = Number(row.HistoricoAcumuladoOtrosPeriodos || 0);
+
+  return {
+    existeUbicacionPeriodo99: Number(row.FilasUbicacionPeriodo99 || 0) > 0,
+    existeAcumuladoPeriodo99: Number(row.FilasAcumuladoPeriodo99 || 0) > 0,
+    saldoAcumuladoPeriodo99: Number(row.SaldoAcumuladoPeriodo99 || 0),
+    hayHistoricoOtrosPeriodos: historicoUbicacion > 0 || historicoAcumulado > 0
+  };
 }
 
 async function obtenerRegistroVigenteAcumuladoStockUbicacionExacto(codigoEmpresa, ajuste, transaction) {
@@ -3197,19 +3483,35 @@ async function obtenerRegistroVigenteAcumuladoStockUbicacionExacto(codigoEmpresa
   return result.recordset[0] || null;
 }
 
-async function eliminarCombinacionVigenteAcumuladoStockUbicacion(codigoEmpresa, ajuste, transaction) {
+// Función para eliminar una combinación específica SOLO del ejercicio actual
+async function eliminarCombinacionVigenteAcumuladoStockUbicacion(codigoEmpresa, ajuste, ejercicio, transaction) {
+  const {
+    articulo,
+    codigoAlmacen,
+    ubicacionStr,
+    partida,
+    unidadStock,
+    codigoColor,
+    codigoTalla01
+  } = ajuste;
+
+  const ubicacionNormalizada = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+  const unidadStockNormalizada = (unidadStock === 'unidades' ? '' : unidadStock);
+
   await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-    .input('codigoArticulo', sql.VarChar, ajuste.articulo)
-    .input('codigoAlmacen', sql.VarChar, ajuste.codigoAlmacen)
-    .input('ubicacion', sql.VarChar, ajuste.ubicacionStr)
-    .input('tipoUnidad', sql.VarChar, ajuste.unidadStock || '')
-    .input('partida', sql.VarChar, ajuste.partida || '')
-    .input('codigoColor', sql.VarChar, ajuste.codigoColor || '')
-    .input('codigoTalla', sql.VarChar, ajuste.codigoTalla01 || '')
+    .input('ejercicio', sql.Int, ejercicio)   // ← Recibido como parámetro
+    .input('codigoArticulo', sql.VarChar, articulo)
+    .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+    .input('ubicacion', sql.VarChar, ubicacionNormalizada)
+    .input('tipoUnidad', sql.VarChar, unidadStockNormalizada)
+    .input('partida', sql.VarChar, partida || '')
+    .input('codigoColor', sql.VarChar, codigoColor || '')
+    .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
     .query(`
       DELETE FROM AcumuladoStockUbicacion
       WHERE CodigoEmpresa = @codigoEmpresa
+        AND Ejercicio = @ejercicio               -- ← Solo el ejercicio actual
         AND CodigoArticulo = @codigoArticulo
         AND CodigoAlmacen = @codigoAlmacen
         AND Ubicacion = @ubicacion
@@ -3224,61 +3526,94 @@ async function eliminarCombinacionVigenteAcumuladoStockUbicacion(codigoEmpresa, 
 async function registrarMovimientoInventario(payload, transaction) {
   const ahora = new Date();
   const periodo = ahora.getMonth() + 1;
-  const comentario = safeString(`${payload.comentario} por ${payload.usuarioInventario}`, 40);
-  const codigoUsuario = safeString(payload.usuarioInventario, 20, '');
-  const codigoArticulo = safeString(payload.ajuste.articulo, 20);
-  const codigoAlmacen = safeString(payload.ajuste.codigoAlmacen, 4);
-  const ubicacion = safeString(payload.ajuste.ubicacionStr, 15);
-  const unidadMedida = safeString(payload.ajuste.unidadStock || '', 10);
-  const partida = safeString(payload.ajuste.partida || '', 15);
-  const codigoColor = safeString(payload.ajuste.codigoColor || '', 10);
-  const codigoTalla = safeString(payload.ajuste.codigoTalla01 || '', 10);
+  
+  // Función local para limpiar strings (sin truncar datos críticos)
+  const limpiarString = (valor, maxLength = 0) => {
+    if (valor === null || valor === undefined) return '';
+    let str = String(valor).trim();
+    if (str === 'null' || str === 'undefined') return '';
+    // Limpiar comas (aunque no suelen dar problemas)
+    str = str.replace(/[,]/g, '').trim();
+    // Si se especifica maxLength, truncar; por defecto no truncamos (0 = sin límite)
+    if (maxLength > 0 && str.length > maxLength) {
+      return str.slice(0, maxLength);
+    }
+    return str;
+  };
 
-  console.log('[AJUSTE MANUAL] Registro historial inventario:', {
+  // Comentario: asegurar que no supere los 40 caracteres (restricción típica de la columna)
+  const comentarioBase = `${payload.comentario} por ${payload.usuarioInventario}`;
+  const comentario = comentarioBase.length > 40 ? comentarioBase.slice(0, 37) + '...' : comentarioBase;
+  
+  // Datos del ajuste
+  const codigoArticulo = limpiarString(payload.ajuste.articulo, 20);
+  const codigoAlmacen = limpiarString(payload.ajuste.codigoAlmacen, 4);
+  const ubicacion = limpiarString(payload.ajuste.ubicacionStr, 15);
+  const unidadMedida = limpiarString(payload.ajuste.unidadStock || '', 10);
+  const partida = limpiarString(payload.ajuste.partida || '', 15);
+  const codigoColor = limpiarString(payload.ajuste.codigoColor || '', 10);
+  const codigoTalla = limpiarString(payload.ajuste.codigoTalla01 || '', 10);
+  const codigoUsuario = limpiarString(payload.usuarioInventario, 20);
+  
+  // Unidades (diferencia de stock)
+  const unidades = typeof payload.unidades === 'number' ? payload.unidades : parseFloat(payload.unidades) || 0;
+
+  console.log('[MOVIMIENTO INVENTARIO] Insertando registro:', {
+    codigoEmpresa: payload.codigoEmpresa,
+    ejercicio: payload.ejercicio,
+    periodo,
+    tipoMovimiento: 5,
     codigoArticulo,
     codigoAlmacen,
     ubicacion,
+    unidades,
     comentario,
+    usuario: codigoUsuario,
     unidadMedida,
     partida,
     codigoColor,
-    codigoTalla,
-    unidades: payload.unidades
+    codigoTalla
   });
 
-  await new sql.Request(transaction)
-    .input('codigoEmpresa', sql.SmallInt, payload.codigoEmpresa)
-    .input('ejercicio', sql.SmallInt, payload.ejercicio)
-    .input('periodo', sql.SmallInt, periodo)
-    .input('fecha', sql.Date, ahora)
-    .input('fechaRegistro', sql.DateTime, ahora)
-    .input('tipoMovimiento', sql.SmallInt, 5)
-    .input('codigoArticulo', sql.VarChar(20), codigoArticulo)
-    .input('codigoAlmacen', sql.VarChar(4), codigoAlmacen)
-    .input('ubicacion', sql.VarChar(15), ubicacion)
-    .input('unidades', sql.Decimal(18, 4), payload.unidades)
-    .input('comentario', sql.VarChar(40), comentario)
-    .input('codigoCliente', sql.VarChar(20), codigoUsuario)
-    .input('unidadMedida', sql.VarChar(10), unidadMedida)
-    .input('partida', sql.VarChar(15), partida)
-    .input('codigoColor', sql.VarChar(10), codigoColor)
-    .input('codigoTalla', sql.VarChar(10), codigoTalla)
-    .query(`
-      INSERT INTO MovimientoStock (
-        CodigoEmpresa, Ejercicio, Periodo, Fecha, FechaRegistro, TipoMovimiento,
-        CodigoArticulo, CodigoAlmacen, Ubicacion,
-        Unidades, Comentario, CodigoCliente, UnidadMedida1_, Partida,
-        CodigoColor_, CodigoTalla01_
-      ) VALUES (
-        @codigoEmpresa, @ejercicio, @periodo, @fecha, @fechaRegistro, @tipoMovimiento,
-        @codigoArticulo, @codigoAlmacen, @ubicacion,
-        @unidades, @comentario, @codigoCliente, @unidadMedida, @partida,
-        @codigoColor, @codigoTalla
-      )
-    `);
+  try {
+    await new sql.Request(transaction)
+      .input('codigoEmpresa', sql.SmallInt, payload.codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, payload.ejercicio)
+      .input('periodo', sql.SmallInt, periodo)
+      .input('fecha', sql.Date, ahora)
+      .input('fechaRegistro', sql.DateTime, ahora)
+      .input('tipoMovimiento', sql.SmallInt, 5)
+      .input('codigoArticulo', sql.VarChar(20), codigoArticulo)
+      .input('codigoAlmacen', sql.VarChar(4), codigoAlmacen)
+      .input('ubicacion', sql.VarChar(15), ubicacion)
+      .input('unidades', sql.Decimal(18, 4), unidades)
+      .input('comentario', sql.VarChar(40), comentario)
+      .input('codigoCliente', sql.VarChar(20), codigoUsuario)   // Suponemos que el usuario se guarda aquí
+      .input('unidadMedida1', sql.VarChar(10), unidadMedida)
+      .input('partida', sql.VarChar(15), partida)
+      .input('codigoColor', sql.VarChar(10), codigoColor)
+      .input('codigoTalla01', sql.VarChar(10), codigoTalla)
+      .query(`
+        INSERT INTO MovimientoStock (
+          CodigoEmpresa, Ejercicio, Periodo, Fecha, FechaRegistro, TipoMovimiento,
+          CodigoArticulo, CodigoAlmacen, Ubicacion,
+          Unidades, Comentario, CodigoCliente, UnidadMedida1_, Partida,
+          CodigoColor_, CodigoTalla01_
+        ) VALUES (
+          @codigoEmpresa, @ejercicio, @periodo, @fecha, @fechaRegistro, @tipoMovimiento,
+          @codigoArticulo, @codigoAlmacen, @ubicacion,
+          @unidades, @comentario, @codigoCliente, @unidadMedida1, @partida,
+          @codigoColor, @codigoTalla01
+        )
+      `);
+      
+    console.log('[MOVIMIENTO INVENTARIO] Registro insertado correctamente');
+  } catch (error) {
+    console.error('[MOVIMIENTO INVENTARIO] Error al insertar:', error.message);
+    // Relanzamos el error para que la transacción principal sepa que falló
+    throw new Error(`No se pudo registrar el movimiento de inventario: ${error.message}`);
+  }
 }
 
   return router;
 };
-
-

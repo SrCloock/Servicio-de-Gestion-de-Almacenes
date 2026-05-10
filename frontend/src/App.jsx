@@ -13,7 +13,7 @@ import AlbaranesAsignadosScreen from './pages/AlbaranesAsignadosScreen';
 import TraspasosPage from './pages/TraspasosPage';
 import InventarioPage from './pages/InventarioPage';
 import GestionDocumentalScreen from './pages/GestionDocumentalScreen';
-import RecepcionPedidosCompra from './pages/RecepcionPedidosCompra';
+import RecepcionPedidosCompra from './pages/RecepcionPedidosCompra/index';
 import { PermissionsProvider, ProtectedRouteWithPermission } from './PermissionsManager';
 
 const ProtectedRoute = ({ children }) => {

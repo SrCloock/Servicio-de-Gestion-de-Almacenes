@@ -17,11 +17,6 @@ class ApiService {
 
   getBaseURL() {
     const configuredApiUrl = (import.meta.env.VITE_API_URL || '').trim();
-    const isViteDevServer = window.location.port === '5173';
-
-    if (isViteDevServer) {
-      return '/api';
-    }
 
     if (configuredApiUrl) {
       return configuredApiUrl;

@@ -1,4 +1,4 @@
-﻿import '../styles/InventarioPage.css';
+import '../styles/InventarioPage.css';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
@@ -165,6 +165,39 @@ const filterFields = [
   { name: 'subfamilia', label: 'Subfamilia', placeholder: 'Buscar por subfamilia' }
 ];
 
+const normalizarUbicacionOption = (ubicacion) => {
+  if (!ubicacion) {
+    return null;
+  }
+
+  const codigo = String(
+    ubicacion.Ubicacion ??
+    ubicacion.CodigoUbicacion ??
+    ubicacion.value ??
+    ''
+  ).trim();
+
+  if (!codigo) {
+    return null;
+  }
+
+  const descripcion = String(
+    ubicacion.DescripcionUbicacion ??
+    ubicacion.descripcion ??
+    ubicacion.label ??
+    ''
+  ).trim();
+
+  return {
+    ...ubicacion,
+    Ubicacion: codigo,
+    DescripcionUbicacion: descripcion
+  };
+};
+
+const formatUbicacionLabel = (ubicacion) =>
+  [ubicacion?.Ubicacion, ubicacion?.DescripcionUbicacion].filter(Boolean).join(' - ');
+
 const InventarioFilters = ({
   open,
   onToggle,
@@ -247,7 +280,7 @@ const InventarioUbicacionesTable = ({
         <TableHead>
           <TableRow sx={{ backgroundColor: 'rgba(44, 62, 80, 0.05)' }}>
             <TableCell>AlmacÃ©n</TableCell>
-            <TableCell>UbicaciÃ³n</TableCell>
+            <TableCell>Ubicación</TableCell>
             <TableCell>DescripciÃ³n</TableCell>
             <TableCell>Unidad</TableCell>
             <TableCell>Talla/Color</TableCell>
@@ -307,7 +340,7 @@ const InventarioUbicacionesTable = ({
                 </Stack>
               </TableCell>
               <TableCell>{ubicacion.Ubicacion || 'N/A'}</TableCell>
-              <TableCell>{ubicacion.DescripcionUbicacion || 'Stock sin ubicaciÃ³n asignada'}</TableCell>
+              <TableCell>{ubicacion.DescripcionUbicacion || 'Stock sin ubicación asignada'}</TableCell>
               <TableCell>{ubicacion.UnidadStock || 'unidades'}</TableCell>
               <TableCell>
                 {ubicacion.TallaColorDisplay && ubicacion.TallaColorDisplay !== 'N/A' ? (
@@ -632,7 +665,8 @@ const NuevoAjusteDialog = ({
   onColorChange,
   cantidadNuevoAjuste,
   onCantidadChange,
-  onGuardar
+  onGuardar,
+  omitirSiguienteBusquedaUbicacionRef
 }) => {
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
@@ -647,10 +681,10 @@ const NuevoAjusteDialog = ({
             <TextField
               fullWidth
               autoFocus
-              label="Buscar ArtÃ­culo *"
+              label="Buscar Artículo *"
               value={articuloBusqueda}
               onChange={(e) => onArticuloBusquedaChange(e.target.value)}
-              placeholder="Ingrese cÃ³digo o descripciÃ³n del artÃ­culo..."
+              placeholder="Ingrese código o descripción del artículo..."
             />
 
             {resultadosBusqueda.length > 0 && (
@@ -687,7 +721,7 @@ const NuevoAjusteDialog = ({
               sx={{ p: 2, borderRadius: 2, backgroundColor: 'rgba(39, 174, 96, 0.06)' }}
             >
               <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
-                ArtÃ­culo seleccionado
+                Artículo seleccionado
               </Typography>
               <Typography variant="body1">
                 <strong>{articuloSeleccionado.CodigoArticulo}</strong> - {articuloSeleccionado.DescripcionArticulo}
@@ -695,8 +729,8 @@ const NuevoAjusteDialog = ({
             </Paper>
           )}
 
-          <TextField select fullWidth label="AlmacÃ©n *" value={almacenSeleccionado} onChange={(e) => onAlmacenChange(e.target.value)}>
-            <MenuItem value="">Seleccionar almacÃ©n</MenuItem>
+          <TextField select fullWidth label="Almacén *" value={almacenSeleccionado} onChange={(e) => onAlmacenChange(e.target.value)}>
+            <MenuItem value="">Seleccionar almacén</MenuItem>
             {almacenesDisponibles.map((almacen) => (
               <MenuItem key={almacen.CodigoAlmacen} value={almacen.CodigoAlmacen}>
                 {almacen.CodigoAlmacen} - {almacen.Almacen || almacen.CodigoAlmacen}
@@ -712,16 +746,29 @@ const NuevoAjusteDialog = ({
               filterOptions={(options) => options}
               value={ubicacionesDisponibles.find((ubicacion) => ubicacion.Ubicacion === ubicacionSeleccionada) || null}
               inputValue={ubicacionBusqueda}
-              onChange={(_, nuevaUbicacion) => onUbicacionChange(nuevaUbicacion?.Ubicacion || '')}
+              onChange={(_, nuevaUbicacion) => {
+                const ubicacionNormalizada = normalizarUbicacionOption(nuevaUbicacion);
+                omitirSiguienteBusquedaUbicacionRef.current = true;
+                onUbicacionChange(ubicacionNormalizada?.Ubicacion || '');
+                onUbicacionBusquedaChange(
+                  ubicacionNormalizada ? formatUbicacionLabel(ubicacionNormalizada) : ''
+                );
+              }}
               onInputChange={(_, nuevoValor, reason) => {
+                if (omitirSiguienteBusquedaUbicacionRef.current) {
+                  omitirSiguienteBusquedaUbicacionRef.current = false;
+                  return;
+                }
+
                 if (reason === 'input' || reason === 'clear') {
+                  onUbicacionChange('');
                   onUbicacionBusquedaChange(nuevoValor);
                 }
               }}
-              isOptionEqualToValue={(option, value) => option.Ubicacion === value.Ubicacion}
+              isOptionEqualToValue={(option, value) => normalizarUbicacionOption(option)?.Ubicacion === normalizarUbicacionOption(value)?.Ubicacion}
               getOptionLabel={(option) => {
-                if (!option) return '';
-                return [option.Ubicacion, option.DescripcionUbicacion].filter(Boolean).join(' - ');
+                const ubicacionNormalizada = normalizarUbicacionOption(option);
+                return ubicacionNormalizada ? formatUbicacionLabel(ubicacionNormalizada) : '';
               }}
               ListboxProps={{
                 onScroll: onUbicacionesScroll,
@@ -736,13 +783,13 @@ const NuevoAjusteDialog = ({
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="UbicaciÃƒÂ³n *"
-                  placeholder="Buscar ubicaciÃƒÂ³n..."
+                  label="Ubicación *"
+                  placeholder="Buscar ubicación..."
                 />
               )}
               renderOption={(props, ubicacion) => (
-                <Box component="li" {...props} key={ubicacion.Ubicacion}>
-                  {[ubicacion.Ubicacion, ubicacion.DescripcionUbicacion].filter(Boolean).join(' - ')}
+                <Box component="li" {...props} key={normalizarUbicacionOption(ubicacion)?.Ubicacion || props.key}>
+                  {formatUbicacionLabel(normalizarUbicacionOption(ubicacion))}
                 </Box>
               )}
             />
@@ -1074,6 +1121,7 @@ const InventarioPage = () => {
   const [mostrarSelectorTalla, setMostrarSelectorTalla] = useState(false);
   const [mostrarSelectorColor, setMostrarSelectorColor] = useState(false);
   const ubicacionesRequestRef = useRef(0);
+  const omitirSiguienteBusquedaUbicacionRef = useRef(false);
   const inventarioRequestRef = useRef(0);
   const UBICACIONES_BATCH_SIZE = 50;
   const INVENTARIO_BATCH_SIZE = 30;
@@ -1162,7 +1210,9 @@ const InventarioPage = () => {
       }
 
       const payload = response.data || {};
-      const items = Array.isArray(payload.items) ? payload.items : [];
+      const items = Array.isArray(payload.items)
+        ? payload.items.map(normalizarUbicacionOption).filter(Boolean)
+        : [];
 
       setUbicacionesDisponibles((prev) => {
         if (!append) {
@@ -1197,7 +1247,6 @@ const InventarioPage = () => {
   };
 
   const handleUbicacionBusquedaChange = (value) => {
-    setUbicacionSeleccionada('');
     setUbicacionBusqueda(value);
   };
 
@@ -1391,6 +1440,11 @@ const InventarioPage = () => {
       return;
     }
 
+    if (omitirSiguienteBusquedaUbicacionRef.current) {
+      omitirSiguienteBusquedaUbicacionRef.current = false;
+      return;
+    }
+
     const timeoutId = setTimeout(() => {
       cargarUbicacionesPorAlmacen({
         codigoAlmacen: almacenSeleccionado,
@@ -1556,7 +1610,7 @@ const InventarioPage = () => {
     const ubicacion = [ajuste.codigoAlmacen, normalizarTextoInventario(ajuste.ubicacionStr)].filter(Boolean).join(' / ');
 
     if (ubicacion) {
-      resumen.push({ label: 'UbicaciÃ³n', value: ubicacion });
+      resumen.push({ label: 'Ubicación', value: ubicacion });
     }
 
     if (ajuste.codigoTalla01) {
@@ -1897,6 +1951,14 @@ const InventarioPage = () => {
         ? groupedItems.length
         : Number(payload.nextOffset || 0);
 
+      console.log('[InventarioPage] Respuesta inventario lote', {
+        payloadKeys: Array.isArray(payload) ? ['array'] : Object.keys(payload),
+        filasRecibidas: items.length,
+        articulosAgrupados: groupedItems.length,
+        hasMore,
+        nextOffset
+      });
+
       setInventario((prev) => (reset ? groupedItems : mergeInventarioItems(prev, groupedItems)));
       setInventarioHasMore(hasMore);
       setInventarioNextOffset(nextOffset);
@@ -1907,7 +1969,7 @@ const InventarioPage = () => {
         return;
       }
       console.error('Error al obtener inventario:', error);
-      setError('Error al cargar el inventario. Intente nuevamente.');
+      setError(error?.response?.data?.mensaje || error?.message || 'Error al cargar el inventario. Intente nuevamente.');
       setLoading(prev => ({ ...prev, inventario: false }));
       setInventarioLoadingMore(false);
     }
@@ -2175,7 +2237,7 @@ const InventarioPage = () => {
       cantidadActual,
       clave,
       codigoAlmacen,
-      ubicacionStr: esSinUbicacion ? 'SIN UBICACIÃ“N' : ubicacionStr,
+      ubicacionStr: esSinUbicacion ? 'SIN UBICACIÓN' : ubicacionStr,
       partida: partida || '',
       unidadStock: unidadStock || 'unidades',
       codigoColor: codigoColor || '',
@@ -2334,18 +2396,18 @@ const InventarioPage = () => {
                 <div key={index} className="inventario-ajuste-item">
                   <div className="inventario-ajuste-info">
                     <div className="inventario-articulo">
-                      <span className="inventario-label">ArtÃ­culo:</span>
+                      <span className="inventario-label">Artículo:</span>
                       <div className="inventario-value">
                         <div className="inventario-articulo-codigo">{ajuste.articulo}</div>
                         <div className="inventario-articulo-descripcion">{ajuste.descripcionArticulo}</div>
                       </div>
                     </div>
                     <div className="inventario-ubicacion">
-                      <span className="inventario-label">UbicaciÃ³n:</span>
+                      <span className="inventario-label">Ubicación:</span>
                       <div className="inventario-value">
                         <div>{[ajuste.codigoAlmacen, normalizarTextoInventario(ajuste.ubicacionStr)].filter(Boolean).join(' / ')}</div>
                         {construirResumenAjustePendiente(ajuste)
-                          .filter((detalle) => detalle.label !== 'UbicaciÃ³n')
+                          .filter((detalle) => detalle.label !== 'Ubicación')
                           .map((detalle) => (
                             <div key={`${index}-${detalle.label}`}>
                               <strong>{detalle.label}:</strong> {detalle.value}
@@ -2631,6 +2693,7 @@ const InventarioPage = () => {
           cantidadNuevoAjuste={cantidadNuevoAjuste}
           onCantidadChange={setCantidadNuevoAjuste}
           onGuardar={guardarNuevoAjuste}
+          omitirSiguienteBusquedaUbicacionRef={omitirSiguienteBusquedaUbicacionRef}
         />
 
         <EditarCantidadDialog
@@ -2666,4 +2729,3 @@ const InventarioPage = () => {
 };
 
 export default InventarioPage;
-

@@ -7,11 +7,28 @@ import Select from 'react-select';
 import AsyncSelect from 'react-select/async';
 import { Alert, Badge, Box, Button, Chip, CircularProgress, Paper, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, Typography } from '@mui/material';
 
-const TraspasosHeader = ({
-  activeSection,
-  onChangeSection,
-  pendientesCount
-}) => {
+// Estilos comunes para react-select (evitar cortes y mejorar apariencia)
+const commonSelectStyles = {
+  control: (base) => ({
+    ...base,
+    minHeight: '44px',
+    borderColor: '#ddd',
+    '&:hover': { borderColor: '#aaa' },
+    boxShadow: 'none',
+  }),
+  menu: (base) => ({
+    ...base,
+    zIndex: 9999,
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: state.isFocused ? '#e6f0ff' : 'white',
+    color: '#1a365d',
+    padding: '10px 12px',
+  }),
+};
+
+const TraspasosHeader = ({ activeSection, onChangeSection, pendientesCount }) => {
   return (
     <Stack spacing={3}>
       <Typography
@@ -61,7 +78,6 @@ const TraspasosHeader = ({
   );
 };
 
-
 const TraspasosModeTabs = ({ activeTab, onChange }) => {
   return (
     <Paper elevation={1} sx={{ borderRadius: 3, overflow: 'hidden' }}>
@@ -77,13 +93,7 @@ const TraspasosModeTabs = ({ activeTab, onChange }) => {
   );
 };
 
-
-const ArticuloSearchPanel = ({
-  loadOptions,
-  onChange,
-  articuloSeleccionado,
-  AsyncSelect
-}) => {
+const ArticuloSearchPanel = ({ loadOptions, onChange, articuloSeleccionado, AsyncSelect }) => {
   return (
     <Paper elevation={1} sx={{ p: 3, borderRadius: 3 }}>
       <Stack spacing={2}>
@@ -108,20 +118,8 @@ const ArticuloSearchPanel = ({
                   : 'No se encontraron articulos'
               }
               loadingMessage={() => 'Buscando...'}
-              styles={{
-                control: (base) => ({
-                  ...base,
-                  minHeight: '44px',
-                  borderColor: '#ddd',
-                  '&:hover': {
-                    borderColor: '#aaa'
-                  }
-                }),
-                menu: (base) => ({
-                  ...base,
-                  zIndex: 9999
-                })
-              }}
+              styles={commonSelectStyles}
+              menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
             />
           </div>
         </Box>
@@ -138,27 +136,18 @@ const ArticuloSearchPanel = ({
   );
 };
 
-
 const StockInfoChip = ({ label, style = {}, color = 'default', variant = 'outlined', sx = {} }) => {
-  if (!label) {
-    return null;
-  }
-
+  if (!label) return null;
   return (
     <Chip
       label={label}
       color={color}
       variant={variant}
       size="small"
-      sx={{
-        fontWeight: 600,
-        ...style,
-        ...sx
-      }}
+      sx={{ fontWeight: 600, ...style, ...sx }}
     />
   );
 };
-
 
 const OrigenSelectorCard = ({
   SelectComponent,
@@ -198,6 +187,8 @@ const OrigenSelectorCard = ({
             placeholder="Seleccionar almacen..."
             isSearchable
             noOptionsMessage={() => 'No hay almacenes disponibles'}
+            styles={commonSelectStyles}
+            menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
           />
         </Box>
 
@@ -215,10 +206,8 @@ const OrigenSelectorCard = ({
             isSearchable
             isDisabled={!almacenOrigen}
             noOptionsMessage={() => 'No hay ubicaciones disponibles'}
-            filterOption={(option, inputValue) => {
-              if (!inputValue) return true;
-              return option.label.toLowerCase().includes(inputValue.toLowerCase());
-            }}
+            styles={commonSelectStyles}
+            menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
           />
         </Box>
 
@@ -258,7 +247,6 @@ const OrigenSelectorCard = ({
   );
 };
 
-
 const DestinoSelectorCard = ({
   title = 'Destino',
   SelectComponent,
@@ -293,6 +281,8 @@ const DestinoSelectorCard = ({
             placeholder="Seleccionar almacen..."
             isSearchable
             noOptionsMessage={() => 'No hay almacenes disponibles'}
+            styles={commonSelectStyles}
+            menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
           />
         </Box>
 
@@ -314,6 +304,8 @@ const DestinoSelectorCard = ({
             isDisabled={!almacenDestino}
             isLoading={cargandoUbicacionesDestino}
             noOptionsMessage={() => 'No hay ubicaciones disponibles'}
+            styles={commonSelectStyles}
+            menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
           />
         </Box>
       </Stack>
@@ -321,17 +313,7 @@ const DestinoSelectorCard = ({
   );
 };
 
-
-const CantidadPanel = ({
-  title = 'Cantidad',
-  cantidad,
-  onCantidadChange,
-  stockInfo,
-  buttonLabel,
-  onSubmit,
-  loading,
-  max
-}) => {
+const CantidadPanel = ({ title = 'Cantidad', cantidad, onCantidadChange, stockInfo, buttonLabel, onSubmit, loading, max }) => {
   return (
     <Paper elevation={1} sx={{ p: 3, borderRadius: 3 }}>
       <Stack spacing={2}>
@@ -352,6 +334,7 @@ const CantidadPanel = ({
             min="1"
             step="any"
             max={max}
+            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '1rem' }}
           />
           {stockInfo && (
             <div className="stock-info">
@@ -369,7 +352,6 @@ const CantidadPanel = ({
     </Paper>
   );
 };
-
 
 const UbicacionesAgrupadasList = ({
   AsyncSelect,
@@ -405,20 +387,8 @@ const UbicacionesAgrupadasList = ({
                 : 'No se encontraron ubicaciones'
             }
             loadingMessage={() => 'Buscando...'}
-            styles={{
-              control: (base) => ({
-                ...base,
-                minHeight: '44px',
-                borderColor: '#ddd',
-                '&:hover': {
-                  borderColor: '#aaa'
-                }
-              }),
-              menu: (base) => ({
-                ...base,
-                zIndex: 9999
-              })
-            }}
+            styles={commonSelectStyles}
+            menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
           />
         </Box>
 
@@ -460,7 +430,6 @@ const UbicacionesAgrupadasList = ({
   );
 };
 
-
 const TraspasosStateView = ({ type = 'info', title, message }) => {
   if (type === 'loading') {
     return (
@@ -483,7 +452,6 @@ const TraspasosStateView = ({ type = 'info', title, message }) => {
     </Paper>
   );
 };
-
 
 const ArticulosUbicacionTable = ({
   articulosUbicacion,
@@ -608,7 +576,6 @@ const ArticulosUbicacionTable = ({
   );
 };
 
-
 const TraspasosPendientesTable = ({
   traspasosPendientes,
   getNombreAlmacen,
@@ -703,7 +670,6 @@ const TraspasosPendientesTable = ({
   );
 };
 
-
 const HistorialTraspasosTable = ({
   historial,
   formatFecha,
@@ -787,7 +753,6 @@ const HistorialTraspasosTable = ({
     </TableContainer>
   );
 };
-
 
 const TraspasosPage = () => {
   // =========== ESTADOS ===========
@@ -1086,7 +1051,6 @@ const TraspasosPage = () => {
     try {
       const headers = getAuthHeader();
       
-      // Usar el endpoint específico para traspasos
       const response = await API.get(
         `/traspasos/stock-por-articulo`,
         { 
@@ -1756,39 +1720,42 @@ const TraspasosPage = () => {
     setCantidad('');
   };
 
+  // =========== FUNCIÓN CORREGIDA DE CONFIRMACIÓN ===========
   const confirmarTraspasos = async () => {
     if (traspasosPendientes.length === 0) {
       alert('No hay traspasos para confirmar');
       return;
     }
-    
+
     setLoading(true);
-    
+    const resultados = []; // { ok, articulo, error, traspasoIndex }
+
     try {
       const headers = getAuthHeader();
       const user = JSON.parse(localStorage.getItem('user'));
       const empresa = user?.CodigoEmpresa;
       const ejercicio = new Date().getFullYear();
-      
-      const traspasosValidados = traspasosPendientes.map(traspaso => {
+
+      // Procesar uno por uno, acumulando resultados
+      for (let index = 0; index < traspasosPendientes.length; index++) {
+        const traspaso = traspasosPendientes[index];
         const cantidadEntera = parseFloat(Number(traspaso.cantidad));
-        
         const partida = traspaso.partida || '';
         const talla = traspaso.talla || '';
         const color = traspaso.color || '';
-        
-        const tipoUnidadMedida = normalizarUnidadMedida(traspaso.unidadMedida);
-        
+        // Normalizar unidad: 'unidades' -> '' (vacío)
+        let unidadNormalizada = traspaso.unidadMedida || '';
+        if (unidadNormalizada.toLowerCase() === 'unidades') unidadNormalizada = '';
         const ubicacionOrigenFinal = traspaso.origen.esSinUbicacion ? 'SIN-UBICACION' : traspaso.origen.ubicacion;
-        
-        return {
+
+        const payload = {
           articulo: traspaso.articulo.CodigoArticulo,
           origenAlmacen: traspaso.origen.almacen,
           origenUbicacion: ubicacionOrigenFinal,
           destinoAlmacen: traspaso.destino.almacen,
           destinoUbicacion: traspaso.destino.ubicacion,
           cantidad: cantidadEntera,
-          unidadMedida: tipoUnidadMedida,
+          unidadMedida: unidadNormalizada,
           partida: partida,
           grupoTalla: talla ? 1 : 0,
           codigoTalla: talla,
@@ -1799,65 +1766,45 @@ const TraspasosPage = () => {
           descripcionArticulo: traspaso.articulo.DescripcionArticulo || '',
           esSinUbicacion: traspaso.origen.esSinUbicacion || false
         };
-      });
 
-      console.log('Datos a enviar:', JSON.stringify(traspasosValidados, null, 2));
-
-      const resultados = [];
-      for (const [index, traspaso] of traspasosValidados.entries()) {
         try {
-          const response = await API.post('/traspaso', traspaso, { headers });
-          resultados.push({ success: true, data: response.data });
-          console.log('Traspaso realizado:', response.data);
+          const response = await API.post('/traspaso', payload, { headers });
+          resultados.push({ ok: true, articulo: payload.articulo, traspasoIndex: index });
         } catch (err) {
-          console.error('Error en traspaso individual:', err.response?.data || err.message);
-          resultados.push({ 
-            success: false, 
-            error: err.response?.data?.mensaje || err.response?.data?.error || err.message,
-            articulo: traspaso.articulo,
-            origen: {
-              almacen: traspaso.origenAlmacen,
-              ubicacion: traspaso.origenUbicacion
-            },
-            traspasoIndex: index
-          });
+          const errorMsg = err.response?.data?.mensaje || err.response?.data?.error || err.message;
+          resultados.push({ ok: false, articulo: payload.articulo, error: errorMsg, traspasoIndex: index });
         }
       }
 
-      const traspasosFallidos = resultados.filter(r => !r.success);
-      if (traspasosFallidos.length > 0) {
-        const mensajeError = traspasosFallidos.map(t => 
-          `Artículo: ${t.articulo} - Origen: ${t.origen.almacen}/${t.origen.ubicacion}\nError: ${t.error}`
-        ).join('\n\n');
-        
-        alert(`Algunos traspasos fallaron:\n\n${mensajeError}`);
-        
-        const indicesFallados = traspasosFallidos.map(t => t.traspasoIndex);
-        setTraspasosPendientes(prev => prev.filter((_, index) => indicesFallados.includes(index)));
-      } else {
-        alert('Todos los traspasos realizados correctamente');
+      const traspasosOk = resultados.filter(r => r.ok);
+      const traspasosFallidos = resultados.filter(r => !r.ok);
+
+      if (traspasosFallidos.length === 0) {
+        alert(`✅ Todos los traspasos se realizaron correctamente (${traspasosOk.length} traspasos).`);
         setTraspasosPendientes([]);
-      }
+        await cargarHistorial();
+        setActiveSection('historial');
+      } else {
+        // Mostrar un solo alert con el resumen
+        const mensajeError = `❌ Fallaron ${traspasosFallidos.length} de ${resultados.length} traspasos:\n\n` +
+          traspasosFallidos.map(f => `• Artículo ${f.articulo}: ${f.error}`).join('\n') +
+          `\n\n✅ Los otros ${traspasosOk.length} traspasos se realizaron correctamente.`;
+        alert(mensajeError);
 
-      await cargarHistorial();
-      setActiveSection('historial');
-    } catch (err) {
-      console.error('Error confirmando traspasos:', err);
-      
-      let errorMsg = 'Error al realizar traspasos';
-      if (err.response?.data) {
-        errorMsg += `: ${err.response.data.mensaje || 'Error desconocido'}`;
-        if (err.response.data.error) {
-          errorMsg += ` (${err.response.data.error})`;
-          if (err.response.data.error.includes('stock')) {
-            errorMsg += '\nVerifique que el stock existe en la ubicación de origen';
-          }
+        // Eliminar de la lista los que sí se realizaron, mantener los fallidos para reintentar
+        const indicesExitosos = new Set(traspasosOk.map(r => r.traspasoIndex));
+        const nuevosPendientes = traspasosPendientes.filter((_, idx) => !indicesExitosos.has(idx));
+        setTraspasosPendientes(nuevosPendientes);
+
+        // Si todos fallaron, no cambiamos de sección
+        if (traspasosOk.length > 0) {
+          await cargarHistorial();
+          setActiveSection('historial');
         }
-      } else if (err.message) {
-        errorMsg += `: ${err.message}`;
       }
-      
-      alert(errorMsg);
+    } catch (err) {
+      console.error('Error en confirmación masiva:', err);
+      alert('Error inesperado al procesar los traspasos: ' + (err.message || 'Intente nuevamente'));
     } finally {
       setLoading(false);
     }
