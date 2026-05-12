@@ -1,58 +1,22 @@
 ﻿import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Container,
-  Paper,
-  Typography,
-  TextField,
-  Button,
-  Stack,
-  Box,
-  Chip,
-  Tabs,
-  Tab,
-  Alert,
-  CircularProgress,
-  Grid,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Divider,
-  useTheme,
-  useMediaQuery,
-  IconButton,
-  Tooltip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogContentText,
-  DialogActions,
-  Snackbar,
-  Skeleton,
-  FormHelperText,
-  Badge,
+  Container, Paper, Typography, TextField, Button, Stack, Box, Chip,
+  Tabs, Tab, Alert, CircularProgress, Grid, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, useTheme, useMediaQuery,
+  Tooltip, Dialog, DialogTitle, DialogContent, DialogContentText,
+  DialogActions, Snackbar, Skeleton, Badge,
 } from '@mui/material';
 import {
-  ArrowBack as ArrowBackIcon,
-  CheckCircle as CheckCircleIcon,
-  Save as SaveIcon,
-  Assignment as AssignmentIcon,
-  Build as BuildIcon,
-  Warning as WarningIcon,
-  Clear as ClearIcon,
-  Edit as EditIcon,
-  Upload as UploadIcon,
-  Refresh as RefreshIcon,
+  ArrowBack as ArrowBackIcon, CheckCircle as CheckCircleIcon,
+  Save as SaveIcon, Assignment as AssignmentIcon, Build as BuildIcon,
+  Warning as WarningIcon, Clear as ClearIcon,
 } from '@mui/icons-material';
 import SignatureCanvas from 'react-signature-canvas';
 import API from '../helpers/api';
 import Navbar from '../components/Navbar';
 import { usePermissions } from '../PermissionsManager';
 
-// Panel de pestañas
 function TabPanel({ children, value, index, ...other }) {
   return (
     <div role="tabpanel" hidden={value !== index} {...other}>
@@ -61,21 +25,15 @@ function TabPanel({ children, value, index, ...other }) {
   );
 }
 
-// Componente para el canvas de firma con mejoras
-const SignatureField = ({ title, name, onClear, onEnd, disabled, value, infoText, isValid }) => {
+// Componente SignatureField mejorado
+const SignatureField = ({ title, onClear, onEnd, disabled, isValid, infoText }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const canvasRef = useRef();
 
-  React.useEffect(() => {
-    if (value && canvasRef.current && typeof value === 'string' && value.startsWith('data:image')) {
-      // Si se pasa una firma precargada (para edición), se puede cargar, pero aquí no es necesario
-    }
-  }, [value]);
-
   const handleClear = () => {
     canvasRef.current?.clear();
-    if (onClear) onClear();
+    onClear?.(); // Notificamos al padre que se limpió
   };
 
   return (
@@ -87,17 +45,15 @@ const SignatureField = ({ title, name, onClear, onEnd, disabled, value, infoText
           </Typography>
           {isValid && <CheckCircleIcon color="success" fontSize="small" />}
         </Stack>
-        <Tooltip title="Limpiar firma">
-          <span>
-            <Button size="small" startIcon={<ClearIcon />} onClick={handleClear} disabled={disabled}>
-              Limpiar
-            </Button>
-          </span>
-        </Tooltip>
+        <Button size="small" startIcon={<ClearIcon />} onClick={handleClear} disabled={disabled}>
+          Limpiar
+        </Button>
       </Stack>
       <SignatureCanvas
         penColor="black"
         canvasProps={{
+          width: 600,
+          height: 240,
           style: {
             width: '100%',
             height: isMobile ? 140 : 180,
@@ -105,17 +61,21 @@ const SignatureField = ({ title, name, onClear, onEnd, disabled, value, infoText
             borderRadius: theme.shape.borderRadius,
             backgroundColor: '#fff',
             cursor: 'crosshair',
+            touchAction: 'none',
           },
           'aria-label': `Área de firma para ${title}`,
         }}
         ref={canvasRef}
         onEnd={onEnd}
+        velocityFilterWeight={0.8}   // Suavizado del trazo
+        minWidth={0.5}               // Grosor mínimo
+        maxWidth={2.5}               // Grosor máximo
+        throttle={16}                // Actualización a 60fps
+        backgroundColor="white"
       />
-      <Box sx={{ mt: 1 }}>
-        <Typography variant="caption" color="text.secondary">
-          {infoText}
-        </Typography>
-      </Box>
+      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+        {infoText}
+      </Typography>
     </Paper>
   );
 };
@@ -127,7 +87,6 @@ const DetalleAlbaran = () => {
   const { state } = useLocation();
   const albaran = state?.albaran;
 
-  // Estados
   const [cantidades, setCantidades] = useState({});
   const [observaciones, setObservaciones] = useState('');
   const [loading, setLoading] = useState(false);
@@ -144,16 +103,12 @@ const DetalleAlbaran = () => {
   const sigRepartidor = useRef();
   const mensajeFirmasObligatorias = 'Debes registrar ambas firmas antes de completar el albarán';
 
-  // Simular carga inicial (si se requiere, aunque ya tenemos datos)
+  // --- Inicialización ---
   useEffect(() => {
-    if (albaran) {
-      setTimeout(() => setInitialLoading(false), 300);
-    } else {
-      setInitialLoading(false);
-    }
+    if (albaran) setTimeout(() => setInitialLoading(false), 300);
+    else setInitialLoading(false);
   }, [albaran]);
 
-  // Inicializar cantidades
   useEffect(() => {
     if (albaran?.articulos) {
       const initial = {};
@@ -164,7 +119,6 @@ const DetalleAlbaran = () => {
     }
   }, [albaran]);
 
-  // Detectar cambios en cantidades
   useEffect(() => {
     if (!albaran?.articulos) return;
     const hasAnyChange = albaran.articulos.some((art) => {
@@ -175,37 +129,49 @@ const DetalleAlbaran = () => {
     setHasChanges(hasAnyChange);
   }, [cantidades, albaran]);
 
-  // Funciones de firmas
+  // --- Detección de firmas (usa el método isEmpty de la librería) ---
   const obtenerFirmaSegura = useCallback((ref) => {
     if (!ref.current) return null;
+    if (ref.current.isEmpty()) return null; // ✅ No hay ningún trazo
     try {
-      const canvas = ref.current.getTrimmedCanvas?.() || ref.current.getCanvas?.();
-      return canvas?.toDataURL('image/png') || null;
-    } catch {
+      const canvas = ref.current.getTrimmedCanvas(); // Recorta márgenes, pero la imagen resultante es más limpia
+      return canvas.toDataURL('image/png');
+    } catch (err) {
+      console.error('Error al obtener firma:', err);
       return null;
     }
   }, []);
-
-  const firmaEstaVacia = useCallback((dataUrl) => !dataUrl || dataUrl.length < 1000 || dataUrl === 'data:,', []);
 
   const actualizarEstadoFirmas = useCallback(() => {
     const firmaCliente = obtenerFirmaSegura(sigCliente);
     const firmaRepartidor = obtenerFirmaSegura(sigRepartidor);
     setFirmasValidas({
-      cliente: !firmaEstaVacia(firmaCliente),
-      repartidor: !firmaEstaVacia(firmaRepartidor),
+      cliente: firmaCliente !== null,
+      repartidor: firmaRepartidor !== null,
     });
-  }, [obtenerFirmaSegura, firmaEstaVacia]);
+  }, [obtenerFirmaSegura]);
 
   const limpiarFirma = useCallback((ref) => {
     ref.current?.clear();
+    actualizarEstadoFirmas(); // Actualizamos inmediatamente después de limpiar
+  }, [actualizarEstadoFirmas]);
+
+  // Al terminar de dibujar, actualizamos estado inmediatamente
+  const handleFirmaEnd = useCallback(() => {
     actualizarEstadoFirmas();
   }, [actualizarEstadoFirmas]);
 
-  // Manejadores
+  // Refrescar estado al mostrar pestaña de firmas
+  useEffect(() => {
+    if (activeTab === 1) {
+      actualizarEstadoFirmas();
+    }
+  }, [activeTab, actualizarEstadoFirmas]);
+
+  // --- Manejadores de cantidades y completado ---
   const handleCantidadChange = useCallback((orden, value) => {
     const num = parseFloat(value);
-    setCantidades((prev) => ({ ...prev, [orden]: isNaN(num) ? 0 : num }));
+    setCantidades(prev => ({ ...prev, [orden]: isNaN(num) ? 0 : num }));
   }, []);
 
   const handleActualizarCantidades = useCallback(async () => {
@@ -239,16 +205,14 @@ const DetalleAlbaran = () => {
     }
   }, [albaran, cantidades, observaciones, canPerformActionsInRutas]);
 
-  const handleCompletar = useCallback(async () => {
-    const firmaCliente = obtenerFirmaSegura(sigCliente);
-    const firmaRepartidor = obtenerFirmaSegura(sigRepartidor);
-    if (firmaEstaVacia(firmaCliente) || firmaEstaVacia(firmaRepartidor)) {
+  const handleCompletar = useCallback(() => {
+    if (!firmasValidas.cliente || !firmasValidas.repartidor) {
       setError(mensajeFirmasObligatorias);
       setActiveTab(1);
       return;
     }
     setConfirmDialogOpen(true);
-  }, [obtenerFirmaSegura, firmaEstaVacia, mensajeFirmasObligatorias]);
+  }, [firmasValidas, mensajeFirmasObligatorias]);
 
   const confirmarCompletar = useCallback(async () => {
     setConfirmDialogOpen(false);
@@ -257,11 +221,17 @@ const DetalleAlbaran = () => {
       setError(null);
       const firmaCliente = obtenerFirmaSegura(sigCliente);
       const firmaRepartidor = obtenerFirmaSegura(sigRepartidor);
-      const lineas = Object.entries(cantidades).map(([orden, unidades]) => ({
-        orden: parseInt(orden),
-        unidades: parseFloat(unidades) || 0,
-      }));
-      if (lineas.length > 0) {
+
+      if (!firmaCliente || !firmaRepartidor) {
+        setError('Ambas firmas son obligatorias');
+        return;
+      }
+
+      if (hasChanges) {
+        const lineas = Object.entries(cantidades).map(([orden, unidades]) => ({
+          orden: parseInt(orden),
+          unidades: parseFloat(unidades) || 0,
+        }));
         await API.put('/actualizarCantidadesAlbaran', {
           codigoEmpresa: albaran.codigoEmpresa,
           ejercicio: albaran.ejercicio,
@@ -271,6 +241,7 @@ const DetalleAlbaran = () => {
           observaciones,
         });
       }
+
       const response = await API.post('/completarAlbaranConFirmas', {
         codigoEmpresa: albaran.codigoEmpresa,
         ejercicio: albaran.ejercicio,
@@ -280,6 +251,7 @@ const DetalleAlbaran = () => {
         firmaRepartidor,
         observaciones,
       });
+
       if (response.data.success) {
         alert(`Albarán ${albaran.albaran} completado correctamente`);
         navigate('/rutas');
@@ -291,16 +263,16 @@ const DetalleAlbaran = () => {
     } finally {
       setLoading(false);
     }
-  }, [albaran, cantidades, observaciones, navigate, obtenerFirmaSegura, firmaEstaVacia]);
+  }, [albaran, cantidades, observaciones, navigate, obtenerFirmaSegura, hasChanges]);
 
-  const formatFecha = useCallback((fecha) => {
+  const formatFecha = (fecha) => {
     if (!fecha) return 'N/A';
     return new Date(fecha).toLocaleDateString('es-ES', {
       year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
     });
-  }, []);
+  };
 
-  // Renderizado condicional de carga
+  // --- Renderizado ---
   if (initialLoading) {
     return (
       <>
@@ -344,12 +316,10 @@ const DetalleAlbaran = () => {
         <Paper elevation={2} sx={{ p: { xs: 2, sm: 3, md: 4 }, borderRadius: 3 }}>
           {/* Cabecera */}
           <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={2} sx={{ mb: 3 }}>
-            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-              <Tooltip title="Volver a la lista">
-                <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate('/rutas')}>
-                  Volver
-                </Button>
-              </Tooltip>
+            <Stack direction="row" spacing={2} alignItems="center">
+              <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate('/rutas')}>
+                Volver
+              </Button>
               <Typography variant="h4" component="h1" sx={{ fontWeight: 700, color: theme.palette.primary.main, fontSize: { xs: '1.5rem', sm: '2rem' } }}>
                 Albarán {albaran.albaran}
               </Typography>
@@ -381,20 +351,11 @@ const DetalleAlbaran = () => {
           <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
             <Tabs value={activeTab} onChange={(e, val) => setActiveTab(val)} variant={isMobile ? 'fullWidth' : 'standard'}>
               <Tab label="Artículos" icon={<AssignmentIcon />} iconPosition="start" />
-              <Tab
-                label="Firmas"
-                icon={
-                  <Badge
-                    color="success"
-                    variant="dot"
-                    invisible={!(firmasValidas.cliente && firmasValidas.repartidor)}
-                    overlap="circular"
-                  >
-                    <CheckCircleIcon />
-                  </Badge>
-                }
-                iconPosition="start"
-              />
+              <Tab label="Firmas" icon={
+                <Badge color="success" variant="dot" invisible={!(firmasValidas.cliente && firmasValidas.repartidor)} overlap="circular">
+                  <CheckCircleIcon />
+                </Badge>
+              } iconPosition="start" />
             </Tabs>
           </Box>
 
@@ -477,9 +438,8 @@ const DetalleAlbaran = () => {
                 <Grid item xs={12} md={6}>
                   <SignatureField
                     title="Cliente"
-                    name="cliente"
                     onClear={() => limpiarFirma(sigCliente)}
-                    onEnd={actualizarEstadoFirmas}
+                    onEnd={handleFirmaEnd}
                     disabled={!canPerformActionsInRutas || loading}
                     isValid={firmasValidas.cliente}
                     infoText={`Nombre: ${albaran.contacto || albaran.cliente} · Fecha: ${new Date().toLocaleDateString('es-ES')}`}
@@ -488,9 +448,8 @@ const DetalleAlbaran = () => {
                 <Grid item xs={12} md={6}>
                   <SignatureField
                     title="Repartidor"
-                    name="repartidor"
                     onClear={() => limpiarFirma(sigRepartidor)}
-                    onEnd={actualizarEstadoFirmas}
+                    onEnd={handleFirmaEnd}
                     disabled={!canPerformActionsInRutas || loading}
                     isValid={firmasValidas.repartidor}
                     infoText={`Nombre: ${albaran.repartidor || 'Repartidor'} · Fecha: ${new Date().toLocaleDateString('es-ES')}`}
@@ -500,17 +459,11 @@ const DetalleAlbaran = () => {
             </Stack>
           </TabPanel>
 
-          {/* Mensajes de error/éxito */}
-          {error && (
-            <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError(null)}>
-              {error}
-            </Alert>
-          )}
+          {error && <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError(null)}>{error}</Alert>}
           <Snackbar open={!!successMsg} autoHideDuration={4000} onClose={() => setSuccessMsg('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
             <Alert severity="success" onClose={() => setSuccessMsg('')}>{successMsg}</Alert>
           </Snackbar>
 
-          {/* Botón principal de completar */}
           {canPerformActionsInRutas && (
             <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
               <Tooltip title={!firmasValidas.cliente || !firmasValidas.repartidor ? mensajeFirmasObligatorias : 'Marcar como entregado'}>
@@ -533,20 +486,16 @@ const DetalleAlbaran = () => {
         </Paper>
       </Container>
 
-      {/* Diálogo de confirmación */}
       <Dialog open={confirmDialogOpen} onClose={() => setConfirmDialogOpen(false)}>
         <DialogTitle>Confirmar entrega</DialogTitle>
         <DialogContent>
           <DialogContentText>
             ¿Estás seguro de que quieres marcar el albarán <strong>{albaran.albaran}</strong> como entregado?
-            Esta acción no se puede deshacer.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmDialogOpen(false)}>Cancelar</Button>
-          <Button onClick={confirmarCompletar} variant="contained" autoFocus>
-            Confirmar
-          </Button>
+          <Button onClick={confirmarCompletar} variant="contained" autoFocus>Confirmar</Button>
         </DialogActions>
       </Dialog>
 

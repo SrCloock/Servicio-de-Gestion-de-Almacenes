@@ -800,6 +800,7 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
     }
   });
 
+  // ✅ ENDPOINT CORREGIDO: /traspasos/stock-por-articulo
   router.get('/traspasos/stock-por-articulo', validarUser, async (req, res) => {
     const { codigoArticulo } = req.query;
     const codigoEmpresa = req.user.CodigoEmpresa;
@@ -809,72 +810,85 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
     try {
       const contexto = await obtenerContextoStockArticulo(codigoEmpresa, codigoArticulo);
       const query = `
-        WITH StockUbicacionVersionado AS (
-          SELECT
-            s.CodigoEmpresa, s.CodigoArticulo,
-            LTRIM(RTRIM(s.CodigoAlmacen)) AS CodigoAlmacen,
-            CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(s.Ubicacion, ''))), '') IS NULL THEN 'SIN-UBICACION' ELSE LTRIM(RTRIM(s.Ubicacion)) END AS Ubicacion,
-            ISNULL(LTRIM(RTRIM(s.TipoUnidadMedida_)), '') AS TipoUnidadMedida_,
-            ISNULL(LTRIM(RTRIM(s.Partida)), '') AS Partida,
-            ISNULL(LTRIM(RTRIM(s.CodigoColor_)), '') AS CodigoColor_,
-            ISNULL(LTRIM(RTRIM(s.CodigoTalla01_)), '') AS CodigoTalla01_,
-            CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) AS DECIMAL(18,4)) AS StockDisponible,
-            s.Ejercicio, s.Periodo,
-            ROW_NUMBER() OVER (PARTITION BY s.CodigoEmpresa, s.CodigoArticulo, LTRIM(RTRIM(s.CodigoAlmacen)), CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(s.Ubicacion, ''))), '') IS NULL THEN 'SIN-UBICACION' ELSE LTRIM(RTRIM(s.Ubicacion)) END, ISNULL(LTRIM(RTRIM(s.TipoUnidadMedida_)), ''), ISNULL(LTRIM(RTRIM(s.Partida)), ''), ISNULL(LTRIM(RTRIM(s.CodigoColor_)), ''), ISNULL(LTRIM(RTRIM(s.CodigoTalla01_)), '') ORDER BY CASE WHEN s.Periodo = 99 THEN 0 ELSE 1 END, s.Ejercicio DESC, s.Periodo DESC) AS rn
-          FROM AcumuladoStockUbicacion s
-          WHERE s.CodigoEmpresa = @codigoEmpresa AND s.CodigoArticulo = @codigoArticulo AND s.Periodo = 99 AND NULLIF(LTRIM(RTRIM(ISNULL(s.CodigoAlmacen, ''))), '') IS NOT NULL
-        ),
-        StockUbicacionExacto AS (
-          SELECT * FROM StockUbicacionVersionado WHERE rn = 1 AND StockDisponible > 0
-        ),
-        StockAcumuladoVersionado AS (
-          SELECT
-            s.CodigoEmpresa, s.CodigoArticulo,
-            LTRIM(RTRIM(s.CodigoAlmacen)) AS CodigoAlmacen,
-            CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(s.Ubicacion, ''))), '') IS NULL THEN 'SIN-UBICACION' ELSE LTRIM(RTRIM(s.Ubicacion)) END AS Ubicacion,
-            ISNULL(LTRIM(RTRIM(s.TipoUnidadMedida_)), '') AS TipoUnidadMedida_,
-            ISNULL(LTRIM(RTRIM(s.Partida)), '') AS Partida,
-            ISNULL(LTRIM(RTRIM(s.CodigoColor_)), '') AS CodigoColor_,
-            ISNULL(LTRIM(RTRIM(s.CodigoTalla01_)), '') AS CodigoTalla01_,
-            CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) AS DECIMAL(18,4)) AS StockDisponible,
-            s.Ejercicio, s.Periodo,
-            ROW_NUMBER() OVER (PARTITION BY s.CodigoEmpresa, s.CodigoArticulo, LTRIM(RTRIM(s.CodigoAlmacen)), CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(s.Ubicacion, ''))), '') IS NULL THEN 'SIN-UBICACION' ELSE LTRIM(RTRIM(s.Ubicacion)) END, ISNULL(LTRIM(RTRIM(s.TipoUnidadMedida_)), ''), ISNULL(LTRIM(RTRIM(s.Partida)), ''), ISNULL(LTRIM(RTRIM(s.CodigoColor_)), ''), ISNULL(LTRIM(RTRIM(s.CodigoTalla01_)), '') ORDER BY CASE WHEN s.Periodo = 99 THEN 0 ELSE 1 END, s.Ejercicio DESC, s.Periodo DESC) AS rn
-          FROM AcumuladoStock s
-          WHERE s.CodigoEmpresa = @codigoEmpresa AND s.CodigoArticulo = @codigoArticulo AND s.Periodo = 99 AND NULLIF(LTRIM(RTRIM(ISNULL(s.CodigoAlmacen, ''))), '') IS NOT NULL
-        ),
-        StockAcumuladoExacto AS (
-          SELECT * FROM StockAcumuladoVersionado WHERE rn = 1 AND StockDisponible > 0
-        ),
-        StockCombinado AS (
-          SELECT * FROM StockUbicacionExacto
-          UNION ALL
-          SELECT a.* FROM StockAcumuladoExacto a WHERE NOT EXISTS (SELECT 1 FROM StockUbicacionExacto u WHERE u.CodigoEmpresa = a.CodigoEmpresa AND u.CodigoArticulo = a.CodigoArticulo AND u.CodigoAlmacen = a.CodigoAlmacen AND u.Ubicacion = a.Ubicacion AND u.TipoUnidadMedida_ = a.TipoUnidadMedida_ AND u.Partida = a.Partida AND u.CodigoColor_ = a.CodigoColor_ AND u.CodigoTalla01_ = a.CodigoTalla01_)
-        )
+        -- Stock con ubicación (periodo 99)
         SELECT
-          s.CodigoArticulo, COALESCE(a.DescripcionArticulo, s.CodigoArticulo) AS DescripcionArticulo,
-          s.CodigoAlmacen, alm.Almacen AS NombreAlmacen,
-          s.Ubicacion, principal.UbicacionPrincipal,
-          CASE WHEN s.Ubicacion = 'SIN-UBICACION' THEN 'Stock sin ubicación asignada' ELSE COALESCE(u.DescripcionUbicacion, '') END AS DescripcionUbicacion,
-          s.TipoUnidadMedida_ AS UnidadStock,
-          CAST(COALESCE(s.StockDisponible, 0) AS DECIMAL(18,4)) AS CantidadBase,
-          CAST(COALESCE(s.StockDisponible, 0) AS DECIMAL(18,4)) AS Cantidad,
-          s.Partida, s.CodigoColor_, s.CodigoTalla01_,
-          a.UnidadMedida2_ AS UnidadBase, a.UnidadMedidaAlternativa_ AS UnidadAlternativa, a.FactorConversion_ AS FactorConversion,
-          CASE WHEN s.Ubicacion = 'SIN-UBICACION' THEN 1 ELSE 0 END AS EsSinUbicacion,
-          CASE WHEN ISNULL(LTRIM(RTRIM(principal.UbicacionPrincipal)), '') = ISNULL(LTRIM(RTRIM(s.Ubicacion)), '') THEN 1 ELSE 0 END AS EsUbicacionPrincipal,
-          'AcumuladoStockUbicacion' AS TablaOrigen,
-          CONCAT(s.CodigoArticulo, '_', s.CodigoAlmacen, '_', s.Ubicacion, '_', s.TipoUnidadMedida_, '_', s.Partida, '_', s.CodigoColor_, '_', s.CodigoTalla01_) AS ClaveUnica
-        FROM StockCombinado s
-        OUTER APPLY (SELECT TOP 1 a.* FROM Articulos a WHERE a.CodigoEmpresa = s.CodigoEmpresa AND (LTRIM(RTRIM(a.CodigoArticulo)) = LTRIM(RTRIM(s.CodigoArticulo)) OR LTRIM(RTRIM(ISNULL(a.CodigoAlternativo, ''))) = LTRIM(RTRIM(s.CodigoArticulo)) OR LTRIM(RTRIM(ISNULL(a.CodigoAlternativo2, ''))) = LTRIM(RTRIM(s.CodigoArticulo)) OR LTRIM(RTRIM(ISNULL(a.CodigoArticuloOferta, ''))) = LTRIM(RTRIM(s.CodigoArticulo)) OR LTRIM(RTRIM(ISNULL(a.ReferenciaEdi_, ''))) = LTRIM(RTRIM(s.CodigoArticulo)) OR (TRY_CONVERT(BIGINT, s.CodigoArticulo) IS NOT NULL AND (TRY_CONVERT(BIGINT, a.CodigoArticulo) = TRY_CONVERT(BIGINT, s.CodigoArticulo) OR TRY_CONVERT(BIGINT, a.CodigoAlternativo) = TRY_CONVERT(BIGINT, s.CodigoArticulo) OR TRY_CONVERT(BIGINT, a.CodigoAlternativo2) = TRY_CONVERT(BIGINT, s.CodigoArticulo) OR TRY_CONVERT(BIGINT, a.CodigoArticuloOferta) = TRY_CONVERT(BIGINT, s.CodigoArticulo) OR TRY_CONVERT(BIGINT, a.ReferenciaEdi_) = TRY_CONVERT(BIGINT, s.CodigoArticulo))) ORDER BY CASE WHEN LTRIM(RTRIM(a.CodigoArticulo)) = LTRIM(RTRIM(s.CodigoArticulo)) THEN 0 WHEN TRY_CONVERT(BIGINT, a.CodigoArticulo) = TRY_CONVERT(BIGINT, s.CodigoArticulo) THEN 1 WHEN LTRIM(RTRIM(ISNULL(a.CodigoAlternativo, ''))) = LTRIM(RTRIM(s.CodigoArticulo)) THEN 2 WHEN LTRIM(RTRIM(ISNULL(a.CodigoAlternativo2, ''))) = LTRIM(RTRIM(s.CodigoArticulo)) THEN 3 WHEN LTRIM(RTRIM(ISNULL(a.CodigoArticuloOferta, ''))) = LTRIM(RTRIM(s.CodigoArticulo)) THEN 4 WHEN LTRIM(RTRIM(ISNULL(a.ReferenciaEdi_, ''))) = LTRIM(RTRIM(s.CodigoArticulo)) THEN 5 ELSE 6 END, a.CodigoArticulo) a
-        OUTER APPLY (SELECT TOP 1 CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(ast.Ubicacion, ''))), '') IS NULL THEN 'SIN-UBICACION' ELSE LTRIM(RTRIM(ast.Ubicacion)) END AS UbicacionPrincipal FROM AcumuladoStock ast WHERE ast.CodigoEmpresa = s.CodigoEmpresa AND ast.Periodo = 99 AND ISNULL(LTRIM(RTRIM(ast.CodigoAlmacen)), '') = ISNULL(LTRIM(RTRIM(s.CodigoAlmacen)), '') AND ISNULL(LTRIM(RTRIM(ast.CodigoArticulo)), '') = ISNULL(LTRIM(RTRIM(s.CodigoArticulo)), '') AND ISNULL(LTRIM(RTRIM(ast.TipoUnidadMedida_)), '') = ISNULL(LTRIM(RTRIM(s.TipoUnidadMedida_)), '') AND ISNULL(LTRIM(RTRIM(ast.Partida)), '') = ISNULL(LTRIM(RTRIM(s.Partida)), '') AND ISNULL(LTRIM(RTRIM(ast.CodigoColor_)), '') = ISNULL(LTRIM(RTRIM(s.CodigoColor_)), '') AND ISNULL(LTRIM(RTRIM(ast.CodigoTalla01_)), '') = ISNULL(LTRIM(RTRIM(s.CodigoTalla01_)), '') ORDER BY CASE WHEN ast.Periodo = 99 THEN 0 ELSE 1 END, ast.Ejercicio DESC, CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(ast.TipoUnidadMedida_, ''))), '') IS NULL THEN COALESCE(ast.UnidadSaldo, ast.UnidadSaldoTipo_, 0) ELSE COALESCE(NULLIF(ast.UnidadSaldoTipo_, 0), ast.UnidadSaldo, 0) END DESC) principal
-        INNER JOIN Almacenes alm ON alm.CodigoEmpresa = s.CodigoEmpresa AND alm.CodigoAlmacen = s.CodigoAlmacen
+          s.CodigoEmpresa,
+          s.CodigoArticulo,
+          a.DescripcionArticulo,
+          s.CodigoAlmacen,
+          alm.Almacen AS NombreAlmacen,
+          CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(s.Ubicacion, ''))), '') IS NULL THEN 'SIN-UBICACION' ELSE LTRIM(RTRIM(s.Ubicacion)) END AS Ubicacion,
+          u.DescripcionUbicacion,
+          ISNULL(NULLIF(LTRIM(RTRIM(s.TipoUnidadMedida_)), ''), 'unidades') AS UnidadStock,
+          CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) AS DECIMAL(18,4)) AS Cantidad,
+          s.Partida,
+          s.CodigoColor_,
+          s.CodigoTalla01_ AS Talla,
+          a.UnidadMedida2_ AS UnidadBase,
+          a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
+          a.FactorConversion_ AS FactorConversion,
+          CASE WHEN s.Ubicacion IS NULL OR s.Ubicacion = '' THEN 1 ELSE 0 END AS EsSinUbicacion
+        FROM AcumuladoStockUbicacion s
+        LEFT JOIN Articulos a ON a.CodigoEmpresa = s.CodigoEmpresa AND a.CodigoArticulo = s.CodigoArticulo
+        LEFT JOIN Almacenes alm ON alm.CodigoEmpresa = s.CodigoEmpresa AND alm.CodigoAlmacen = s.CodigoAlmacen
         LEFT JOIN Ubicaciones u ON u.CodigoEmpresa = s.CodigoEmpresa AND u.CodigoAlmacen = s.CodigoAlmacen AND u.Ubicacion = s.Ubicacion
-        ORDER BY s.CodigoAlmacen, s.Ubicacion, s.CodigoColor_, s.CodigoTalla01_, s.Partida, s.TipoUnidadMedida_, s.StockDisponible DESC
+        WHERE s.CodigoEmpresa = @codigoEmpresa
+          AND s.CodigoArticulo = @codigoArticulo
+          AND s.Periodo = 99
+          AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+          AND COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) > 0
+
+        UNION ALL
+
+        -- Stock sin ubicación (no aparece en AcumuladoStockUbicacion pero sí en AcumuladoStock)
+        SELECT
+          s.CodigoEmpresa,
+          s.CodigoArticulo,
+          a.DescripcionArticulo,
+          s.CodigoAlmacen,
+          alm.Almacen AS NombreAlmacen,
+          'SIN-UBICACION' AS Ubicacion,
+          'Stock sin ubicación asignada' AS DescripcionUbicacion,
+          ISNULL(NULLIF(LTRIM(RTRIM(s.TipoUnidadMedida_)), ''), 'unidades') AS UnidadStock,
+          CAST(COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) AS DECIMAL(18,4)) AS Cantidad,
+          s.Partida,
+          s.CodigoColor_,
+          s.CodigoTalla01_ AS Talla,
+          a.UnidadMedida2_ AS UnidadBase,
+          a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
+          a.FactorConversion_ AS FactorConversion,
+          1 AS EsSinUbicacion
+        FROM AcumuladoStock s
+        LEFT JOIN Articulos a ON a.CodigoEmpresa = s.CodigoEmpresa AND a.CodigoArticulo = s.CodigoArticulo
+        LEFT JOIN Almacenes alm ON alm.CodigoEmpresa = s.CodigoEmpresa AND alm.CodigoAlmacen = s.CodigoAlmacen
+        LEFT JOIN Ubicaciones u ON u.CodigoEmpresa = s.CodigoEmpresa AND u.CodigoAlmacen = s.CodigoAlmacen AND u.Ubicacion = s.Ubicacion
+        WHERE s.CodigoEmpresa = @codigoEmpresa
+          AND s.CodigoArticulo = @codigoArticulo
+          AND s.Periodo = 99
+          AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
+          AND COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM AcumuladoStockUbicacion sub
+            WHERE sub.CodigoEmpresa = s.CodigoEmpresa
+              AND sub.CodigoAlmacen = s.CodigoAlmacen
+              AND sub.CodigoArticulo = s.CodigoArticulo
+              AND ISNULL(sub.TipoUnidadMedida_, '') = ISNULL(s.TipoUnidadMedida_, '')
+              AND ISNULL(sub.Partida, '') = ISNULL(s.Partida, '')
+              AND ISNULL(sub.CodigoColor_, '') = ISNULL(s.CodigoColor_, '')
+              AND ISNULL(sub.CodigoTalla01_, '') = ISNULL(s.CodigoTalla01_, '')
+              AND sub.Periodo = 99
+          )
+
+        ORDER BY CodigoAlmacen, Ubicacion, Cantidad DESC
       `;
+
       const result = await getPool().request()
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('codigoArticulo', sql.VarChar, codigoArticulo)
+        .input('ejercicioBase', sql.SmallInt, contexto.ejercicioBase)
+        .input('ejercicioActual', sql.SmallInt, new Date().getFullYear())
         .query(query);
+
       res.json(result.recordset);
     } catch (error) {
       console.error('[ERROR STOCK POR ARTICULO TRASPASOS]', error);

@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import API from '../helpers/api';
 import { getAuthHeader } from '../helpers/authHelper';
 import Navbar from '../components/Navbar';
-import { Alert, Autocomplete, Box, Button, Card, CardContent, Chip, CircularProgress, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Grid, MenuItem, Paper, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, TextField, Typography } from '@mui/material';
+import { Alert, Autocomplete, Box, Button, Card, CardContent, Chip, CircularProgress, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Grid, MenuItem, Paper, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, TextField, Typography, Pagination } from '@mui/material';
 import { FiAlertTriangle, FiCheck, FiChevronDown, FiChevronUp, FiClock, FiDatabase, FiEdit, FiFilter, FiLayers, FiList, FiMapPin, FiMinus, FiPackage, FiPlus, FiPlusCircle, FiRefreshCw, FiX } from 'react-icons/fi';
 
 const getDefaultHistoryFilters = () => {

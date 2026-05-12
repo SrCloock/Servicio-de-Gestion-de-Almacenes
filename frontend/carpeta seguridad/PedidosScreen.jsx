@@ -1,12 +1,12 @@
 import '../styles/PedidosScreen.css';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import API from '../helpers/api';
-import { getAuthHeader } from '../helpers/authHelper';
-import Navbar from '../components/Navbar';
+import API from '../../helpers/api';
+import { getAuthHeader } from '../../helpers/authHelper';
+import Navbar from '../../components/Navbar';
 import { Alert, Box, Button, Card, CardContent, CircularProgress, FormControlLabel, Grid, Paper, Stack, Switch, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
 import { Html5Qrcode } from 'html5-qrcode';
-import { usePermissions } from '../PermissionsManager';
+import { usePermissions } from '../../PermissionsManager';
 import { FaBarcode, FaBell, FaBox, FaCalendarAlt, FaCamera, FaCheck, FaChevronDown, FaEllipsisV, FaExclamation, FaExclamationTriangle, FaFilter, FaInfoCircle, FaPhone, FaQrcode, FaSearch, FaSync, FaTimes, FaTruck, FaUser, FaWeight } from 'react-icons/fa';
 
 const PedidosHeader = ({ title, subtitle }) => {

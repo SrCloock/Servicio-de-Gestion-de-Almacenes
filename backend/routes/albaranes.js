@@ -696,14 +696,14 @@ router.get('/pedidos-preparados', async (req, res) => {
   }
 });
 
-// ✅ 7.4 OBTENER REPARTIDORES (VERSIÓN FINAL)
-// ✅ 7.5 MARCAR ALBARÁN COMO COMPLETADO (SIMPLIFICADO - SIN EMAIL)
+
+// ✅ 7.5 MARCAR ALBARÁN COMO COMPLETADO (SIMPLIFICADO Y CORREGIDO)
 const completarAlbaranHandler = async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
   }
 
-  const { codigoEmpresa, ejercicio, serie, numeroAlbaran } = req.body;
+  const { codigoEmpresa, ejercicio, serie, numeroAlbaran, firmaCliente, firmaRepartidor, observaciones } = req.body;
   const usuario = req.user.UsuarioLogicNet;
 
   if (!codigoEmpresa || !ejercicio || !numeroAlbaran) {
@@ -713,6 +713,7 @@ const completarAlbaranHandler = async (req, res) => {
     });
   }
 
+  // Validar firmas (ahora se reciben desde el body)
   if (!tieneFirmaValida(firmaCliente) || !tieneFirmaValida(firmaRepartidor)) {
     return res.status(400).json({
       success: false,
@@ -750,9 +751,7 @@ const completarAlbaranHandler = async (req, res) => {
       .input('serie', sql.VarChar, serie || '')
       .input('numeroAlbaran', sql.Int, numeroAlbaran)
       .query(`
-        SELECT EmpleadoAsignado,
-               ISNULL(FirmaCliente, '') AS FirmaCliente,
-               ISNULL(FirmaRepartidor, '') AS FirmaRepartidor
+        SELECT EmpleadoAsignado, StatusFacturado
         FROM CabeceraAlbaranCliente
         WHERE CodigoEmpresa = @codigoEmpresa
           AND EjercicioAlbaran = @ejercicio
@@ -769,13 +768,13 @@ const completarAlbaranHandler = async (req, res) => {
 
     const albaran = albaranResult.recordset[0];
 
-    if (!tieneFirmaValida(albaran.FirmaCliente) || !tieneFirmaValida(albaran.FirmaRepartidor)) {
-      return res.status(400).json({
-        success: false,
-        mensaje: MENSAJE_FIRMAS_OBLIGATORIAS
+    if (albaran.StatusFacturado === -1) {
+      return res.status(400).json({ 
+        success: false, 
+        mensaje: 'El albarán ya está completado' 
       });
     }
-    
+
     if (!esAdmin && !esUsuarioAvanzado) {
       if (albaran.EmpleadoAsignado !== usuario) {
         return res.status(403).json({ 
@@ -785,15 +784,25 @@ const completarAlbaranHandler = async (req, res) => {
       }
     }
 
-    // 3. Actualizar StatusFacturado a -1 (completado) - SIN ENVÍO DE EMAIL
+    // 3. Actualizar albarán (guardar firmas y observaciones)
     await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
       .input('serie', sql.VarChar, serie || '')
       .input('numeroAlbaran', sql.Int, numeroAlbaran)
+      .input('firmaCliente', sql.Text, firmaCliente)
+      .input('firmaRepartidor', sql.Text, firmaRepartidor)
+      .input('observaciones', sql.VarChar, observaciones || '')
       .query(`
         UPDATE CabeceraAlbaranCliente
-        SET StatusFacturado = -1
+        SET StatusFacturado = -1,
+            FirmaCliente = @firmaCliente,
+            FirmaRepartidor = @firmaRepartidor,
+            ObservacionesAlbaran = COALESCE(ObservacionesAlbaran, '') + 
+              CASE WHEN @observaciones != '' THEN 
+                CHAR(13) + CHAR(10) + 'Observaciones entrega: ' + @observaciones 
+              ELSE '' END,
+            FechaEntrega = GETDATE()
         WHERE CodigoEmpresa = @codigoEmpresa
           AND EjercicioAlbaran = @ejercicio
           AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
@@ -814,8 +823,10 @@ const completarAlbaranHandler = async (req, res) => {
   }
 };
 
+// Registrar ambas rutas (si quieres mantener compatibilidad)
 router.post('/completar-albaran', completarAlbaranHandler);
 router.post('/api/completar-albaran', completarAlbaranHandler);
+
 
 // ✅ 7.6 ACTUALIZAR CANTIDADES DE ALBARANES (CORREGIDO)
 router.put('/actualizarCantidadesAlbaran', async (req, res) => {
@@ -902,7 +913,7 @@ router.put('/actualizarCantidadesAlbaran', async (req, res) => {
   }
 });
 
-// ✅ 7.7 COMPLETAR ALBARÁN CON FIRMAS (NUEVO)
+// ✅ 7.7 COMPLETAR ALBARÁN CON FIRMAS (CORREGIDO)
 router.post('/completarAlbaranConFirmas', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -922,12 +933,20 @@ router.post('/completarAlbaranConFirmas', async (req, res) => {
   if (!codigoEmpresa || !ejercicio || !numeroAlbaran) {
     return res.status(400).json({ 
       success: false, 
-      mensaje: 'Faltan datos requeridos.' 
+      mensaje: 'Faltan datos requeridos: empresa, ejercicio, número de albarán.' 
+    });
+  }
+
+  // Validar que ambas firmas sean correctas (no vacías y con tamaño mínimo)
+  if (!tieneFirmaValida(firmaCliente) || !tieneFirmaValida(firmaRepartidor)) {
+    return res.status(400).json({
+      success: false,
+      mensaje: MENSAJE_FIRMAS_OBLIGATORIAS
     });
   }
 
   try {
-    // 1. Verificar permisos
+    // 1. Verificar permisos del usuario
     const permisoResult = await getPool().request()
       .input('usuario', sql.VarChar, usuario)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -949,7 +968,7 @@ router.post('/completarAlbaranConFirmas', async (req, res) => {
     const esAdmin = userPerms.StatusAdministrador === -1;
     const esUsuarioAvanzado = userPerms.StatusUsuarioAvanzado === -1;
     
-    // 2. Verificar repartidor asignado
+    // 2. Obtener datos del albarán para verificar repartidor asignado y estado
     const albaranResult = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -989,7 +1008,7 @@ router.post('/completarAlbaranConFirmas', async (req, res) => {
       }
     }
 
-    // 3. Actualizar albarán con firmas y estado completado
+    // 3. Actualizar albarán: marcar como completado, guardar firmas y observaciones
     await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)

@@ -1,10 +1,9 @@
-﻿﻿import React from 'react';
+﻿﻿﻿﻿import React from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Box, Container } from '@mui/material';
 import Navbar from './components/Navbar';
 import LoginPage from './pages/LoginPage';
-import PedidosScreen from './pages/PedidosScreen';
-import ConfirmacionEntrega from './pages/ConfirmacionEntrega';
+import PedidosScreen from './pages/PedidosScreen/PedidosScreen';
 import GestionRutas from './pages/GestionRutas';
 import DetalleAlbaran from './pages/DetalleAlbaran';
 import AsignarPedidosScreen from './pages/AsignarPedidosScreen';
@@ -72,14 +71,6 @@ function App() {
               <ProtectedRoute>
                 <ProtectedRouteWithPermission requiredPermission="canViewWaybills">
                   <GestionRutas />
-                </ProtectedRouteWithPermission>
-              </ProtectedRoute>
-            } />
-
-            <Route path="/confirmacion-entrega" element={
-              <ProtectedRoute>
-                <ProtectedRouteWithPermission requiredPermission="canViewWaybills">
-                  <ConfirmacionEntrega />
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
