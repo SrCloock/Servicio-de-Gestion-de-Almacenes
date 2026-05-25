@@ -17,7 +17,6 @@ import {
   FaCalendarAlt,
 } from 'react-icons/fa';
 
-// Importaciones de los módulos divididos
 import API from '../../helpers/api';
 import { getAuthHeader } from '../../helpers/authHelper';
 import { usePermissions } from '../../PermissionsManager';
@@ -59,7 +58,8 @@ const PedidosScreen = () => {
   const [generandoAlbaran, setGenerandoAlbaran] = useState(false);
   const [filtroBusqueda, setFiltroBusqueda] = useState('');
   const debouncedFiltroBusqueda = useDebounce(filtroBusqueda, 500);
-  const [rangoFechas, setRangoFechas] = useState('semana');
+  // ✅ NUEVO: valor por defecto 'todos' para ver todos los pedidos sin límite de fechas
+  const [rangoFechas, setRangoFechas] = useState('todos');
   const [filtroStatus, setFiltroStatus] = useState('');
   const [paginaActual, setPaginaActual] = useState(1);
   const [error, setError] = useState('');
@@ -80,8 +80,13 @@ const PedidosScreen = () => {
   const rangoFechasRef = useRef(rangoFechas);
   const userRef = useRef(JSON.parse(localStorage.getItem('user') || 'null'));
 
+  // Mantener ref actualizada
+  useEffect(() => {
+    rangoFechasRef.current = rangoFechas;
+  }, [rangoFechas]);
+
   // ----------------------
-  // Funciones de negocio (idénticas al original)
+  // Funciones de negocio
   // ----------------------
   const mostrarNotificacionNavegador = useCallback((titulo, cuerpo, tipo = 'info') => {
     if (!('Notification' in window)) {
@@ -226,19 +231,30 @@ const PedidosScreen = () => {
           { headers: getAuthHeader() }
         );
         if (response.data.success) {
-          if (response.data.detalles?.albaranProgramado) {
-            setTimeout(
-              () =>
-                mostrarNotificacionNavegador(
-                  response.data.detalles?.pedidoCompletado ? 'Pedido Completado' : 'Expedición Registrada',
-                  response.data.detalles?.pedidoCompletado
-                    ? `El pedido #${pedido.numeroPedido} se ha completado.\nSe genera albarán automáticamente.`
-                    : `Expedición registrada para pedido #${pedido.numeroPedido}.`
-                ),
-              1200
+          // ✅ Notificación mejorada según respuesta del backend
+          const { albaranGenerado, albaran, pedidoCompletado } = response.data.detalles || {};
+          if (albaranGenerado && albaran) {
+            mostrarNotificacionNavegador(
+              'Albarán Generado',
+              `✅ Albarán Nº ${albaran.serie || ''}${albaran.numero} generado automáticamente.`,
+              'success'
+            );
+            mostrarToastEnPagina('Albarán generado', `Nº ${albaran.serie || ''}${albaran.numero}`, 'success');
+          } else if (pedidoCompletado && !albaranGenerado) {
+            mostrarNotificacionNavegador(
+              'Atención',
+              `Pedido #${pedido.numeroPedido} completado pero no se pudo generar el albarán automáticamente. Revisa logs.`,
+              'error'
+            );
+          } else {
+            mostrarNotificacionNavegador(
+              'Expedición Registrada',
+              `Servidas ${validacion.cantidad} ${linea.unidadBase || 'ud'} para pedido #${pedido.numeroPedido}.`,
+              'info'
             );
           }
-          // Actualización local sin recargar
+
+          // Actualización local del estado
           setPedidos((prev) =>
             prev
               .map((p) => {
@@ -254,7 +270,7 @@ const PedidosScreen = () => {
                 const tieneLineasPendientes = articulosActualizados.some(
                   (art) => parseFloat(art.unidadesPendientes) > 0
                 );
-                if (!tieneLineasPendientes) return null;
+                if (!tieneLineasPendientes) return null; // eliminar pedido si está completamente expedido
                 return {
                   ...p,
                   Estado: response.data.detalles?.pedidoParcial ? 4 : p.Estado,
@@ -266,6 +282,7 @@ const PedidosScreen = () => {
               })
               .filter(Boolean)
           );
+
           if (expedicion.ubicacion !== 'Zona descarga') {
             setUbicaciones((prev) => {
               const nuevas = { ...prev };
@@ -281,13 +298,6 @@ const PedidosScreen = () => {
             });
           }
           setExpediciones((prev) => ({ ...prev, [key]: { ...prev[key], cantidad: '0' } }));
-          mostrarToastEnPagina(
-            'Servicio registrado',
-            `Servidas ${validacion.cantidad} ${linea.unidadBase || 'ud'} desde ${expedicion.almacen} - ${
-              expedicion.ubicacion
-            }`,
-            'success'
-          );
         }
       } catch (error) {
         console.error(error);
@@ -424,26 +434,6 @@ const PedidosScreen = () => {
       if (!canPerformActionsInPedidos) return;
       try {
         setGenerandoAlbaran(true);
-        const lineasExpedidas = [];
-        pedido.articulos.forEach((articulo) => {
-          const unidadesPedidas = parseFloat(articulo.unidadesPedidas) || 0;
-          const unidadesPendientes = parseFloat(articulo.unidadesPendientes) || 0;
-          const unidadesExpedidas = unidadesPedidas - unidadesPendientes;
-          if (unidadesExpedidas > 0) {
-            lineasExpedidas.push({
-              codigoArticulo: articulo.codigoArticulo,
-              descripcionArticulo: articulo.descripcionArticulo,
-              cantidad: unidadesExpedidas,
-              precio: articulo.precio || 0,
-              codigoAlmacen: articulo.codigoAlmacen || 'CEN',
-              partida: articulo.partida || '',
-            });
-          }
-        });
-        if (lineasExpedidas.length === 0) {
-          alert('No hay líneas con cantidades expedidas para generar albarán parcial.');
-          return;
-        }
         const response = await API.post(
           '/generarAlbaranParcial',
           {
@@ -451,7 +441,6 @@ const PedidosScreen = () => {
             ejercicio: pedido.ejercicioPedido,
             serie: pedido.seriePedido,
             numeroPedido: pedido.numeroPedido,
-            lineasExpedidas,
           },
           { headers: getAuthHeader() }
         );
@@ -508,6 +497,7 @@ const PedidosScreen = () => {
           setLoading(false);
           return;
         }
+        // ✅ Enviar el rango actual (incluyendo 'todos')
         const response = await API.get('/pedidosPendientes', {
           headers: getAuthHeader(),
           params: { codigoEmpresa, rango: rangoFechasRef.current },
@@ -645,7 +635,6 @@ const PedidosScreen = () => {
   return (
     <Box className="ps-pedidos-screen">
       <Container maxWidth={false} sx={{ py: 3, px: { xs: 2, sm: 3 } }}>
-
         <PedidosFilters
           filtroBusqueda={filtroBusqueda}
           onFiltroBusquedaChange={setFiltroBusqueda}
@@ -664,9 +653,7 @@ const PedidosScreen = () => {
           voluminosos={pedidosOrdenados.filter((p) => p.EsVoluminoso).length}
         />
 
-        <PedidosList
-
-        >
+        <PedidosList>
           {error ? (
             <PedidosStateView
               type="error"

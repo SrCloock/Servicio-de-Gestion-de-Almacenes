@@ -103,7 +103,7 @@ export const PedidosHeader = ({ title, subtitle }) => {
 };
 
 // ----------------------
-// PedidosFilters
+// PedidosFilters (MODIFICADO: AÑADIDA OPCIÓN "TODOS")
 // ----------------------
 export const PedidosFilters = ({
   filtroBusqueda,
@@ -150,6 +150,7 @@ export const PedidosFilters = ({
               '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: colors.primary },
             }}
           >
+            <MenuItem value="todos">Todos</MenuItem>    {/* ✅ NUEVA OPCIÓN */}
             <MenuItem value="semana">Una semana</MenuItem>
             <MenuItem value="dia">Un día</MenuItem>
           </Select>
@@ -180,7 +181,7 @@ export const PedidosFilters = ({
 };
 
 // ----------------------
-// SummaryCard y PedidosSummaryBar (CORREGIDO)
+// SummaryCard y PedidosSummaryBar
 // ----------------------
 export const SummaryCard = ({ label, value }) => {
   return (
@@ -278,7 +279,7 @@ export const PedidosStateView = ({
 };
 
 // ----------------------
-// PedidoCard (CORREGIDO: Grid interno)
+// PedidoCard
 // ----------------------
 export const PedidoCard = ({
   pedido,
@@ -435,7 +436,6 @@ export const PedidoCard = ({
                 </Stack>
               </Stack>
 
-              {/* Grid interno corregido */}
               <Grid container spacing={1.5} sx={{ mt: 1 }}>
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <Typography variant="body2"><strong><FaUser size={12} /> Contacto:</strong> {pedido.Contacto || 'No especificado'}</Typography>

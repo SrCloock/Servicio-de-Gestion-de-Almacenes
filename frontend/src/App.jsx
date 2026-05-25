@@ -9,7 +9,7 @@ import DetalleAlbaran from './pages/DetalleAlbaran';
 import AsignarPedidosScreen from './pages/AsignarPedidosScreen';
 import DesignarRutasScreen from './pages/DesignarRutasScreen';
 import AlbaranesAsignadosScreen from './pages/AlbaranesAsignadosScreen';
-import TraspasosPage from './pages/TraspasosPage';
+import TraspasosPage from './pages/TraspasosScreen/TraspasosScreen';
 import InventarioPage from './pages/InventarioPage';
 import GestionDocumentalScreen from './pages/GestionDocumentalScreen';
 import RecepcionPedidosCompra from './pages/RecepcionPedidosCompra/index';

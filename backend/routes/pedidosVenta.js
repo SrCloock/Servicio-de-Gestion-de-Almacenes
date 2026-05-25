@@ -28,17 +28,27 @@ router.get('/pedidosPendientes', async (req, res) => {
     const estadosPedido = req.query.estados ? req.query.estados.split(',') : [];
     const empleadoAsignado = req.query.empleadoAsignado;
     
-    // 2. Calcular fechas según rango
+    // 2. Calcular fechas según rango (ahora soporta 'todos')
     const hoy = new Date();
-    const fechaInicio = new Date(hoy);
-    const fechaFinExclusiva = new Date(hoy);
-    
-    if (rangoDias === 'dia') {
+    let fechaInicio, fechaFinExclusiva;
+
+    if (rangoDias === 'todos') {
+      // Fechas muy amplias para no filtrar por tiempo (todos los pedidos históricos)
+      fechaInicio = new Date('1900-01-01');
+      fechaFinExclusiva = new Date('2100-01-01');
+      console.log('[PEDIDOS] Rango = TODOS, sin filtro de fechas');
+    } else if (rangoDias === 'dia') {
+      fechaInicio = new Date(hoy);
       fechaInicio.setDate(hoy.getDate() - 1);
+      fechaFinExclusiva = new Date(hoy);
       fechaFinExclusiva.setDate(hoy.getDate() + 2);
-    } else {
+      console.log('[PEDIDOS] Rango = día');
+    } else { // semana por defecto
+      fechaInicio = new Date(hoy);
       fechaInicio.setDate(hoy.getDate() - 7);
+      fechaFinExclusiva = new Date(hoy);
       fechaFinExclusiva.setDate(hoy.getDate() + 8);
+      console.log('[PEDIDOS] Rango = semana');
     }
 
     fechaInicio.setHours(0, 0, 0, 0);
@@ -53,7 +63,7 @@ router.get('/pedidosPendientes', async (req, res) => {
       6: 'Pedido Express'
     };
 
-    // 4. Construir consulta base con parámetros
+    // 4. Construir consulta base
     let sqlQuery = `
       SELECT 
         c.CodigoEmpresa,
@@ -70,7 +80,6 @@ router.get('/pedidosPendientes', async (req, res) => {
         c.FormaEnvio,
         c.Estado,
         c.StatusAprobado,
-        -- Determinación de Status
         CASE 
           WHEN c.Estado = 0 AND c.StatusAprobado = 0 THEN 'Revision'
           WHEN c.Estado = 0 AND c.StatusAprobado = -1 THEN 'Preparando'
@@ -123,20 +132,16 @@ router.get('/pedidosPendientes', async (req, res) => {
         AND c.FechaPedido < @fechaFinExclusiva
     `;
 
-    // Filtro por FormaEnvio
+    // Filtros adicionales (FormaEnvio, empleado, etc.)
     if (FormaEnvio) {
       sqlQuery += ` AND c.FormaEnvio = @FormaEnvio`;
     }
-
-    // Filtro por empleado
     if (empleado) {
       sqlQuery += ` AND c.EmpleadoAsignado = @empleado`;
     }
     if (empleadoAsignado) {
       sqlQuery += ` AND c.EmpleadoAsignado = @empleadoAsignado`;
     }
-
-    // Filtro por estados (Status) - repetimos la expresión CASE
     if (estadosPedido.length > 0) {
       const statusConditions = estadosPedido.map(() => 
         `(CASE WHEN c.Estado = 0 AND c.StatusAprobado = 0 THEN 'Revision'
@@ -147,10 +152,9 @@ router.get('/pedidosPendientes', async (req, res) => {
       ).join(' OR ');
       sqlQuery += ` AND (${statusConditions})`;
     }
-
     sqlQuery += ` ORDER BY COALESCE(c.FechaEntrega, c.FechaPedido) ASC`;
 
-    // 5. Preparar request con parámetros
+    // Preparar request con parámetros
     const request = getPool().request();
     request.input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
     request.input('fechaInicio', sql.DateTime, fechaInicio);
@@ -160,19 +164,23 @@ router.get('/pedidosPendientes', async (req, res) => {
     if (empleado) request.input('empleado', sql.VarChar, empleado);
     if (empleadoAsignado) request.input('empleadoAsignado', sql.VarChar, empleadoAsignado);
     
-    // Para los estados, agregamos parámetros dinámicos
     if (estadosPedido.length > 0) {
       estadosPedido.forEach((est, idx) => {
         request.input(`estado${idx}`, sql.VarChar, est);
       });
-      // Reemplazar los '?' por los nombres de parámetros
       let paramIndex = 0;
       sqlQuery = sqlQuery.replace(/\?/g, () => `@estado${paramIndex++}`);
     }
 
     const result = await request.query(sqlQuery);
+    console.log(`[PEDIDOS] Consulta ejecutada. Filas obtenidas: ${result.recordset.length}`);
 
-    // 6. Recopilar IDs para detalles (usando LineasPosicion)
+    // Si no hay resultados, devolver array vacío (frontend mostrará mensaje)
+    if (result.recordset.length === 0) {
+      return res.json([]);
+    }
+
+    // Recopilar IDs para detalles (tallas/colores)
     const lineasIds = [];
     result.recordset.forEach(row => {
       if (row.LineasPosicion) {
@@ -180,11 +188,9 @@ router.get('/pedidosPendientes', async (req, res) => {
       }
     });
 
-    // 7. Consulta para detalles de tallas/colores (sin cambios)
     let detallesPorLinea = {};
     if (lineasIds.length > 0) {
       const placeholders = lineasIds.map((_, i) => `@id${i}`).join(',');
-      
       const detallesQuery = `
         SELECT 
           lt.MovPosicionLinea_ AS MovPosicionLinea,
@@ -215,14 +221,11 @@ router.get('/pedidosPendientes', async (req, res) => {
         WHERE lt.CodigoEmpresa = @codigoEmpresa
           AND lt.MovPosicionLinea_ IN (${placeholders})
       `;
-
       const detallesRequest = getPool().request()
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
-      
       lineasIds.forEach((id, index) => {
         detallesRequest.input(`id${index}`, sql.VarChar, id);
       });
-
       const detallesResult = await detallesRequest.query(detallesQuery);
       
       detallesResult.recordset.forEach(detalle => {
@@ -270,7 +273,7 @@ router.get('/pedidosPendientes', async (req, res) => {
       });
     }
 
-    // 8. Combinar resultados
+    // Combinar resultados
     const pedidosAgrupados = {};
     result.recordset.forEach(row => {
       const key = `${row.CodigoEmpresa}-${row.EjercicioPedido}-${row.SeriePedido}-${row.NumeroPedido}`;
@@ -331,7 +334,9 @@ router.get('/pedidosPendientes', async (req, res) => {
     });
     
     const pedidosArray = Object.values(pedidosAgrupados);
+    console.log(`[PEDIDOS] Total pedidos agrupados: ${pedidosArray.length}`);
     res.json(pedidosArray);
+    
   } catch (err) {
     console.error('[ERROR PEDIDOS PENDIENTES]', err);
     res.status(500).json({ 
@@ -435,41 +440,33 @@ router.post('/asignarEmpleado', async (req, res) => {
   }
 });
 
-// ✅ 5.3 ACTUALIZAR LÍNEA DE PEDIDO (VERSIÓN OPTIMIZADA - CONSULTA DE STOCK MEJORADA)
+// ============================================================
+// ✅ 5.3 ACTUALIZAR LÍNEA DE PEDIDO (VERSIÓN COMPLETA CON LOGS Y ALBARÁN MEJORADO)
+// ============================================================
 router.post('/actualizarLineaPedido', async (req, res) => {
   const datosLinea = req.body;
 
   console.log('[BACKEND DEBUG] ===== INICIO ACTUALIZAR LÍNEA =====');
-  console.log('[BACKEND DEBUG] Datos recibidos para actualizar línea:', {
+  console.log('[BACKEND DEBUG] Datos recibidos:', {
     codigoArticulo: datosLinea.codigoArticulo,
-    unidadMedida: datosLinea.unidadMedida,
     cantidadExpedida: datosLinea.cantidadExpedida,
     movPosicionLinea: datosLinea.movPosicionLinea,
     ubicacion: datosLinea.ubicacion,
     almacen: datosLinea.almacen,
-    codigoColor: datosLinea.codigoColor,
-    codigoTalla: datosLinea.codigoTalla,
-    esZonaDescarga: datosLinea.esZonaDescarga,
     codigoEmpresa: datosLinea.codigoEmpresa,
     ejercicio: datosLinea.ejercicio,
-    numeroPedido: datosLinea.numeroPedido,
-    serie: datosLinea.serie
+    numeroPedido: datosLinea.numeroPedido
   });
 
   // Campos obligatorios
   const camposRequeridos = [
-    'codigoEmpresa', 'ejercicio', 'numeroPedido', 
+    'codigoEmpresa', 'ejercicio', 'numeroPedido',
     'codigoArticulo', 'cantidadExpedida', 'ubicacion', 'almacen',
     'movPosicionLinea'
   ];
-  
   for (const campo of camposRequeridos) {
     if (!datosLinea[campo]) {
-      console.log(`[BACKEND DEBUG] ❌ Campo requerido faltante: ${campo}`);
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: `Campo requerido: ${campo}` 
-      });
+      return res.status(400).json({ success: false, mensaje: `Campo requerido: ${campo}` });
     }
   }
 
@@ -484,12 +481,12 @@ router.post('/actualizarLineaPedido', async (req, res) => {
   const esZonaDescarga = datosLinea.esZonaDescarga || datosLinea.ubicacion === "Zona descarga";
 
   const transaction = new sql.Transaction(getPool());
-  
+
   try {
     await transaction.begin();
-    console.log('[BACKEND DEBUG] Transacción iniciada');
-    
-    // OBTENER DATOS DE LA LÍNEA
+    console.log('[EXPEDICION] Transacción iniciada');
+
+    // 1. OBTENER DATOS DE LA LÍNEA
     const requestLinea = new sql.Request(transaction);
     const resultLinea = await requestLinea
       .input('movPosicionLinea', sql.VarChar, datosLinea.movPosicionLinea)
@@ -519,70 +516,40 @@ router.post('/actualizarLineaPedido', async (req, res) => {
           a.CodigoSubfamilia,
           a.UnidadMedida2_ AS UnidadBase,
           a.UnidadMedidaAlternativa_ AS UnidadAlternativa,
-          a.FactorConversion_ AS FactorConversion
+          a.FactorConversion_
         FROM LineasPedidoCliente l
         INNER JOIN Articulos a ON a.CodigoArticulo = l.CodigoArticulo AND a.CodigoEmpresa = l.CodigoEmpresa
         WHERE l.LineasPosicion = @movPosicionLinea
       `);
 
     if (resultLinea.recordset.length === 0) {
-      console.log(`[BACKEND DEBUG] ❌ Línea no encontrada con LineasPosicion: ${datosLinea.movPosicionLinea}`);
       await transaction.rollback();
-      return res.status(404).json({ 
-        success: false, 
-        mensaje: `Línea de pedido no encontrada con LineasPosicion: ${datosLinea.movPosicionLinea}` 
-      });
+      return res.status(404).json({ success: false, mensaje: `Línea no encontrada con LineasPosicion: ${datosLinea.movPosicionLinea}` });
     }
 
     const lineaData = resultLinea.recordset[0];
-    const codigoAlmacen = lineaData.CodigoAlmacen;
-    
-    const unidadMedida = lineaData.UnidadMedida || 'unidades';
-    const precio = lineaData.Precio;
     const unidadesPendientes = parseFloat(lineaData.UnidadesPendientes);
     const unidadesServidas = parseFloat(lineaData.UnidadesServidas) || 0;
     const movPosicionLinea = lineaData.LineasPosicion;
-    
-    const grupoTalla = lineaData.GrupoTalla_ ? 
-                      (typeof lineaData.GrupoTalla_ === 'number' ? 
-                       lineaData.GrupoTalla_.toString() : 
-                       lineaData.GrupoTalla_) : 
-                      null;
+    const unidadMedida = lineaData.UnidadMedida || 'unidades';
+    const precio = lineaData.Precio;
+    const grupoTalla = lineaData.GrupoTalla_ ? (typeof lineaData.GrupoTalla_ === 'number' ? lineaData.GrupoTalla_.toString() : lineaData.GrupoTalla_) : null;
 
-    console.log('[BACKEND DEBUG] Datos de línea obtenidos:', {
-      articulo: datosLinea.codigoArticulo,
-      unidadMedida: unidadMedida,
-      unidadesPendientes: unidadesPendientes,
-      unidadesServidas: unidadesServidas,
-      movPosicionLinea: movPosicionLinea,
-      grupoTalla: grupoTalla,
-      codigoEmpresa: lineaData.CodigoEmpresa,
-      ejercicioPedido: lineaData.EjercicioPedido,
-      seriePedido: lineaData.SeriePedido,
-      numeroPedido: lineaData.NumeroPedido
-    });
+    console.log('[EXPEDICION] Línea obtenida - Pendientes:', unidadesPendientes, 'Servidas:', unidadesServidas);
 
-    // VALIDACIÓN DE UNIDADES PENDIENTES
+    // Validar cantidad
     if (datosLinea.cantidadExpedida > unidadesPendientes) {
-      console.log(`[BACKEND DEBUG] ❌ Cantidad a expedir (${datosLinea.cantidadExpedida}) > unidades pendientes (${unidadesPendientes})`);
       await transaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: `La cantidad a expedir (${datosLinea.cantidadExpedida}) supera las unidades pendientes (${unidadesPendientes}).` 
-      });
+      return res.status(400).json({ success: false, mensaje: `La cantidad a expedir (${datosLinea.cantidadExpedida}) supera las unidades pendientes (${unidadesPendientes}).` });
     }
 
     const cantidadExpedidaStock = datosLinea.cantidadExpedida;
-
-    // VERIFICAR STOCK SOLO SI NO ES ZONA DESCARGA (OPTIMIZADO: UNA SOLA CONSULTA CON TOP 1)
     let ubicacionFinal = datosLinea.ubicacion;
     let partidaFinal = partida;
-    
+
+    // 2. VERIFICAR STOCK (si no es Zona Descarga)
     if (!esZonaDescarga) {
-      console.log('[BACKEND DEBUG] Verificando stock para ubicación:', ubicacionFinal);
-      
       const requestStock = new sql.Request(transaction);
-      // 🔥 OPTIMIZACIÓN: Una sola consulta que obtiene la mejor ubicación con stock
       const stockResult = await requestStock
         .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
         .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
@@ -594,12 +561,9 @@ router.post('/actualizarLineaPedido', async (req, res) => {
         .input('codigoTalla', sql.VarChar(10), codigoTalla)
         .query(`
           SELECT TOP 1 
-            Ubicacion, 
-            UnidadSaldoTipo_, 
-            Partida
+            Ubicacion, UnidadSaldoTipo_, Partida
           FROM AcumuladoStockUbicacion
-          WHERE 
-            CodigoEmpresa = @codigoEmpresa
+          WHERE CodigoEmpresa = @codigoEmpresa
             AND CodigoAlmacen = @almacen
             AND CodigoArticulo = @codigoArticulo
             AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
@@ -612,38 +576,27 @@ router.post('/actualizarLineaPedido', async (req, res) => {
             UnidadSaldoTipo_ DESC
         `);
 
-      let stockDisponible = 0;
-      if (stockResult.recordset.length > 0) {
-        const mejorUbicacion = stockResult.recordset[0];
-        stockDisponible = parseFloat(mejorUbicacion.UnidadSaldoTipo_) || 0;
-        ubicacionFinal = mejorUbicacion.Ubicacion;
-        partidaFinal = mejorUbicacion.Partida || '';
-        console.log('[BACKEND DEBUG] Ubicación encontrada:', ubicacionFinal, 'Stock:', stockDisponible);
-      } else {
-        stockDisponible = 0;
+      if (stockResult.recordset.length === 0) {
+        await transaction.rollback();
+        return res.status(400).json({ success: false, mensaje: `No hay stock disponible en ninguna ubicación para el artículo ${datosLinea.codigoArticulo}.` });
       }
 
-      if (stockDisponible === 0) {
-        await transaction.rollback();
-        return res.status(400).json({ 
-          success: false, 
-          mensaje: `No hay stock disponible en ninguna ubicación para el artículo ${datosLinea.codigoArticulo}${codigoColor ? ` color ${codigoColor}` : ''}${codigoTalla ? ` talla ${codigoTalla}` : ''}.` 
-        });
-      }
+      const mejorUbicacion = stockResult.recordset[0];
+      const stockDisponible = parseFloat(mejorUbicacion.UnidadSaldoTipo_) || 0;
+      ubicacionFinal = mejorUbicacion.Ubicacion;
+      partidaFinal = mejorUbicacion.Partida || '';
 
       if (cantidadExpedidaStock > stockDisponible) {
         await transaction.rollback();
-        return res.status(400).json({ 
-          success: false, 
-          mensaje: `No hay suficiente stock en ${ubicacionFinal}. Solo hay ${stockDisponible} unidades disponibles.` 
-        });
+        return res.status(400).json({ success: false, mensaje: `No hay suficiente stock en ${ubicacionFinal}. Solo hay ${stockDisponible} unidades.` });
       }
+      console.log('[EXPEDICION] Stock verificado, ubicación:', ubicacionFinal, 'stock:', stockDisponible);
     }
 
-    // ✅ ACTUALIZAR UNIDADES PENDIENTES Y SERVIDAS
+    // 3. ACTUALIZAR LÍNEA DEL PEDIDO
     const requestUpdate = new sql.Request(transaction);
     await requestUpdate
-      .input('cantidadExpedida', sql.Decimal(18, 4), datosLinea.cantidadExpedida)
+      .input('cantidadExpedida', sql.Decimal(18,4), datosLinea.cantidadExpedida)
       .input('movPosicionLinea', sql.VarChar, movPosicionLinea)
       .query(`
         UPDATE LineasPedidoCliente
@@ -652,15 +605,14 @@ router.post('/actualizarLineaPedido', async (req, res) => {
           UnidadesServidas = UnidadesServidas + @cantidadExpedida
         WHERE LineasPosicion = @movPosicionLinea
       `);
+    console.log('[EXPEDICION] Línea actualizada - pendientes reducidas');
 
-    console.log('[BACKEND DEBUG] Línea actualizada - Unidades pendientes reducidas y servidas incrementadas');
-
-    // ACTUALIZAR STOCK EN AMBAS TABLAS (solo si no es zona descarga)
+    // 4. ACTUALIZAR STOCK EN UBICACIÓN (solo si no es zona descarga)
     if (!esZonaDescarga) {
-      console.log('[BACKEND DEBUG] Actualizando stock en ubicación:', ubicacionFinal);
-      
-      // 1. Obtener stock actual en AcumuladoStockUbicacion
-      const stockActualResult = await new sql.Request(transaction)
+      // Actualizar AcumuladoStockUbicacion
+      const requestStockUpdate = new sql.Request(transaction);
+      await requestStockUpdate
+        .input('cantidad', sql.Decimal(18,4), cantidadExpedidaStock)
         .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
         .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
         .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
@@ -670,10 +622,11 @@ router.post('/actualizarLineaPedido', async (req, res) => {
         .input('codigoColor', sql.VarChar(10), codigoColor)
         .input('codigoTalla', sql.VarChar(10), codigoTalla)
         .query(`
-          SELECT UnidadSaldo, UnidadSaldoTipo_
-          FROM AcumuladoStockUbicacion
-          WHERE 
-            CodigoEmpresa = @codigoEmpresa
+          UPDATE AcumuladoStockUbicacion
+          SET 
+            UnidadSaldo = UnidadSaldo - @cantidad,
+            UnidadSaldoTipo_ = UnidadSaldoTipo_ - @cantidad
+          WHERE CodigoEmpresa = @codigoEmpresa
             AND CodigoAlmacen = @almacen
             AND CodigoArticulo = @codigoArticulo
             AND Ubicacion = @ubicacion
@@ -683,72 +636,36 @@ router.post('/actualizarLineaPedido', async (req, res) => {
             AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
             AND Periodo = 99
         `);
+      console.log('[EXPEDICION] Stock actualizado en AcumuladoStockUbicacion');
 
-      if (stockActualResult.recordset.length > 0) {
-        const stockActualData = stockActualResult.recordset[0];
-        const stockActual = parseFloat(stockActualData.UnidadSaldoTipo_) || 0;
-        const nuevoStock = Math.max(0, stockActual - cantidadExpedidaStock);
-
-        // Actualizar AcumuladoStockUbicacion
-        await new sql.Request(transaction)
-          .input('nuevoStock', sql.Decimal(18,4), nuevoStock)
-          .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
-          .input('almacen', sql.VarChar(10), truncarString(datosLinea.almacen, 10))
-          .input('codigoArticulo', sql.VarChar(20), truncarString(datosLinea.codigoArticulo, 20))
-          .input('ubicacion', sql.VarChar(20), truncarString(ubicacionFinal, 20))
-          .input('partida', sql.VarChar(20), truncarString(partidaFinal, 20))
-          .input('unidadMedida', sql.VarChar(10), truncarString(unidadMedida, 10))
-          .input('codigoColor', sql.VarChar(10), codigoColor)
-          .input('codigoTalla', sql.VarChar(10), codigoTalla)
-          .query(`
-            UPDATE AcumuladoStockUbicacion
-            SET UnidadSaldo = @nuevoStock, UnidadSaldoTipo_ = @nuevoStock
-            WHERE 
-              CodigoEmpresa = @codigoEmpresa
-              AND CodigoAlmacen = @almacen
-              AND CodigoArticulo = @codigoArticulo
-              AND Ubicacion = @ubicacion
-              AND (TipoUnidadMedida_ = @unidadMedida OR (@unidadMedida = 'unidades' AND (TipoUnidadMedida_ IS NULL OR TipoUnidadMedida_ = '')))
-              AND (Partida = @partida OR (Partida IS NULL AND @partida = ''))
-              AND (CodigoColor_ = @codigoColor OR (CodigoColor_ IS NULL AND @codigoColor = ''))
-              AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
-              AND Periodo = 99
-          `);
-
-        // Actualizar también AcumuladoStock (tabla resumen)
-        await actualizarAcumuladoStockParaArticulo(
-          transaction,
-          datosLinea.codigoEmpresa,
-          datosLinea.almacen,
-          datosLinea.codigoArticulo,
-          unidadMedida,
-          partidaFinal,
-          codigoColor,
-          codigoTalla,
-          ubicacionFinal
-        );
-      }
+      // Actualizar tabla resumen AcumuladoStock
+      await actualizarAcumuladoStockParaArticulo(
+        transaction,
+        datosLinea.codigoEmpresa,
+        datosLinea.almacen,
+        datosLinea.codigoArticulo,
+        unidadMedida,
+        partidaFinal,
+        codigoColor,
+        codigoTalla,
+        ubicacionFinal
+      );
+      console.log('[EXPEDICION] Stock actualizado en AcumuladoStock');
     }
 
-    // ACTUALIZAR TABLA DE TALLAS SI ES NECESARIO
+    // 5. ACTUALIZAR TABLA DE TALLAS (si aplica)
     if (codigoColor && grupoTalla && codigoTalla) {
-      console.log('[BACKEND DEBUG] Actualizando tallas con:', {
-        grupoTalla: grupoTalla,
-        codigoColor: codigoColor,
-        codigoTalla: codigoTalla,
-        cantidad: datosLinea.cantidadExpedida
+      console.log('[EXPEDICION] Actualizando tallas con:', {
+        grupoTalla, codigoColor, codigoTalla, cantidad: datosLinea.cantidadExpedida
       });
-
       try {
         const grupoTallasRequest = new sql.Request(transaction);
-        
         let grupoTallaParam;
         if (grupoTalla && !isNaN(grupoTalla)) {
           grupoTallaParam = sql.Int;
         } else {
           grupoTallaParam = sql.VarChar;
         }
-        
         const grupoTallasResult = await grupoTallasRequest
           .input('grupoTalla', grupoTallaParam, grupoTalla)
           .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
@@ -762,7 +679,6 @@ router.post('/actualizarLineaPedido', async (req, res) => {
         if (grupoTallasResult.recordset.length > 0) {
           const grupoTallas = grupoTallasResult.recordset[0];
           let columnaTalla = '';
-          
           if (grupoTallas.CodigoTalla01_ === codigoTalla) {
             columnaTalla = 'UnidadesTalla01_';
           } else if (grupoTallas.CodigoTalla02_ === codigoTalla) {
@@ -772,7 +688,7 @@ router.post('/actualizarLineaPedido', async (req, res) => {
           } else if (grupoTallas.CodigoTalla04_ === codigoTalla) {
             columnaTalla = 'UnidadesTalla04_';
           }
-          
+
           if (columnaTalla) {
             await new sql.Request(transaction)
               .input('cantidadExpedida', sql.Decimal(18,4), datosLinea.cantidadExpedida)
@@ -786,15 +702,16 @@ router.post('/actualizarLineaPedido', async (req, res) => {
                 WHERE MovPosicionLinea_ = @movPosicionLinea
                   AND CodigoColor_ = @codigoColor
               `);
+            console.log('[EXPEDICION] Tallas actualizadas correctamente');
           }
         }
       } catch (tallasError) {
         console.error('[ERROR ACTUALIZAR TALLAS]', tallasError);
+        // No hacemos rollback porque no es crítico, solo log
       }
     }
 
-    // VERIFICAR SI EL PEDIDO ESTÁ COMPLETAMENTE EXPEDIDO
-    console.log('[BACKEND DEBUG] ===== VERIFICANDO SI PEDIDO COMPLETADO =====');
+    // 6. VERIFICAR SI EL PEDIDO ESTÁ COMPLETAMENTE EXPEDIDO (todas las líneas con pendientes = 0)
     const requestVerificarPedido = new sql.Request(transaction);
     const pedidoVerificado = await requestVerificarPedido
       .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
@@ -845,22 +762,14 @@ router.post('/actualizarLineaPedido', async (req, res) => {
     let pedidoParcial = false;
     let formaEnvioValor = null;
     let pedidoInfoParaAlbaran = null;
-    
+
     if (pedidoVerificado.recordset.length > 0) {
       const pedidoInfo = pedidoVerificado.recordset[0];
       formaEnvioValor = pedidoInfo.FormaEnvio;
-      
-      console.log('[BACKEND DEBUG] Información del pedido obtenida:', {
-        PedidoCompletado: pedidoInfo.PedidoCompletado,
-        Estado: pedidoInfo.Estado,
-        FormaEnvio: pedidoInfo.FormaEnvio,
-        StatusAprobado: pedidoInfo.StatusAprobado
-      });
-      
-      if (pedidoInfo.PedidoCompletado === 1 && pedidoInfo.Estado !== 2) {
+      const completado = pedidoInfo.PedidoCompletado === 1;
+
+      if (completado && pedidoInfo.Estado !== 2) {
         pedidoCompletado = true;
-        console.log('[BACKEND DEBUG] ✅ Marcando pedido como completado automáticamente');
-        
         await new sql.Request(transaction)
           .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
           .input('ejercicio', sql.SmallInt, datosLinea.ejercicio || lineaData.EjercicioPedido)
@@ -878,30 +787,24 @@ router.post('/actualizarLineaPedido', async (req, res) => {
               AND NumeroPedido = @numeroPedido
               AND Estado IN (0, 4)
           `);
-        
-        console.log('[BACKEND DEBUG] ✅ Pedido marcado automáticamente como completado');
-        
-      } else if (pedidoInfo.PedidoCompletado === 1 && pedidoInfo.Estado === 2) {
-        pedidoCompletado = true;
-        console.log('[BACKEND DEBUG] Pedido ya estaba marcado como completado (Estado = 2)');
-      } else if (pedidoInfo.PedidoCompletado === 0) {
-        if (pedidoInfo.Estado !== 4) {
-          await new sql.Request(transaction)
-            .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
-            .input('ejercicio', sql.SmallInt, datosLinea.ejercicio || lineaData.EjercicioPedido)
-            .input('serie', sql.VarChar, datosLinea.serie || lineaData.SeriePedido || '')
-            .input('numeroPedido', sql.Int, datosLinea.numeroPedido || lineaData.NumeroPedido)
-            .query(`
-              UPDATE CabeceraPedidoCliente
-              SET Estado = 4, StatusAprobado = -1
-              WHERE CodigoEmpresa = @codigoEmpresa
-                AND EjercicioPedido = @ejercicio
-                AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
-                AND NumeroPedido = @numeroPedido
-                AND Estado IN (0, 4)
-            `);
-        }
+        console.log('[EXPEDICION] Pedido marcado como completado (Estado=2)');
+      } else if (!completado && pedidoInfo.Estado !== 4) {
         pedidoParcial = true;
+        await new sql.Request(transaction)
+          .input('codigoEmpresa', sql.SmallInt, datosLinea.codigoEmpresa)
+          .input('ejercicio', sql.SmallInt, datosLinea.ejercicio || lineaData.EjercicioPedido)
+          .input('serie', sql.VarChar, datosLinea.serie || lineaData.SeriePedido || '')
+          .input('numeroPedido', sql.Int, datosLinea.numeroPedido || lineaData.NumeroPedido)
+          .query(`
+            UPDATE CabeceraPedidoCliente
+            SET Estado = 4, StatusAprobado = -1
+            WHERE CodigoEmpresa = @codigoEmpresa
+              AND EjercicioPedido = @ejercicio
+              AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
+              AND NumeroPedido = @numeroPedido
+              AND Estado IN (0, 4)
+          `);
+        console.log('[EXPEDICION] Pedido marcado como parcial (Estado=4)');
       }
 
       if (pedidoCompletado) {
@@ -916,27 +819,33 @@ router.post('/actualizarLineaPedido', async (req, res) => {
     }
 
     await transaction.commit();
-    console.log('[BACKEND DEBUG] ✅ Transacción confirmada');
+    console.log('[EXPEDICION] Transacción principal confirmada');
 
-    // LLAMAR A LA GENERACIÓN DE ALBARÁN EN SEGUNDO PLANO (FUERA DE LA TRANSACCIÓN)
+    // 7. GENERAR ALBARÁN AUTOMÁTICO EN SEGUNDO PLANO (solo si pedido completado)
+    let albaranGenerado = false;
+    let albaranInfo = null;
+
     if (pedidoCompletado && pedidoInfoParaAlbaran) {
-      console.log('[BACKEND DEBUG] 🔥 Programando generación de albarán automático al completar pedido...');
-      generarAlbaranAutomaticoEnSegundoPlano(pedidoInfoParaAlbaran)
-        .then(result => {
-          console.log(`[BACKEND SEGUNDO PLANO] ✅ Albarán generado: ${result.albaran?.numero || 'No generado'}`);
-        })
-        .catch(err => {
-          console.error('[BACKEND SEGUNDO PLANO] ❌ Error generando albarán:', err.message);
-        });
+      console.log('[EXPEDICION] Pedido completado, iniciando generación de albarán...');
+      const resultadoAlbaran = await generarAlbaranAutomaticoEnSegundoPlano(pedidoInfoParaAlbaran);
+      if (resultadoAlbaran.success) {
+        albaranGenerado = true;
+        albaranInfo = resultadoAlbaran.albaran;
+        console.log(`[EXPEDICION] Albarán generado correctamente: ${albaranInfo.serie}${albaranInfo.numero}`);
+      } else {
+        console.error(`[EXPEDICION] Error generando albarán: ${resultadoAlbaran.error}`);
+      }
     }
 
-    // CALCULAR NUEVOS VALORES
+    // 8. RESPUESTA AL FRONTEND
     const nuevasUnidadesPendientes = unidadesPendientes - datosLinea.cantidadExpedida;
     const nuevasUnidadesServidas = unidadesServidas + datosLinea.cantidadExpedida;
 
     const respuesta = {
-      success: true, 
-      mensaje: 'Línea actualizada correctamente',
+      success: true,
+      mensaje: pedidoCompletado
+        ? (albaranGenerado ? 'Línea actualizada y albarán generado automáticamente' : 'Línea actualizada pero no se pudo generar el albarán')
+        : 'Línea actualizada correctamente',
       detalles: {
         cantidadExpedidaVenta: datosLinea.cantidadExpedida,
         cantidadExpedidaStock: cantidadExpedidaStock,
@@ -944,32 +853,23 @@ router.post('/actualizarLineaPedido', async (req, res) => {
         unidadesServidasActualizadas: nuevasUnidadesServidas,
         stockRestante: esZonaDescarga ? 'N/A (Zona Descarga)' : 'Actualizado',
         ubicacionUtilizada: ubicacionFinal,
-        tallasActualizadas: !!(codigoColor && grupoTalla && codigoTalla),
-        unidadMedida: unidadMedida,
         pedidoCompletado: pedidoCompletado,
         pedidoParcial: pedidoParcial,
         statusPedido: pedidoCompletado ? 'Servido' : (pedidoParcial ? 'Parcial' : 'Preparando'),
-        formaEnvio: formaEnvioValor
+        formaEnvio: formaEnvioValor,
+        albaranGenerado: albaranGenerado,
+        albaran: albaranInfo
       }
     };
-    
-    if (pedidoCompletado) {
-      respuesta.mensaje = 'Línea actualizada, albarán programado y pedido marcado como completado';
-      respuesta.detalles.albaranProgramado = 'En proceso de generación en segundo plano';
-    }
 
-    console.log('[BACKEND DEBUG] ===== FIN ACTUALIZAR LÍNEA =====\n');
+    console.log('[EXPEDICION] ===== FIN ACTUALIZAR LÍNEA =====\n');
     res.json(respuesta);
 
   } catch (err) {
-    if (transaction._aborted === false) {
-      await transaction.rollback();
-      console.log('[BACKEND DEBUG] ❌ Transacción revertida debido a error');
-    }
+    if (transaction && !transaction._aborted) await transaction.rollback();
     console.error('[ERROR ACTUALIZAR LINEA PEDIDO]', err);
     console.error('[ERROR DETAILS]', err.message);
     console.error('[ERROR STACK]', err.stack);
-    
     res.status(500).json({
       success: false,
       mensaje: 'Error al actualizar línea de pedido',
@@ -979,10 +879,12 @@ router.post('/actualizarLineaPedido', async (req, res) => {
   }
 });
 
-// Función auxiliar para actualizar AcumuladoStock (tabla resumen)
+// ============================================================
+// FUNCIÓN AUXILIAR: ACTUALIZAR ACUMULADOSTOCK (TABLA RESUMEN)
+// ============================================================
 async function actualizarAcumuladoStockParaArticulo(transaction, codigoEmpresa, codigoAlmacen, codigoArticulo, unidadMedida, partida, codigoColor, codigoTalla, ubicacion) {
   try {
-    // Recalcular stock total desde AcumuladoStockUbicacion para esta combinación
+    // Recalcular stock total desde AcumuladoStockUbicacion
     const totalResult = await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
@@ -1003,9 +905,9 @@ async function actualizarAcumuladoStockParaArticulo(transaction, codigoEmpresa, 
           AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
           AND Periodo = 99
       `);
-    
+
     const stockTotal = totalResult.recordset[0]?.StockTotal || 0;
-    
+
     // Eliminar registro existente
     await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -1026,7 +928,7 @@ async function actualizarAcumuladoStockParaArticulo(transaction, codigoEmpresa, 
           AND (CodigoTalla01_ = @codigoTalla OR (CodigoTalla01_ IS NULL AND @codigoTalla = ''))
           AND Periodo = 99
       `);
-    
+
     // Insertar nuevo registro si hay stock
     if (stockTotal > 0) {
       await new sql.Request(transaction)
@@ -1057,32 +959,28 @@ async function actualizarAcumuladoStockParaArticulo(transaction, codigoEmpresa, 
   }
 }
 
-// ✅ FUNCIÓN PARA GENERAR ALBARÁN AUTOMÁTICO EN SEGUNDO PLANO (CORREGIDA Y COMPLETA)
+// ============================================================
+// FUNCIÓN DE GENERACIÓN DE ALBARÁN AUTOMÁTICO (MEJORADA)
+// ============================================================
 async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
-  console.log('[ALBARÁN SEGUNDO PLANO] ===== INICIANDO GENERACIÓN DE ALBARÁN =====');
-  console.log('[ALBARÁN SEGUNDO PLANO] Información del pedido:', {
-    codigoEmpresa: infoPedido.codigoEmpresa,
-    ejercicio: infoPedido.ejercicio,
-    serie: infoPedido.serie,
-    numeroPedido: infoPedido.numeroPedido
-  });
+  const log = (msg) => console.log(`[ALBARAN PEDIDO ${infoPedido.numeroPedido}] ${msg}`);
+  log('Iniciando proceso de generación de albarán');
 
   const transaction = new sql.Transaction(getPool());
-
   try {
     await transaction.begin();
     const txRequest = transaction.request();
 
-    // 1. Obtener albaranes anteriores no facturados para este pedido
-    const albaranesAnterioresResult = await txRequest
+    // 1. Obtener unidades ya albaranadas en albaranes NO facturados (StatusFacturado = 0)
+    const albaranesPrevios = await txRequest
       .input('codigoEmpresa', sql.SmallInt, infoPedido.codigoEmpresa)
       .input('ejercicioPedido', sql.SmallInt, infoPedido.ejercicio)
       .input('seriePedido', sql.VarChar, infoPedido.serie || '')
       .input('numeroPedido', sql.Int, infoPedido.numeroPedido)
       .query(`
-        SELECT lac.CodigoArticulo, SUM(lac.UnidadesServidas) AS TotalUnidadesAlbaranadas
+        SELECT lac.CodigoArticulo, SUM(lac.UnidadesServidas) AS TotalUnidades
         FROM CabeceraAlbaranCliente cac
-        INNER JOIN LineasAlbaranCliente lac
+        INNER JOIN LineasAlbaranCliente lac 
           ON cac.CodigoEmpresa = lac.CodigoEmpresa
           AND cac.EjercicioAlbaran = lac.EjercicioAlbaran
           AND cac.SerieAlbaran = lac.SerieAlbaran
@@ -1096,39 +994,27 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
       `);
 
     const unidadesYaAlbaranadas = {};
-    albaranesAnterioresResult.recordset.forEach((row) => {
-      unidadesYaAlbaranadas[row.CodigoArticulo] = parseFloat(row.TotalUnidadesAlbaranadas) || 0;
+    albaranesPrevios.recordset.forEach(row => {
+      unidadesYaAlbaranadas[row.CodigoArticulo] = parseFloat(row.TotalUnidades) || 0;
     });
+    log('Unidades ya albaranadas en albaranes pendientes:', unidadesYaAlbaranadas);
 
     // 2. Obtener líneas del pedido con unidades servidas
-    const lineasServidasResult = await txRequest
+    const lineasPedido = await txRequest
       .input('codigoEmpresa', sql.SmallInt, infoPedido.codigoEmpresa)
       .input('ejercicio', sql.SmallInt, infoPedido.ejercicio)
       .input('serie', sql.VarChar, infoPedido.serie || '')
       .input('numeroPedido', sql.Int, infoPedido.numeroPedido)
       .query(`
-        SELECT
-          l.CodigoArticulo,
-          l.DescripcionArticulo,
-          l.Descripcion2Articulo,
-          l.UnidadesServidas,
-          l.Precio,
-          l.CodigoAlmacen,
-          l.Partida,
-          l.UnidadMedida1_,
-          l.UnidadMedida2_,
-          l.FactorConversion_,
-          l.LineasPosicion,
-          l.GrupoIva,
-          l.[%Iva],
-          l.PesoBrutoUnitario_,
-          l.PesoNetoUnitario_,
-          l.VolumenUnitario_,
-          a.CodigoFamilia,
-          a.CodigoSubfamilia
+        SELECT 
+          l.CodigoArticulo, l.UnidadesServidas, l.Precio, l.CodigoAlmacen,
+          l.LineasPosicion, l.GrupoIva, l.[%Iva], l.PesoBrutoUnitario_,
+          l.PesoNetoUnitario_, l.VolumenUnitario_, l.DescripcionArticulo,
+          l.Descripcion2Articulo, l.UnidadMedida1_, l.UnidadMedida2_,
+          l.FactorConversion_, l.Partida,
+          a.CodigoFamilia, a.CodigoSubfamilia
         FROM LineasPedidoCliente l
-        LEFT JOIN Articulos a ON a.CodigoArticulo = l.CodigoArticulo
-          AND a.CodigoEmpresa = l.CodigoEmpresa
+        LEFT JOIN Articulos a ON a.CodigoArticulo = l.CodigoArticulo AND a.CodigoEmpresa = l.CodigoEmpresa
         WHERE l.CodigoEmpresa = @codigoEmpresa
           AND l.EjercicioPedido = @ejercicio
           AND (l.SeriePedido = @serie OR (@serie = '' AND l.SeriePedido IS NULL))
@@ -1136,34 +1022,24 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
           AND l.UnidadesServidas > 0
       `);
 
-    // 3. Filtrar líneas que aún no han sido albaranadas (nuevas unidades)
-    const lineasParaNuevoAlbaran = lineasServidasResult.recordset
-      .map((linea) => {
-        const yaAlbaranadas = unidadesYaAlbaranadas[linea.CodigoArticulo] || 0;
-        const totalServidas = parseFloat(linea.UnidadesServidas) || 0;
-        const unidadesNoAlbaranadas = totalServidas - yaAlbaranadas;
-
-        if (unidadesNoAlbaranadas <= 0) {
-          return null;
-        }
-
-        return {
-          ...linea,
-          UnidadesServidas: unidadesNoAlbaranadas
-        };
-      })
-      .filter(Boolean);
-
-    if (lineasParaNuevoAlbaran.length === 0) {
-      await transaction.rollback();
-      console.log('[ALBARÁN SEGUNDO PLANO] No hay unidades nuevas para generar albarán');
-      return {
-        success: false,
-        mensaje: 'No hay unidades nuevas para generar albarán'
-      };
+    const lineasNuevas = [];
+    for (const linea of lineasPedido.recordset) {
+      const servidas = parseFloat(linea.UnidadesServidas) || 0;
+      const yaAlbaranadas = unidadesYaAlbaranadas[linea.CodigoArticulo] || 0;
+      const pendientesAlbaran = servidas - yaAlbaranadas;
+      if (pendientesAlbaran > 0) {
+        lineasNuevas.push({ ...linea, UnidadesServidas: pendientesAlbaran });
+      }
     }
 
-    // 4. Calcular totales para el nuevo albarán
+    if (lineasNuevas.length === 0) {
+      log('No hay unidades nuevas para albarán. Cancelando.');
+      await transaction.rollback();
+      return { success: false, error: 'No hay unidades nuevas para albarán' };
+    }
+    log(`Unidades nuevas a albaranar: ${lineasNuevas.length} líneas`);
+
+    // 3. Calcular totales del nuevo albarán
     const fechaActual = new Date();
     const ejercicioAlbaran = fechaActual.getFullYear();
     let totalUnidades = 0;
@@ -1173,23 +1049,23 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
     let volumen = 0;
     let bultos = 0;
 
-    lineasParaNuevoAlbaran.forEach((linea) => {
-      const unidadesNum = parseFloat(linea.UnidadesServidas) || 0;
+    for (const linea of lineasNuevas) {
+      const unidades = parseFloat(linea.UnidadesServidas) || 0;
       const precio = parseFloat(linea.Precio) || 0;
       const pesoBrutoUnit = parseFloat(linea.PesoBrutoUnitario_) || 0;
       const pesoNetoUnit = parseFloat(linea.PesoNetoUnitario_) || 0;
       const volumenUnit = parseFloat(linea.VolumenUnitario_) || 0;
 
-      totalUnidades += unidadesNum;
-      importeBruto += unidadesNum * precio;
-      pesoBruto += unidadesNum * pesoBrutoUnit;
-      pesoNeto += unidadesNum * pesoNetoUnit;
-      volumen += unidadesNum * volumenUnit;
-      bultos += Math.max(1, Math.ceil(Math.max(unidadesNum / 10, (unidadesNum * pesoBrutoUnit) / 50)));
-    });
+      totalUnidades += unidades;
+      importeBruto += unidades * precio;
+      pesoBruto += unidades * pesoBrutoUnit;
+      pesoNeto += unidades * pesoNetoUnit;
+      volumen += unidades * volumenUnit;
+      bultos += Math.max(1, Math.ceil(Math.max(unidades / 10, (unidades * pesoBrutoUnit) / 50)));
+    }
 
-    // 5. Obtener siguiente número de albarán
-    const nextAlbaranResult = await txRequest
+    // 4. Obtener siguiente número de albarán
+    const nextAlbaran = await txRequest
       .input('codigoEmpresa', sql.SmallInt, infoPedido.codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicioAlbaran)
       .input('serie', sql.VarChar, infoPedido.serie || '')
@@ -1200,10 +1076,10 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
           AND EjercicioAlbaran = @ejercicio
           AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
       `);
+    const numeroAlbaran = nextAlbaran.recordset[0].SiguienteNumero;
+    log(`Nuevo número de albarán: ${numeroAlbaran}`);
 
-    const numeroAlbaran = nextAlbaranResult.recordset[0].SiguienteNumero;
-
-    // 6. Insertar cabecera del albarán (con todos los campos necesarios)
+    // 5. Insertar cabecera del albarán (ajustar nombres de columna según tu esquema)
     await txRequest
       .input('codigoEmpresa', sql.SmallInt, infoPedido.codigoEmpresa)
       .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
@@ -1225,12 +1101,12 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
       .input('fechaAlbaran', sql.DateTime, fechaActual)
       .input('fechaCreacion', sql.DateTime, fechaActual)
       .input('fechaEntrega', sql.DateTime, fechaActual)
-      .input('numeroLineas', sql.SmallInt, lineasParaNuevoAlbaran.length)
+      .input('numeroLineas', sql.SmallInt, lineasNuevas.length)
       .input('empleadoAsignado', sql.VarChar, (infoPedido.pedidoInfo.EmpleadoAsignado || '').toString())
       .input('telefono', sql.VarChar, (infoPedido.pedidoInfo.Telefono || '').toString())
       .input('telefonoEnvios', sql.VarChar, (infoPedido.pedidoInfo.Telefono || '').toString())
       .input('contacto', sql.VarChar, (infoPedido.pedidoInfo.Contacto || '').toString())
-      .input('observacionesWeb', sql.Text, `${(infoPedido.pedidoInfo.ObservacionesWeb || '').toString()} | Generado automáticamente al completar pedido`)
+      .input('observacionesWeb', sql.Text, `${(infoPedido.pedidoInfo.ObservacionesWeb || '').toString()} | Albarán automático post-expedición`)
       .input('nombreObra', sql.VarChar, (infoPedido.pedidoInfo.NombreObra || '').toString())
       .input('vendedor', sql.VarChar, (infoPedido.pedidoInfo.Vendedor || '').toString())
       .input('statusFacturado', sql.SmallInt, 0)
@@ -1283,17 +1159,18 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
         )
       `);
 
-    // 7. Insertar líneas del albarán
-    for (let i = 0; i < lineasParaNuevoAlbaran.length; i++) {
-      const linea = lineasParaNuevoAlbaran[i];
-      const unidadesNum = parseFloat(linea.UnidadesServidas) || 0;
+    // 6. Insertar líneas del albarán
+    for (let i = 0; i < lineasNuevas.length; i++) {
+      const linea = lineasNuevas[i];
+      const unidades = parseFloat(linea.UnidadesServidas) || 0;
       const precio = parseFloat(linea.Precio) || 0;
-      const importeBrutoLinea = unidadesNum * precio;
+      const importeBrutoLinea = unidades * precio;
+      const ivaPorcentaje = parseFloat(linea['%Iva']) || 21;
       const baseIvaLinea = importeBrutoLinea;
-      const cuotaIvaLinea = baseIvaLinea * ((parseFloat(linea['%Iva']) || 21) / 100);
-      const pesoBrutoLinea = unidadesNum * (parseFloat(linea.PesoBrutoUnitario_) || 0);
-      const pesoNetoLinea = unidadesNum * (parseFloat(linea.PesoNetoUnitario_) || 0);
-      const volumenLinea = unidadesNum * (parseFloat(linea.VolumenUnitario_) || 0);
+      const cuotaIvaLinea = baseIvaLinea * (ivaPorcentaje / 100);
+      const pesoBrutoLinea = unidades * (parseFloat(linea.PesoBrutoUnitario_) || 0);
+      const pesoNetoLinea = unidades * (parseFloat(linea.PesoNetoUnitario_) || 0);
+      const volumenLinea = unidades * (parseFloat(linea.VolumenUnitario_) || 0);
 
       await txRequest
         .input('codigoEmpresa', sql.SmallInt, infoPedido.codigoEmpresa)
@@ -1305,8 +1182,8 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
         .input('codigoArticulo', sql.VarChar, (linea.CodigoArticulo || '').toString())
         .input('descripcionArticulo', sql.VarChar, (linea.DescripcionArticulo || '').toString())
         .input('descripcion2Articulo', sql.VarChar, (linea.Descripcion2Articulo || '').toString())
-        .input('unidades', sql.Decimal(18,4), unidadesNum)
-        .input('unidadesServidas', sql.Decimal(18,4), unidadesNum)
+        .input('unidades', sql.Decimal(18,4), unidades)
+        .input('unidadesServidas', sql.Decimal(18,4), unidades)
         .input('precio', sql.Decimal(18,4), precio)
         .input('codigoAlmacen', sql.VarChar, (linea.CodigoAlmacen || '').toString())
         .input('partida', sql.VarChar, (linea.Partida || '').toString())
@@ -1317,7 +1194,7 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
         .input('seriePedido', sql.VarChar, infoPedido.serie || '')
         .input('numeroPedido', sql.Int, infoPedido.numeroPedido)
         .input('grupoIva', sql.TinyInt, linea.GrupoIva || 1)
-        .input('porcentajeIva', sql.Decimal(18,4), parseFloat(linea['%Iva']) || 21)
+        .input('porcentajeIva', sql.Decimal(18,4), ivaPorcentaje)
         .input('importeLiquido', sql.Decimal(18,4), importeBrutoLinea)
         .input('importeBruto', sql.Decimal(18,4), importeBrutoLinea)
         .input('baseImponible', sql.Decimal(18,4), baseIvaLinea)
@@ -1366,43 +1243,27 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
     }
 
     await transaction.commit();
-
-    console.log('[ALBARÁN SEGUNDO PLANO] Albarán generado con éxito:', {
-      numeroAlbaran,
-      serie: infoPedido.serie || '',
-      ejercicio: ejercicioAlbaran,
-      lineas: lineasParaNuevoAlbaran.length,
-      unidades: totalUnidades,
-      importe: importeBruto
-    });
-
+    log(`Albarán ${numeroAlbaran} generado con éxito`);
     return {
       success: true,
       albaran: {
         numero: numeroAlbaran,
         serie: infoPedido.serie || '',
         ejercicio: ejercicioAlbaran,
-        lineas: lineasParaNuevoAlbaran.length,
+        lineas: lineasNuevas.length,
         unidades: totalUnidades,
         importe: importeBruto
       }
     };
-    
   } catch (err) {
-    if (transaction && !transaction._aborted) {
-      try { await transaction.rollback(); } catch (e) { console.error('[ALBARÁN SEGUNDO PLANO] Error en rollback:', e); }
-    }
-    console.error('[ALBARÁN SEGUNDO PLANO] Error:', err);
-    console.error('[ALBARÁN SEGUNDO PLANO] Detalles:', err.message);
-    
-    return {
-      success: false,
-      error: err.message
-    };
+    if (transaction && !transaction._aborted) await transaction.rollback();
+    log(`ERROR CRÍTICO: ${err.message}`);
+    console.error(err);
+    return { success: false, error: err.message };
   }
 }
 
-// ✅ 5.4.1 GENERAR ALBARÁN AUTOMÁTICO CUANDO SE COMPLETA UN PEDIDO
+// ✅ GENERAR ALBARÁN AUTOMÁTICO (SIEMPRE CREA UNO NUEVO CON SALDO PENDIENTE)
 router.post('/generarAlbaranAutoCompletado', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1412,23 +1273,16 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
   const usuario = req.user.UsuarioLogicNet;
 
   if (!codigoEmpresa || !ejercicio || !numeroPedido) {
-    return res.status(400).json({ 
-      success: false, 
-      mensaje: 'Faltan datos requeridos' 
-    });
+    return res.status(400).json({ success: false, mensaje: 'Faltan datos requeridos' });
   }
 
   const transaction = new sql.Transaction(getPool());
 
   try {
     await transaction.begin();
-    const txRequest = transaction.request(); // 👈 USAR EL REQUEST DE LA TRANSACCIÓN
+    const txRequest = transaction.request();
 
-    console.log('[ALBARÁN AUTO] Verificando pedido:', {
-      codigoEmpresa, ejercicio, serie, numeroPedido
-    });
-
-    // 1. Verificar que el pedido existe y está completado
+    // 1. Verificar que el pedido existe y está completado (Estado = 2)
     const pedidoResult = await txRequest
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -1438,8 +1292,7 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
         SELECT 
           c.*,
           CASE WHEN EXISTS (
-            SELECT 1 
-            FROM LineasPedidoCliente l
+            SELECT 1 FROM LineasPedidoCliente l
             WHERE l.CodigoEmpresa = c.CodigoEmpresa
               AND l.EjercicioPedido = c.EjercicioPedido
               AND l.SeriePedido = c.SeriePedido
@@ -1455,56 +1308,47 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
 
     if (pedidoResult.recordset.length === 0) {
       await transaction.rollback();
-      return res.status(404).json({ 
-        success: false, 
-        mensaje: 'Pedido no encontrado' 
-      });
+      return res.status(404).json({ success: false, mensaje: 'Pedido no encontrado' });
     }
 
     const pedido = pedidoResult.recordset[0];
-    
     if (pedido.PedidoCompletado !== 1) {
       await transaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: 'El pedido no está completamente expedido' 
-      });
+      return res.status(400).json({ success: false, mensaje: 'El pedido no está completamente expedido' });
     }
-
     if (pedido.Estado !== 2) {
       await transaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: 'El pedido no está marcado como servido/completado' 
-      });
+      return res.status(400).json({ success: false, mensaje: 'El pedido no está marcado como servido/completado' });
     }
 
-    // 2. Verificar si ya existe un albarán para este pedido
-    const albaranExistente = await txRequest
+    // 2. Obtener albaranes anteriores NO FACTURADOS para calcular unidades ya albaranadas
+    const albaranesPrevios = await txRequest
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicioPedido', sql.SmallInt, ejercicio)
       .input('seriePedido', sql.VarChar, serie || '')
       .input('numeroPedido', sql.Int, numeroPedido)
       .query(`
-        SELECT TOP 1 NumeroAlbaran, EjercicioAlbaran, SerieAlbaran
-        FROM CabeceraAlbaranCliente
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioPedido = @ejercicioPedido
-          AND (SeriePedido = @seriePedido OR (@seriePedido = '' AND SeriePedido IS NULL))
-          AND NumeroPedido = @numeroPedido
-          AND StatusFacturado = 0
+        SELECT lac.CodigoArticulo, SUM(lac.UnidadesServidas) AS TotalUnidades
+        FROM CabeceraAlbaranCliente cac
+        INNER JOIN LineasAlbaranCliente lac 
+          ON cac.CodigoEmpresa = lac.CodigoEmpresa
+          AND cac.EjercicioAlbaran = lac.EjercicioAlbaran
+          AND cac.SerieAlbaran = lac.SerieAlbaran
+          AND cac.NumeroAlbaran = lac.NumeroAlbaran
+        WHERE cac.CodigoEmpresa = @codigoEmpresa
+          AND cac.EjercicioPedido = @ejercicioPedido
+          AND (cac.SeriePedido = @seriePedido OR (@seriePedido = '' AND cac.SeriePedido IS NULL))
+          AND cac.NumeroPedido = @numeroPedido
+          AND cac.StatusFacturado = 0
+        GROUP BY lac.CodigoArticulo
       `);
 
-    if (albaranExistente.recordset.length > 0) {
-      await transaction.commit();
-      return res.json({ 
-        success: true, 
-        mensaje: 'Ya existe un albarán pendiente para este pedido',
-        albaranExistente: albaranExistente.recordset[0]
-      });
-    }
+    const unidadesYaAlbaranadas = {};
+    albaranesPrevios.recordset.forEach(row => {
+      unidadesYaAlbaranadas[row.CodigoArticulo] = parseFloat(row.TotalUnidades) || 0;
+    });
 
-    // 3. Obtener líneas con unidades servidas
+    // 3. Obtener líneas del pedido con unidades servidas
     const lineasServidas = await txRequest
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -1512,23 +1356,14 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
       .input('numeroPedido', sql.Int, numeroPedido)
       .query(`
         SELECT 
-          l.CodigoArticulo,
-          l.DescripcionArticulo,
-          l.Descripcion2Articulo,
-          l.UnidadesServidas,
-          l.Precio,
-          l.CodigoAlmacen,
-          l.Partida,
-          l.UnidadMedida1_,
-          l.UnidadMedida2_,
-          l.FactorConversion_,
-          l.LineasPosicion,
-          l.GrupoIva,
-          l.[%Iva],
-          l.PesoBrutoUnitario_,
-          l.PesoNetoUnitario_,
-          l.VolumenUnitario_
+          l.CodigoArticulo, l.UnidadesServidas, l.Precio, l.CodigoAlmacen,
+          l.LineasPosicion, l.GrupoIva, l.[%Iva], l.PesoBrutoUnitario_,
+          l.PesoNetoUnitario_, l.VolumenUnitario_, l.DescripcionArticulo,
+          l.Descripcion2Articulo, l.UnidadMedida1_, l.UnidadMedida2_,
+          l.FactorConversion_, l.Partida,
+          a.CodigoFamilia, a.CodigoSubfamilia
         FROM LineasPedidoCliente l
+        LEFT JOIN Articulos a ON a.CodigoArticulo = l.CodigoArticulo AND a.CodigoEmpresa = l.CodigoEmpresa
         WHERE l.CodigoEmpresa = @codigoEmpresa
           AND l.EjercicioPedido = @ejercicio
           AND (l.SeriePedido = @serie OR (@serie = '' AND l.SeriePedido IS NULL))
@@ -1536,18 +1371,26 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
           AND l.UnidadesServidas > 0
       `);
 
-    if (lineasServidas.recordset.length === 0) {
-      await transaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: 'No hay líneas con unidades servidas para generar albarán' 
-      });
+    // Filtrar solo las líneas con unidades NO ALBARANADAS
+    const lineasParaNuevoAlbaran = [];
+    for (const linea of lineasServidas.recordset) {
+      const servidas = parseFloat(linea.UnidadesServidas) || 0;
+      const yaAlbaranadas = unidadesYaAlbaranadas[linea.CodigoArticulo] || 0;
+      const pendientesAlbaran = servidas - yaAlbaranadas;
+      if (pendientesAlbaran > 0) {
+        lineasParaNuevoAlbaran.push({ ...linea, UnidadesServidas: pendientesAlbaran });
+      }
     }
 
-    // 4. Generar número de albarán
+    if (lineasParaNuevoAlbaran.length === 0) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, mensaje: 'No hay nuevas unidades servidas para generar albarán' });
+    }
+
+    // 4. Generar nuevo albarán (misma lógica que generarAlbaranParcial)
     const fechaActual = new Date();
     const ejercicioAlbaran = fechaActual.getFullYear();
-    
+
     const nextAlbaran = await txRequest
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicioAlbaran)
@@ -1559,10 +1402,32 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
           AND EjercicioAlbaran = @ejercicio
           AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
       `);
-
     const numeroAlbaran = nextAlbaran.recordset[0].SiguienteNumero;
 
-    // 5. Insertar cabecera del albarán (versión completa con todos los campos necesarios)
+    // Calcular totales
+    let totalUnidades = 0;
+    let importeBruto = 0;
+    let pesoBruto = 0;
+    let pesoNeto = 0;
+    let volumen = 0;
+    let bultos = 0;
+
+    for (const linea of lineasParaNuevoAlbaran) {
+      const unidades = parseFloat(linea.UnidadesServidas) || 0;
+      const precio = parseFloat(linea.Precio) || 0;
+      const pesoBrutoUnit = parseFloat(linea.PesoBrutoUnitario_) || 0;
+      const pesoNetoUnit = parseFloat(linea.PesoNetoUnitario_) || 0;
+      const volumenUnit = parseFloat(linea.VolumenUnitario_) || 0;
+
+      totalUnidades += unidades;
+      importeBruto += unidades * precio;
+      pesoBruto += unidades * pesoBrutoUnit;
+      pesoNeto += unidades * pesoNetoUnit;
+      volumen += unidades * volumenUnit;
+      bultos += Math.max(1, Math.ceil(Math.max(unidades / 10, (unidades * pesoBrutoUnit) / 50)));
+    }
+
+    // Insertar cabecera (igual que en generarAlbaranParcial)
     await txRequest
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
@@ -1584,12 +1449,12 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
       .input('fechaAlbaran', sql.DateTime, fechaActual)
       .input('fechaCreacion', sql.DateTime, fechaActual)
       .input('fechaEntrega', sql.DateTime, fechaActual)
-      .input('numeroLineas', sql.SmallInt, lineasServidas.recordset.length)
+      .input('numeroLineas', sql.SmallInt, lineasParaNuevoAlbaran.length)
       .input('empleadoAsignado', sql.VarChar, pedido.EmpleadoAsignado || usuario)
       .input('telefono', sql.VarChar, pedido.Telefono || '')
       .input('telefonoEnvios', sql.VarChar, pedido.Telefono || '')
       .input('contacto', sql.VarChar, pedido.Contacto || '')
-      .input('observacionesWeb', sql.Text, (pedido.ObservacionesWeb || '') + ' | Generado automáticamente al completar pedido')
+      .input('observacionesWeb', sql.Text, (pedido.ObservacionesWeb || '') + ' | Albarán automático post-expedición')
       .input('nombreObra', sql.VarChar, pedido.NombreObra || '')
       .input('vendedor', sql.VarChar, pedido.Vendedor || '')
       .input('statusFacturado', sql.SmallInt, 0)
@@ -1602,13 +1467,13 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
       .input('codigoTransportistaEnvios', sql.Int, pedido.CodigoTransportistaEnvios || 0)
       .input('tipoPortesEnvios', sql.VarChar, pedido.TipoPortesEnvios || '')
       .input('formaEnvio', sql.Int, pedido.FormaEnvio || 3)
-      .input('importeLiquido', sql.Decimal(18,4), pedido.ImporteLiquido || 0)
-      .input('importeBruto', sql.Decimal(18,4), pedido.ImporteLiquido || 0)
-      .input('baseImponible', sql.Decimal(18,4), pedido.ImporteLiquido || 0)
-      .input('bultos', sql.Int, 1)
-      .input('pesoBruto', sql.Decimal(18,4), 0)
-      .input('pesoNeto', sql.Decimal(18,4), 0)
-      .input('volumen', sql.Decimal(18,4), 0)
+      .input('importeLiquido', sql.Decimal(18,4), importeBruto)
+      .input('importeBruto', sql.Decimal(18,4), importeBruto)
+      .input('baseImponible', sql.Decimal(18,4), importeBruto)
+      .input('bultos', sql.Int, bultos)
+      .input('pesoBruto', sql.Decimal(18,4), pesoBruto)
+      .input('pesoNeto', sql.Decimal(18,4), pesoNeto)
+      .input('volumen', sql.Decimal(18,4), volumen)
       .input('horaAlbaran', sql.Decimal(6,2), parseFloat(`${fechaActual.getHours()}.${fechaActual.getMinutes()}`))
       .query(`
         INSERT INTO CabeceraAlbaranCliente (
@@ -1642,18 +1507,18 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
         )
       `);
 
-    // 6. Insertar líneas del albarán
-    for (let i = 0; i < lineasServidas.recordset.length; i++) {
-      const linea = lineasServidas.recordset[i];
-      const unidadesNum = parseFloat(linea.UnidadesServidas) || 0;
+    // Insertar líneas del albarán (igual que en generarAlbaranParcial)
+    for (let i = 0; i < lineasParaNuevoAlbaran.length; i++) {
+      const linea = lineasParaNuevoAlbaran[i];
+      const unidades = parseFloat(linea.UnidadesServidas) || 0;
       const precio = parseFloat(linea.Precio) || 0;
-      const importeBrutoLinea = unidadesNum * precio;
+      const importeBrutoLinea = unidades * precio;
       const ivaPorcentaje = parseFloat(linea['%Iva']) || 21;
       const baseIvaLinea = importeBrutoLinea;
       const cuotaIvaLinea = baseIvaLinea * (ivaPorcentaje / 100);
-      const pesoBrutoLinea = unidadesNum * (parseFloat(linea.PesoBrutoUnitario_) || 0);
-      const pesoNetoLinea = unidadesNum * (parseFloat(linea.PesoNetoUnitario_) || 0);
-      const volumenLinea = unidadesNum * (parseFloat(linea.VolumenUnitario_) || 0);
+      const pesoBrutoLinea = unidades * (parseFloat(linea.PesoBrutoUnitario_) || 0);
+      const pesoNetoLinea = unidades * (parseFloat(linea.PesoNetoUnitario_) || 0);
+      const volumenLinea = unidades * (parseFloat(linea.VolumenUnitario_) || 0);
 
       await txRequest
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -1662,16 +1527,16 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
         .input('numeroAlbaran', sql.Int, numeroAlbaran)
         .input('orden', sql.SmallInt, i + 1)
         .input('lineasPosicion', sql.UniqueIdentifier, linea.LineasPosicion || null)
-        .input('codigoArticulo', sql.VarChar, (linea.CodigoArticulo || '').toString())
-        .input('descripcionArticulo', sql.VarChar, (linea.DescripcionArticulo || '').toString())
-        .input('descripcion2Articulo', sql.VarChar, (linea.Descripcion2Articulo || '').toString())
-        .input('unidades', sql.Decimal(18,4), unidadesNum)
-        .input('unidadesServidas', sql.Decimal(18,4), unidadesNum)
+        .input('codigoArticulo', sql.VarChar, linea.CodigoArticulo || '')
+        .input('descripcionArticulo', sql.VarChar, linea.DescripcionArticulo || '')
+        .input('descripcion2Articulo', sql.VarChar, linea.Descripcion2Articulo || '')
+        .input('unidades', sql.Decimal(18,4), unidades)
+        .input('unidadesServidas', sql.Decimal(18,4), unidades)
         .input('precio', sql.Decimal(18,4), precio)
-        .input('codigoAlmacen', sql.VarChar, (linea.CodigoAlmacen || '').toString())
-        .input('partida', sql.VarChar, (linea.Partida || '').toString())
-        .input('unidadMedida1_', sql.VarChar, (linea.UnidadMedida1_ || '').toString())
-        .input('unidadMedida2_', sql.VarChar, (linea.UnidadMedida2_ || '').toString())
+        .input('codigoAlmacen', sql.VarChar, linea.CodigoAlmacen || '')
+        .input('partida', sql.VarChar, linea.Partida || '')
+        .input('unidadMedida1_', sql.VarChar, linea.UnidadMedida1_ || '')
+        .input('unidadMedida2_', sql.VarChar, linea.UnidadMedida2_ || '')
         .input('factorConversion_', sql.Decimal(18,4), linea.FactorConversion_ || 1)
         .input('ejercicioPedido', sql.SmallInt, ejercicio)
         .input('seriePedido', sql.VarChar, serie || '')
@@ -1689,6 +1554,8 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
         .input('pesoBruto_', sql.Decimal(18,4), pesoBrutoLinea)
         .input('pesoNeto_', sql.Decimal(18,4), pesoNetoLinea)
         .input('volumen_', sql.Decimal(18,4), volumenLinea)
+        .input('codigoFamilia', sql.VarChar, linea.CodigoFamilia || '')
+        .input('codigoSubfamilia', sql.VarChar, linea.CodigoSubfamilia || '')
         .input('fechaRegistro', sql.DateTime, fechaActual)
         .query(`
           INSERT INTO LineasAlbaranCliente (
@@ -1703,6 +1570,7 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
             ImporteLiquido, ImporteBruto, BaseImponible, BaseIva, CuotaIva,
             PesoBrutoUnitario_, PesoNetoUnitario_, VolumenUnitario_,
             PesoBruto_, PesoNeto_, Volumen_,
+            CodigoFamilia, CodigoSubfamilia,
             FechaRegistro
           ) VALUES (
             @codigoEmpresa, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
@@ -1716,6 +1584,7 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
             @importeLiquido, @importeBruto, @baseImponible, @baseIva, @cuotaIva,
             @pesoBrutoUnitario_, @pesoNetoUnitario_, @volumenUnitario_,
             @pesoBruto_, @pesoNeto_, @volumen_,
+            @codigoFamilia, @codigoSubfamilia,
             @fechaRegistro
           )
         `);
@@ -1723,30 +1592,23 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
 
     await transaction.commit();
 
-    console.log('[ALBARÁN AUTO] Albarán generado con éxito:', {
-      numeroAlbaran,
-      serie,
-      ejercicioAlbaran,
-      lineas: lineasServidas.recordset.length
-    });
-
-    res.json({ 
+    res.json({
       success: true,
       mensaje: 'Albarán generado automáticamente al completar el pedido',
       albaran: {
         ejercicio: ejercicioAlbaran,
         serie: serie || '',
         numero: numeroAlbaran,
-        lineas: lineasServidas.recordset.length,
-        unidades: lineasServidas.recordset.reduce((sum, linea) => sum + (parseFloat(linea.UnidadesServidas) || 0), 0)
+        lineas: lineasParaNuevoAlbaran.length,
+        unidades: totalUnidades,
+        importe: importeBruto
       }
     });
-
   } catch (err) {
     await transaction.rollback();
     console.error('[ERROR ALBARÁN AUTO]', err);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       mensaje: 'Error al generar albarán automático',
       error: err.message,
       stack: err.stack
