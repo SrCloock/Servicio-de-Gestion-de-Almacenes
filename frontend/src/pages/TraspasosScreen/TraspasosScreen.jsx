@@ -12,8 +12,11 @@ import {
   StockInfoChip
 } from './componentes';
 import { TraspasosPendientesTable, HistorialTraspasosTable } from './modalesYLineas';
+import { usePermissions } from '../../PermissionsManager';
 
 const TraspasosPage = () => {
+  const { canViewTransfers } = usePermissions();
+
   const {
     activeSection, setActiveSection,
     activeTab, setActiveTab,
@@ -56,6 +59,20 @@ const TraspasosPage = () => {
     cargarOpcionesArticulos,
     cargarOpcionesUbicaciones,
   } = useTraspasosPage();
+
+  // FIX: guard de permisos — sin canViewTransfers la pantalla queda bloqueada
+  if (!canViewTransfers) {
+    return (
+      <div className="traspasos-container">
+        <Box sx={{ mt: 4, textAlign: 'center' }}>
+          <Paper sx={{ p: 4, maxWidth: 500, mx: 'auto', borderRadius: 3 }}>
+            <Typography variant="h6" sx={{ mb: 1 }}>Acceso restringido</Typography>
+            <Typography color="text.secondary">No tienes permiso para acceder a esta sección.</Typography>
+          </Paper>
+        </Box>
+      </div>
+    );
+  }
 
   return (
     <div className="traspasos-container">

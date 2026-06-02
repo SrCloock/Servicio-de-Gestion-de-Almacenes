@@ -29,6 +29,13 @@ export const useDebounce = (value, delay) => {
 // Constantes
 // ----------------------
 
+// FIX: Añadido "Todos" al rango de fechas
+export const opcionesRangoFechas = [
+  { value: 'semana', label: 'Una semana' },
+  { value: 'dia', label: 'Un día' },
+  { value: 'todos', label: 'Todos' },
+];
+
 export const opcionesStatus = [
   { id: '', nombre: 'Todos los estados' },
   { id: 'PendienteProveedor', nombre: 'Pendiente Proveedor' },
@@ -129,7 +136,6 @@ export const formatearUnidad = (cantidad, unidad) => {
     }
 
     const ultimaLetra = unidadDisplay.charAt(unidadDisplay.length - 1);
-    // Regla simple: añadir 'es' si termina en consonante (excepto 's'), sino 's'
     if (['a', 'e', 'i', 'o', 'u'].includes(ultimaLetra)) {
       return `${cantidadNum} ${unidadDisplay}s`;
     } else {
@@ -175,6 +181,7 @@ export const buildUbicacionOptionValue = (ubicacion) => [
 
 // ----------------------
 // Validación de expedición
+// FIX: Eliminada validación de 'Zona descarga' y 'SIN-UBICACION' — ya no se muestran
 // ----------------------
 
 /**
@@ -201,25 +208,24 @@ export const validarExpedicionLinea = (linea, expedicion, ubicaciones) => {
     return { isValid: false, message: 'Seleccione una ubicación válida' };
   }
 
-  if (expedicion.ubicacion !== 'Zona descarga') {
-    const ubicacionActual = (ubicaciones[linea.codigoArticulo] || []).find(
-      (ubi) =>
-        ubi.ubicacion === expedicion.ubicacion &&
-        ubi.codigoAlmacen === expedicion.almacen &&
-        (ubi.partida || '') === (expedicion.partida || '') &&
-        (ubi.codigoColor || '') === (expedicion.codigoColor || '') &&
-        (ubi.codigoTalla || '') === (expedicion.codigoTalla || '') &&
-        normalizarUnidad(ubi.unidadMedida) === normalizarUnidad(expedicion.unidadMedida || linea.unidadPedido)
-    );
+  // FIX: Solo ubicaciones reales — se valida siempre el stock
+  const ubicacionActual = (ubicaciones[linea.codigoArticulo] || []).find(
+    (ubi) =>
+      ubi.ubicacion === expedicion.ubicacion &&
+      ubi.codigoAlmacen === expedicion.almacen &&
+      (ubi.partida || '') === (expedicion.partida || '') &&
+      (ubi.codigoColor || '') === (expedicion.codigoColor || '') &&
+      (ubi.codigoTalla || '') === (expedicion.codigoTalla || '') &&
+      normalizarUnidad(ubi.unidadMedida) === normalizarUnidad(expedicion.unidadMedida || linea.unidadPedido)
+  );
 
-    const stockDisponible = parseInt(parseFloat(ubicacionActual?.unidadSaldo) || 0, 10);
-    if (!ubicacionActual || stockDisponible <= 0) {
-      return { isValid: false, message: 'La ubicación no tiene stock disponible' };
-    }
+  const stockDisponible = parseInt(parseFloat(ubicacionActual?.unidadSaldo) || 0, 10);
+  if (!ubicacionActual || stockDisponible <= 0) {
+    return { isValid: false, message: 'La ubicación no tiene stock disponible' };
+  }
 
-    if (cantidad > stockDisponible) {
-      return { isValid: false, message: 'Supera stock disponible' };
-    }
+  if (cantidad > stockDisponible) {
+    return { isValid: false, message: 'Supera stock disponible' };
   }
 
   return { isValid: true, cantidad };
@@ -246,7 +252,6 @@ export const mostrarToastEnPagina = (titulo, cuerpo, tipo = 'info') => {
     <div class="ps-toast-body">${cuerpo.replace(/\n/g, '<br>')}</div>
   `;
 
-  // Colores según tipo
   const bgColor = tipo === 'success' ? '#38a169' : tipo === 'error' ? '#e53e3e' : '#3182ce';
   toast.style.cssText = `
     position: fixed;

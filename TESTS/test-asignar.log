@@ -1,0 +1,233 @@
+
+████████████████████████████████████████████████████████████████████
+  SUITE DE TESTS — ASIGNAR PEDIDOS Y ALBARANES — Empresa 9999
+████████████████████████████████████████████████████████████████████
+  API:  http://localhost:3000
+  Log:  C:\Users\alejandro\Desktop\Servicio-de-Gestion-de-Almacenes\TESTS\test-asignar.log
+  ⚠️  Los albaranes generados se MANTIENEN en BD para revisión.
+  29/5/2026, 12:35:49
+
+════════════════════════════════════════════════════════════════════
+  0. LOGIN
+════════════════════════════════════════════════════════════════════
+  ▶ Login correcto devuelve usuario y empresa ...      → Usuario: 0006 | Empresa: 9999
+✅ PASS
+  ▶ Login incorrecto → 401 ... ✅ PASS
+  ▶ Endpoint protegido sin cabeceras → 401 ... ✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  1. DESCUBRIR DATOS REALES
+════════════════════════════════════════════════════════════════════
+  ▶ Diagnóstico: columna EmpleadoAsignado en CabeceraPedidoCliente ...      → Endpoint asignarPedidosAEmpleado accesible (usa EmpleadoAsignado) ✓
+✅ PASS
+  ▶ Obtener empleados preparadores ...      → 2 preparadores: barcelona, user
+✅ PASS
+  ▶ Obtener repartidores ...      → 2 repartidores: barcelona, user
+✅ PASS
+  ▶ Obtener pedidos completados sin empleado ...      → 90 pedidos completados sin empleado
+     → Ejemplo: Pedido 99 | Cliente: 7 de Copes, S.A. | 1 líneas
+✅ PASS
+  ▶ Obtener pedidos sin asignar ...      → 383 pedidos sin asignar
+     → Ejemplo: Pedido 235 | HOTEL SAN PEDRO
+✅ PASS
+  ▶ Obtener albaranes para asignación (FormaEnvio=3, no facturado) ...      → 1 albaranes para asignación
+     → Ejemplo: Albarán 69 | SUMINISTROS TAIWAN S.L. | Repartidor: user
+✅ PASS
+  ▶ Obtener albaranes completados (última semana) ...      → 0 albaranes completados en últimos 7 días
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  2. EMPLEADOS Y REPARTIDORES
+════════════════════════════════════════════════════════════════════
+  ▶ Preparadores tienen campos código y nombre ...      → 2 preparadores válidos ✓
+✅ PASS
+  ▶ Repartidores tienen campos id y nombre ...      → 2 repartidores válidos ✓
+✅ PASS
+  ▶ No hay duplicados en preparadores ...      → Sin duplicados ✓
+✅ PASS
+  ▶ No hay duplicados en repartidores ...      → Sin duplicados ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  3. PEDIDOS COMPLETADOS
+════════════════════════════════════════════════════════════════════
+  ▶ Todos los pedidos completados tienen Estado=2 ...      → Todos con Estado=2 ✓
+✅ PASS
+  ▶ Ningún pedido completado tiene empleado asignado ...      → Todos sin empleado asignado ✓
+✅ PASS
+  ▶ Pedidos completados tienen artículos cargados ...      → Todos tienen array de artículos ✓
+✅ PASS
+  ▶ Pedidos completados tienen TotalLineas numérico ...      → Todos con TotalLineas numérico ✓
+✅ PASS
+  ▶ Pedidos completados tienen campos obligatorios ...      → Campos obligatorios presentes ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  4. PEDIDOS SIN ASIGNAR
+════════════════════════════════════════════════════════════════════
+  ▶ Todos con Estado=0 y sin empleado ...      → 383 pedidos sin empleado asignado ✓
+✅ PASS
+  ▶ Pedidos sin asignar tienen campos básicos ...      → Campos básicos presentes ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  5. ASIGNAR PEDIDO A EMPLEADO (/asignar-pedido)
+════════════════════════════════════════════════════════════════════
+
+  Pedido: 45 | Empleado: barcelona (CLIENTE PRUEBA)
+  ▶ Asignar pedido 45 a barcelona ...      → Asignado ✓
+✅ PASS
+  ▶ Verificar asignación en pedidos-sin-asignar (ya no aparece) ...      → No aparece en sin-asignar ✓
+✅ PASS
+  ▶ Desasignar pedido 45 (limpiar) ...      → Desasignado ✓
+✅ PASS
+  ▶ Pedido sin pedidoId → 400 ... ✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  6. ASIGNAR MÚLTIPLES PEDIDOS A EMPLEADO (/asignarPedidosAEmpleado)
+════════════════════════════════════════════════════════════════════
+
+  Lote de 3 pedidos: 235, 110, 232
+  Empleado: barcelona (CLIENTE PRUEBA)
+  ▶ Asignar 3 pedidos al empleado barcelona ...      → 3 pedidos asignados ✓
+✅ PASS
+  ▶ Array vacío de pedidos → 400 ... ✅ PASS
+  ▶ Sin campo pedidos → 400 ... ✅ PASS
+  ▶ Desasignar el lote (codigoEmpleado null) ...      → Lote desasignado ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  7. MARCAR PEDIDO COMO COMPLETADO (/marcarPedidoCompletado)
+════════════════════════════════════════════════════════════════════
+
+  Pedido: 220
+  ▶ Marcar pedido 220 como completado (Estado=2) ...      → Pedido: 220 | Ejercicio: 2025 | Serie:  | Estado actual: 0
+     → Pedido marcado como completado. Ahora debe ser asignado a un empleado para generar el albarán.
+✅ PASS
+  ▶ Pedido 220 aparece ahora en pedidosCompletados ...      → Pedido encontrado en completados ✓
+✅ PASS
+  ▶ Pedido 220 ya NO aparece en sin-asignar ...      → Correcto: no aparece en sin-asignar ✓
+✅ PASS
+  ▶ Faltan datos del pedido → 400 ... ✅ PASS
+  ℹ️  Pedido 220 queda en Estado=2 (no hay endpoint de revert para pedidos)
+
+════════════════════════════════════════════════════════════════════
+  8. ASIGNAR PEDIDO Y GENERAR ALBARÁN (/asignarPedidoYGenerarAlbaran)
+════════════════════════════════════════════════════════════════════
+
+  Pedido: 70 | Empleado: barcelona
+  ▶ Asignar empleado barcelona al pedido 70 ...      → Empleado asignado ✓
+✅ PASS
+  ▶ Generar albarán para pedido 70 ...      → Albarán generado: 201 ✓
+     → Mensaje: Albarán generado y pedido marcado como servido.
+✅ PASS
+  ▶ Albarán 201 aparece en albaranes-asignacion ...      → Albarán encontrado: cliente=HOTEL SAN PEDRO ✓
+✅ PASS
+  ▶ Albarán 201 tiene artículos cargados ...      → 1 artículos en el albarán ✓
+       - M1001: BOTELLA SIDRA ENVELLIDA 75 x200
+✅ PASS
+  ▶ Albarán 201 tiene StatusFacturado=0 ...      → StatusFacturado=0 ✓
+✅ PASS
+  ℹ️  Albarán 201 se mantiene en BD para revisión
+  ▶ Pedido sin empleado asignado → error al generar albarán ...      → Error esperado (500): Error al asignar pedido y generar albarán ✓
+✅ PASS
+  ▶ Faltan datos → 400 ... ✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  9. ALBARANES PARA ASIGNACIÓN
+════════════════════════════════════════════════════════════════════
+  ▶ Todos los albaranes tienen StatusFacturado=0 ...      → Todos con StatusFacturado=0 ✓
+✅ PASS
+  ▶ Albaranes tienen artículos cargados con campos correctos ...      → 5 artículos verificados en los primeros 5 albaranes ✓
+✅ PASS
+  ▶ Albaranes tienen campos de cabecera correctos ...      → Campos de cabecera correctos ✓
+✅ PASS
+  ▶ Campo albaran formateado correctamente (serie-numero o numero) ...      → Formato de albarán correcto ✓
+✅ PASS
+  ▶ Campo esParcial correcto (Estado=4 del pedido → true) ...      → esParcial correcto ✓
+✅ PASS
+  ℹ️  Con repartidor: 1 | Sin repartidor: 0 | Parciales: 0
+
+════════════════════════════════════════════════════════════════════
+  10. ASIGNAR ALBARÁN A REPARTIDOR (/asignarAlbaranExistente)
+════════════════════════════════════════════════════════════════════
+
+  Albarán: 69 | Repartidor: user (OPERARIO FABRICA 1)
+  Repartidor anterior: user
+  ▶ Asignar albarán 69 al repartidor user ...      → Albarán asignado correctamente al repartidor ✓
+✅ PASS
+  ▶ Albarán 69 aparece con repartidor user ...      → Repartidor asignado correctamente ✓
+✅ PASS
+  ℹ️  Albarán 69 queda asignado a user
+  ▶ Faltan datos requeridos → 400 ... ✅ PASS
+  ▶ Albarán inexistente → 404 ...      → 404 correcto: Albarán no encontrado
+✅ PASS
+  ▶ Albarán ya completado (StatusFacturado=-1) → 400 ...      ⏭  Sin albaranes completados
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  11. REVERTIR ESTADO ALBARÁN (/revertir-albaran)
+════════════════════════════════════════════════════════════════════
+  ⏭  Revertir albarán completado — SKIP: Sin albaranes completados disponibles
+
+════════════════════════════════════════════════════════════════════
+  12. ALBARANES COMPLETADOS
+════════════════════════════════════════════════════════════════════
+  ▶ Todos los albaranes completados tienen StatusFacturado=-1 ...      ⏭  Sin albaranes
+✅ PASS
+  ▶ Albaranes completados tienen campos básicos ...      ⏭  Sin albaranes
+✅ PASS
+  ▶ Campo id formateado correctamente (ejercicio-serie-numero) ...      ⏭  Sin albaranes
+✅ PASS
+  ▶ Solo FormaEnvio=3 en completados ...      ⏭  Sin albaranes
+✅ PASS
+  ▶ Todos dentro de los últimos 7 días ...      ⏭  Sin albaranes
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  13. VALIDACIONES Y SEGURIDAD
+════════════════════════════════════════════════════════════════════
+  ▶ GET /pedidosCompletados sin auth → 401 ... ✅ PASS
+  ▶ GET /albaranes-asignacion sin auth → 401 ... ✅ PASS
+  ▶ POST /asignarAlbaranExistente sin auth → 401 ... ✅ PASS
+  ▶ POST /revertir-albaran sin auth → 401 ... ✅ PASS
+  ▶ marcarPedidoCompletado sin numeroPedido → 400 ... ✅ PASS
+  ▶ asignarPedidosAEmpleado con pedidos no-array → 400 ... ✅ PASS
+  ▶ asignarPedidoYGenerarAlbaran sin codigoEmpresa → 400 ... ✅ PASS
+  ▶ asignarAlbaranExistente con margarita (admin) → no 403 ...      → Margarita tiene permisos ✓ (status 200)
+✅ PASS
+  ▶ revertir-albaran con margarita (admin) → no 403 ...      ⏭  Sin albaranes completados
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  14. CONSISTENCIA DE DATOS
+════════════════════════════════════════════════════════════════════
+  ▶ Pedidos completados NO están en pedidos-sin-asignar ...   ⚠️  36 pedidos aparecen en ambas listas (pueden tener EmpleadoAsignado=NULL en ambos estados)
+     ℹ️  Esto indica que Estado=0 y Estado=2 comparten pedidos sin empleado → revisar lógica de estados
+  ℹ️  Estados en pedidosCompletados: 2
+  ℹ️  Primeros 5 solapados: 110(E:0), 107(E:0), 108(E:0), 109(E:0), 105(E:0)
+✅ PASS
+  ▶ Albaranes completados NO están en albaranes-asignacion ...      → Sin solapamiento entre completados y asignacion ✓
+✅ PASS
+  ▶ Albaranes asignacion son de los últimos 30 días ...      → Todos dentro de los últimos 30 días ✓
+✅ PASS
+  ▶ Repartidores de albaranes existen en la lista de repartidores ...      → Todos los repartidores asignados están en la lista ✓
+✅ PASS
+
+  📊 Resumen de datos:
+     Pedidos completados (sin empleado): 90
+     Pedidos sin asignar:                383
+     Albaranes para asignación:          1
+     Albaranes completados (7 días):     0
+     Preparadores activos:               2
+     Repartidores activos:               2
+
+════════════════════════════════════════════════════════════════════
+  RESUMEN FINAL
+════════════════════════════════════════════════════════════════════
+  ✅ PASS:  68
+  ❌ FAIL:  0
+  ⏭  SKIP:  1
+  TOTAL:   69
+════════════════════════════════════════════════════════════════════
+

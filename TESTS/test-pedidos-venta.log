@@ -1,0 +1,220 @@
+
+████████████████████████████████████████████████████████████████████
+  SUITE DE TESTS — PEDIDOS DE VENTA — Empresa 9999
+████████████████████████████████████████████████████████████████████
+  API:  http://localhost:3000
+  Log:  C:\Users\alejandro\Desktop\Servicio-de-Gestion-de-Almacenes\TESTS\test-pedidos-venta.log
+  ⚠️  Expediciones y albaranes generados se MANTIENEN en BD.
+  30/5/2026, 16:54:26
+
+════════════════════════════════════════════════════════════════════
+  0. LOGIN
+════════════════════════════════════════════════════════════════════
+  ▶ Login correcto ...      → 0006 | Empresa 9999
+✅ PASS
+  ▶ Login incorrecto → 401 ... ✅ PASS
+  ▶ /pedidosPendientes sin auth → 401 ... ✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  1. DESCUBRIR DATOS REALES
+════════════════════════════════════════════════════════════════════
+  ▶ GET /pedidosPendientes (rango=semana) ...      → 1 pedidos esta semana
+     → Ejemplo: 235 | HOTEL SAN PEDRO | 1 arts | Status: Preparando
+✅ PASS
+  ▶ GET /pedidosPendientes (rango=todos) ...      → 180 pedidos totales
+✅ PASS
+  ▶ GET /empleados/preparadores ...      → 2 preparadores: barcelona, user
+✅ PASS
+  ▶ Buscar pedido expedible (con stock disponible) ...      → Pedido 40 | Art: X0004 | Pendientes: 1
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  2. ESTRUCTURA DE PEDIDOS
+════════════════════════════════════════════════════════════════════
+  ▶ Pedidos tienen campos de cabecera obligatorios ...      → Campos OK en 1 pedidos ✓
+✅ PASS
+  ▶ Artículos tienen campos de línea obligatorios ...      → 1 artículos verificados ✓
+✅ PASS
+  ▶ PesoTotal es numérico y >= 0 ...      → Todos con PesoTotal válido ✓
+✅ PASS
+  ▶ Status tiene valores válidos ...      → Status válidos: Preparando ✓
+✅ PASS
+  ▶ FormaEnvio está mapeada a texto ...      → Formas de envío: No especificada ✓
+✅ PASS
+  ▶ UnidadesExpedidas = UnidadesPedidas - UnidadesPendientes ...      → Consistencia Pedidas-Pendientes-Expedidas ✓
+✅ PASS
+  ▶ Estado IN (0,4) en todos los pedidos devueltos ...      → Todos con Estado 0 o 4 ✓
+✅ PASS
+  ▶ Pedidos sin serie X ni R ...      → Sin series X/R ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  3. FILTROS
+════════════════════════════════════════════════════════════════════
+  ▶ Filtro rango=dia devuelve subset de semana ...      → Día: 0 | Semana: 1 ✓
+✅ PASS
+  ▶ Filtro FormaEnvio=3 devuelve solo FormaEnvio=Nuestros Medios ...      → 0 pedidos FormaEnvio=3 ✓
+✅ PASS
+  ▶ Filtro FormaEnvio=4 devuelve solo Agencia ...      → 0 pedidos FormaEnvio=4 ✓
+✅ PASS
+  ▶ Filtro estados=Preparando devuelve solo Preparando ...      → 110 pedidos Preparando ✓
+✅ PASS
+  ▶ Filtro estados=Parcial devuelve solo Parcial ...      → 8 pedidos Parcial ✓
+✅ PASS
+  ▶ Filtro estados=Preparando,Parcial devuelve solo esos ...      → 118 pedidos (Preparando+Parcial) ✓
+✅ PASS
+  ▶ Filtro empleado filtra por EmpleadoAsignado ...      → 1 pedidos del preparador barcelona ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  4. PERMISOS
+════════════════════════════════════════════════════════════════════
+  ▶ margarita (admin) puede ver todos los pedidos → no 403 ...      → Admin ve 1 pedidos ✓
+✅ PASS
+  ▶ margarita puede actualizar voluminoso → no 403 ...      → Voluminoso toggled y revertido ✓
+✅ PASS
+  ▶ Sin auth → 401 en todos los endpoints de escritura ...      → Todos los endpoints sin auth → 401 ✓
+✅ PASS
+  ▶ Datos incompletos → 400 en endpoints de escritura ...      → Validaciones de entrada → 400 ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  5. ACTUALIZAR VOLUMINOSO
+════════════════════════════════════════════════════════════════════
+
+  Pedido: 50 | EsVoluminoso actual: false
+  ▶ Marcar pedido 50 como voluminoso ...      → Pedido marcado como voluminoso correctamente. ✓
+✅ PASS
+  ▶ Verificar EsVoluminoso=true en pedido 50 ...      → EsVoluminoso=true ✓
+✅ PASS
+  ▶ Desmarcar pedido 50 (revertir) ...      → Revertido a false ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  6. ASIGNAR EMPLEADO A PEDIDOS
+════════════════════════════════════════════════════════════════════
+
+  Pedido: 6 | Preparador: user | Anterior: ninguno
+  ▶ Asignar user al pedido 6 ...      → Asignaciones actualizadas correctamente ✓
+✅ PASS
+  ▶ Filtro empleado=user incluye pedido 6 ...      → Pedido aparece con empleado correcto ✓
+✅ PASS
+  ▶ Asignar lote de 3 pedidos simultáneamente ...      → Lote de 3 pedidos asignados ✓
+✅ PASS
+  ▶ asignaciones no es array → 400 ... ✅ PASS
+  ▶ asignaciones vacío → 400 ... ✅ PASS
+  ▶ Revertir asignación de 6 ...      → Revertido a null ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  7. ACTUALIZAR LÍNEA DE PEDIDO (EXPEDICIÓN)
+════════════════════════════════════════════════════════════════════
+
+  Pedido: 40 | Art: X0004 | Pendientes: 1
+  ▶ Campos requeridos faltantes → 400 ... ✅ PASS
+  ▶ Cantidad mayor que pendientes → 400 ...      → Cantidad (10000) supera pendientes (1). ✓
+✅ PASS
+  ▶ Expedir 1 ud artículo X0004 (zona descarga) ...      → Línea actualizada y albarán generado automáticamente
+     → Pedido completado: true | Parcial: false
+     → Status pedido: Servido
+     → Albarán generado: true
+     → Albarán: 425
+✅ PASS
+  ▶ Pedido refleja expedición en pedidosPendientes ...      → Artículo ya no aparece (sin pendientes) ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  9b. EXPEDICIÓN CON STOCK REAL
+════════════════════════════════════════════════════════════════════
+
+  Pedido: 3 | Art: X1000
+  Almacén: CEN | Ubicación: SIN-UBICACION | Stock: 8
+  Pendientes antes: 28
+  ▶ Expedir 1 ud de X1000 con stock real ...      → Línea actualizada correctamente
+     → Ubicación usada: SIN-UBICACION
+     → Stock restante: Actualizado
+     → Pedido completado: false
+     → Parcial: false
+✅ PASS
+  ▶ Pendientes reducidos en 1 tras expedición ...      → Artículo ya no aparece en pendientes (sin pendientes) ✓
+✅ PASS
+  ▶ UnidadesServidas incrementadas en 1 ...      ⏭  Artículo sin pendientes
+✅ PASS
+  ▶ Stock en AcumuladoStock descontado correctamente ...      → Stock AcumStock: 8 → 7 ✓
+✅ PASS
+  ℹ️  Expedición de 1 ud se mantiene en BD para revisión
+
+════════════════════════════════════════════════════════════════════
+  10. TRANSICIÓN DE ESTADOS (Parcial → Servido)
+════════════════════════════════════════════════════════════════════
+
+  Pedido: 59 | Art: 01.01.05 | Pendientes: 1
+  movPosicionLinea: 7D0A87FA-8B9D-40AF-AF52-878728336505 | almacén: BCN
+  ▶ Expedir última unidad de pedido 59 (zona descarga) ...      → Pedido completado: true ✓
+     → Status: Servido
+     → Albarán generado: true
+     → Albarán: 426
+✅ PASS
+  ▶ Pedido 59 ya no aparece en pendientes (o sin unidades del artículo) ...      ✓ Artículo ya no aparece en líneas del pedido (pendientes=0)
+✅ PASS
+  ▶ Albarán automático generado tras completar pedido ...      → albaranGenerado: true (informativo)
+✅ PASS
+  ℹ️  Pedido 59 queda en Estado=2 (servido)
+
+════════════════════════════════════════════════════════════════════
+  11. ARTÍCULOS CON TALLAS Y COLORES
+════════════════════════════════════════════════════════════════════
+
+  Pedido: 188 | Art: T0021
+  GrupoTalla: 2 | Detalles: 2 variantes
+  ▶ Artículo con tallas tiene detalles de color y talla correctos ...      → 2 variantes con color/talla ✓
+       Color: A | Tallas: 38,40 | Uds: 4
+       Color: V | Tallas: 40,44 | Uds: 7
+✅ PASS
+  ▶ Suma de unidades por talla = unidadesPendientes del artículo ...      → Suma tallas (11) = unidadesPendientes (11) ✓
+✅ PASS
+  ▶ Expedir 1 ud color=A talla=38 (zona descarga) ...      → Expedición talla/color OK ✓
+     → Status pedido: Parcial
+✅ PASS
+  ▶ Pendientes reducidos tras expedir talla ...      → Pendientes: 11 → 10 ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  12. ALBARÁN AUTOMÁTICO (generarAlbaranAutoCompletado)
+════════════════════════════════════════════════════════════════════
+
+  Pedido: 216 | Status: 2
+  ▶ Generar albarán automático para pedido 216 ...      ⏭  No hay nuevas unidades servidas para generar albarán (puede ya estar albaranado)
+✅ PASS
+  ▶ Pedido no completado → 400 al generar albarán automático ...      → 400 correcto: El pedido no está completamente expedido ✓
+✅ PASS
+  ▶ Pedido inexistente → 404 al generar albarán automático ...      → 404 correcto ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  9. CONSISTENCIA DE DATOS
+════════════════════════════════════════════════════════════════════
+  ▶ Todos los pedidos tienen al menos 1 artículo ...      → Todos con artículos ✓
+✅ PASS
+  ▶ UnidadesPendientes > 0 en todos los artículos devueltos ...      → Todos con UnidadesPendientes > 0 ✓
+✅ PASS
+  ▶ rango=todos >= rango=semana (en cantidad) ...      → Todos: 180 ≥ Semana: 1 ✓
+✅ PASS
+  ▶ Artículos con tallas tienen detalles de color/talla ...      → Artículos con grupoTalla: 0 | Con detalles cargados: 0
+✅ PASS
+  ▶ Estadísticas finales ...      → Total pedidos: 180
+     → Por estado: Preparando:110 | Parcial:8 | Revision:62
+     → Por forma envío: No especificada:180
+     → Con tallas: 13
+     → Preparadores activos: 2
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  RESUMEN FINAL
+════════════════════════════════════════════════════════════════════
+  ✅ PASS:  58
+  ❌ FAIL:  0
+  ⏭  SKIP:  0
+  TOTAL:   58
+════════════════════════════════════════════════════════════════════
+

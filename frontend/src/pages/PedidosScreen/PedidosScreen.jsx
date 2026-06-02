@@ -47,7 +47,14 @@ const PedidosScreen = () => {
   const navigate = useNavigate();
   const pedidosPorPagina = 20;
 
-  const { canViewAllOrders, canPerformActions, canPerformActionsInPedidos } = usePermissions();
+  const permissions = usePermissions();
+  const {
+    canViewAllOrders,
+    canPerformActions,
+    canPerformActionsInPedidos,
+    isSuperUser,
+    _hasAssignedOrdersPermission,
+  } = permissions;
 
   // Estados principales
   const [pedidos, setPedidos] = useState([]);
@@ -58,8 +65,7 @@ const PedidosScreen = () => {
   const [generandoAlbaran, setGenerandoAlbaran] = useState(false);
   const [filtroBusqueda, setFiltroBusqueda] = useState('');
   const debouncedFiltroBusqueda = useDebounce(filtroBusqueda, 500);
-  // ✅ NUEVO: valor por defecto 'todos' para ver todos los pedidos sin límite de fechas
-  const [rangoFechas, setRangoFechas] = useState('todos');
+  const [rangoFechas, setRangoFechas] = useState('semana');
   const [filtroStatus, setFiltroStatus] = useState('');
   const [paginaActual, setPaginaActual] = useState(1);
   const [error, setError] = useState('');
@@ -79,11 +85,17 @@ const PedidosScreen = () => {
   const abortControllerRef = useRef(null);
   const rangoFechasRef = useRef(rangoFechas);
   const userRef = useRef(JSON.parse(localStorage.getItem('user') || 'null'));
+  // FIX: ref de permisos para usarlos dentro de cargarPedidos sin añadirlos como dependencia
+  const permissionsRef = useRef(permissions);
 
-  // Mantener ref actualizada
+  // Sincronizar refs
   useEffect(() => {
     rangoFechasRef.current = rangoFechas;
   }, [rangoFechas]);
+
+  useEffect(() => {
+    permissionsRef.current = permissions;
+  }, [permissions]);
 
   // ----------------------
   // Funciones de negocio
@@ -225,36 +237,24 @@ const PedidosScreen = () => {
             unidadMedida: expedicion.unidadMedida || linea.unidadPedido,
             codigoColor: expedicion.codigoColor || '',
             codigoTalla: expedicion.codigoTalla || '',
-            esZonaDescarga: expedicion.ubicacion === 'Zona descarga',
+            esZonaDescarga: false,
             movPosicionLinea: key,
           },
           { headers: getAuthHeader() }
         );
         if (response.data.success) {
-          // ✅ Notificación mejorada según respuesta del backend
-          const { albaranGenerado, albaran, pedidoCompletado } = response.data.detalles || {};
-          if (albaranGenerado && albaran) {
-            mostrarNotificacionNavegador(
-              'Albarán Generado',
-              `✅ Albarán Nº ${albaran.serie || ''}${albaran.numero} generado automáticamente.`,
-              'success'
-            );
-            mostrarToastEnPagina('Albarán generado', `Nº ${albaran.serie || ''}${albaran.numero}`, 'success');
-          } else if (pedidoCompletado && !albaranGenerado) {
-            mostrarNotificacionNavegador(
-              'Atención',
-              `Pedido #${pedido.numeroPedido} completado pero no se pudo generar el albarán automáticamente. Revisa logs.`,
-              'error'
-            );
-          } else {
-            mostrarNotificacionNavegador(
-              'Expedición Registrada',
-              `Servidas ${validacion.cantidad} ${linea.unidadBase || 'ud'} para pedido #${pedido.numeroPedido}.`,
-              'info'
+          if (response.data.detalles?.albaranProgramado) {
+            setTimeout(
+              () =>
+                mostrarNotificacionNavegador(
+                  response.data.detalles?.pedidoCompletado ? 'Pedido Completado' : 'Expedición Registrada',
+                  response.data.detalles?.pedidoCompletado
+                    ? `El pedido #${pedido.numeroPedido} se ha completado.\nSe genera albarán automáticamente.`
+                    : `Expedición registrada para pedido #${pedido.numeroPedido}.`
+                ),
+              1200
             );
           }
-
-          // Actualización local del estado
           setPedidos((prev) =>
             prev
               .map((p) => {
@@ -270,7 +270,7 @@ const PedidosScreen = () => {
                 const tieneLineasPendientes = articulosActualizados.some(
                   (art) => parseFloat(art.unidadesPendientes) > 0
                 );
-                if (!tieneLineasPendientes) return null; // eliminar pedido si está completamente expedido
+                if (!tieneLineasPendientes) return null;
                 return {
                   ...p,
                   Estado: response.data.detalles?.pedidoParcial ? 4 : p.Estado,
@@ -282,22 +282,24 @@ const PedidosScreen = () => {
               })
               .filter(Boolean)
           );
-
-          if (expedicion.ubicacion !== 'Zona descarga') {
-            setUbicaciones((prev) => {
-              const nuevas = { ...prev };
-              const ubicacionActualizada = (nuevas[linea.codigoArticulo] || []).map((ubic) =>
-                ubic.ubicacion === expedicion.ubicacion &&
-                ubic.codigoAlmacen === expedicion.almacen &&
-                (ubic.partida || '') === (expedicion.partida || '')
-                  ? { ...ubic, unidadSaldo: Math.max(0, parseFloat(ubic.unidadSaldo) - validacion.cantidad) }
-                  : ubic
-              );
-              nuevas[linea.codigoArticulo] = ubicacionActualizada;
-              return nuevas;
-            });
-          }
+          setUbicaciones((prev) => {
+            const nuevas = { ...prev };
+            const ubicacionActualizada = (nuevas[linea.codigoArticulo] || []).map((ubic) =>
+              ubic.ubicacion === expedicion.ubicacion &&
+              ubic.codigoAlmacen === expedicion.almacen &&
+              (ubic.partida || '') === (expedicion.partida || '')
+                ? { ...ubic, unidadSaldo: Math.max(0, parseFloat(ubic.unidadSaldo) - validacion.cantidad) }
+                : ubic
+            );
+            nuevas[linea.codigoArticulo] = ubicacionActualizada;
+            return nuevas;
+          });
           setExpediciones((prev) => ({ ...prev, [key]: { ...prev[key], cantidad: '0' } }));
+          mostrarToastEnPagina(
+            'Servicio registrado',
+            `Servidas ${validacion.cantidad} ${linea.unidadBase || 'ud'} desde ${expedicion.almacen} - ${expedicion.ubicacion}`,
+            'success'
+          );
         }
       } catch (error) {
         console.error(error);
@@ -380,20 +382,24 @@ const PedidosScreen = () => {
             unidadMedida,
             codigoColor: color,
             codigoTalla: talla,
-            esZonaDescarga: ubicacion === 'Zona descarga',
+            esZonaDescarga: false,
             movPosicionLinea,
           },
           { headers: getAuthHeader() }
         );
         if (response.data.success) {
           setPedidos((prev) =>
-            prev.map((p) => {
-              if (p.numeroPedido !== pedido.numeroPedido) return p;
-              const articulosActualizados = p.articulos.map((art) => {
-                if (art.movPosicionLinea !== movPosicionLinea) return art;
-                if (art.detalles && Array.isArray(art.detalles)) {
-                  const detallesActualizados = art.detalles.map((variante) => {
-                    if (variante.color?.codigo === color) {
+            prev
+              .map((p) => {
+                if (p.numeroPedido !== pedido.numeroPedido) return p;
+                const articulosActualizados = p.articulos.map((art) => {
+                  if (art.movPosicionLinea !== movPosicionLinea) return art;
+                  const nuevasPendientes = Math.max(0, parseFloat(art.unidadesPendientes) - cantidad);
+                  let detallesActualizados = art.detalles;
+                  if (art.detalles && Array.isArray(art.detalles)) {
+                    detallesActualizados = art.detalles.map((variante) => {
+                      const mismoColor = (variante.color?.codigo || '') === (color || '');
+                      if (!mismoColor) return variante;
                       const tallasActualizadas = { ...variante.tallas };
                       if (tallasActualizadas[talla]) {
                         tallasActualizadas[talla] = {
@@ -402,24 +408,34 @@ const PedidosScreen = () => {
                         };
                       }
                       return { ...variante, tallas: tallasActualizadas };
-                    }
-                    return variante;
-                  });
-                  let nuevasUnidadesPendientes = 0;
-                  detallesActualizados.forEach((variante) => {
-                    Object.values(variante.tallas || {}).forEach((tallaInfo) => {
-                      nuevasUnidadesPendientes += parseFloat(tallaInfo.unidades) || 0;
                     });
-                  });
-                  return { ...art, detalles: detallesActualizados, unidadesPendientes: nuevasUnidadesPendientes };
-                }
-                return art;
-              });
-              return { ...p, articulos: articulosActualizados };
-            })
+                  }
+                  return {
+                    ...art,
+                    unidadesPendientes: nuevasPendientes,
+                    detalles: detallesActualizados,
+                  };
+                });
+                const tieneLineasPendientes = articulosActualizados.some(
+                  (art) => parseFloat(art.unidadesPendientes) > 0
+                );
+                if (!tieneLineasPendientes) return null;
+                return {
+                  ...p,
+                  Estado: response.data.detalles?.pedidoParcial ? 4 : p.Estado,
+                  Status: response.data.detalles?.statusPedido ||
+                    (response.data.detalles?.pedidoParcial ? 'Parcial' : p.Status),
+                  articulos: articulosActualizados,
+                };
+              })
+              .filter(Boolean)
           );
           setDetallesModal(null);
-          alert(`Expedición realizada: ${cantidad} unidades de la variante`);
+          mostrarToastEnPagina(
+            'Expedición realizada',
+            `${cantidad} unidades expedidas correctamente`,
+            'success'
+          );
         }
       } catch (error) {
         console.error(error);
@@ -434,6 +450,26 @@ const PedidosScreen = () => {
       if (!canPerformActionsInPedidos) return;
       try {
         setGenerandoAlbaran(true);
+        const lineasExpedidas = [];
+        pedido.articulos.forEach((articulo) => {
+          const unidadesPedidas = parseFloat(articulo.unidadesPedidas) || 0;
+          const unidadesPendientes = parseFloat(articulo.unidadesPendientes) || 0;
+          const unidadesExpedidas = unidadesPedidas - unidadesPendientes;
+          if (unidadesExpedidas > 0) {
+            lineasExpedidas.push({
+              codigoArticulo: articulo.codigoArticulo,
+              descripcionArticulo: articulo.descripcionArticulo,
+              cantidad: unidadesExpedidas,
+              precio: articulo.precio || 0,
+              codigoAlmacen: articulo.codigoAlmacen || 'CEN',
+              partida: articulo.partida || '',
+            });
+          }
+        });
+        if (lineasExpedidas.length === 0) {
+          alert('No hay líneas con cantidades expedidas para generar albarán parcial.');
+          return;
+        }
         const response = await API.post(
           '/generarAlbaranParcial',
           {
@@ -441,6 +477,7 @@ const PedidosScreen = () => {
             ejercicio: pedido.ejercicioPedido,
             serie: pedido.seriePedido,
             numeroPedido: pedido.numeroPedido,
+            lineasExpedidas,
           },
           { headers: getAuthHeader() }
         );
@@ -459,9 +496,7 @@ const PedidosScreen = () => {
           const albaranInfo = response.data.albaran;
           mostrarNotificacionNavegador(
             'Albarán Generado',
-            `✅ Albarán ${albaranInfo.esParcial ? 'parcial' : 'completo'} Nº: ${albaranInfo.serie || ''}${
-              albaranInfo.numero
-            }`,
+            `✅ Albarán ${albaranInfo.esParcial ? 'parcial' : 'completo'} Nº: ${albaranInfo.serie || ''}${albaranInfo.numero}`,
             'success'
           );
           alert(`✅ Albarán generado correctamente\nNúmero: ${albaranInfo.serie || ''}${albaranInfo.numero}`);
@@ -477,15 +512,18 @@ const PedidosScreen = () => {
     [canPerformActionsInPedidos, mostrarNotificacionNavegador]
   );
 
+  // FIX: cargarPedidos usa permissionsRef para no añadir permissions como dependencia
+  // y evitar recargas innecesarias. Filtra por EmpleadoAsignado cuando el usuario
+  // no es superUser ni tiene permiso de asignación de pedidos.
   const cargarPedidos = useCallback(
     async (forzarRecarga = false) => {
-      if (abortControllerRef.current && !forzarRecarga) abortControllerRef.current.abort();
+      if (abortControllerRef.current) abortControllerRef.current.abort();
       abortControllerRef.current = new AbortController();
       const signal = abortControllerRef.current.signal;
       try {
         setLoading(true);
         setError('');
-        if (forzarRecarga && !isScanning) {
+        if (forzarRecarga) {
           setUbicaciones({});
           setExpediciones({});
           setArticulosConUbicacionesCargadas(new Set());
@@ -497,10 +535,20 @@ const PedidosScreen = () => {
           setLoading(false);
           return;
         }
-        // ✅ Enviar el rango actual (incluyendo 'todos')
+
+        // FIX: si el usuario no es superUser ni tiene permiso de asignación,
+        // filtrar por su CodigoCliente (= EmpleadoAsignado en BD)
+        const { isSuperUser: superUser } = permissionsRef.current;
+        const debeFiltrарPorEmpleado = !superUser;
+
+        const params = { codigoEmpresa, rango: rangoFechasRef.current };
+        if (debeFiltrарPorEmpleado && userRef.current?.UsuarioLogicNet) {
+          params.empleadoAsignado = userRef.current.UsuarioLogicNet;
+        }
+
         const response = await API.get('/pedidosPendientes', {
           headers: getAuthHeader(),
-          params: { codigoEmpresa, rango: rangoFechasRef.current },
+          params,
           signal,
         });
         if (signal.aborted) return;
@@ -520,7 +568,7 @@ const PedidosScreen = () => {
         if (!signal.aborted) setLoading(false);
       }
     },
-    [isScanning]
+    []
   );
 
   useEffect(() => {
@@ -528,7 +576,7 @@ const PedidosScreen = () => {
     return () => {
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-  }, [rangoFechas, cargarPedidos]);
+  }, [rangoFechas]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Detectar cámaras
   useEffect(() => {
@@ -590,6 +638,29 @@ const PedidosScreen = () => {
           }
         });
       }
+
+      if (detallesPlana.length === 0) {
+        setPedidos((prev) =>
+          prev.map((p) => {
+            if (p.numeroPedido !== pedido.numeroPedido) return p;
+            return {
+              ...p,
+              articulos: p.articulos.map((art) =>
+                art.movPosicionLinea === linea.movPosicionLinea
+                  ? { ...art, detalles: null }
+                  : art
+              ),
+            };
+          })
+        );
+        mostrarToastEnPagina(
+          'Sin variantes reales',
+          'Este artículo no tiene desglose por talla/color. Puedes expedirlo directamente.',
+          'info'
+        );
+        return;
+      }
+
       setDetallesModal({ detalles: detallesPlana, linea, pedido });
     } catch (error) {
       console.error(error);
@@ -617,6 +688,14 @@ const PedidosScreen = () => {
   const pedidosActuales = pedidosOrdenados.slice(indexPrimerPedido, indexUltimoPedido);
   const totalPaginas = Math.ceil(pedidosOrdenados.length / pedidosPorPagina);
 
+  const paginacionComponente = (
+    <Paginacion
+      totalPaginas={totalPaginas}
+      paginaActual={paginaActual}
+      cambiarPagina={cambiarPagina}
+    />
+  );
+
   if (!canViewAllOrders) {
     return (
       <Box className="ps-pedidos-screen">
@@ -635,6 +714,7 @@ const PedidosScreen = () => {
   return (
     <Box className="ps-pedidos-screen">
       <Container maxWidth={false} sx={{ py: 3, px: { xs: 2, sm: 3 } }}>
+
         <PedidosFilters
           filtroBusqueda={filtroBusqueda}
           onFiltroBusquedaChange={setFiltroBusqueda}
@@ -653,7 +733,10 @@ const PedidosScreen = () => {
           voluminosos={pedidosOrdenados.filter((p) => p.EsVoluminoso).length}
         />
 
-        <PedidosList>
+        <PedidosList
+          topPagination={paginacionComponente}
+          bottomPagination={paginacionComponente}
+        >
           {error ? (
             <PedidosStateView
               type="error"
@@ -687,9 +770,7 @@ const PedidosScreen = () => {
                   <PedidoLineasTable>
                     {pedido.articulos.map((linea, idx) => (
                       <LineaPedido
-                        key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${
-                          pedido.numeroPedido
-                        }-${linea.codigoArticulo}-${idx}`}
+                        key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${idx}`}
                         linea={linea}
                         pedido={pedido}
                         expediciones={expediciones}
@@ -697,6 +778,7 @@ const PedidosScreen = () => {
                         ubicaciones={ubicaciones}
                         ubicacionesCargadas={!!ubicaciones[linea.codigoArticulo]}
                         iniciarEscaneo={iniciarEscaneo}
+                        onExpedirDirecto={handleExpedirArticuloOptimizado}
                         abrirModalDetalles={abrirModalDetalles}
                         canPerformActions={canPerformActions}
                         isScanning={isScanning}
@@ -718,6 +800,7 @@ const PedidosScreen = () => {
             onClose={() => setDetallesModal(null)}
             onExpedirVariante={handleExpedirVariante}
             canPerformActions={canPerformActions}
+            iniciarEscaneo={iniciarEscaneo}
           />
         )}
 
@@ -727,11 +810,7 @@ const PedidosScreen = () => {
           cameras={cameras}
           selectedCamera={selectedCamera}
           setSelectedCamera={setSelectedCamera}
-          manualCode={manualCode}
-          setManualCode={setManualCode}
           handleScanSuccess={handleScanSuccess}
-          handleManualVerification={handleManualVerification}
-          cameraError={cameraError}
         />
       </Container>
       <Navbar />

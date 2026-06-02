@@ -1389,6 +1389,15 @@ router.get('/pedidos-compra/buscar', async (req, res) => {
 router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
   const { ejercicio, serie, numero } = req.params;
+  const { suAlbaranNo, fechaSuAlbaran } = req.body;  // ✅ nuevos campos
+
+  // ✅ Validar que los datos del proveedor estén presentes
+  if (!suAlbaranNo || !fechaSuAlbaran) {
+    return res.status(400).json({
+      success: false,
+      mensaje: 'Faltan datos obligatorios: Nº de Albarán del Proveedor (SuAlbaranNo) y Fecha del Albarán del Proveedor (FechaSuAlbaran).'
+    });
+  }
 
   if (!codigoEmpresa || !ejercicio || !numero) {
     return res.status(400).json({ success: false, mensaje: 'Parámetros del pedido requeridos.' });
@@ -1399,7 +1408,7 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
     await transaction.begin();
     const serieParam = (serie === 'undefined' || serie === 'null' || !serie) ? '0' : serie;
 
-    // 1. Obtener cabecera del pedido (igual que antes, pero sin usuario)
+    // 1. Obtener cabecera del pedido
     const pedidoResult = await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -1505,7 +1514,7 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
       return { ...linea, unidades, precio, iva, importeNeto, importeIva, importeLiquido, factorConversion, unidades2, unidadMedida };
     });
 
-    // 6. Insertar cabecera del albarán (sin CodigoUsuarioCrea ni CodigoUsuario_)
+    // 6. Insertar cabecera del albarán (incluyendo los nuevos campos)
     await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
@@ -1566,6 +1575,9 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
       .input('ejercicioPedido', sql.SmallInt, ejercicio)
       .input('seriePedido', sql.VarChar(10), serieParam)
       .input('numeroPedido', sql.Int, numero)
+      // ✅ Nuevos campos para trazabilidad
+      .input('suAlbaranNo', sql.VarChar(50), safeString(suAlbaranNo, 50))
+      .input('fechaSuAlbaran', sql.Date, fechaSuAlbaran)
       .query(`
         INSERT INTO CabeceraAlbaranProveedor (
           CodigoEmpresa, EjercicioAlbaran, NumeroAlbaran, SerieAlbaran,
@@ -1583,6 +1595,7 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
           NumeroLineas, ImporteBruto, ImporteNetoLineas, ImporteParcial,
           BaseImponible, TotalCuotaIva, TotalIva, ImporteLiquido,
           EjercicioPedido, SeriePedido, NumeroPedido,
+          SuAlbaranNo, FechaSuAlbaran,  -- ✅ nuevos campos
           FechaAlbaran
         ) VALUES (
           @codigoEmpresa, @ejercicioAlbaran, @numeroAlbaran, @serieAlbaran,
@@ -1600,11 +1613,12 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
           @numeroLineas, @importeBruto, @importeNetoLineas, @importeParcial,
           @baseImponible, @totalCuotaIva, @totalIva, @importeLiquido,
           @ejercicioPedido, @seriePedido, @numeroPedido,
+          @suAlbaranNo, @fechaSuAlbaran,
           GETDATE()
         )
       `);
 
-    // 7. Insertar líneas del albarán (sin cambios, ya funcionaba)
+    // 7. Insertar líneas del albarán (sin cambios)
     for (const linea of lineasProcesadas) {
       await new sql.Request(transaction)
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -1729,7 +1743,9 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/generar-albaran', async (
         proveedor: { codigo: pedido.CodigoProveedor, nombre: pedido.RazonSocial },
         totalLineas: lineasProcesadas.length,
         totalUnidades,
-        importes: { neto: baseImponibleTotal, iva: totalIva, liquido: importeLiquidoTotal }
+        importes: { neto: baseImponibleTotal, iva: totalIva, liquido: importeLiquidoTotal },
+        suAlbaranNo,                     // ✅ devolvemos también los datos guardados
+        fechaSuAlbaran
       }
     });
   } catch (err) {
@@ -1880,11 +1896,19 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/finalizar', async (req, r
   }
 });
 
-// ✅ 9. ALBARÁN POR PROVEEDOR - CORREGIDO (sin agregados anidados y sin campos usuario)
+// ✅ 9. ALBARÁN POR PROVEEDOR - CORREGIDO (con SuAlbaranNo y FechaSuAlbaran)
 router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) => {
   const codigoEmpresa = req.user.CodigoEmpresa;
   const { codigoProveedor } = req.params;
-  const { pedidos } = req.body;
+  const { pedidos, suAlbaranNo, fechaSuAlbaran } = req.body;  // ✅ nuevos campos
+
+  // ✅ Validar que los datos del proveedor estén presentes
+  if (!suAlbaranNo || !fechaSuAlbaran) {
+    return res.status(400).json({
+      success: false,
+      mensaje: 'Faltan datos obligatorios: Nº de Albarán del Proveedor (SuAlbaranNo) y Fecha del Albarán del Proveedor (FechaSuAlbaran).'
+    });
+  }
 
   if (!codigoEmpresa || !codigoProveedor) {
     return res.status(400).json({ success: false, mensaje: 'Código de empresa y proveedor requeridos.' });
@@ -2046,7 +2070,7 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
       throw new Error('No hay unidades pendientes de albaranar para generar un nuevo albarán.');
     }
 
-    // Insertar cabecera del albarán (sin campos de usuario)
+    // Insertar cabecera del albarán (incluyendo los nuevos campos)
     await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
@@ -2107,6 +2131,9 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
       .input('ejercicioPedido', sql.SmallInt, ejercicioPrimero)
       .input('seriePedido', sql.VarChar(10), seriePrimero)
       .input('numeroPedido', sql.Int, numeroPrimero)
+      // ✅ Nuevos campos para trazabilidad
+      .input('suAlbaranNo', sql.VarChar(50), safeString(suAlbaranNo, 50))
+      .input('fechaSuAlbaran', sql.Date, fechaSuAlbaran)
       .query(`
         INSERT INTO CabeceraAlbaranProveedor (
           CodigoEmpresa, EjercicioAlbaran, NumeroAlbaran, SerieAlbaran,
@@ -2124,6 +2151,7 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
           NumeroLineas, ImporteBruto, ImporteNetoLineas, ImporteParcial,
           BaseImponible, TotalCuotaIva, TotalIva, ImporteLiquido,
           EjercicioPedido, SeriePedido, NumeroPedido,
+          SuAlbaranNo, FechaSuAlbaran,  -- ✅ nuevos campos
           FechaAlbaran
         ) VALUES (
           @codigoEmpresa, @ejercicioAlbaran, @numeroAlbaran, @serieAlbaran,
@@ -2141,6 +2169,7 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
           @numeroLineas, @importeBruto, @importeNetoLineas, @importeParcial,
           @baseImponible, @totalCuotaIva, @totalIva, @importeLiquido,
           @ejercicioPedido, @seriePedido, @numeroPedido,
+          @suAlbaranNo, @fechaSuAlbaran,
           GETDATE()
         )
       `);
@@ -2224,7 +2253,7 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
         `);
     }
 
-    // 5. Actualizar estado de cada pedido si ya no tiene unidades pendientes de albaranar (CONSULTA CORREGIDA)
+    // 5. Actualizar estado de cada pedido si ya no tiene unidades pendientes de albaranar
     for (const pedidoInfo of pedidosPorProcesar) {
       const { ejercicio, serie, numero } = pedidoInfo;
       // Consulta corregida usando OUTER APPLY para evitar agregación anidada
@@ -2289,7 +2318,9 @@ router.post('/proveedores/:codigoProveedor/generar-albaran', async (req, res) =>
         totalLineas: lineasDetalladas.length,
         totalUnidades,
         importes: { neto: baseImponibleTotal, iva: totalIva, liquido: importeLiquidoTotal },
-        pedidosIncluidos: pedidosPorProcesar.length
+        pedidosIncluidos: pedidosPorProcesar.length,
+        suAlbaranNo,                     // ✅ devolvemos también los datos guardados
+        fechaSuAlbaran
       }
     });
   } catch (err) {

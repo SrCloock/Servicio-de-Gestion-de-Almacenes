@@ -1,0 +1,756 @@
+
+████████████████████████████████████████████████████████████████████
+  SUITE COMPLETA v3 — INVENTARIO Y TRASPASOS — Empresa 9999
+████████████████████████████████████████████████████████████████████
+  API:      http://localhost:3000
+  Empresa:  9999
+  Normales: CD0001, CD0002, CD0003, CD0004, CD0005, CD0006, CD0007, CD0008, CD0009
+  Tallas:   TBH0006(A/100), TBH0006(A/90), TBH0006(A/95), TBH0006(AC/100), TBH0006(AC/90), TBH0006(AC/95), 003(A/38), 003(A/40), 003(A/42), 003(N/38), 003(N/40)
+  Uds med:  52323X203, ART001, ART002, CASILIGRIS20CM, DIAPOL508, ENXU03, M4145X110, X0053, X0054, X0055, X0056, X0202
+  Log:      C:\Users\SrCloock\Desktop\Servicio-de-Gestion-de-Almacenes\TESTS\test-resultado.log
+  ⚠️  Los registros sembrados se MANTIENEN en BD para revisión.
+  31/5/2026, 11:39:15
+
+════════════════════════════════════════════════════════════════════
+  1. LOGIN Y AUTENTICACIÓN
+════════════════════════════════════════════════════════════════════
+  ▶ Login correcto devuelve usuario y empresa ...      → Usuario: margarita | Empresa: 1
+✅ PASS
+  ▶ Login contraseña incorrecta → 401 ... ✅ PASS
+  ▶ Login usuario inexistente → 401 ... ✅ PASS
+  ▶ Endpoint protegido sin cabeceras → 401 ... ✅ PASS
+  ▶ Endpoint protegido con cabeceras correctas → 200 ... ✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  0. DESCUBRIR ALMACENES Y UBICACIONES (empresa 9999)
+════════════════════════════════════════════════════════════════════
+  Almacenes (5): 5, N1, N5, PK, R
+    5: 0 ubicaciones
+    N1: 399 ubicaciones — N1A1, N1A10, N1A100, N1A101, N1A102, N1A103...
+    N5: 301 ubicaciones — N5A1, N5A10, N5A11, N5A12, N5A13, N5A14...
+    PK: 399 ubicaciones — PATIO, PKA1, PKA10, PKA100, PKA101, PKA102...
+    R: 1 ubicaciones — R1
+
+  Total ubicaciones: 1100
+
+════════════════════════════════════════════════════════════════════
+  0b. SINCRONIZACIÓN PREVIA
+════════════════════════════════════════════════════════════════════
+  Ejecutando sincronización automática antes del test...
+  → ✅ Limpieza ejecutada manualmente
+
+════════════════════════════════════════════════════════════════════
+  2. INVENTARIO — VISUALIZACIÓN Y FILTROS
+════════════════════════════════════════════════════════════════════
+  ▶ Stock total lote: offset=0 limit=10 devuelve items ...      → 4 items | hasMore: true
+✅ PASS
+  ▶ Paginación: offset=0 y offset=5 devuelven páginas distintas ...      → P1: 3 | P2: 1
+✅ PASS
+  ▶ Filtro por código exacto de almacén devuelve solo ese almacén ... ❌ FAIL: Items de almacén distinto en filtro 5: N5
+  ▶ Búsqueda por código de artículo: CD0001 ...      → 0 registros para CD0001
+✅ PASS
+  ▶ Stock sin ubicación devuelve array ...      → 9365 artículos sin ubicación
+✅ PASS
+  ▶ Historial ajustes v2 paginado ...      → Total ajustes: 123
+✅ PASS
+  ▶ Registros fantasma no aparecen ...      → Sin registros fantasma ✓
+✅ PASS
+  ▶ Almacenes endpoint devuelve lista ...      → 5 almacenes: 5, N1, N5, PK, R
+✅ PASS
+  ▶ Stock por artículo devuelve desglose ...      → CD0001: 5 registros por ubicación
+✅ PASS
+  ▶ Artículos con stock: búsqueda devuelve resultados ...      → 10 artículos con stock
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  3. ARTÍCULOS NORMALES
+════════════════════════════════════════════════════════════════════
+
+  ┄ CD0001
+     → Saldo real en BD: 0 uds en PK/PKA343
+  ▶ [CD0001] Ajuste edición → 121 ... ✅ PASS
+  ▶ [CD0001] AcumuladoStockUbicacion = 121 ... ❌ FAIL: AcumStockUbic PK/PKA343 (esperado 121, obtenido 0)
+  ▶ [CD0001] AcumuladoStock delta correcto ...      → AcumStock: 0 → 0 (Δ+0.00)
+✅ PASS
+  ▶ [CD0001] Ajuste edición → 0 (vaciado explícito) ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+  ▶ [CD0001] AcumuladoStockUbicacion = 0 tras vaciado ...      → 121 → 0 ✓
+✅ PASS
+  ▶ [CD0001] Ajuste nuevo post-vaciado → 65 ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+     → Re-sembrado: saldo real = 0
+  ▶ [CD0001] Ajuste en segunda ubicación PK/PKA297 → 59 ... ✅ PASS
+  ▶ [CD0001] Ambas ubicaciones tienen stock independiente ...      → PKA343: 0 | PKA297: 0
+✅ PASS
+  ⏭  [CD0001] Traspaso mismo almacén — SKIP: Stock insuficiente (0)
+  ⏭  [CD0001] Traspaso parcial repetido — SKIP: Stock insuficiente (0) o sin tercera ubicación
+  ⏭  [CD0001] Traspaso entre almacenes — SKIP: Sin stock en ubic1
+  ▶ [CD0001] Ajuste múltiple en 3 ubicaciones simultáneas ...      → Ubicaciones: PKA322, PKA157, PKA196
+✅ PASS
+  ▶ [CD0001] Cada ubicación tiene su cantidad individual ... ❌ FAIL: PK/PKA322 (esperado 32, obtenido 0)
+
+  ┄ CD0002
+     → Saldo real en BD: 0 uds en PK/PKA231
+  ▶ [CD0002] Ajuste edición → 113 ... ✅ PASS
+  ▶ [CD0002] AcumuladoStockUbicacion = 113 ... ❌ FAIL: AcumStockUbic PK/PKA231 (esperado 113, obtenido 0)
+  ▶ [CD0002] AcumuladoStock delta correcto ...      → AcumStock: 0 → 0 (Δ+0.00)
+✅ PASS
+  ▶ [CD0002] Ajuste edición → 0 (vaciado explícito) ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+  ▶ [CD0002] AcumuladoStockUbicacion = 0 tras vaciado ...      → 113 → 0 ✓
+✅ PASS
+  ▶ [CD0002] Ajuste nuevo post-vaciado → 123 ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+     → Re-sembrado: saldo real = 0
+  ▶ [CD0002] Ajuste en segunda ubicación PK/PKA388 → 44 ... ✅ PASS
+  ▶ [CD0002] Ambas ubicaciones tienen stock independiente ...      → PKA231: 0 | PKA388: 0
+✅ PASS
+  ⏭  [CD0002] Traspaso mismo almacén — SKIP: Stock insuficiente (0)
+  ⏭  [CD0002] Traspaso parcial repetido — SKIP: Stock insuficiente (0) o sin tercera ubicación
+  ⏭  [CD0002] Traspaso entre almacenes — SKIP: Sin almacén alternativo
+  ▶ [CD0002] Ajuste múltiple en 3 ubicaciones simultáneas ...      → Ubicaciones: PKA170, PKA207, PKA174
+✅ PASS
+  ▶ [CD0002] Cada ubicación tiene su cantidad individual ... ❌ FAIL: PK/PKA170 (esperado 39, obtenido 0)
+
+  ┄ CD0003
+     → Saldo real en BD: 0 uds en N1/N1A365
+  ▶ [CD0003] Ajuste edición → 190 ... ✅ PASS
+  ▶ [CD0003] AcumuladoStockUbicacion = 190 ... ❌ FAIL: AcumStockUbic N1/N1A365 (esperado 190, obtenido 0)
+  ▶ [CD0003] AcumuladoStock delta correcto ...      → AcumStock: 0 → 0 (Δ+0.00)
+✅ PASS
+  ▶ [CD0003] Ajuste edición → 0 (vaciado explícito) ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+  ▶ [CD0003] AcumuladoStockUbicacion = 0 tras vaciado ...      → 190 → 0 ✓
+✅ PASS
+  ▶ [CD0003] Ajuste nuevo post-vaciado → 73 ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+     → Re-sembrado: saldo real = 0
+  ▶ [CD0003] Ajuste en segunda ubicación N1/N1A63 → 48 ... ✅ PASS
+  ▶ [CD0003] Ambas ubicaciones tienen stock independiente ...      → N1A365: 0 | N1A63: 0
+✅ PASS
+  ⏭  [CD0003] Traspaso mismo almacén — SKIP: Stock insuficiente (0)
+  ⏭  [CD0003] Traspaso parcial repetido — SKIP: Stock insuficiente (0) o sin tercera ubicación
+  ⏭  [CD0003] Traspaso entre almacenes — SKIP: Sin stock en ubic1
+  ▶ [CD0003] Ajuste múltiple en 3 ubicaciones simultáneas ...      → Ubicaciones: N1A368, N1A337, N1A134
+✅ PASS
+  ▶ [CD0003] Cada ubicación tiene su cantidad individual ... ❌ FAIL: N1/N1A368 (esperado 35, obtenido 0)
+
+  ┄ CD0004
+     → Saldo real en BD: 0 uds en N1/N1A399
+  ▶ [CD0004] Ajuste edición → 61 ... ✅ PASS
+  ▶ [CD0004] AcumuladoStockUbicacion = 61 ... ❌ FAIL: AcumStockUbic N1/N1A399 (esperado 61, obtenido 0)
+  ▶ [CD0004] AcumuladoStock delta correcto ...      → AcumStock: 0 → 0 (Δ+0.00)
+✅ PASS
+  ▶ [CD0004] Ajuste edición → 0 (vaciado explícito) ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+  ▶ [CD0004] AcumuladoStockUbicacion = 0 tras vaciado ...      → 61 → 0 ✓
+✅ PASS
+  ▶ [CD0004] Ajuste nuevo post-vaciado → 129 ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+     → Re-sembrado: saldo real = 0
+  ▶ [CD0004] Ajuste en segunda ubicación N1/N1A305 → 78 ... ✅ PASS
+  ▶ [CD0004] Ambas ubicaciones tienen stock independiente ...      → N1A399: 0 | N1A305: 0
+✅ PASS
+  ⏭  [CD0004] Traspaso mismo almacén — SKIP: Stock insuficiente (0)
+  ⏭  [CD0004] Traspaso parcial repetido — SKIP: Stock insuficiente (0) o sin tercera ubicación
+  ⏭  [CD0004] Traspaso entre almacenes — SKIP: Sin stock en ubic1
+  ▶ [CD0004] Ajuste múltiple en 3 ubicaciones simultáneas ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+  ▶ [CD0004] Cada ubicación tiene su cantidad individual ... ❌ FAIL: N1/N1A41 (esperado 39, obtenido 0)
+
+  ┄ CD0005
+     → Saldo real en BD: 0 uds en N5/N5C37
+  ▶ [CD0005] Ajuste edición → 77 ... ✅ PASS
+  ▶ [CD0005] AcumuladoStockUbicacion = 77 ... ❌ FAIL: AcumStockUbic N5/N5C37 (esperado 77, obtenido 0)
+  ▶ [CD0005] AcumuladoStock delta correcto ...      → AcumStock: 0 → 0 (Δ+0.00)
+✅ PASS
+  ▶ [CD0005] Ajuste edición → 0 (vaciado explícito) ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+  ▶ [CD0005] AcumuladoStockUbicacion = 0 tras vaciado ...      → 77 → 0 ✓
+✅ PASS
+  ▶ [CD0005] Ajuste nuevo post-vaciado → 162 ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+     → Re-sembrado: saldo real = 0
+  ▶ [CD0005] Ajuste en segunda ubicación N5/N5A21 → 96 ... ✅ PASS
+  ▶ [CD0005] Ambas ubicaciones tienen stock independiente ...      → N5C37: 0 | N5A21: 0
+✅ PASS
+  ⏭  [CD0005] Traspaso mismo almacén — SKIP: Stock insuficiente (0)
+  ⏭  [CD0005] Traspaso parcial repetido — SKIP: Stock insuficiente (0) o sin tercera ubicación
+  ⏭  [CD0005] Traspaso entre almacenes — SKIP: Sin almacén alternativo
+  ▶ [CD0005] Ajuste múltiple en 3 ubicaciones simultáneas ...      → Ubicaciones: N5D40, N5A19, N5C35
+✅ PASS
+  ▶ [CD0005] Cada ubicación tiene su cantidad individual ... ❌ FAIL: N5/N5D40 (esperado 39, obtenido 0)
+
+  ┄ CD0006
+     → Saldo real en BD: 0 uds en R/R1
+  ▶ [CD0006] Ajuste edición → 64 ... ✅ PASS
+  ▶ [CD0006] AcumuladoStockUbicacion = 64 ... ❌ FAIL: AcumStockUbic R/R1 (esperado 64, obtenido 0)
+  ▶ [CD0006] AcumuladoStock delta correcto ...      → AcumStock: 0 → 0 (Δ+0.00)
+✅ PASS
+  ▶ [CD0006] Ajuste edición → 0 (vaciado explícito) ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+  ▶ [CD0006] AcumuladoStockUbicacion = 0 tras vaciado ...      → 64 → 0 ✓
+✅ PASS
+  ▶ [CD0006] Ajuste nuevo post-vaciado → 67 ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+     → Re-sembrado: saldo real = 0
+  ⏭  [CD0006] Tests segunda ubicación — SKIP: Sin segunda ubicación en R
+  ⏭  [CD0006] Traspaso parcial repetido — SKIP: Stock insuficiente (0) o sin tercera ubicación
+  ⏭  [CD0006] Traspaso entre almacenes — SKIP: Sin stock en ubic1
+  ⏭  [CD0006] Ajuste múltiple — SKIP: Solo 0 ubicaciones disponibles
+
+  ┄ CD0007
+     → Saldo real en BD: 0 uds en N1/N1A102
+  ▶ [CD0007] Ajuste edición → 170 ... ✅ PASS
+  ▶ [CD0007] AcumuladoStockUbicacion = 170 ... ❌ FAIL: AcumStockUbic N1/N1A102 (esperado 170, obtenido 0)
+  ▶ [CD0007] AcumuladoStock delta correcto ...      → AcumStock: 0 → 0 (Δ+0.00)
+✅ PASS
+  ▶ [CD0007] Ajuste edición → 0 (vaciado explícito) ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+  ▶ [CD0007] AcumuladoStockUbicacion = 0 tras vaciado ...      → 170 → 0 ✓
+✅ PASS
+  ▶ [CD0007] Ajuste nuevo post-vaciado → 72 ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+     → Re-sembrado: saldo real = 0
+  ▶ [CD0007] Ajuste en segunda ubicación N1/N1A271 → 75 ... ✅ PASS
+  ▶ [CD0007] Ambas ubicaciones tienen stock independiente ...      → N1A102: 0 | N1A271: 0
+✅ PASS
+  ⏭  [CD0007] Traspaso mismo almacén — SKIP: Stock insuficiente (0)
+  ⏭  [CD0007] Traspaso parcial repetido — SKIP: Stock insuficiente (0) o sin tercera ubicación
+  ⏭  [CD0007] Traspaso entre almacenes — SKIP: Sin stock en ubic1
+  ▶ [CD0007] Ajuste múltiple en 3 ubicaciones simultáneas ...      → Ubicaciones: N1A162, N1A20, N1A94
+✅ PASS
+  ▶ [CD0007] Cada ubicación tiene su cantidad individual ... ❌ FAIL: N1/N1A162 (esperado 21, obtenido 0)
+
+  ┄ CD0008
+     → Saldo real en BD: 0 uds en N5/N5B1
+  ▶ [CD0008] Ajuste edición → 149 ... ✅ PASS
+  ▶ [CD0008] AcumuladoStockUbicacion = 149 ... ❌ FAIL: AcumStockUbic N5/N5B1 (esperado 149, obtenido 0)
+  ▶ [CD0008] AcumuladoStock delta correcto ...      → AcumStock: 0 → 0 (Δ+0.00)
+✅ PASS
+  ▶ [CD0008] Ajuste edición → 0 (vaciado explícito) ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+  ▶ [CD0008] AcumuladoStockUbicacion = 0 tras vaciado ...      → 149 → 0 ✓
+✅ PASS
+  ▶ [CD0008] Ajuste nuevo post-vaciado → 69 ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+     → Re-sembrado: saldo real = 0
+  ▶ [CD0008] Ajuste en segunda ubicación N5/N5B13 → 37 ... ✅ PASS
+  ▶ [CD0008] Ambas ubicaciones tienen stock independiente ...      → N5B1: 0 | N5B13: 0
+✅ PASS
+  ⏭  [CD0008] Traspaso mismo almacén — SKIP: Stock insuficiente (0)
+  ⏭  [CD0008] Traspaso parcial repetido — SKIP: Stock insuficiente (0) o sin tercera ubicación
+  ⏭  [CD0008] Traspaso entre almacenes — SKIP: Sin stock en ubic1
+  ▶ [CD0008] Ajuste múltiple en 3 ubicaciones simultáneas ...      → Ubicaciones: N5F28, N5B18, N5A40
+✅ PASS
+  ▶ [CD0008] Cada ubicación tiene su cantidad individual ... ❌ FAIL: N5/N5F28 (esperado 39, obtenido 0)
+
+  ┄ CD0009
+     → Saldo real en BD: 0 uds en R/R1
+  ▶ [CD0009] Ajuste edición → 115 ... ✅ PASS
+  ▶ [CD0009] AcumuladoStockUbicacion = 115 ... ❌ FAIL: AcumStockUbic R/R1 (esperado 115, obtenido 0)
+  ▶ [CD0009] AcumuladoStock delta correcto ...      → AcumStock: 0 → 0 (Δ+0.00)
+✅ PASS
+  ▶ [CD0009] Ajuste edición → 0 (vaciado explícito) ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+  ▶ [CD0009] AcumuladoStockUbicacion = 0 tras vaciado ...      → 115 → 0 ✓
+✅ PASS
+  ▶ [CD0009] Ajuste nuevo post-vaciado → 190 ... ❌ FAIL: 409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+     → Re-sembrado: saldo real = 0
+  ⏭  [CD0009] Tests segunda ubicación — SKIP: Sin segunda ubicación en R
+  ⏭  [CD0009] Traspaso parcial repetido — SKIP: Stock insuficiente (0) o sin tercera ubicación
+  ⏭  [CD0009] Traspaso entre almacenes — SKIP: Sin stock en ubic1
+  ⏭  [CD0009] Ajuste múltiple — SKIP: Solo 0 ubicaciones disponibles
+
+════════════════════════════════════════════════════════════════════
+  4. ARTÍCULOS ESPECIALES — TALLAS Y COLORES
+════════════════════════════════════════════════════════════════════
+
+  ┄ TBH0006 C=A T=100
+  ▶ [TBH0006] variantes-contexto devuelve tallas/colores ... ❌ FAIL: 404
+     → Saldo real BD: 0 en N1/N1A284
+  ▶ [TBH0006] C=A/T=100 Ajuste → 57 ... ✅ PASS
+  ▶ [TBH0006] AcumStockUbic variante C=A/T=100 = 57 ... ❌ FAIL: Variante C=A/T=100 (esperado 57, obtenido 0)
+  ▶ [TBH0006] Otras variantes NO cambian ...      → 0 otras variantes en N1/N1A284 (informativo)
+✅ PASS
+  ▶ [TBH0006] AcumuladoStock delta variante correcto ...      → AcumStock: 0 → 0 (Δ+0.00, esperado Δ+57.00)
+❌ FAIL: Delta AcumStock N1 (esperado 57, obtenido 0)
+  ▶ [TBH0006] C=A/T=100 Traspaso N1A284→N1A183 (23 ud) ... ❌ FAIL: Stock variante insuficiente: 0 < 23
+  ▶ [TBH0006] C=A/T=100: origen-23, destino+23, acum sin cambio ... ❌ FAIL: Origen C=A/T=100 (esperado -23, obtenido 0)
+  ⏭  [TBH0006] C=A/T=100 Traspaso entre alm — SKIP: Sin stock de variante
+  ▶ [TBH0006] Traspaso variante inexistente → error ...      ⏭  Sin ubicación, skip
+✅ PASS
+
+  ┄ TBH0006 C=A T=90
+  ▶ [TBH0006] variantes-contexto devuelve tallas/colores ... ❌ FAIL: 404
+     → Saldo real BD: 0 en N1/N1A284
+  ▶ [TBH0006] C=A/T=90 Ajuste → 84 ... ✅ PASS
+  ▶ [TBH0006] AcumStockUbic variante C=A/T=90 = 84 ... ❌ FAIL: Variante C=A/T=90 (esperado 84, obtenido 0)
+  ▶ [TBH0006] Otras variantes NO cambian ...      → 0 otras variantes en N1/N1A284 (informativo)
+✅ PASS
+  ▶ [TBH0006] AcumuladoStock delta variante correcto ...      → AcumStock: 0 → 0 (Δ+0.00, esperado Δ+84.00)
+❌ FAIL: Delta AcumStock N1 (esperado 84, obtenido 0)
+  ▶ [TBH0006] C=A/T=90 Traspaso N1A284→N1A244 (29 ud) ... ❌ FAIL: Stock variante insuficiente: 0 < 29
+  ▶ [TBH0006] C=A/T=90: origen-29, destino+29, acum sin cambio ... ❌ FAIL: Origen C=A/T=90 (esperado -29, obtenido 0)
+  ▶ [TBH0006] Traspaso variante inexistente → error ...      ⏭  Sin ubicación, skip
+✅ PASS
+
+  ┄ TBH0006 C=A T=95
+  ▶ [TBH0006] variantes-contexto devuelve tallas/colores ... ❌ FAIL: 404
+     → Saldo real BD: 0 en PK/PKA263
+  ▶ [TBH0006] C=A/T=95 Ajuste → 94 ... ✅ PASS
+  ▶ [TBH0006] AcumStockUbic variante C=A/T=95 = 94 ... ❌ FAIL: Variante C=A/T=95 (esperado 94, obtenido 0)
+  ▶ [TBH0006] Otras variantes NO cambian ...      → 0 otras variantes en PK/PKA263 (informativo)
+✅ PASS
+  ▶ [TBH0006] AcumuladoStock delta variante correcto ...      → AcumStock: 0 → 0 (Δ+0.00, esperado Δ+94.00)
+❌ FAIL: Delta AcumStock PK (esperado 94, obtenido 0)
+  ▶ [TBH0006] C=A/T=95 Traspaso PKA263→PKA139 (39 ud) ... ❌ FAIL: Stock variante insuficiente: 0 < 39
+  ▶ [TBH0006] C=A/T=95: origen-39, destino+39, acum sin cambio ... ❌ FAIL: Origen C=A/T=95 (esperado -39, obtenido 0)
+  ⏭  [TBH0006] C=A/T=95 Traspaso entre alm — SKIP: Sin stock de variante
+  ▶ [TBH0006] Traspaso variante inexistente → error ...      ⏭  Sin ubicación, skip
+✅ PASS
+
+  ┄ TBH0006 C=AC T=100
+  ▶ [TBH0006] variantes-contexto devuelve tallas/colores ... ❌ FAIL: 404
+     → Saldo real BD: 0 en N1/N1A284
+  ▶ [TBH0006] C=AC/T=100 Ajuste → 63 ... ✅ PASS
+  ▶ [TBH0006] AcumStockUbic variante C=AC/T=100 = 63 ... ❌ FAIL: Variante C=AC/T=100 (esperado 63, obtenido 0)
+  ▶ [TBH0006] Otras variantes NO cambian ...      → 0 otras variantes en N1/N1A284 (informativo)
+✅ PASS
+  ▶ [TBH0006] AcumuladoStock delta variante correcto ...      → AcumStock: 0 → 0 (Δ+0.00, esperado Δ+63.00)
+❌ FAIL: Delta AcumStock N1 (esperado 63, obtenido 0)
+  ▶ [TBH0006] C=AC/T=100 Traspaso N1A284→N1A185 (11 ud) ... ❌ FAIL: Stock variante insuficiente: 0 < 11
+  ▶ [TBH0006] C=AC/T=100: origen-11, destino+11, acum sin cambio ... ❌ FAIL: Origen C=AC/T=100 (esperado -11, obtenido 0)
+  ⏭  [TBH0006] C=AC/T=100 Traspaso entre alm — SKIP: Sin stock de variante
+  ▶ [TBH0006] Traspaso variante inexistente → error ...      ⏭  Sin ubicación, skip
+✅ PASS
+
+  ┄ TBH0006 C=AC T=90
+  ▶ [TBH0006] variantes-contexto devuelve tallas/colores ... ❌ FAIL: 404
+     → Saldo real BD: 0 en PK/PKA263
+  ▶ [TBH0006] C=AC/T=90 Ajuste → 152 ... ✅ PASS
+  ▶ [TBH0006] AcumStockUbic variante C=AC/T=90 = 152 ... ❌ FAIL: Variante C=AC/T=90 (esperado 152, obtenido 0)
+  ▶ [TBH0006] Otras variantes NO cambian ...      → 0 otras variantes en PK/PKA263 (informativo)
+✅ PASS
+  ▶ [TBH0006] AcumuladoStock delta variante correcto ...      → AcumStock: 0 → 0 (Δ+0.00, esperado Δ+152.00)
+❌ FAIL: Delta AcumStock PK (esperado 152, obtenido 0)
+  ▶ [TBH0006] C=AC/T=90 Traspaso PKA263→PKA367 (17 ud) ... ❌ FAIL: Stock variante insuficiente: 0 < 17
+  ▶ [TBH0006] C=AC/T=90: origen-17, destino+17, acum sin cambio ... ❌ FAIL: Origen C=AC/T=90 (esperado -17, obtenido 0)
+  ⏭  [TBH0006] C=AC/T=90 Traspaso entre alm — SKIP: Sin stock de variante
+  ▶ [TBH0006] Traspaso variante inexistente → error ...      ⏭  Sin ubicación, skip
+✅ PASS
+
+  ┄ TBH0006 C=AC T=95
+  ▶ [TBH0006] variantes-contexto devuelve tallas/colores ... ❌ FAIL: 404
+     → Saldo real BD: 0 en PK/PKA263
+  ▶ [TBH0006] C=AC/T=95 Ajuste → 94 ... ✅ PASS
+  ▶ [TBH0006] AcumStockUbic variante C=AC/T=95 = 94 ... ❌ FAIL: Variante C=AC/T=95 (esperado 94, obtenido 0)
+  ▶ [TBH0006] Otras variantes NO cambian ...      → 0 otras variantes en PK/PKA263 (informativo)
+✅ PASS
+  ▶ [TBH0006] AcumuladoStock delta variante correcto ...      → AcumStock: 0 → 0 (Δ+0.00, esperado Δ+94.00)
+❌ FAIL: Delta AcumStock PK (esperado 94, obtenido 0)
+  ▶ [TBH0006] C=AC/T=95 Traspaso PKA263→PKA31 (43 ud) ... ❌ FAIL: Stock variante insuficiente: 0 < 43
+  ▶ [TBH0006] C=AC/T=95: origen-43, destino+43, acum sin cambio ... ❌ FAIL: Origen C=AC/T=95 (esperado -43, obtenido 0)
+  ⏭  [TBH0006] C=AC/T=95 Traspaso entre alm — SKIP: Sin stock de variante
+  ▶ [TBH0006] Traspaso variante inexistente → error ...      ⏭  Sin ubicación, skip
+✅ PASS
+
+  ┄ 003 C=A T=38
+  ▶ [003] variantes-contexto devuelve tallas/colores ... ❌ FAIL: 404
+     → Saldo real BD: 0 en N5/N5F10
+  ▶ [003] C=A/T=38 Ajuste → 153 ... ✅ PASS
+  ▶ [003] AcumStockUbic variante C=A/T=38 = 153 ... ❌ FAIL: Variante C=A/T=38 (esperado 153, obtenido 0)
+  ▶ [003] Otras variantes NO cambian ...      → 0 otras variantes en N5/N5F10 (informativo)
+✅ PASS
+  ▶ [003] AcumuladoStock delta variante correcto ...      → AcumStock: 0 → 0 (Δ+0.00, esperado Δ+153.00)
+❌ FAIL: Delta AcumStock N5 (esperado 153, obtenido 0)
+  ▶ [003] C=A/T=38 Traspaso N5F10→N5A46 (69 ud) ... ❌ FAIL: Stock variante insuficiente: 0 < 69
+  ▶ [003] C=A/T=38: origen-69, destino+69, acum sin cambio ... ❌ FAIL: Origen C=A/T=38 (esperado -69, obtenido 0)
+  ⏭  [003] C=A/T=38 Traspaso entre alm — SKIP: Sin stock de variante
+  ▶ [003] Traspaso variante inexistente → error ...      ⏭  Sin ubicación, skip
+✅ PASS
+
+  ┄ 003 C=A T=40
+  ▶ [003] variantes-contexto devuelve tallas/colores ... ❌ FAIL: 404
+     → Saldo real BD: 0 en N5/N5F10
+  ▶ [003] C=A/T=40 Ajuste → 127 ... ✅ PASS
+  ▶ [003] AcumStockUbic variante C=A/T=40 = 127 ... ❌ FAIL: Variante C=A/T=40 (esperado 127, obtenido 0)
+  ▶ [003] Otras variantes NO cambian ...      → 0 otras variantes en N5/N5F10 (informativo)
+✅ PASS
+  ▶ [003] AcumuladoStock delta variante correcto ...      → AcumStock: 0 → 0 (Δ+0.00, esperado Δ+127.00)
+❌ FAIL: Delta AcumStock N5 (esperado 127, obtenido 0)
+  ▶ [003] C=A/T=40 Traspaso N5F10→N5A35 (3 ud) ... ❌ FAIL: Stock variante insuficiente: 0 < 3
+  ▶ [003] C=A/T=40: origen-3, destino+3, acum sin cambio ... ❌ FAIL: Origen C=A/T=40 (esperado -3, obtenido 0)
+  ⏭  [003] C=A/T=40 Traspaso entre alm — SKIP: Sin stock de variante
+  ▶ [003] Traspaso variante inexistente → error ...      ⏭  Sin ubicación, skip
+✅ PASS
+
+  ┄ 003 C=A T=42
+  ▶ [003] variantes-contexto devuelve tallas/colores ... ❌ FAIL: 404
+     → Saldo real BD: 0 en N5/N5F10
+  ▶ [003] C=A/T=42 Ajuste → 93 ... ✅ PASS
+  ▶ [003] AcumStockUbic variante C=A/T=42 = 93 ... ❌ FAIL: Variante C=A/T=42 (esperado 93, obtenido 0)
+  ▶ [003] Otras variantes NO cambian ...      → 0 otras variantes en N5/N5F10 (informativo)
+✅ PASS
+  ▶ [003] AcumuladoStock delta variante correcto ...      → AcumStock: 0 → 0 (Δ+0.00, esperado Δ+93.00)
+❌ FAIL: Delta AcumStock N5 (esperado 93, obtenido 0)
+  ▶ [003] C=A/T=42 Traspaso N5F10→N5D5 (25 ud) ... ❌ FAIL: Stock variante insuficiente: 0 < 25
+  ▶ [003] C=A/T=42: origen-25, destino+25, acum sin cambio ... ❌ FAIL: Origen C=A/T=42 (esperado -25, obtenido 0)
+  ▶ [003] Traspaso variante inexistente → error ...      ⏭  Sin ubicación, skip
+✅ PASS
+
+  ┄ 003 C=N T=38
+  ▶ [003] variantes-contexto devuelve tallas/colores ... ❌ FAIL: 404
+     → Saldo real BD: 0 en N5/N5F10
+  ▶ [003] C=N/T=38 Ajuste → 72 ... ✅ PASS
+  ▶ [003] AcumStockUbic variante C=N/T=38 = 72 ... ❌ FAIL: Variante C=N/T=38 (esperado 72, obtenido 0)
+  ▶ [003] Otras variantes NO cambian ...      → 0 otras variantes en N5/N5F10 (informativo)
+✅ PASS
+  ▶ [003] AcumuladoStock delta variante correcto ...      → AcumStock: 0 → 0 (Δ+0.00, esperado Δ+72.00)
+❌ FAIL: Delta AcumStock N5 (esperado 72, obtenido 0)
+  ▶ [003] C=N/T=38 Traspaso N5F10→N5X50 (34 ud) ... ❌ FAIL: Stock variante insuficiente: 0 < 34
+  ▶ [003] C=N/T=38: origen-34, destino+34, acum sin cambio ... ❌ FAIL: Origen C=N/T=38 (esperado -34, obtenido 0)
+  ⏭  [003] C=N/T=38 Traspaso entre alm — SKIP: Sin stock de variante
+  ▶ [003] Traspaso variante inexistente → error ...      ⏭  Sin ubicación, skip
+✅ PASS
+
+  ┄ 003 C=N T=40
+  ▶ [003] variantes-contexto devuelve tallas/colores ... ❌ FAIL: 404
+     → Saldo real BD: 0 en N5/N5F10
+  ▶ [003] C=N/T=40 Ajuste → 96 ... ✅ PASS
+  ▶ [003] AcumStockUbic variante C=N/T=40 = 96 ... ❌ FAIL: Variante C=N/T=40 (esperado 96, obtenido 0)
+  ▶ [003] Otras variantes NO cambian ...      → 0 otras variantes en N5/N5F10 (informativo)
+✅ PASS
+  ▶ [003] AcumuladoStock delta variante correcto ...      → AcumStock: 0 → 0 (Δ+0.00, esperado Δ+96.00)
+❌ FAIL: Delta AcumStock N5 (esperado 96, obtenido 0)
+  ▶ [003] C=N/T=40 Traspaso N5F10→N5C1 (30 ud) ... ❌ FAIL: Stock variante insuficiente: 0 < 30
+  ▶ [003] C=N/T=40: origen-30, destino+30, acum sin cambio ... ❌ FAIL: Origen C=N/T=40 (esperado -30, obtenido 0)
+  ▶ [003] Traspaso variante inexistente → error ...      ⏭  Sin ubicación, skip
+✅ PASS
+
+  ┄ Múltiples variantes TBH0006 en misma ubicación
+  ▶ [TBH0006] Sembrar 3 variantes en N1/N1A268 ...      → C=A/T=100: 30 en N1/N1A268
+     → C=A/T=90: 37 en N1/N1A268
+     → C=AC/T=100: 69 en N1/N1A268
+✅ PASS
+  ▶ [TBH0006] Cada variante tiene saldo independiente ... ❌ FAIL: C=A/T=100 tiene saldo 0
+  ▶ [TBH0006] Ajustar una variante no altera las otras ... ❌ FAIL: Variante modificada (esperado 14, obtenido 0)
+
+════════════════════════════════════════════════════════════════════
+  5. ARTÍCULOS CON UNIDADES DE MEDIDA ALTERNATIVA
+════════════════════════════════════════════════════════════════════
+
+  ┄ 52323X203
+  ⏭  [52323X203] — SKIP: Artículo no encontrado
+
+  ┄ ART001
+  ⏭  [ART001] — SKIP: Artículo no encontrado
+
+  ┄ ART002
+  ⏭  [ART002] — SKIP: Artículo no encontrado
+
+  ┄ CASILIGRIS20CM
+  ⏭  [CASILIGRIS20CM] — SKIP: Artículo no encontrado
+
+  ┄ DIAPOL508
+  ⏭  [DIAPOL508] — SKIP: Artículo no encontrado
+
+  ┄ ENXU03
+  ⏭  [ENXU03] — SKIP: Artículo no encontrado
+
+  ┄ M4145X110
+  ⏭  [M4145X110] — SKIP: Artículo no encontrado
+
+  ┄ X0053
+  ⏭  [X0053] — SKIP: Artículo no encontrado
+
+  ┄ X0054
+  ⏭  [X0054] — SKIP: Artículo no encontrado
+
+  ┄ X0055
+  ⏭  [X0055] — SKIP: Artículo no encontrado
+
+  ┄ X0056
+  ⏭  [X0056] — SKIP: Artículo no encontrado
+
+  ┄ X0202
+  ⏭  [X0202] — SKIP: Artículo no encontrado
+
+════════════════════════════════════════════════════════════════════
+  6. AJUSTES DE INVENTARIO — CASOS AVANZADOS
+════════════════════════════════════════════════════════════════════
+  ▶ [CD0001] Crear duplicado (ya existe) → error 409 ...      → Error correcto (409): Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+✅ PASS
+  ▶ [CD0001] Edición con cambio de ubicación: PKA343→PKA383 ...      → Movido a PKA383 con cantidad 81
+✅ PASS
+  ▶ [CD0001] PKA343=0, PKA383=81 ... ❌ FAIL: PKA383 (esperado 81, obtenido 0)
+     🌱 Re-sembrado 82 en PK/PKA343
+  ▶ [CD0001] Ajuste cantidad negativa → error o saldo ≥ 0 ...      → Status 200 | Saldo: 0 → 0 ✓
+✅ PASS
+  ▶ [CD0001] Ajuste cantidad 'abc' → servidor no crashea ...      → Status 200 ✓
+✅ PASS
+  ▶ Ajuste lista vacía → 400 ... ✅ PASS
+  ▶ Ajuste sin campo ajustes → 400 ... ✅ PASS
+  ▶ [CD0001] Ajuste en PK con ubicación de N1 → 400 ...      → Error correcto (400): La ubicación N1A338 no pertenece al almacén PK.
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  7. TRASPASOS — CASOS AVANZADOS
+════════════════════════════════════════════════════════════════════
+  ⏭  [CD0002] Traspaso exacto — SKIP: Sin stock o segunda ubicación
+  ⏭  [CD0002] Traspaso a SIN-UBICACION — SKIP: Sin stock
+  ⏭  [CD0002] Traspaso SIN-UBICACION→real — SKIP: Sin stock en SIN-UBICACION
+  ⏭  [CD0002] Traspaso total entre alm — SKIP: Sin almacén o stock
+
+════════════════════════════════════════════════════════════════════
+  8. HISTORIAL — AJUSTES Y TRASPASOS
+════════════════════════════════════════════════════════════════════
+  ▶ Historial traspasos devuelve items paginados ...      → Total: 85 | Página 1: 10
+✅ PASS
+  ▶ Último traspaso tiene campos correctos ...      → 034751 | PK→PK | 30 | 31/05/2026 11:13:16
+✅ PASS
+  ▶ Historial traspasos filtrado por fecha (hoy) ...      → Traspasos hoy (2026-05-31): 1
+✅ PASS
+  ▶ Historial ajustes: último tiene campos correctos ...      → CD0001 | PK/PKA343 | Δ10 | MOVIMIENTO
+✅ PASS
+  ▶ Ajuste reciente aparece en historial ...      → Último ajuste: CD0003 Δ-185 ✓
+✅ PASS
+  ▶ Traspaso reciente aparece en historial ...      ⏭  Sin segunda ubicación o stock
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  9. VALIDACIONES Y CASOS DE ERROR
+════════════════════════════════════════════════════════════════════
+  ▶ Traspaso cantidad > stock → error ...      → Error correcto (400): No puedes traspasar a la misma ubicación de origen.
+✅ PASS
+  ▶ Traspaso cantidad 0 → 400 ... ✅ PASS
+  ▶ Traspaso cantidad negativa → 400 ... ✅ PASS
+  ▶ Traspaso misma ubicación → 400 ... ✅ PASS
+  ▶ Traspaso sin artículo → 400 ... ✅ PASS
+  ▶ Traspaso sin origenUbicacion → 400 ... ✅ PASS
+  ▶ Traspaso con origenUbicacion de otro almacén → 400 ...      → La ubicación origen N1A1 no pertenece al almacén 5.
+✅ PASS
+  ▶ Sin autenticación (traspasos/stock) → 401 ... ✅ PASS
+  ▶ Sin autenticación (inventario/ajustar) → 401 ... ✅ PASS
+  ▶ Ajuste lista vacía → 400 ... ✅ PASS
+  ▶ Ajuste sin campo ajustes → 400 ... ✅ PASS
+  ▶ Artículo inexistente → 404 ... ✅ PASS
+  ▶ Ubicaciones de almacén inexistente → array vacío ...      → Vacío ✓
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  10. CONSISTENCIA GLOBAL
+════════════════════════════════════════════════════════════════════
+  ▶ [CD0001] Delta AcumStock y AcumStockUbicacion son simétricos ... ❌ FAIL: Delta AcumStockUbicacion tras +5 (esperado 5, obtenido 0)
+  ▶ [CD0002] Delta AcumStock y AcumStockUbicacion son simétricos ... ❌ FAIL: Delta AcumStockUbicacion tras +5 (esperado 5, obtenido 0)
+  ▶ [CD0003] Delta AcumStock y AcumStockUbicacion son simétricos ... ❌ FAIL: Delta AcumStockUbicacion tras +5 (esperado 5, obtenido 0)
+  ▶ [CD0004] Delta AcumStock y AcumStockUbicacion son simétricos ... ❌ FAIL: Delta AcumStockUbicacion tras +5 (esperado 5, obtenido 0)
+  ▶ [TBH0006] Delta AcumStock y AcumStockUbicacion son simétricos ... ❌ FAIL: Delta AcumStockUbicacion tras +5 (esperado 5, obtenido 0)
+  ▶ [52323X203] Delta AcumStock y AcumStockUbicacion son simétricos ... ❌ FAIL: Delta AcumStockUbicacion tras +5 (esperado 5, obtenido 0)
+  ▶ Ninguna ubicación con stock negativo ...      → Sin stocks negativos ✓
+✅ PASS
+  ▶ Consistencia tras 3 ajustes consecutivos ... ❌ FAIL: Saldo final (esperado 72, obtenido 0)
+
+════════════════════════════════════════════════════════════════════
+  11. LIMPIEZA AUTOMÁTICA
+════════════════════════════════════════════════════════════════════
+  ▶ Sincronización manual ejecuta sin error ...      → Limpieza ejecutada manualmente
+✅ PASS
+  ▶ Tras limpieza no aparecen registros cero no principales ...      → Registros saldo 0 para CD0001: 0 (informativo)
+✅ PASS
+
+════════════════════════════════════════════════════════════════════
+  RESUMEN FINAL
+════════════════════════════════════════════════════════════════════
+  ✅ PASS:  124
+  ❌ FAIL:  101
+  ⏭  SKIP:  53
+  TOTAL:   278
+════════════════════════════════════════════════════════════════════
+
+  Tests fallidos:
+    ❌ Filtro por código exacto de almacén devuelve solo ese almacén
+       Items de almacén distinto en filtro 5: N5
+    ❌ [CD0001] AcumuladoStockUbicacion = 121
+       AcumStockUbic PK/PKA343 (esperado 121, obtenido 0)
+    ❌ [CD0001] Ajuste edición → 0 (vaciado explícito)
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0001] Ajuste nuevo post-vaciado → 65
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0001] Cada ubicación tiene su cantidad individual
+       PK/PKA322 (esperado 32, obtenido 0)
+    ❌ [CD0002] AcumuladoStockUbicacion = 113
+       AcumStockUbic PK/PKA231 (esperado 113, obtenido 0)
+    ❌ [CD0002] Ajuste edición → 0 (vaciado explícito)
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0002] Ajuste nuevo post-vaciado → 123
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0002] Cada ubicación tiene su cantidad individual
+       PK/PKA170 (esperado 39, obtenido 0)
+    ❌ [CD0003] AcumuladoStockUbicacion = 190
+       AcumStockUbic N1/N1A365 (esperado 190, obtenido 0)
+    ❌ [CD0003] Ajuste edición → 0 (vaciado explícito)
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0003] Ajuste nuevo post-vaciado → 73
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0003] Cada ubicación tiene su cantidad individual
+       N1/N1A368 (esperado 35, obtenido 0)
+    ❌ [CD0004] AcumuladoStockUbicacion = 61
+       AcumStockUbic N1/N1A399 (esperado 61, obtenido 0)
+    ❌ [CD0004] Ajuste edición → 0 (vaciado explícito)
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0004] Ajuste nuevo post-vaciado → 129
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0004] Ajuste múltiple en 3 ubicaciones simultáneas
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0004] Cada ubicación tiene su cantidad individual
+       N1/N1A41 (esperado 39, obtenido 0)
+    ❌ [CD0005] AcumuladoStockUbicacion = 77
+       AcumStockUbic N5/N5C37 (esperado 77, obtenido 0)
+    ❌ [CD0005] Ajuste edición → 0 (vaciado explícito)
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0005] Ajuste nuevo post-vaciado → 162
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0005] Cada ubicación tiene su cantidad individual
+       N5/N5D40 (esperado 39, obtenido 0)
+    ❌ [CD0006] AcumuladoStockUbicacion = 64
+       AcumStockUbic R/R1 (esperado 64, obtenido 0)
+    ❌ [CD0006] Ajuste edición → 0 (vaciado explícito)
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0006] Ajuste nuevo post-vaciado → 67
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0007] AcumuladoStockUbicacion = 170
+       AcumStockUbic N1/N1A102 (esperado 170, obtenido 0)
+    ❌ [CD0007] Ajuste edición → 0 (vaciado explícito)
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0007] Ajuste nuevo post-vaciado → 72
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0007] Cada ubicación tiene su cantidad individual
+       N1/N1A162 (esperado 21, obtenido 0)
+    ❌ [CD0008] AcumuladoStockUbicacion = 149
+       AcumStockUbic N5/N5B1 (esperado 149, obtenido 0)
+    ❌ [CD0008] Ajuste edición → 0 (vaciado explícito)
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0008] Ajuste nuevo post-vaciado → 69
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0008] Cada ubicación tiene su cantidad individual
+       N5/N5F28 (esperado 39, obtenido 0)
+    ❌ [CD0009] AcumuladoStockUbicacion = 115
+       AcumStockUbic R/R1 (esperado 115, obtenido 0)
+    ❌ [CD0009] Ajuste edición → 0 (vaciado explícito)
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [CD0009] Ajuste nuevo post-vaciado → 190
+       409 — Ese artículo/variante ya existe. Edítalo manualmente desde el listado.
+    ❌ [TBH0006] variantes-contexto devuelve tallas/colores
+       404
+    ❌ [TBH0006] AcumStockUbic variante C=A/T=100 = 57
+       Variante C=A/T=100 (esperado 57, obtenido 0)
+    ❌ [TBH0006] AcumuladoStock delta variante correcto
+       Delta AcumStock N1 (esperado 57, obtenido 0)
+    ❌ [TBH0006] C=A/T=100 Traspaso N1A284→N1A183 (23 ud)
+       Stock variante insuficiente: 0 < 23
+    ❌ [TBH0006] C=A/T=100: origen-23, destino+23, acum sin cambio
+       Origen C=A/T=100 (esperado -23, obtenido 0)
+    ❌ [TBH0006] variantes-contexto devuelve tallas/colores
+       404
+    ❌ [TBH0006] AcumStockUbic variante C=A/T=90 = 84
+       Variante C=A/T=90 (esperado 84, obtenido 0)
+    ❌ [TBH0006] AcumuladoStock delta variante correcto
+       Delta AcumStock N1 (esperado 84, obtenido 0)
+    ❌ [TBH0006] C=A/T=90 Traspaso N1A284→N1A244 (29 ud)
+       Stock variante insuficiente: 0 < 29
+    ❌ [TBH0006] C=A/T=90: origen-29, destino+29, acum sin cambio
+       Origen C=A/T=90 (esperado -29, obtenido 0)
+    ❌ [TBH0006] variantes-contexto devuelve tallas/colores
+       404
+    ❌ [TBH0006] AcumStockUbic variante C=A/T=95 = 94
+       Variante C=A/T=95 (esperado 94, obtenido 0)
+    ❌ [TBH0006] AcumuladoStock delta variante correcto
+       Delta AcumStock PK (esperado 94, obtenido 0)
+    ❌ [TBH0006] C=A/T=95 Traspaso PKA263→PKA139 (39 ud)
+       Stock variante insuficiente: 0 < 39
+    ❌ [TBH0006] C=A/T=95: origen-39, destino+39, acum sin cambio
+       Origen C=A/T=95 (esperado -39, obtenido 0)
+    ❌ [TBH0006] variantes-contexto devuelve tallas/colores
+       404
+    ❌ [TBH0006] AcumStockUbic variante C=AC/T=100 = 63
+       Variante C=AC/T=100 (esperado 63, obtenido 0)
+    ❌ [TBH0006] AcumuladoStock delta variante correcto
+       Delta AcumStock N1 (esperado 63, obtenido 0)
+    ❌ [TBH0006] C=AC/T=100 Traspaso N1A284→N1A185 (11 ud)
+       Stock variante insuficiente: 0 < 11
+    ❌ [TBH0006] C=AC/T=100: origen-11, destino+11, acum sin cambio
+       Origen C=AC/T=100 (esperado -11, obtenido 0)
+    ❌ [TBH0006] variantes-contexto devuelve tallas/colores
+       404
+    ❌ [TBH0006] AcumStockUbic variante C=AC/T=90 = 152
+       Variante C=AC/T=90 (esperado 152, obtenido 0)
+    ❌ [TBH0006] AcumuladoStock delta variante correcto
+       Delta AcumStock PK (esperado 152, obtenido 0)
+    ❌ [TBH0006] C=AC/T=90 Traspaso PKA263→PKA367 (17 ud)
+       Stock variante insuficiente: 0 < 17
+    ❌ [TBH0006] C=AC/T=90: origen-17, destino+17, acum sin cambio
+       Origen C=AC/T=90 (esperado -17, obtenido 0)
+    ❌ [TBH0006] variantes-contexto devuelve tallas/colores
+       404
+    ❌ [TBH0006] AcumStockUbic variante C=AC/T=95 = 94
+       Variante C=AC/T=95 (esperado 94, obtenido 0)
+    ❌ [TBH0006] AcumuladoStock delta variante correcto
+       Delta AcumStock PK (esperado 94, obtenido 0)
+    ❌ [TBH0006] C=AC/T=95 Traspaso PKA263→PKA31 (43 ud)
+       Stock variante insuficiente: 0 < 43
+    ❌ [TBH0006] C=AC/T=95: origen-43, destino+43, acum sin cambio
+       Origen C=AC/T=95 (esperado -43, obtenido 0)
+    ❌ [003] variantes-contexto devuelve tallas/colores
+       404
+    ❌ [003] AcumStockUbic variante C=A/T=38 = 153
+       Variante C=A/T=38 (esperado 153, obtenido 0)
+    ❌ [003] AcumuladoStock delta variante correcto
+       Delta AcumStock N5 (esperado 153, obtenido 0)
+    ❌ [003] C=A/T=38 Traspaso N5F10→N5A46 (69 ud)
+       Stock variante insuficiente: 0 < 69
+    ❌ [003] C=A/T=38: origen-69, destino+69, acum sin cambio
+       Origen C=A/T=38 (esperado -69, obtenido 0)
+    ❌ [003] variantes-contexto devuelve tallas/colores
+       404
+    ❌ [003] AcumStockUbic variante C=A/T=40 = 127
+       Variante C=A/T=40 (esperado 127, obtenido 0)
+    ❌ [003] AcumuladoStock delta variante correcto
+       Delta AcumStock N5 (esperado 127, obtenido 0)
+    ❌ [003] C=A/T=40 Traspaso N5F10→N5A35 (3 ud)
+       Stock variante insuficiente: 0 < 3
+    ❌ [003] C=A/T=40: origen-3, destino+3, acum sin cambio
+       Origen C=A/T=40 (esperado -3, obtenido 0)
+    ❌ [003] variantes-contexto devuelve tallas/colores
+       404
+    ❌ [003] AcumStockUbic variante C=A/T=42 = 93
+       Variante C=A/T=42 (esperado 93, obtenido 0)
+    ❌ [003] AcumuladoStock delta variante correcto
+       Delta AcumStock N5 (esperado 93, obtenido 0)
+    ❌ [003] C=A/T=42 Traspaso N5F10→N5D5 (25 ud)
+       Stock variante insuficiente: 0 < 25
+    ❌ [003] C=A/T=42: origen-25, destino+25, acum sin cambio
+       Origen C=A/T=42 (esperado -25, obtenido 0)
+    ❌ [003] variantes-contexto devuelve tallas/colores
+       404
+    ❌ [003] AcumStockUbic variante C=N/T=38 = 72
+       Variante C=N/T=38 (esperado 72, obtenido 0)
+    ❌ [003] AcumuladoStock delta variante correcto
+       Delta AcumStock N5 (esperado 72, obtenido 0)
+    ❌ [003] C=N/T=38 Traspaso N5F10→N5X50 (34 ud)
+       Stock variante insuficiente: 0 < 34
+    ❌ [003] C=N/T=38: origen-34, destino+34, acum sin cambio
+       Origen C=N/T=38 (esperado -34, obtenido 0)
+    ❌ [003] variantes-contexto devuelve tallas/colores
+       404
+    ❌ [003] AcumStockUbic variante C=N/T=40 = 96
+       Variante C=N/T=40 (esperado 96, obtenido 0)
+    ❌ [003] AcumuladoStock delta variante correcto
+       Delta AcumStock N5 (esperado 96, obtenido 0)
+    ❌ [003] C=N/T=40 Traspaso N5F10→N5C1 (30 ud)
+       Stock variante insuficiente: 0 < 30
+    ❌ [003] C=N/T=40: origen-30, destino+30, acum sin cambio
+       Origen C=N/T=40 (esperado -30, obtenido 0)
+    ❌ [TBH0006] Cada variante tiene saldo independiente
+       C=A/T=100 tiene saldo 0
+    ❌ [TBH0006] Ajustar una variante no altera las otras
+       Variante modificada (esperado 14, obtenido 0)
+    ❌ [CD0001] PKA343=0, PKA383=81
+       PKA383 (esperado 81, obtenido 0)
+    ❌ [CD0001] Delta AcumStock y AcumStockUbicacion son simétricos
+       Delta AcumStockUbicacion tras +5 (esperado 5, obtenido 0)
+    ❌ [CD0002] Delta AcumStock y AcumStockUbicacion son simétricos
+       Delta AcumStockUbicacion tras +5 (esperado 5, obtenido 0)
+    ❌ [CD0003] Delta AcumStock y AcumStockUbicacion son simétricos
+       Delta AcumStockUbicacion tras +5 (esperado 5, obtenido 0)
+    ❌ [CD0004] Delta AcumStock y AcumStockUbicacion son simétricos
+       Delta AcumStockUbicacion tras +5 (esperado 5, obtenido 0)
+    ❌ [TBH0006] Delta AcumStock y AcumStockUbicacion son simétricos
+       Delta AcumStockUbicacion tras +5 (esperado 5, obtenido 0)
+    ❌ [52323X203] Delta AcumStock y AcumStockUbicacion son simétricos
+       Delta AcumStockUbicacion tras +5 (esperado 5, obtenido 0)
+    ❌ Consistencia tras 3 ajustes consecutivos
+       Saldo final (esperado 72, obtenido 0)
+

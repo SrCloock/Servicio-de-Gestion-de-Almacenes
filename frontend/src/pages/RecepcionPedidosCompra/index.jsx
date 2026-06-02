@@ -27,22 +27,24 @@ import {
   calcularPorcentajeRecepcion
 } from './utils';
 import '../../styles/RecepcionPedidosCompra.css';
+import { Paper, Stack, Typography, TextField, Button, Alert } from '@mui/material';
 
 const RecepcionPedidosCompra = () => {
   const permissions = usePermissions();
   const userData = JSON.parse(localStorage.getItem('user'));
   const user = userData || {};
 
-  const canViewInventory = permissions.canViewInventory;
-  const canReceivePurchaseOrders = permissions.canViewInventory || permissions.isAdmin || permissions.isAdvancedUser;
+  // FIX: usar canViewReceiving (StatusVerRecepcionMercancia) en lugar de canViewInventory
+  const { canViewReceiving } = permissions;
 
   // Estados de UI locales (expansiones)
   const [proveedoresExpandidos, setProveedoresExpandidos] = useState({});
   const [pedidosExpandidos, setPedidosExpandidos] = useState({});
   const [lineasExpandidas, setLineasExpandidas] = useState({});
   const [mostrarFiltros, setMostrarFiltros] = useState(false);
+  
+  const [pedidosDatos, setPedidosDatos] = useState({});
 
-  // Hook de pedidos
   const {
     pedidosAgrupados,
     detallesPedidos,
@@ -59,7 +61,22 @@ const RecepcionPedidosCompra = () => {
     cargarDetallesPedido
   } = usePedidosCompra(user);
 
-  // Hook de recepción (modal)
+  const guardarDatosPedido = (clavePedido, suAlbaranNo, fechaSuAlbaran) => {
+    if (!suAlbaranNo || !fechaSuAlbaran) {
+      setError('Debe completar el Nº de Albarán del Proveedor y la Fecha para este pedido.');
+      return;
+    }
+    setPedidosDatos(prev => ({
+      ...prev,
+      [clavePedido]: { suAlbaranNo, fechaSuAlbaran, fijado: true }
+    }));
+    setSuccess(`Datos guardados para el pedido ${clavePedido}`);
+  };
+
+  const obtenerDatosPedido = (clavePedido) => {
+    return pedidosDatos[clavePedido] || null;
+  };
+
   const {
     modalRecepcion,
     lineaARecepcionar,
@@ -87,7 +104,6 @@ const RecepcionPedidosCompra = () => {
     setSuccess
   });
 
-  // Hook de albarán
   const {
     modalGenerarAlbaran,
     pedidoAAlbaran,
@@ -96,7 +112,6 @@ const RecepcionPedidosCompra = () => {
     importeTotalAlbaran,
     loadingAlbaran,
     prepararGenerarAlbaran,
-    prepararGenerarAlbaranPorProveedor,
     generarAlbaran,
     cerrarModalAlbaran
   } = useAlbaranModal({
@@ -109,7 +124,6 @@ const RecepcionPedidosCompra = () => {
     setSuccess
   });
 
-  // Hook de finalizar pedido
   const {
     modalFinalizarPedido,
     pedidoAFinalizar,
@@ -125,7 +139,6 @@ const RecepcionPedidosCompra = () => {
     setSuccess
   });
 
-  // Funciones de navegación y filtros
   const aplicarFiltros = () => {
     setPagination(prev => ({ ...prev, page: 1 }));
     cargarPedidos(1, true);
@@ -149,7 +162,6 @@ const RecepcionPedidosCompra = () => {
     cargarPedidos(nuevaPagina, true);
   };
 
-  // Handlers de expansión
   const toggleProveedorExpandido = (claveProveedor) => {
     setProveedoresExpandidos(prev => ({
       ...prev,
@@ -165,14 +177,15 @@ const RecepcionPedidosCompra = () => {
     }));
   };
 
-  // Efecto inicial
+  // FIX: guard correcto — solo cargar si tiene permiso de recepción
   useEffect(() => {
-    if (user && user.UsuarioLogicNet && canViewInventory) {
+    if (user && user.UsuarioLogicNet && canViewReceiving) {
       cargarPedidos(1, false);
     }
   }, []);
 
-  if (!canViewInventory || !canReceivePurchaseOrders) {
+  // FIX: guard de acceso con el permiso correcto
+  if (!canViewReceiving) {
     return (
       <div className="RPC-container">
         <RecepcionStateView
@@ -234,7 +247,6 @@ const RecepcionPedidosCompra = () => {
                 expandido={proveedorExpandido}
                 onToggle={() => toggleProveedorExpandido(claveProveedor)}
                 loading={loading}
-                onGenerarAlbaran={() => prepararGenerarAlbaranPorProveedor(claveProveedor, pedidosAgrupados)}
               >
                 <div className={`RPC-pedidos-container ${proveedorExpandido ? 'visible' : 'hidden'}`}>
                   {grupo.pedidos.map(pedido => {
@@ -242,6 +254,30 @@ const RecepcionPedidosCompra = () => {
                     const pedidoExpandido = pedidosExpandidos[clavePedido] || false;
                     const detalles = detallesPedidos[clavePedido];
                     const tieneUnidadesRecibidas = parseFloat(pedido.TotalUnidadesRecibidas) > 0;
+                    const datosPedido = obtenerDatosPedido(clavePedido);
+                    const datosFijados = datosPedido && datosPedido.fijado;
+
+                    const handleAbrirModalRecepcion = (linea, clavePedido, variante = null, talla = null) => {
+                      if (!datosFijados) {
+                        setError('Debe guardar los datos del albarán del proveedor para este pedido antes de recepcionar.');
+                        return;
+                      }
+                      abrirModalRecepcion(linea, clavePedido, variante, talla, datosPedido);
+                    };
+
+                    const handlePrepararGenerarAlbaran = async (pedido) => {
+                      if (!datosFijados) {
+                        setError('Debe guardar los datos del albarán del proveedor para este pedido antes de generar albarán.');
+                        return;
+                      }
+                      const clave = `${pedido.EjercicioPedido}_${pedido.SeriePedido || '0'}_${pedido.NumeroPedido}`;
+                      let detalles = detallesPedidos[clave];
+                      if (!detalles) {
+                        detalles = await cargarDetallesPedido(pedido.EjercicioPedido, pedido.SeriePedido || '0', pedido.NumeroPedido, false);
+                        if (!detalles) return;
+                      }
+                      await prepararGenerarAlbaran(pedido, datosPedido);
+                    };
 
                     return (
                       <PedidoCompraCard
@@ -262,8 +298,12 @@ const RecepcionPedidosCompra = () => {
                             setPedidosExpandidos(prev => ({ ...prev, [clavePedido]: !prev[clavePedido] }));
                           }
                         }}
-                        onGenerarAlbaran={() => prepararGenerarAlbaran(pedido)}
+                        onGenerarAlbaran={() => handlePrepararGenerarAlbaran(pedido)}
                         onFinalizar={() => prepararFinalizarPedido(pedido)}
+                        datosPedido={datosPedido}
+                        onGuardarDatos={(suAlbaranNo, fechaSuAlbaran) => guardarDatosPedido(clavePedido, suAlbaranNo, fechaSuAlbaran)}
+                        disabledAlbaran={!datosFijados}
+                        disabledFinalizar={!datosFijados}
                       >
                         {detalles && (
                           <RecepcionLineasTable title={`Líneas del Pedido (${detalles.lineas.length})`}>
@@ -319,8 +359,9 @@ const RecepcionPedidosCompra = () => {
                                           {pendientes > 0 ? (
                                             <button
                                               className="RPC-btn RPC-btn-primary RPC-btn-xs"
-                                              onClick={() => abrirModalRecepcion(linea, clavePedido)}
-                                              disabled={loading}
+                                              onClick={() => handleAbrirModalRecepcion(linea, clavePedido)}
+                                              disabled={loading || !datosFijados}
+                                              title={!datosFijados ? "Debe guardar los datos del proveedor primero" : ""}
                                             >
                                               + Recepcionar
                                             </button>
@@ -385,8 +426,8 @@ const RecepcionPedidosCompra = () => {
                                                                   <span className="RPC-talla-cantidad">{parseFloat(talla.unidades).toLocaleString()}</span>
                                                                   <button
                                                                     className="RPC-btn RPC-btn-primary RPC-btn-xxs"
-                                                                    onClick={() => abrirModalRecepcion(linea, clavePedido, variante, talla)}
-                                                                    disabled={loading || parseFloat(talla.unidades) <= 0}
+                                                                    onClick={() => handleAbrirModalRecepcion(linea, clavePedido, variante, talla)}
+                                                                    disabled={loading || !datosFijados}
                                                                   >
                                                                     +
                                                                   </button>
@@ -397,8 +438,8 @@ const RecepcionPedidosCompra = () => {
                                                           <div className="RPC-text-center">
                                                             <button
                                                               className="RPC-btn RPC-btn-primary RPC-btn-xs"
-                                                              onClick={() => abrirModalRecepcion(linea, clavePedido, variante, null)}
-                                                              disabled={loading || parseFloat(variante.unidadesTotal) <= 0}
+                                                              onClick={() => handleAbrirModalRecepcion(linea, clavePedido, variante, null)}
+                                                              disabled={loading || !datosFijados}
                                                             >
                                                               + Recepcionar
                                                             </button>
@@ -408,8 +449,8 @@ const RecepcionPedidosCompra = () => {
                                                       <td className="RPC-text-center">
                                                         <button
                                                           className="RPC-btn RPC-btn-primary RPC-btn-xs"
-                                                          onClick={() => abrirModalRecepcion(linea, clavePedido, variante, null)}
-                                                          disabled={loading || parseFloat(variante.unidadesTotal) <= 0}
+                                                          onClick={() => handleAbrirModalRecepcion(linea, clavePedido, variante, null)}
+                                                          disabled={loading || !datosFijados}
                                                         >
                                                           + Todo
                                                         </button>
@@ -450,11 +491,6 @@ const RecepcionPedidosCompra = () => {
         onNext={() => cambiarPagina(pagination.page + 1)}
       />
 
-      {/* ============================================
-         MODALES (código completo extraído del original)
-         ============================================ */}
-
-      {/* Modal para recepción de línea */}
       {modalRecepcion && lineaARecepcionar && (
         <RecepcionDialog
           open={modalRecepcion}
@@ -481,7 +517,6 @@ const RecepcionPedidosCompra = () => {
             </>
           }
         >
-          {/* Información de variante específica (si aplica) */}
           {lineaARecepcionar.variante && (
             <div className="RPC-modal-section">
               <h4>Variante específica a recepcionar</h4>
@@ -580,7 +615,6 @@ const RecepcionPedidosCompra = () => {
             </div>
           </div>
           
-          {/* Sección de variantes (solo para recepción de línea completa) */}
           {!lineaARecepcionar.variante && variantesDistribucion.length > 0 && (
             <div className="RPC-modal-section">
               <h4>Distribución por Variantes</h4>
@@ -707,7 +741,6 @@ const RecepcionPedidosCompra = () => {
         </RecepcionDialog>
       )}
 
-      {/* Modal para generar albarán */}
       {modalGenerarAlbaran && pedidoAAlbaran && (
         <GenerarAlbaranDialog
           open={modalGenerarAlbaran}
@@ -735,19 +768,11 @@ const RecepcionPedidosCompra = () => {
             <div className="modal-alert-icon">ℹ️</div>
             <div className="modal-alert-content">
               <h5>Información del albarán NO ACUMULATIVO</h5>
-              {pedidoAAlbaran.tipo === 'PROVEEDOR' ? (
-                <p>
-                  <strong>Proveedor:</strong> {pedidoAAlbaran.nombreProveedor} ({pedidoAAlbaran.codigoProveedor})<br/>
-                  <strong>Pedidos incluidos:</strong> {pedidoAAlbaran.pedidos.length} pedidos<br/>
-                  <strong>Tipo:</strong> Solo unidades no albaranadas previamente
-                </p>
-              ) : (
-                <p>
-                  <strong>Pedido:</strong> #{pedidoAAlbaran.NumeroPedido} - {pedidoAAlbaran.NombreProveedor}<br/>
-                  <strong>Ejercicio:</strong> {pedidoAAlbaran.EjercicioPedido}<br/>
-                  <strong>Tipo:</strong> Solo unidades no albaranadas previamente
-                </p>
-              )}
+              <p>
+                <strong>Pedido:</strong> #{pedidoAAlbaran.NumeroPedido} - {pedidoAAlbaran.NombreProveedor}<br/>
+                <strong>Ejercicio:</strong> {pedidoAAlbaran.EjercicioPedido}<br/>
+                <strong>Tipo:</strong> Solo unidades no albaranadas previamente
+              </p>
             </div>
           </div>
           
@@ -773,14 +798,12 @@ const RecepcionPedidosCompra = () => {
                   })}
                 </span>
               </div>
-              {pedidoAAlbaran.tipo === 'PEDIDO' && (
-                <div className="RPC-info-item">
-                  <span className="RPC-info-label">Unidades pendientes:</span>
-                  <span className="RPC-info-value RPC-text-warning">
-                    {parseFloat(pedidoAAlbaran.TotalUnidadesPendientes).toLocaleString()}
-                  </span>
-                </div>
-              )}
+              <div className="RPC-info-item">
+                <span className="RPC-info-label">Unidades pendientes:</span>
+                <span className="RPC-info-value RPC-text-warning">
+                  {parseFloat(pedidoAAlbaran.TotalUnidadesPendientes).toLocaleString()}
+                </span>
+              </div>
             </div>
           </div>
           
@@ -793,7 +816,6 @@ const RecepcionPedidosCompra = () => {
                     <tr>
                       <th>Artículo</th>
                       <th>Descripción</th>
-                      {pedidoAAlbaran.tipo === 'PROVEEDOR' && <th>Pedido</th>}
                       <th className="RPC-text-right">Pedidas</th>
                       <th className="RPC-text-right">Recibidas</th>
                       <th className="RPC-text-right">%</th>
@@ -809,9 +831,6 @@ const RecepcionPedidosCompra = () => {
                         <tr key={index}>
                           <td>{linea.CodigoArticulo}</td>
                           <td>{linea.DescripcionArticulo}</td>
-                          {pedidoAAlbaran.tipo === 'PROVEEDOR' && (
-                            <td>#{linea.numeroPedido || linea.NumeroPedido}</td>
-                          )}
                           <td className="RPC-text-right">{parseFloat(linea.UnidadesPedidas).toLocaleString()}</td>
                           <td className="RPC-text-right RPC-text-success">
                             {parseFloat(linea.UnidadesRecibidas).toLocaleString()}
@@ -826,7 +845,7 @@ const RecepcionPedidosCompra = () => {
                     })}
                     {lineasConRecepcion.length > 10 && (
                       <tr>
-                        <td colSpan={pedidoAAlbaran.tipo === 'PROVEEDOR' ? 6 : 5} className="RPC-text-center">
+                        <td colSpan={5} className="RPC-text-center">
                           <em>... y {lineasConRecepcion.length - 10} líneas más</em>
                         </td>
                       </tr>
@@ -844,16 +863,10 @@ const RecepcionPedidosCompra = () => {
               <p>
                 El albarán se generará automáticamente con un número único y será <strong>cerrado</strong>.
                 <strong> SOLO INCLUIRÁ las unidades que no hayan sido albaranadas previamente.</strong>
-                {pedidoAAlbaran.tipo === 'PROVEEDOR' ? (
-                  <span> El sistema calculará automáticamente las unidades pendientes de cada pedido del proveedor {pedidoAAlbaran.nombreProveedor}.</span>
+                {parseFloat(pedidoAAlbaran.TotalUnidadesPendientes) > 0 ? (
+                  <span> El pedido seguirá pendiente porque hay unidades sin recepcionar.</span>
                 ) : (
-                  <span>
-                    {parseFloat(pedidoAAlbaran.TotalUnidadesPendientes) > 0 ? (
-                      <span> El pedido seguirá pendiente porque hay unidades sin recepcionar.</span>
-                    ) : (
-                      <span> El pedido se marcará como <strong>servido</strong> automáticamente.</span>
-                    )}
-                  </span>
+                  <span> El pedido se marcará como <strong>servido</strong> automáticamente.</span>
                 )}
               </p>
             </div>
@@ -861,7 +874,6 @@ const RecepcionPedidosCompra = () => {
         </GenerarAlbaranDialog>
       )}
 
-      {/* Modal para finalizar pedido */}
       {modalFinalizarPedido && pedidoAFinalizar && (
         <FinalizarPedidoDialog
           open={modalFinalizarPedido}

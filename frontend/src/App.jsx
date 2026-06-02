@@ -1,4 +1,4 @@
-﻿﻿﻿﻿import React from 'react';
+﻿﻿import React from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Box, Container } from '@mui/material';
 import Navbar from './components/Navbar';
@@ -10,7 +10,7 @@ import AsignarPedidosScreen from './pages/AsignarPedidosScreen';
 import DesignarRutasScreen from './pages/DesignarRutasScreen';
 import AlbaranesAsignadosScreen from './pages/AlbaranesAsignadosScreen';
 import TraspasosPage from './pages/TraspasosScreen/TraspasosScreen';
-import InventarioPage from './pages/InventarioPage';
+import InventarioPage from './pages/inventario/InventarioPage';
 import GestionDocumentalScreen from './pages/GestionDocumentalScreen';
 import RecepcionPedidosCompra from './pages/RecepcionPedidosCompra/index';
 import { PermissionsProvider, ProtectedRouteWithPermission } from './PermissionsManager';
@@ -18,7 +18,6 @@ import { PermissionsProvider, ProtectedRouteWithPermission } from './Permissions
 const ProtectedRoute = ({ children }) => {
   const location = useLocation();
   const userData = JSON.parse(localStorage.getItem('user'));
-  
   if (!userData) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
@@ -33,8 +32,7 @@ function App() {
   return (
     <PermissionsProvider user={userData}>
       {showNavbar && <Navbar />}
-      
-      {/* Contenido principal con padding superior para compensar el AppBar fijo */}
+
       <Box
         component="main"
         sx={{
@@ -51,6 +49,7 @@ function App() {
             <Route path="/" element={<Navigate to="/login" />} />
             <Route path="/login" element={<LoginPage />} />
 
+            {/* Pedidos de venta — StatusTodosLosPedidos */}
             <Route path="/PedidosScreen" element={
               <ProtectedRoute>
                 <ProtectedRouteWithPermission requiredPermission="canViewPedidosScreen">
@@ -59,62 +58,52 @@ function App() {
               </ProtectedRoute>
             } />
 
-            <Route path="/designar-rutas" element={
-              <ProtectedRoute>
-                <ProtectedRouteWithPermission requiredPermission="canAssignRoutes">
-                  <DesignarRutasScreen />
-                </ProtectedRouteWithPermission>
-              </ProtectedRoute>
-            } />
-
-            <Route path="/rutas" element={
-              <ProtectedRoute>
-                <ProtectedRouteWithPermission requiredPermission="canViewWaybills">
-                  <GestionRutas />
-                </ProtectedRouteWithPermission>
-              </ProtectedRoute>
-            } />
-
-            <Route path="/detalle-albaran" element={
-              <ProtectedRoute>
-                <ProtectedRouteWithPermission requiredPermission="canViewWaybills">
-                  <DetalleAlbaran />
-                </ProtectedRouteWithPermission>
-              </ProtectedRoute>
-            } />
-
+            {/* Asignación de pedidos — StatusVerPedidosAsignados */}
             <Route path="/pedidos-asignados" element={
               <ProtectedRoute>
-                <ProtectedRouteWithPermission requiredPermission="canViewAssignedOrders">
+                <ProtectedRouteWithPermission requiredPermission="canViewAsignacionPedidos">
                   <AsignarPedidosScreen />
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
 
+            {/* Albaranes / Gestión de rutas — StatusDesignarRutas */}
+            <Route path="/rutas" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewGestionRutas">
+                  <GestionRutas />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+
+            {/* Detalle albarán — mismo permiso que rutas */}
+            <Route path="/detalle-albaran" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewGestionRutas">
+                  <DetalleAlbaran />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+
+            {/* Asignar albaranes — StatusVerAlbaranesAsignados */}
             <Route path="/albaranes-asignados" element={
               <ProtectedRoute>
-                <ProtectedRouteWithPermission requiredPermission="canViewWaybills">
+                <ProtectedRouteWithPermission requiredPermission="canViewAlbaranesAsignadosScreen">
                   <AlbaranesAsignadosScreen />
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
 
-            <Route path="/traspasos" element={
+            {/* Designar rutas — StatusVerAlbaranesAsignados (misma pantalla de asignación) */}
+            <Route path="/designar-rutas" element={
               <ProtectedRoute>
-                <ProtectedRouteWithPermission requiredPermission="canViewTransfers">
-                  <TraspasosPage />
+                <ProtectedRouteWithPermission requiredPermission="canViewAlbaranesAsignadosScreen">
+                  <DesignarRutasScreen />
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>
             } />
 
-            <Route path="/inventario" element={
-              <ProtectedRoute>
-                <ProtectedRouteWithPermission requiredPermission="canViewInventory">
-                  <InventarioPage />
-                </ProtectedRouteWithPermission>
-              </ProtectedRoute>
-            } />
-
+            {/* Gestión documental — StatusVerAlbaranesAsignados */}
             <Route path="/gestion-documental" element={
               <ProtectedRoute>
                 <ProtectedRouteWithPermission requiredPermission="canViewDocumentManagement">
@@ -123,9 +112,28 @@ function App() {
               </ProtectedRoute>
             } />
 
-            <Route path="/recepcion-pedidos-compra" element={
+            {/* Traspasos — StatusVerTraspasosAlmacen */}
+            <Route path="/traspasos" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewTransfers">
+                  <TraspasosPage />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+
+            {/* Inventario — StatusVerInventarios */}
+            <Route path="/inventario" element={
               <ProtectedRoute>
                 <ProtectedRouteWithPermission requiredPermission="canViewInventory">
+                  <InventarioPage />
+                </ProtectedRouteWithPermission>
+              </ProtectedRoute>
+            } />
+
+            {/* Recepción de mercancía — StatusVerRecepcionMercancia */}
+            <Route path="/recepcion-pedidos-compra" element={
+              <ProtectedRoute>
+                <ProtectedRouteWithPermission requiredPermission="canViewReceiving">
                   <RecepcionPedidosCompra />
                 </ProtectedRouteWithPermission>
               </ProtectedRoute>

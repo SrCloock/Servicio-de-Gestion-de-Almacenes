@@ -78,10 +78,23 @@ export const UbicacionesSelect = ({
   ubicacionesCargadas,
   ubicacionesConStock,
   formatearInfoStock,
-  zonaDescargaClass = '',
+  sinStock = false,
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
+  // FIX: Si no hay stock, mostrar alerta roja en lugar del select
+  if (ubicacionesCargadas && sinStock) {
+    return (
+      <Alert
+        severity="error"
+        icon={<FaExclamationTriangle />}
+        sx={{ py: 0.5, fontSize: '0.78rem' }}
+      >
+        Sin stock disponible
+      </Alert>
+    );
+  }
 
   return (
     <FormControl
@@ -98,13 +111,12 @@ export const UbicacionesSelect = ({
           '& .MuiOutlinedInput-notchedOutline': { borderColor: colors.secondary },
           '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: colors.accent },
           '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: colors.primary },
-          ...(zonaDescargaClass === 'ps-zona-descarga' && { backgroundColor: `${colors.success}10` }),
         }}
       >
         {!ubicacionesCargadas ? (
           <MenuItem value="">Cargando ubicaciones...</MenuItem>
         ) : ubicacionesConStock.length === 0 ? (
-          <MenuItem value="">Sin ubicaciones disponibles</MenuItem>
+          <MenuItem value="" disabled>Sin ubicaciones disponibles</MenuItem>
         ) : (
           ubicacionesConStock.map((ubicacion, locIndex) => (
             <MenuItem
@@ -139,7 +151,6 @@ export const ExpedicionLineaPanel = ({
   value,
   onChange,
   unidad,
-  zonaDescarga,
   canPerformActions,
   isProcesando,
   isUpdatingExpedicion,
@@ -152,12 +163,15 @@ export const ExpedicionLineaPanel = ({
   showButton = true,
   isValid = true,
   helperText = '',
+  sinStock = false,
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const direction = mobile || isMobile ? 'column' : 'row';
 
+  // FIX: Si no hay stock, deshabilitar todo el panel
   const disabledButton =
+    sinStock ||
     !canPerformActions ||
     !isValid ||
     parseFloat(value) <= 0 ||
@@ -182,7 +196,7 @@ export const ExpedicionLineaPanel = ({
               </Typography>
             ),
           }}
-          disabled={!canPerformActions || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
+          disabled={sinStock || !canPerformActions || isProcesando || isUpdatingExpedicion || !ubicacionesCargadas}
           error={!isValid && helperText !== ''}
           helperText={helperText}
           sx={{
@@ -191,7 +205,6 @@ export const ExpedicionLineaPanel = ({
               '&:hover fieldset': { borderColor: colors.accent },
               '&.Mui-focused fieldset': { borderColor: colors.primary },
             },
-            ...(zonaDescarga && { '& .MuiInputBase-root': { backgroundColor: `${colors.success}10` } }),
           }}
         />
       )}
@@ -217,6 +230,7 @@ export const ExpedicionLineaPanel = ({
 
 // ----------------------
 // LineaPedido (responsive: escritorio tabla, móvil tarjeta)
+// FIX PRINCIPAL: Elimina Zona descarga y SIN-UBICACION, alerta roja si no hay stock real
 // ----------------------
 export const LineaPedido = React.memo(({
   linea,
@@ -226,6 +240,7 @@ export const LineaPedido = React.memo(({
   ubicaciones,
   ubicacionesCargadas,
   iniciarEscaneo,
+  onExpedirDirecto, // FIX: nuevo callback para expedir desde ClickCounterModal
   abrirModalDetalles,
   canPerformActions,
   isScanning,
@@ -234,39 +249,49 @@ export const LineaPedido = React.memo(({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [isUpdatingExpedicion, setIsUpdatingExpedicion] = useState(false);
+  const [showClickCounter, setShowClickCounter] = useState(false);
+  // FIX BUG CANTIDAD: ref para saber si la ubicación ya fue inicializada para esta línea.
+  // Evita que el useEffect de sincronización se dispare al cambiar la cantidad.
+  const ubicacionInicializadaRef = useRef(false);
 
+  // FIX: Solo ubicaciones reales con stock — sin Zona descarga, sin SIN-UBICACION
   const ubicacionesConStock = useMemo(() => {
     if (!ubicacionesCargadas) return [];
     const ubicacionesArticulo = ubicaciones[linea.codigoArticulo] || [];
-    let ubicacionesConStockReal = ubicacionesArticulo.filter((ubi) => {
+
+    // Filtrar: solo reales, con stock > 0, unidad coincide, excluir explícitamente zona descarga y sin-ubicacion
+    const ubicacionesReales = ubicacionesArticulo.filter((ubi) => {
       const tieneStock = parseFloat(ubi.unidadSaldo) > 0;
       const unidadUbicacion = normalizarUnidad(ubi.unidadMedida);
       const unidadPedido = normalizarUnidad(linea.unidadPedido);
       const unidadBase = normalizarUnidad(linea.unidadBase);
       const unidadCoincide = unidadUbicacion === unidadPedido || unidadUbicacion === unidadBase;
-      const noEsZonaDescarga = ubi.ubicacion !== 'Zona descarga';
-      return tieneStock && unidadCoincide && noEsZonaDescarga;
+      // FIX: Excluir explícitamente zona descarga y sin-ubicacion
+      const esZonaDescarga = ubi.ubicacion === 'Zona descarga';
+      const esSinUbicacion = !ubi.ubicacion || ubi.ubicacion === 'SIN-UBICACION' || ubi.ubicacion.trim() === '';
+      return tieneStock && unidadCoincide && !esZonaDescarga && !esSinUbicacion;
     });
-    if (ubicacionesConStockReal.length === 0) {
-      ubicacionesConStockReal = [
-        {
-          codigoAlmacen: linea.codigoAlmacen || 'CEN',
-          ubicacion: 'Zona descarga',
-          partida: null,
-          unidadSaldo: Infinity,
-          unidadMedida: linea.unidadPedido || linea.unidadBase || 'ud',
-          codigoColor: '',
-          codigoTalla: '',
-          descripcionUbicacion: 'Stock disponible para expedición directa',
-        },
-      ];
-    }
-    return ubicacionesConStockReal.sort((a, b) => {
-      const stockA = a.unidadSaldo === Infinity ? 999999 : parseFloat(a.unidadSaldo);
-      const stockB = b.unidadSaldo === Infinity ? 999999 : parseFloat(b.unidadSaldo);
+
+    // Ordenar: la principal (primera en AcumuladoStockUbicacion suele tener más stock) primero
+    return ubicacionesReales.sort((a, b) => {
+      const stockA = parseFloat(a.unidadSaldo) || 0;
+      const stockB = parseFloat(b.unidadSaldo) || 0;
       return stockB - stockA;
     });
-  }, [ubicaciones, ubicacionesCargadas, linea.codigoArticulo, linea.unidadPedido, linea.codigoAlmacen, linea.unidadBase]);
+  }, [ubicaciones, ubicacionesCargadas, linea.codigoArticulo, linea.unidadPedido, linea.unidadBase]);
+
+  // FIX: solo bloquear expedición directa si hay variantes REALES con pendientes > 0
+  // linea.detalles puede existir pero con todas las tallas a 0 (artículo con grupoTalla sin desglose)
+  const tieneVariantesReales = useMemo(() => {
+    if (!linea.detalles || !Array.isArray(linea.detalles)) return false;
+    return linea.detalles.some((variante) =>
+      variante.tallas &&
+      Object.values(variante.tallas).some((t) => parseFloat(t.unidades) > 0)
+    );
+  }, [linea.detalles]);
+
+  // FIX: sinStock se usa para alerta roja y deshabilitar controles
+  const sinStock = ubicacionesCargadas && ubicacionesConStock.length === 0;
 
   const key = linea.movPosicionLinea;
   const expedicion = expediciones[key] || {
@@ -279,18 +304,20 @@ export const LineaPedido = React.memo(({
     cantidad: '0',
   };
 
-  // Sincronizar expedición si la ubicación actual ya no está disponible
+  // FIX BUG CANTIDAD: Este efecto SOLO se dispara cuando cambian las ubicaciones disponibles,
+  // NO cuando cambia la cantidad ni otros campos de expedicion.
+  // Caso 1: La ubicación aún no ha sido inicializada → asignar la primera disponible.
+  // Caso 2: Las ubicaciones cambiaron (p.ej. tras expedir) y la ubicación actual ya no tiene stock → reasignar.
+  // En ningún caso se debe disparar al escribir en el input de cantidad.
   useEffect(() => {
     if (ubicacionesConStock.length === 0 || isUpdatingExpedicion) return;
-    const ubicacionActual = ubicacionesConStock.find(
-      (ubi) =>
-        ubi.ubicacion === expedicion.ubicacion &&
-        ubi.codigoAlmacen === expedicion.almacen &&
-        (ubi.partida || '') === (expedicion.partida || '') &&
-        (ubi.codigoColor || '') === (expedicion.codigoColor || '') &&
-        (ubi.codigoTalla || '') === (expedicion.codigoTalla || '')
-    );
-    if (!ubicacionActual) {
+
+    // Leer el estado actual de expedicion a través de la ref para no añadirlo como dependencia
+    const expedicionActual = expediciones[key];
+
+    // Caso 1: No hay expedición inicializada aún para esta línea
+    if (!expedicionActual || !expedicionActual.ubicacion) {
+      if (ubicacionInicializadaRef.current) return; // Ya se inicializó antes, no volver a hacerlo
       setIsUpdatingExpedicion(true);
       const timeoutId = setTimeout(() => {
         const primera = ubicacionesConStock[0];
@@ -302,31 +329,45 @@ export const LineaPedido = React.memo(({
           handleExpedicionChange(key, 'codigoColor', primera.codigoColor || '');
           handleExpedicionChange(key, 'codigoTalla', primera.codigoTalla || '');
           const pendientes = parseFloat(linea.unidadesPendientes) || 0;
-          let nuevaCantidad = 0;
-          if (primera.ubicacion === 'Zona descarga') nuevaCantidad = pendientes;
-          else {
-            const stock = parseFloat(primera.unidadSaldo) || 0;
-            nuevaCantidad = Math.min(pendientes, stock);
-          }
-          handleExpedicionChange(key, 'cantidad', nuevaCantidad.toString());
+          const stock = parseFloat(primera.unidadSaldo) || 0;
+          handleExpedicionChange(key, 'cantidad', Math.min(pendientes, stock).toString());
+          ubicacionInicializadaRef.current = true;
         }
         setIsUpdatingExpedicion(false);
       }, 0);
       return () => clearTimeout(timeoutId);
     }
-  }, [
-    ubicacionesConStock,
-    expedicion.ubicacion,
-    expedicion.almacen,
-    expedicion.partida,
-    expedicion.codigoColor,
-    expedicion.codigoTalla,
-    handleExpedicionChange,
-    key,
-    linea.unidadesPendientes,
-    linea.unidadPedido,
-    isUpdatingExpedicion,
-  ]);
+
+    // Caso 2: Hay expedición pero la ubicación ya no existe en las disponibles (cambió el stock)
+    const ubicacionSigueDisponible = ubicacionesConStock.find(
+      (ubi) =>
+        ubi.ubicacion === expedicionActual.ubicacion &&
+        ubi.codigoAlmacen === expedicionActual.almacen &&
+        (ubi.partida || '') === (expedicionActual.partida || '') &&
+        (ubi.codigoColor || '') === (expedicionActual.codigoColor || '') &&
+        (ubi.codigoTalla || '') === (expedicionActual.codigoTalla || '')
+    );
+    if (!ubicacionSigueDisponible) {
+      setIsUpdatingExpedicion(true);
+      const timeoutId = setTimeout(() => {
+        const primera = ubicacionesConStock[0];
+        if (primera) {
+          handleExpedicionChange(key, 'ubicacion', primera.ubicacion);
+          handleExpedicionChange(key, 'almacen', primera.codigoAlmacen);
+          handleExpedicionChange(key, 'partida', primera.partida || '');
+          handleExpedicionChange(key, 'unidadMedida', primera.unidadMedida || linea.unidadPedido);
+          handleExpedicionChange(key, 'codigoColor', primera.codigoColor || '');
+          handleExpedicionChange(key, 'codigoTalla', primera.codigoTalla || '');
+          const pendientes = parseFloat(linea.unidadesPendientes) || 0;
+          const stock = parseFloat(primera.unidadSaldo) || 0;
+          handleExpedicionChange(key, 'cantidad', Math.min(pendientes, stock).toString());
+        }
+        setIsUpdatingExpedicion(false);
+      }, 0);
+      return () => clearTimeout(timeoutId);
+    }
+  // FIX: Solo depende de ubicacionesConStock — NO de expedicion.* para no dispararse al cambiar cantidad
+  }, [ubicacionesConStock]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const formatted = useMemo(() => {
     const pendientes = parseFloat(linea.unidadesPendientes) || 0;
@@ -361,13 +402,9 @@ export const LineaPedido = React.memo(({
       const valor = e.target.value;
       const seleccionada = ubicacionesConStock.find((ubi) => buildUbicacionOptionValue(ubi) === valor);
       if (!seleccionada) return;
-      let nuevaCantidad = 0;
       const pendientes = parseFloat(linea.unidadesPendientes) || 0;
-      if (seleccionada.ubicacion === 'Zona descarga') nuevaCantidad = pendientes;
-      else {
-        const stock = parseFloat(seleccionada.unidadSaldo) || 0;
-        nuevaCantidad = Math.min(pendientes, stock);
-      }
+      const stock = parseFloat(seleccionada.unidadSaldo) || 0;
+      const nuevaCantidad = Math.min(pendientes, stock);
       handleExpedicionChange(key, 'ubicacion', seleccionada.ubicacion);
       handleExpedicionChange(key, 'almacen', seleccionada.codigoAlmacen);
       handleExpedicionChange(key, 'partida', seleccionada.partida || '');
@@ -380,7 +417,6 @@ export const LineaPedido = React.memo(({
   );
 
   const formatearInfoStock = useCallback((ubicacion) => {
-    if (ubicacion.ubicacion === 'Zona descarga') return 'Stock disponible';
     const stock = parseFloat(ubicacion.unidadSaldo);
     if (isNaN(stock)) return 'Stock no disponible';
     return `Stock: ${formatearUnidad(stock, ubicacion.unidadMedida)}`;
@@ -400,23 +436,29 @@ export const LineaPedido = React.memo(({
   );
 
   const cantidadValidacion = useMemo(() => {
+    if (sinStock) return { isValid: false, helperText: 'Sin stock disponible', cantidad: 0 };
     const cantidadTexto = sanitizarCantidadEntera(expedicion.cantidad);
     const cantidad = parseInt(cantidadTexto, 10);
     const pendientes = parseInt(parseFloat(linea.unidadesPendientes) || 0, 10);
     if (!ubicacionSeleccionada) return { isValid: false, helperText: 'Seleccione una ubicación válida', cantidad: 0 };
     if (!cantidadTexto || isNaN(cantidad) || cantidad < 1) return { isValid: false, helperText: 'Cantidad mínima: 1', cantidad: 0 };
     if (cantidad > pendientes) return { isValid: false, helperText: 'Supera pendiente', cantidad };
-    if (ubicacionSeleccionada.ubicacion !== 'Zona descarga' && ubicacionSeleccionada.unidadSaldo !== Infinity) {
-      const stock = parseInt(parseFloat(ubicacionSeleccionada.unidadSaldo) || 0, 10);
-      if (cantidad > stock) return { isValid: false, helperText: 'Supera stock disponible', cantidad };
-    }
+    const stock = parseInt(parseFloat(ubicacionSeleccionada.unidadSaldo) || 0, 10);
+    if (cantidad > stock) return { isValid: false, helperText: 'Supera stock disponible', cantidad };
     return { isValid: true, helperText: '', cantidad };
-  }, [expedicion.cantidad, linea.unidadesPendientes, ubicacionSeleccionada]);
+  }, [expedicion.cantidad, linea.unidadesPendientes, ubicacionSeleccionada, sinStock]);
 
-  // Vista móvil (tarjeta) - CON GRID CORREGIDO
+  // Vista móvil (tarjeta)
   if (isMobile) {
     return (
-      <Card variant="outlined" sx={{ borderRadius: 2, borderLeft: `3px solid ${colors.accent}` }}>
+      <>
+        <Card
+          variant="outlined"
+          sx={{
+            borderRadius: 2,
+            borderLeft: `3px solid ${sinStock ? colors.danger : colors.accent}`,
+          }}
+        >
         <CardContent>
           <Stack spacing={1.5}>
             <Box>
@@ -427,7 +469,6 @@ export const LineaPedido = React.memo(({
               {linea.codigoAlternativo && <Typography variant="caption" color="text.secondary">{linea.codigoAlternativo}</Typography>}
             </Box>
 
-            {/* Grid corregido: size={{ xs: 6 }} en lugar de item xs={6} */}
             <Grid container spacing={1}>
               <Grid size={{ xs: 6 }}>
                 <Typography variant="caption" color="text.secondary">Pendiente:</Typography>
@@ -451,14 +492,130 @@ export const LineaPedido = React.memo(({
               ubicacionesCargadas={ubicacionesCargadas}
               ubicacionesConStock={ubicacionesConStock}
               formatearInfoStock={formatearInfoStock}
-              zonaDescargaClass={expedicion.ubicacion === 'Zona descarga' ? 'ps-zona-descarga' : ''}
+              sinStock={sinStock}
             />
 
+            {/* Si tiene variantes: solo mostrar botón de modal, no escanear/contar directo */}
+            {tieneVariantesReales ? (
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<FaInfoCircle />}
+                onClick={() => abrirModalDetalles(linea.detalles, linea, pedido)}
+                sx={{ bgcolor: colors.accent, '&:hover': { bgcolor: colors.primary } }}
+              >
+                Expedir por variantes
+              </Button>
+            ) : (
+              <>
+                {!sinStock && (
+                  <ExpedicionLineaPanel
+                    value={expedicion.cantidad}
+                    onChange={handleCambioCantidad}
+                    unidad={linea.unidadBase || 'ud'}
+                    canPerformActions={canPerformActions}
+                    isProcesando={isProcesando}
+                    isUpdatingExpedicion={isUpdatingExpedicion}
+                    ubicacionesCargadas={ubicacionesCargadas}
+                    isScanning={isScanning}
+                    onEscanear={() => {
+                      if (canPerformActions && cantidadValidacion.isValid) iniciarEscaneo(linea, pedido);
+                    }}
+                    cameraIcon={<FaCamera />}
+                    mobile
+                    isValid={cantidadValidacion.isValid}
+                    helperText={cantidadValidacion.helperText}
+                    sinStock={sinStock}
+                  />
+                )}
+                {!sinStock && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => setShowClickCounter(true)}
+                    disabled={!canPerformActions || isProcesando || !ubicacionesCargadas || !ubicacionSeleccionada}
+                    sx={{
+                      borderColor: colors.accent,
+                      color: colors.accent,
+                      '&:hover': { borderColor: colors.primary, color: colors.primary },
+                    }}
+                  >
+                    Contar unidades
+                  </Button>
+                )}
+              </>
+            )}
+          </Stack>
+        </CardContent>
+      </Card>
+
+      {/* ClickCounterModal */}
+      <ClickCounterModal
+        open={showClickCounter}
+        onClose={() => setShowClickCounter(false)}
+        onConfirm={(cantidad) => {
+          if (onExpedirDirecto) onExpedirDirecto(linea, pedido, { ...expedicion, cantidad: cantidad.toString() });
+        }}
+        totalUnidades={parseInt(parseFloat(linea.unidadesPendientes) || 0, 10)}
+        unidad={linea.unidadBase || 'ud'}
+        descripcionArticulo={linea.descripcionArticulo}
+        codigoArticulo={linea.codigoArticulo}
+      />
+    </>
+  );
+  } // cierre if (isMobile)
+
+  return (
+    <>
+      <TableRow sx={{ '&:hover': { bgcolor: `${colors.secondary}08` } }}>
+        <TableCell>
+          <Typography variant="body2" fontWeight={500}>{linea.codigoArticulo}</Typography>
+          {linea.codigoAlternativo && <Typography variant="caption" color="text.secondary">{linea.codigoAlternativo}</Typography>}
+        </TableCell>
+        <TableCell>
+          <Typography variant="body2">{linea.descripcionArticulo}</Typography>
+          <Typography variant="caption" color="text.secondary">{linea.descripcion2Articulo}</Typography>
+        </TableCell>
+        <TableCell>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="body2">{formatted.pendiente}</Typography>
+            {formatted.equivalencia && <Typography variant="caption" color="text.secondary">{formatted.equivalencia}</Typography>}
+            {linea.detalles && (
+              <IconButton size="small" onClick={() => abrirModalDetalles(linea.detalles, linea, pedido)} sx={{ color: colors.info }}>
+                <FaInfoCircle size={14} />
+              </IconButton>
+            )}
+          </Stack>
+        </TableCell>
+        <TableCell>
+          {infoPeso.tienePeso ? (
+            <>
+              <Typography variant="caption">Unit.: {infoPeso.pesoUnitario.toFixed(2)} kg</Typography>
+              <Typography variant="body2">Total: {infoPeso.total.toFixed(2)} kg</Typography>
+            </>
+          ) : (
+            <Typography variant="caption" color="text.secondary">Sin peso</Typography>
+          )}
+        </TableCell>
+        <TableCell>
+          <UbicacionesSelect
+            value={ubicacionSeleccionada ? buildUbicacionOptionValue(ubicacionSeleccionada) : ''}
+            onChange={handleCambioUbicacion}
+            canPerformActions={canPerformActions}
+            isProcesando={isProcesando}
+            isUpdatingExpedicion={isUpdatingExpedicion}
+            ubicacionesCargadas={ubicacionesCargadas}
+            ubicacionesConStock={ubicacionesConStock}
+            formatearInfoStock={formatearInfoStock}
+            sinStock={sinStock}
+          />
+        </TableCell>
+        <TableCell>
+          {!sinStock && (
             <ExpedicionLineaPanel
               value={expedicion.cantidad}
               onChange={handleCambioCantidad}
               unidad={linea.unidadBase || 'ud'}
-              zonaDescarga={expedicion.ubicacion === 'Zona descarga'}
               canPerformActions={canPerformActions}
               isProcesando={isProcesando}
               isUpdatingExpedicion={isUpdatingExpedicion}
@@ -468,111 +625,80 @@ export const LineaPedido = React.memo(({
                 if (canPerformActions && cantidadValidacion.isValid) iniciarEscaneo(linea, pedido);
               }}
               cameraIcon={<FaCamera />}
-              mobile
+              showButton={false}
               isValid={cantidadValidacion.isValid}
               helperText={cantidadValidacion.helperText}
+              sinStock={sinStock}
             />
-
-            {linea.detalles && (
-              <Button
-                size="small"
-                startIcon={<FaInfoCircle />}
-                onClick={() => abrirModalDetalles(linea.detalles, linea, pedido)}
-                sx={{ alignSelf: 'flex-start', color: colors.info }}
-              >
-                Ver variantes
-              </Button>
-            )}
-          </Stack>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Vista escritorio (fila de tabla)
-  return (
-    <TableRow sx={{ '&:hover': { bgcolor: `${colors.secondary}08` } }}>
-      <TableCell>
-        <Typography variant="body2" fontWeight={500}>{linea.codigoArticulo}</Typography>
-        {linea.codigoAlternativo && <Typography variant="caption" color="text.secondary">{linea.codigoAlternativo}</Typography>}
-      </TableCell>
-      <TableCell>
-        <Typography variant="body2">{linea.descripcionArticulo}</Typography>
-        <Typography variant="caption" color="text.secondary">{linea.descripcion2Articulo}</Typography>
-      </TableCell>
-      <TableCell>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <Typography variant="body2">{formatted.pendiente}</Typography>
-          {formatted.equivalencia && <Typography variant="caption" color="text.secondary">{formatted.equivalencia}</Typography>}
-          {linea.detalles && (
-            <IconButton size="small" onClick={() => abrirModalDetalles(linea.detalles, linea, pedido)} sx={{ color: colors.info }}>
-              <FaInfoCircle size={14} />
-            </IconButton>
           )}
-        </Stack>
-      </TableCell>
-      <TableCell>
-        {infoPeso.tienePeso ? (
-          <>
-            <Typography variant="caption">Unit.: {infoPeso.pesoUnitario.toFixed(2)} kg</Typography>
-            <Typography variant="body2">Total: {infoPeso.total.toFixed(2)} kg</Typography>
-          </>
-        ) : (
-          <Typography variant="caption" color="text.secondary">Sin peso</Typography>
-        )}
-      </TableCell>
-      <TableCell>
-        <UbicacionesSelect
-          value={ubicacionSeleccionada ? buildUbicacionOptionValue(ubicacionSeleccionada) : ''}
-          onChange={handleCambioUbicacion}
-          canPerformActions={canPerformActions}
-          isProcesando={isProcesando}
-          isUpdatingExpedicion={isUpdatingExpedicion}
-          ubicacionesCargadas={ubicacionesCargadas}
-          ubicacionesConStock={ubicacionesConStock}
-          formatearInfoStock={formatearInfoStock}
-          zonaDescargaClass={expedicion.ubicacion === 'Zona descarga' ? 'ps-zona-descarga' : ''}
-        />
-      </TableCell>
-      <TableCell>
-        <ExpedicionLineaPanel
-          value={expedicion.cantidad}
-          onChange={handleCambioCantidad}
-          unidad={linea.unidadBase || 'ud'}
-          zonaDescarga={expedicion.ubicacion === 'Zona descarga'}
-          canPerformActions={canPerformActions}
-          isProcesando={isProcesando}
-          isUpdatingExpedicion={isUpdatingExpedicion}
-          ubicacionesCargadas={ubicacionesCargadas}
-          isScanning={isScanning}
-          onEscanear={() => {
-            if (canPerformActions && cantidadValidacion.isValid) iniciarEscaneo(linea, pedido);
-          }}
-          cameraIcon={<FaCamera />}
-          showButton={false}
-          isValid={cantidadValidacion.isValid}
-          helperText={cantidadValidacion.helperText}
-        />
-      </TableCell>
-      <TableCell>
-        <Button
-          variant="contained"
-          startIcon={<FaCamera />}
-          onClick={() => {
-            if (canPerformActions && cantidadValidacion.isValid) iniciarEscaneo(linea, pedido);
-          }}
-          disabled={!canPerformActions || !cantidadValidacion.isValid}
-          sx={{ bgcolor: colors.accent, '&:hover': { bgcolor: colors.primary } }}
-        >
-          Escanear
-        </Button>
-      </TableCell>
-    </TableRow>
+        </TableCell>
+        <TableCell>
+          {sinStock ? (
+            <Typography variant="caption" color="error">Sin stock</Typography>
+          ) : tieneVariantesReales ? (
+            // Con variantes reales: solo desde el modal
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<FaInfoCircle />}
+              onClick={() => abrirModalDetalles(linea.detalles, linea, pedido)}
+              disabled={!canPerformActions}
+              sx={{ bgcolor: colors.accent, '&:hover': { bgcolor: colors.primary }, whiteSpace: 'nowrap' }}
+            >
+              Expedir por variantes
+            </Button>
+          ) : (
+            <Stack spacing={0.5}>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<FaCamera />}
+                onClick={() => {
+                  if (canPerformActions && cantidadValidacion.isValid) iniciarEscaneo(linea, pedido);
+                }}
+                disabled={!canPerformActions || !cantidadValidacion.isValid}
+                sx={{ bgcolor: colors.accent, '&:hover': { bgcolor: colors.primary }, whiteSpace: 'nowrap' }}
+              >
+                Escanear
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setShowClickCounter(true)}
+                disabled={!canPerformActions || isProcesando || !ubicacionesCargadas || !ubicacionSeleccionada}
+                sx={{
+                  borderColor: colors.accent,
+                  color: colors.accent,
+                  '&:hover': { borderColor: colors.primary, color: colors.primary },
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Contar
+              </Button>
+            </Stack>
+          )}
+        </TableCell>
+      </TableRow>
+
+      {/* ClickCounterModal */}
+      <ClickCounterModal
+        open={showClickCounter}
+        onClose={() => setShowClickCounter(false)}
+        onConfirm={(cantidad) => {
+          if (onExpedirDirecto) onExpedirDirecto(linea, pedido, { ...expedicion, cantidad: cantidad.toString() });
+        }}
+        totalUnidades={parseInt(parseFloat(linea.unidadesPendientes) || 0, 10)}
+        unidad={linea.unidadBase || 'ud'}
+        descripcionArticulo={linea.descripcionArticulo}
+        codigoArticulo={linea.codigoArticulo}
+      />
+    </>
   );
 });
 
 // ----------------------
 // DetallesArticuloModal (modal de variantes) - RESPONSIVE
+// FIX: buildUbicacionOptionValue funciona con campos en mayúscula de la API
 // ----------------------
 export const DetallesArticuloModal = React.memo(({
   detalles,
@@ -581,6 +707,7 @@ export const DetallesArticuloModal = React.memo(({
   onClose,
   onExpedirVariante,
   canPerformActions,
+  iniciarEscaneo, // para escanear desde el modal
 }) => {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('md'));
@@ -591,6 +718,8 @@ export const DetallesArticuloModal = React.memo(({
   const [procesando, setProcesando] = useState(false);
   const [cargandoUbicaciones, setCargandoUbicaciones] = useState(true);
   const [erroresCarga, setErroresCarga] = useState({});
+  // Para escanear/contar desde el modal de variantes
+  const [clickCounterDetalle, setClickCounterDetalle] = useState(null); // { key, detalle }
   const abortControllers = useRef({});
 
   useEffect(() => {
@@ -625,7 +754,13 @@ export const DetallesArticuloModal = React.memo(({
             params,
             signal: abortControllers.current[key].signal,
           });
-          resultados[key] = Array.isArray(response.data) ? response.data : [];
+          // FIX: Filtrar también Zona descarga y SIN-UBICACION en el modal
+          const ubicacionesFiltradas = (Array.isArray(response.data) ? response.data : []).filter((ubic) => {
+            const esZonaDescarga = ubic.Ubicacion === 'Zona descarga';
+            const esSinUbicacion = !ubic.Ubicacion || ubic.Ubicacion === 'SIN-UBICACION' || ubic.Ubicacion.trim() === '';
+            return !esZonaDescarga && !esSinUbicacion && parseFloat(ubic.Cantidad) > 0;
+          });
+          resultados[key] = ubicacionesFiltradas;
         } catch (error) {
           if (error.name !== 'CanceledError') {
             nuevosErrores[key] = error.message;
@@ -643,10 +778,37 @@ export const DetallesArticuloModal = React.memo(({
     };
   }, [detalles]);
 
+  // Autoseleccionar ubicación principal y cantidad cuando se cargan las ubicaciones
+  // Mismas reglas que LineaPedido: primera ubicación con más stock, cantidad = min(pendiente, stock)
+  useEffect(() => {
+    if (cargandoUbicaciones) return;
+    const nuevasSelecciones = {};
+    detallesConPendientes.forEach((detalle) => {
+      const key = `${detalle.codigoArticulo}-${detalle.codigoColor || 'SIN_COLOR'}-${detalle.codigoTalla || 'SIN_TALLA'}`;
+      const ubicaciones = ubicacionesPorDetalle[key] || [];
+      if (ubicaciones.length === 0) return;
+      // Ordenar por stock descendente — la primera es la principal
+      const ordenadas = [...ubicaciones].sort(
+        (a, b) => parseFloat(b.Cantidad) - parseFloat(a.Cantidad)
+      );
+      const principal = ordenadas[0];
+      const stockDisponible = parseFloat(principal.Cantidad) || 0;
+      const pendiente = parseFloat(detalle.cantidadPendiente) || 0;
+      // Reglas de cantidad: min(pendiente, stock)
+      const cantidadAuto = Math.min(pendiente, stockDisponible);
+      nuevasSelecciones[key] = {
+        ubicacionKey: buildUbicacionOptionValue(principal),
+        cantidad: cantidadAuto > 0 ? cantidadAuto.toString() : '',
+      };
+    });
+    if (Object.keys(nuevasSelecciones).length > 0) {
+      setSelecciones((prev) => ({ ...prev, ...nuevasSelecciones }));
+    }
+  }, [cargandoUbicaciones, ubicacionesPorDetalle]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const detallesConPendientes = useMemo(() => detalles.filter((d) => parseFloat(d.cantidadPendiente) > 0), [detalles]);
 
   const formatearInfoUbicacionModal = useCallback((ubicacion) => {
-    if (ubicacion.ubicacion === 'Zona descarga') return 'Stock disponible';
     const stock = parseFloat(ubicacion.Cantidad);
     if (isNaN(stock)) return 'Stock no disponible';
     return formatearUnidad(stock, ubicacion.UnidadMedida);
@@ -657,12 +819,6 @@ export const DetallesArticuloModal = React.memo(({
       let texto = `${ubicacion.CodigoAlmacen} - ${ubicacion.Ubicacion}`;
       if (ubicacion.Partida) texto += ` (${ubicacion.Partida})`;
       texto += ` - ${formatearInfoUbicacionModal(ubicacion)}`;
-      if (ubicacion.CodigoColor_ || ubicacion.CodigoTalla01_) {
-        const extras = [];
-        if (ubicacion.CodigoColor_) extras.push(`Color: ${ubicacion.CodigoColor_}`);
-        if (ubicacion.CodigoTalla01_) extras.push(`Talla: ${ubicacion.CodigoTalla01_}`);
-        if (extras.length) texto += ` [${extras.join(', ')}]`;
-      }
       return texto;
     },
     [formatearInfoUbicacionModal]
@@ -675,6 +831,8 @@ export const DetallesArticuloModal = React.memo(({
     }));
   }, []);
 
+  // FIX: buildUbicacionOptionValue en el modal — los campos de la API vienen en PascalCase
+  // Usamos la función helper que ya maneja ambos (codigoAlmacen y CodigoAlmacen)
   const handleExpedir = useCallback(
     async (detalle) => {
       const detalleKey = `${detalle.codigoArticulo}-${detalle.codigoColor || 'SIN_COLOR'}-${detalle.codigoTalla || 'SIN_TALLA'}`;
@@ -690,8 +848,8 @@ export const DetallesArticuloModal = React.memo(({
       }
       setProcesando(true);
       try {
-        const ubicaciones = ubicacionesPorDetalle[detalleKey] || [];
-        const ubicacionSeleccionada = ubicaciones.find(
+        const ubicacionesDetalle = ubicacionesPorDetalle[detalleKey] || [];
+        const ubicacionSeleccionada = ubicacionesDetalle.find(
           (ubic) => buildUbicacionOptionValue(ubic) === seleccion.ubicacionKey
         );
         if (!ubicacionSeleccionada) throw new Error('Ubicación no encontrada');
@@ -759,7 +917,7 @@ export const DetallesArticuloModal = React.memo(({
           <Stack spacing={2}>
             {detallesConPendientes.map((detalle) => {
               const key = `${detalle.codigoArticulo}-${detalle.codigoColor || 'SIN_COLOR'}-${detalle.codigoTalla || 'SIN_TALLA'}`;
-              const ubicaciones = ubicacionesPorDetalle[key] || [];
+              const ubicacionesDetalle = ubicacionesPorDetalle[key] || [];
               const seleccion = selecciones[key] || {};
               const error = erroresCarga[key];
               return (
@@ -779,7 +937,7 @@ export const DetallesArticuloModal = React.memo(({
                       </Typography>
                       {error ? (
                         <ErrorMessage message="Error al cargar ubicaciones" />
-                      ) : ubicaciones.length > 0 ? (
+                      ) : ubicacionesDetalle.length > 0 ? (
                         <FormControl fullWidth size="small">
                           <InputLabel sx={{ color: colors.primary }}>Ubicación</InputLabel>
                           <Select
@@ -793,7 +951,7 @@ export const DetallesArticuloModal = React.memo(({
                             }}
                           >
                             <MenuItem value="">Selecciona ubicación</MenuItem>
-                            {ubicaciones.map((ubic, idx) => (
+                            {ubicacionesDetalle.map((ubic, idx) => (
                               <MenuItem
                                 key={`${ubic.CodigoAlmacen}-${ubic.Ubicacion}-${idx}`}
                                 value={buildUbicacionOptionValue(ubic)}
@@ -804,7 +962,7 @@ export const DetallesArticuloModal = React.memo(({
                           </Select>
                         </FormControl>
                       ) : (
-                        <Alert severity="warning" icon={<FaExclamationTriangle />}>
+                        <Alert severity="error" icon={<FaExclamationTriangle />}>
                           Sin stock disponible
                         </Alert>
                       )}
@@ -817,7 +975,7 @@ export const DetallesArticuloModal = React.memo(({
                           val = Math.min(val, detalle.cantidadPendiente);
                           handleCambioSeleccion(key, 'cantidad', val.toString());
                         }}
-                        disabled={!canPerformActions || ubicaciones.length === 0 || !!error}
+                        disabled={!canPerformActions || ubicacionesDetalle.length === 0 || !!error}
                         size="small"
                         InputProps={{
                           endAdornment: (
@@ -826,24 +984,27 @@ export const DetallesArticuloModal = React.memo(({
                         }}
                         fullWidth
                       />
+                      {/* Solo Escanear y Contar — sin botón Expedir directo */}
+                      {iniciarEscaneo && (
+                        <Button
+                          variant="contained"
+                          size="small"
+                          startIcon={<FaCamera />}
+                          onClick={() => iniciarEscaneo(linea, pedido, { color: detalle.codigoColor, talla: detalle.codigoTalla })}
+                          disabled={!canPerformActions || ubicacionesDetalle.length === 0 || !!error || !seleccion.ubicacionKey}
+                          sx={{ bgcolor: colors.secondary, '&:hover': { bgcolor: colors.primary } }}
+                        >
+                          Escanear
+                        </Button>
+                      )}
                       <Button
-                        variant="contained"
-                        onClick={() => handleExpedir(detalle)}
-                        disabled={
-                          !canPerformActions ||
-                          !seleccion.ubicacionKey ||
-                          !seleccion.cantidad ||
-                          parseFloat(seleccion.cantidad) <= 0 ||
-                          procesando ||
-                          !!error
-                        }
-                        sx={{
-                          bgcolor: colors.accent,
-                          '&:hover': { bgcolor: colors.primary },
-                          mt: 1,
-                        }}
+                        variant="outlined"
+                        size="small"
+                        onClick={() => setClickCounterDetalle({ key, detalle })}
+                        disabled={!canPerformActions || ubicacionesDetalle.length === 0 || !!error || !seleccion.ubicacionKey}
+                        sx={{ borderColor: colors.accent, color: colors.accent }}
                       >
-                        {procesando ? 'Procesando...' : 'Expedir'}
+                        Contar unidades
                       </Button>
                     </Stack>
                   </CardContent>
@@ -868,7 +1029,7 @@ export const DetallesArticuloModal = React.memo(({
               <TableBody>
                 {detallesConPendientes.map((detalle) => {
                   const key = `${detalle.codigoArticulo}-${detalle.codigoColor || 'SIN_COLOR'}-${detalle.codigoTalla || 'SIN_TALLA'}`;
-                  const ubicaciones = ubicacionesPorDetalle[key] || [];
+                  const ubicacionesDetalle = ubicacionesPorDetalle[key] || [];
                   const seleccion = selecciones[key] || {};
                   const error = erroresCarga[key];
                   return (
@@ -879,7 +1040,7 @@ export const DetallesArticuloModal = React.memo(({
                       <TableCell>
                         {error ? (
                           <ErrorMessage message="Error al cargar ubicaciones" />
-                        ) : ubicaciones.length > 0 ? (
+                        ) : ubicacionesDetalle.length > 0 ? (
                           <FormControl fullWidth size="small">
                             <Select
                               value={seleccion.ubicacionKey || ''}
@@ -891,7 +1052,7 @@ export const DetallesArticuloModal = React.memo(({
                               }}
                             >
                               <MenuItem value="">Selecciona ubicación</MenuItem>
-                              {ubicaciones.map((ubic, idx) => (
+                              {ubicacionesDetalle.map((ubic, idx) => (
                                 <MenuItem
                                   key={`${ubic.CodigoAlmacen}-${ubic.Ubicacion}-${idx}`}
                                   value={buildUbicacionOptionValue(ubic)}
@@ -902,7 +1063,7 @@ export const DetallesArticuloModal = React.memo(({
                             </Select>
                           </FormControl>
                         ) : (
-                          <Alert severity="warning" icon={<FaExclamationTriangle />}>
+                          <Alert severity="error" icon={<FaExclamationTriangle />}>
                             Sin stock disponible
                           </Alert>
                         )}
@@ -916,7 +1077,7 @@ export const DetallesArticuloModal = React.memo(({
                             val = Math.min(val, detalle.cantidadPendiente);
                             handleCambioSeleccion(key, 'cantidad', val.toString());
                           }}
-                          disabled={!canPerformActions || ubicaciones.length === 0 || !!error}
+                          disabled={!canPerformActions || ubicacionesDetalle.length === 0 || !!error}
                           size="small"
                           InputProps={{
                             endAdornment: (
@@ -926,25 +1087,31 @@ export const DetallesArticuloModal = React.memo(({
                           sx={{ width: 120 }}
                         />
                       </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="contained"
-                          onClick={() => handleExpedir(detalle)}
-                          disabled={
-                            !canPerformActions ||
-                            !seleccion.ubicacionKey ||
-                            !seleccion.cantidad ||
-                            parseFloat(seleccion.cantidad) <= 0 ||
-                            procesando ||
-                            !!error
-                          }
-                          sx={{
-                            bgcolor: colors.accent,
-                            '&:hover': { bgcolor: colors.primary },
-                          }}
-                        >
-                          {procesando ? 'Procesando...' : 'Expedir'}
-                        </Button>
+      <TableCell>
+                        <Stack spacing={0.5}>
+                          {/* Solo Escanear y Contar — sin botón Expedir directo */}
+                          {iniciarEscaneo && (
+                            <Button
+                              variant="contained"
+                              size="small"
+                              startIcon={<FaCamera />}
+                              onClick={() => iniciarEscaneo(linea, pedido, { color: detalle.codigoColor, talla: detalle.codigoTalla })}
+                              disabled={!canPerformActions || ubicacionesDetalle.length === 0 || !!error || !seleccion.ubicacionKey}
+                              sx={{ bgcolor: colors.secondary, '&:hover': { bgcolor: colors.primary }, whiteSpace: 'nowrap' }}
+                            >
+                              Escanear
+                            </Button>
+                          )}
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={() => setClickCounterDetalle({ key, detalle })}
+                            disabled={!canPerformActions || ubicacionesDetalle.length === 0 || !!error || !seleccion.ubicacionKey}
+                            sx={{ borderColor: colors.accent, color: colors.accent, whiteSpace: 'nowrap' }}
+                          >
+                            Contar
+                          </Button>
+                        </Stack>
                       </TableCell>
                     </TableRow>
                   );
@@ -957,124 +1124,497 @@ export const DetallesArticuloModal = React.memo(({
       <DialogActions>
         <Button onClick={onClose}>Cerrar</Button>
       </DialogActions>
+
+      {/* ClickCounterModal para variantes */}
+      {clickCounterDetalle && (
+        <ClickCounterModal
+          open={!!clickCounterDetalle}
+          onClose={() => setClickCounterDetalle(null)}
+          onConfirm={(cantidad) => {
+            // FIX race condition: no usar setState + handleExpedir en el mismo tick.
+            // Llamar directamente a onExpedirVariante con la cantidad contada.
+            const { key: dKey, detalle: dDetalle } = clickCounterDetalle;
+            const ubicacionesDetalle = ubicacionesPorDetalle[dKey] || [];
+            const seleccion = selecciones[dKey] || {};
+            const ubicacionSeleccionada = ubicacionesDetalle.find(
+              (u) => buildUbicacionOptionValue(u) === seleccion.ubicacionKey
+            );
+            if (!ubicacionSeleccionada) {
+              alert('Selecciona una ubicación antes de contar.');
+              setClickCounterDetalle(null);
+              return;
+            }
+            setProcesando(true);
+            onExpedirVariante({
+              articulo: dDetalle.codigoArticulo,
+              color: dDetalle.codigoColor,
+              talla: dDetalle.codigoTalla,
+              cantidad,
+              ubicacion: ubicacionSeleccionada.Ubicacion,
+              almacen: ubicacionSeleccionada.CodigoAlmacen,
+              partida: ubicacionSeleccionada.Partida || '',
+              unidadMedida: ubicacionSeleccionada.UnidadMedida || linea.unidadBase,
+              codigoColor: ubicacionSeleccionada.CodigoColor_ || '',
+              codigoTalla: ubicacionSeleccionada.CodigoTalla01_ || '',
+              movPosicionLinea: linea.movPosicionLinea,
+            }).finally(() => setProcesando(false));
+            setClickCounterDetalle(null);
+          }}
+          totalUnidades={parseInt(parseFloat(clickCounterDetalle.detalle.cantidadPendiente) || 0, 10)}
+          unidad={linea.unidadBase || 'ud'}
+          descripcionArticulo={`${clickCounterDetalle.detalle.colorNombre || ''} / ${clickCounterDetalle.detalle.descripcionTalla || ''}`}
+          codigoArticulo={linea.codigoArticulo}
+        />
+      )}
+    </Dialog>
+  );
+});
+
+// ----------------------
+// ClickCounterModal — nuevo método: clicks por unidad en lugar de entrada manual
+// Reglas:
+//   ≤ 100 unidades  → 1 clic = 1 unidad
+//   101–500         → 1 clic = 10 unidades
+//   > 500           → 1 clic = 100 unidades
+// Al alcanzar el total → confirmación antes de expedir
+// ----------------------
+export const ClickCounterModal = React.memo(({
+  open,
+  onClose,
+  onConfirm,
+  totalUnidades,
+  unidad,
+  descripcionArticulo,
+  codigoArticulo,
+}) => {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+
+  // Calcular tamaño de lote según total
+  const lotePorClic = useMemo(() => {
+    if (totalUnidades <= 100) return 1;
+    if (totalUnidades <= 500) return 10;
+    return 100;
+  }, [totalUnidades]);
+
+  const [clicsDados, setClicsDados] = useState(0);
+  const [confirmando, setConfirmando] = useState(false);
+
+  // Resetear al abrir
+  useEffect(() => {
+    if (open) {
+      setClicsDados(0);
+      setConfirmando(false);
+    }
+  }, [open]);
+
+  const unidadesContadas = useMemo(() => {
+    return Math.min(clicsDados * lotePorClic, totalUnidades);
+  }, [clicsDados, lotePorClic, totalUnidades]);
+
+  const completado = unidadesContadas >= totalUnidades;
+  const progreso = totalUnidades > 0 ? (unidadesContadas / totalUnidades) * 100 : 0;
+
+  const handleClic = useCallback(() => {
+    if (completado) return;
+    setClicsDados((prev) => prev + 1);
+  }, [completado]);
+
+  const handleConfirmar = useCallback(() => {
+    setConfirmando(true);
+  }, []);
+
+  const handleConfirmarFinal = useCallback(() => {
+    onConfirm(unidadesContadas);
+    onClose();
+  }, [onConfirm, onClose, unidadesContadas]);
+
+  const handleReset = useCallback(() => {
+    setClicsDados(0);
+    setConfirmando(false);
+  }, []);
+
+  return (
+    <Dialog open={open} onClose={onClose} fullScreen={fullScreen} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ bgcolor: colors.primary, color: 'white' }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+            Contar unidades
+          </Typography>
+          <IconButton onClick={onClose} sx={{ color: 'white' }} size="small">
+            <FaTimes />
+          </IconButton>
+        </Stack>
+        <Typography variant="body2" sx={{ color: `${colors.accent}dd`, mt: 0.5, fontSize: '0.8rem' }}>
+          {codigoArticulo} — {descripcionArticulo}
+        </Typography>
+      </DialogTitle>
+
+      <DialogContent dividers sx={{ p: { xs: 2, sm: 3 } }}>
+        {!confirmando ? (
+          <Stack spacing={2} alignItems="center">
+            {/* Info de lote */}
+            <Alert severity="info" sx={{ width: '100%', py: 0.5 }}>
+              <Typography variant="caption">
+                Total a servir: <strong>{totalUnidades} {unidad || 'ud'}</strong>
+                {' · '}Cada clic cuenta: <strong>{lotePorClic} {unidad || 'ud'}</strong>
+              </Typography>
+            </Alert>
+
+            {/* Contador grande — botón de clic */}
+            <Box
+              onClick={handleClic}
+              sx={{
+                width: { xs: 160, sm: 200 },
+                height: { xs: 160, sm: 200 },
+                borderRadius: '50%',
+                bgcolor: completado ? colors.success : colors.primary,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: completado ? 'default' : 'pointer',
+                userSelect: 'none',
+                boxShadow: completado
+                  ? `0 0 0 6px ${colors.success}40`
+                  : `0 0 0 6px ${colors.accent}40`,
+                transition: 'all 0.15s ease',
+                '&:active': completado ? {} : {
+                  transform: 'scale(0.95)',
+                  boxShadow: `0 0 0 3px ${colors.accent}60`,
+                },
+              }}
+            >
+              <Typography variant="h2" sx={{ color: 'white', fontWeight: 700, lineHeight: 1, fontSize: { xs: '2.5rem', sm: '3.5rem' } }}>
+                {unidadesContadas}
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)', mt: 0.5 }}>
+                de {totalUnidades} {unidad || 'ud'}
+              </Typography>
+              {!completado && (
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)', mt: 0.5, fontSize: '0.65rem' }}>
+                  TAP para contar
+                </Typography>
+              )}
+              {completado && (
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.9)', mt: 0.5, fontWeight: 700 }}>
+                  ✓ COMPLETO
+                </Typography>
+              )}
+            </Box>
+
+            {/* Barra de progreso */}
+            <Box sx={{ width: '100%', bgcolor: `${colors.secondary}30`, borderRadius: 1, height: 8, overflow: 'hidden' }}>
+              <Box
+                sx={{
+                  width: `${progreso}%`,
+                  height: '100%',
+                  bgcolor: completado ? colors.success : colors.accent,
+                  transition: 'width 0.2s ease',
+                  borderRadius: 1,
+                }}
+              />
+            </Box>
+
+            <Typography variant="body2" color="text.secondary">
+              {clicsDados} {clicsDados === 1 ? 'clic' : 'clics'} dados
+              {completado ? '' : ` · Faltan ${totalUnidades - unidadesContadas} ${unidad || 'ud'}`}
+            </Typography>
+
+            <Stack direction="row" spacing={1} sx={{ width: '100%' }}>
+              <Button
+                variant="outlined"
+                onClick={handleReset}
+                disabled={clicsDados === 0}
+                sx={{ flex: 1, borderColor: colors.secondary, color: colors.secondary }}
+              >
+                Reiniciar
+              </Button>
+              <Button
+                variant="contained"
+                onClick={handleConfirmar}
+                disabled={!completado}
+                sx={{ flex: 2, bgcolor: colors.success, '&:hover': { bgcolor: '#2d8a57' } }}
+              >
+                Confirmar expedición
+              </Button>
+            </Stack>
+          </Stack>
+        ) : (
+          // Pantalla de confirmación final
+          <Stack spacing={2} alignItems="center">
+            <Alert severity="warning" sx={{ width: '100%' }}>
+              <Typography variant="body2">
+                ¿Confirmas la expedición de <strong>{unidadesContadas} {unidad || 'ud'}</strong> del artículo <strong>{codigoArticulo}</strong>?
+              </Typography>
+            </Alert>
+            <Stack direction="row" spacing={1} sx={{ width: '100%' }}>
+              <Button
+                variant="outlined"
+                onClick={() => setConfirmando(false)}
+                sx={{ flex: 1, borderColor: colors.secondary, color: colors.secondary }}
+              >
+                Volver
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<FaCheck />}
+                onClick={handleConfirmarFinal}
+                sx={{ flex: 2, bgcolor: colors.success, '&:hover': { bgcolor: '#2d8a57' } }}
+              >
+                Sí, expedir
+              </Button>
+            </Stack>
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} sx={{ color: colors.secondary }}>Cancelar</Button>
+      </DialogActions>
     </Dialog>
   );
 });
 
 // ----------------------
 // CameraModal
+// FIX: div del escáner fuera del árbol React (evita NotFoundError al desmontar)
+// FIX: NotReadableError — esperar liberación de cámara antes de reiniciar
+// FIX: Responsive — override de estilos inline de Html5Qrcode
 // ----------------------
+
+// Singleton global para rastrear si hay una cámara activa — evita NotReadableError
+// al abrir el modal dos veces seguidas sin que el sistema libere el stream
+let globalScannerInstance = null;
+
+async function pararScannerGlobal() {
+  if (!globalScannerInstance) return;
+  const s = globalScannerInstance;
+  globalScannerInstance = null;
+  try { if (s.isScanning) await s.stop(); } catch (_) {}
+  try { s.clear(); } catch (_) {}
+  // Esperar un tick para que el navegador libere el stream de cámara
+  await new Promise(r => setTimeout(r, 100));
+}
+
 export const CameraModal = React.memo(({
   showCamera,
   setShowCamera,
   cameras,
   selectedCamera,
   setSelectedCamera,
-  manualCode,
-  setManualCode,
   handleScanSuccess,
-  handleManualVerification,
-  cameraError,
 }) => {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
-  const scannerRef = useRef(null);
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
+  const scanDivRef = useRef(null);
+  const wrapperRef = useRef(null);
+  const [cameraError, setCameraError] = useState('');
+  const [ready, setReady] = useState(false);
+
+  const detener = useCallback(async () => {
+    await pararScannerGlobal();
+    if (scanDivRef.current) {
+      // Desconectar observer de estilos si existe
+      if (scanDivRef.current._styleObserver) {
+        scanDivRef.current._styleObserver.disconnect();
+        scanDivRef.current._styleObserver = null;
+      }
+      if (wrapperRef.current && wrapperRef.current.contains(scanDivRef.current)) {
+        wrapperRef.current.removeChild(scanDivRef.current);
+      }
+      scanDivRef.current = null;
+    }
+  }, []);
+
+  const handleClose = useCallback(async () => {
+    await detener();
+    setCameraError('');
+    setReady(false);
+    setShowCamera(false);
+  }, [detener, setShowCamera]);
 
   useEffect(() => {
-    let scanner = null;
-    const container = document.getElementById('ps-camera-container');
-    if (!showCamera || cameraError || !selectedCamera || !container) return;
-    const iniciar = async () => {
+    if (!showCamera || !selectedCamera) return;
+
+    setCameraError('');
+    setReady(false);
+
+    const isHttp =
+      window.location.protocol === 'http:' &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1';
+    if (isHttp) {
+      setCameraError('La cámara solo está disponible en HTTPS o localhost.');
+      return;
+    }
+
+    let cancelled = false;
+
+    const timeoutId = setTimeout(async () => {
+      if (cancelled || !wrapperRef.current) return;
+
+      // Parar cualquier instancia previa antes de iniciar
+      await pararScannerGlobal();
+      if (cancelled) return;
+
+      // Crear div hijo fuera del control de React
+      const div = document.createElement('div');
+      div.id = 'ps-qr-' + Date.now();
+      // Estilos para que ocupe todo el wrapper — override de lo que Html5Qrcode inyecta
+      div.style.cssText = 'width:100% !important;height:100% !important;';
+      wrapperRef.current.appendChild(div);
+      scanDivRef.current = div;
+
       try {
-        container.innerHTML = '';
-        scanner = new Html5Qrcode('ps-camera-container', { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 });
+        const scanner = new Html5Qrcode(div.id, { verbose: false });
+
+        // Calcular qrbox responsivo
+        const wrapperW = wrapperRef.current?.offsetWidth || window.innerWidth;
+        const boxSize = Math.min(wrapperW - 32, isMobile ? 260 : 300);
+
         await scanner.start(
           selectedCamera,
-          { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
-          (decodedText) => {
-            handleScanSuccess(decodedText);
-            setShowCamera(false);
+          {
+            fps: 10,
+            qrbox: { width: boxSize, height: boxSize },
+            // aspectRatio en móvil: usar el aspecto de la pantalla para llenar más
+            aspectRatio: isMobile ? (window.innerHeight / window.innerWidth) : 1.0,
           },
-          (err) => {}
+          async (decodedText) => {
+            if (cancelled) return;
+            globalScannerInstance = null;
+            try { if (scanner.isScanning) await scanner.stop(); } catch (_) {}
+            try { scanner.clear(); } catch (_) {}
+            if (scanDivRef.current && wrapperRef.current?.contains(scanDivRef.current)) {
+              wrapperRef.current.removeChild(scanDivRef.current);
+              scanDivRef.current = null;
+            }
+            if (!cancelled) {
+              handleScanSuccess(decodedText);
+              setShowCamera(false);
+            }
+          },
+          () => {}
         );
-        scannerRef.current = scanner;
+
+        if (!cancelled) {
+          globalScannerInstance = scanner;
+          setReady(true);
+
+          // FIX RESPONSIVE: Html5Qrcode inyecta width/height en px via style inline.
+          // Usamos MutationObserver para forzar 100% cada vez que los cambia.
+          const forzarEstilos = () => {
+            if (!div) return;
+            // El div contenedor que Html5Qrcode controla
+            div.style.setProperty('width', '100%', 'important');
+            div.style.setProperty('height', '100%', 'important');
+            // El primer hijo interno también tiene width/height en px
+            const inner = div.firstElementChild;
+            if (inner) {
+              inner.style.setProperty('width', '100%', 'important');
+              inner.style.setProperty('height', '100%', 'important');
+            }
+            // El video
+            const video = div.querySelector('video');
+            if (video) {
+              video.style.setProperty('width', '100%', 'important');
+              video.style.setProperty('height', '100%', 'important');
+              video.style.setProperty('object-fit', 'cover', 'important');
+            }
+          };
+          forzarEstilos();
+          // Observer para re-aplicar si Html5Qrcode resetea los estilos
+          const observer = new MutationObserver(forzarEstilos);
+          observer.observe(div, { attributes: true, subtree: true, attributeFilter: ['style'] });
+          // Guardar observer para desconectarlo al parar
+          div._styleObserver = observer;
+        } else {
+          globalScannerInstance = null;
+          try { if (scanner.isScanning) await scanner.stop(); } catch (_) {}
+          try { scanner.clear(); } catch (_) {}
+          if (div.parentNode) div.parentNode.removeChild(div);
+        }
       } catch (err) {
-        console.error('Error iniciando escáner:', err);
+        console.error('[CameraModal]', err.name, err.message);
+        if (!cancelled) {
+          const msg = err.name === 'NotReadableError'
+            ? 'La cámara está siendo usada por otra aplicación. Cierra otras apps que usen la cámara y vuelve a intentarlo.'
+            : (err.message || 'No se pudo acceder a la cámara.');
+          setCameraError(msg);
+        }
+        if (div.parentNode) div.parentNode.removeChild(div);
+        scanDivRef.current = null;
       }
-    };
-    iniciar();
+    }, 300); // 300ms para que MUI Dialog y el navegador estén listos
+
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current.clear();
-        scannerRef.current = null;
-      }
+      cancelled = true;
+      clearTimeout(timeoutId);
+      // Cleanup async — no bloquea React
+      pararScannerGlobal().then(() => {
+        if (scanDivRef.current) {
+          if (wrapperRef.current?.contains(scanDivRef.current)) {
+            wrapperRef.current.removeChild(scanDivRef.current);
+          }
+          scanDivRef.current = null;
+        }
+      });
     };
-  }, [showCamera, selectedCamera, handleScanSuccess, setShowCamera, cameraError]);
+  }, [showCamera, selectedCamera]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Dialog open={showCamera} onClose={() => setShowCamera(false)} fullScreen={fullScreen} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ bgcolor: colors.primary, color: 'white' }}>
+    <Dialog
+      open={showCamera}
+      onClose={handleClose}
+      fullScreen={fullScreen}
+      maxWidth="sm"
+      fullWidth
+      keepMounted={false}
+    >
+      <DialogTitle sx={{ bgcolor: colors.primary, color: 'white', pb: 1 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center">
-          <Typography variant="h6">
+          <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
             <FaQrcode style={{ marginRight: 8 }} /> Escanear Artículo
           </Typography>
-          <IconButton onClick={() => setShowCamera(false)} sx={{ color: 'white' }}>
+          <IconButton onClick={handleClose} sx={{ color: 'white' }} size="small">
             <FaTimes />
           </IconButton>
         </Stack>
       </DialogTitle>
-      <DialogContent dividers>
+
+      <DialogContent
+        dividers
+        sx={{
+          p: { xs: 0, sm: 1 },
+          // En fullscreen quitar padding para que la cámara ocupe más espacio
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         {cameraError ? (
-          <Stack spacing={2}>
-            <Alert severity="error" icon={<FaExclamationTriangle />}>
-              <strong>No se pudo acceder a la cámara</strong>
+          <Stack spacing={2} sx={{ p: 2 }}>
+            <Alert severity="warning" icon={<FaExclamationTriangle />}>
+              <strong>Problema con la cámara</strong>
               <br />
               {cameraError}
             </Alert>
+            <Button
+              variant="outlined"
+              onClick={() => { setCameraError(''); setReady(false); }}
+              sx={{ borderColor: colors.accent, color: colors.accent }}
+            >
+              Reintentar
+            </Button>
             <Alert severity="info">
-              <strong>⚠️ Cámara no disponible en HTTP:</strong>
-              <br />
-              Para usar la cámara necesitas:
-              <ul>
-                <li>Usar HTTPS en lugar de HTTP</li>
-                <li>O acceder desde localhost</li>
-                <li>O usar la entrada manual de código</li>
-              </ul>
+              Si el problema persiste, usa el método de conteo por clics (botón "Contar" en la línea).
             </Alert>
-            <Box>
-              <Typography variant="subtitle2">Introduce el código manualmente:</Typography>
-              <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  placeholder="Código del artículo"
-                  value={manualCode}
-                  onChange={(e) => setManualCode(e.target.value)}
-                  autoFocus
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      '&:hover fieldset': { borderColor: colors.accent },
-                      '&.Mui-focused fieldset': { borderColor: colors.primary },
-                    },
-                  }}
-                />
-                <Button
-                  variant="contained"
-                  onClick={handleManualVerification}
-                  disabled={!manualCode}
-                  startIcon={<FaCheck />}
-                  sx={{ bgcolor: colors.accent, '&:hover': { bgcolor: colors.primary } }}
-                >
-                  Verificar
-                </Button>
-              </Stack>
-            </Box>
           </Stack>
         ) : (
-          <Stack spacing={2}>
-            {cameras.length > 0 && (
-              <FormControl fullWidth size="small">
+          <Stack spacing={1} sx={{ p: { xs: 0.5, sm: 1 }, flex: 1 }}>
+            {cameras.length > 1 && (
+              <FormControl fullWidth size="small" sx={{ px: { xs: 1, sm: 0 } }}>
                 <InputLabel sx={{ color: colors.primary }}>Cámara</InputLabel>
                 <Select
                   value={selectedCamera}
@@ -1087,66 +1627,56 @@ export const CameraModal = React.memo(({
                     '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: colors.primary },
                   }}
                 >
-                  {cameras.map((camera) => (
-                    <MenuItem key={camera.id} value={camera.id}>
-                      {camera.label || `Cámara ${camera.id}`}
-                    </MenuItem>
+                  {cameras.map((c) => (
+                    <MenuItem key={c.id} value={c.id}>{c.label || `Cámara ${c.id}`}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
             )}
+
+            {/* Wrapper: React solo gestiona este Box (tamaño y fondo).
+                Html5Qrcode trabaja en un div hijo insertado por el efecto. */}
             <Box
-              id="ps-camera-container"
+              ref={wrapperRef}
               sx={{
                 bgcolor: 'black',
-                borderRadius: 2,
+                borderRadius: { xs: 0, sm: 2 },
                 overflow: 'hidden',
-                minHeight: 300,
+                width: '100%',
+                // En móvil fullscreen: ocupar toda la altura disponible
+                flex: fullScreen ? 1 : 'none',
+                height: fullScreen ? 'auto' : 380,
+                minHeight: { xs: 280, sm: 320 },
                 position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
               }}
             >
-              {cameras.length === 0 && !cameraError && (
-                <Stack alignItems="center" justifyContent="center" sx={{ height: 300 }}>
+              {!ready && (
+                <Stack
+                  alignItems="center"
+                  justifyContent="center"
+                  sx={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' }}
+                >
                   <CircularProgress sx={{ color: colors.accent }} />
-                  <Typography sx={{ mt: 2, color: 'white' }}>Inicializando cámara...</Typography>
+                  <Typography sx={{ mt: 2, color: 'white', fontSize: '0.9rem' }}>
+                    Inicializando cámara...
+                  </Typography>
                 </Stack>
               )}
             </Box>
-            <Box>
-              <Typography variant="subtitle2">O introduce el código manualmente:</Typography>
-              <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  placeholder="Código del artículo"
-                  value={manualCode}
-                  onChange={(e) => setManualCode(e.target.value)}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      '&:hover fieldset': { borderColor: colors.accent },
-                      '&.Mui-focused fieldset': { borderColor: colors.primary },
-                    },
-                  }}
-                />
-                <Button
-                  variant="contained"
-                  onClick={handleManualVerification}
-                  disabled={!manualCode}
-                  startIcon={<FaCheck />}
-                  sx={{ bgcolor: colors.accent, '&:hover': { bgcolor: colors.primary } }}
-                >
-                  Verificar
-                </Button>
-              </Stack>
-            </Box>
+
+            {!fullScreen && (
+              <Typography variant="caption" color="text.secondary" textAlign="center" sx={{ pb: 0.5 }}>
+                Apunta la cámara al código de barras o QR del artículo
+              </Typography>
+            )}
           </Stack>
         )}
       </DialogContent>
-      <DialogActions>
-        <Button onClick={() => setShowCamera(false)}>Cancelar</Button>
+
+      <DialogActions sx={{ px: 2 }}>
+        <Button onClick={handleClose} sx={{ color: colors.secondary }}>
+          Cancelar
+        </Button>
       </DialogActions>
     </Dialog>
   );

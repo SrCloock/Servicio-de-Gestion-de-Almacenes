@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 5173",
-    "dev:local": "vite --host localhost --port 5173",
+    "dev": "vite --host 0.0.0.0 --port 5174",
+    "dev:local": "vite --host localhost --port 5174",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "preview:local": "vite preview --host localhost --port 4173"

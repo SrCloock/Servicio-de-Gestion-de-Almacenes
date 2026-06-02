@@ -380,8 +380,9 @@ const AlbaranCard = ({
   onToggleAssignment,
 }) => {
   const theme = useTheme();
-  const key = `albaran-${albaran.EjercicioAlbaran}-${albaran.SerieAlbaran || ''}-${albaran.NumeroAlbaran}`;
-  const repartidorActual = albaran.repartidorAsignado;
+  // FIX 5: usar campos camelCase que devuelve /api/albaranesPendientes
+  const key = albaran.id || `albaran-${albaran.ejercicio}-${albaran.serie || ''}-${albaran.numero}`;
+  const repartidorActual = albaran.empleadoAsignado || '';
   const repartidorSeleccionado = asignacion;
   const nombreRepartidorActual = repartidores.find((rep) => rep.id === repartidorActual)?.nombre || repartidorActual || 'Sin asignar';
   const accionLabel = repartidorActual ? 'Reasignar' : 'Asignar';
@@ -443,14 +444,15 @@ const AlbaranCard = ({
           </Stack>
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} useFlexGap>
+            {/* FIX 5: campos camelCase del backend */}
             <Typography variant="body2" color="text.secondary">
-              <strong>Cliente:</strong> {albaran.RazonSocial || 'Sin cliente'}
+              <strong>Cliente:</strong> {albaran.cliente || albaran.RazonSocial || 'Sin cliente'}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              <strong>Contacto:</strong> {albaran.Contacto || albaran.contacto || 'Sin contacto'}
+              <strong>Contacto:</strong> {albaran.contacto || albaran.Contacto || 'Sin contacto'}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              <strong>Obra:</strong> {albaran.NombreObra || albaran.obra || 'Sin obra'}
+              <strong>Obra:</strong> {albaran.nombreObra || albaran.NombreObra || albaran.obra || 'Sin obra'}
             </Typography>
           </Stack>
         </Stack>
@@ -546,47 +548,47 @@ function AlbaranesAsignadosScreen() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(15);
 
-  const { canAssignWaybills, isAdmin, isAdvancedUser } = usePermissions();
-  const currentUser = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem('user') || 'null');
-    } catch {
-      return null;
-    }
-  }, []);
+  const { canAssignWaybills } = usePermissions();
 
   const fetchData = async () => {
     try {
       setLoading(true);
       setError(null);
       const [albaranesResponse, repartidoresResponse] = await Promise.all([
-        API.get('/albaranes-asignacion'),
+        // FIX 3: endpoint correcto — /api/albaranesPendientes
+        // El backend ya filtra por EmpleadoAsignado según permisos del usuario
+        API.get('/api/albaranesPendientes'),
         API.get('/repartidores'),
       ]);
 
-      const albaranesBase =
-        !isAdmin && !isAdvancedUser && currentUser?.UsuarioLogicNet
-          ? albaranesResponse.data.filter((albaran) => albaran.repartidorAsignado === currentUser.UsuarioLogicNet)
-          : albaranesResponse.data;
-
-      const albaranesConStatus = albaranesBase.map((albaran) => ({
+      // FIX 5: normalizar campos — /api/albaranesPendientes devuelve camelCase
+      // Añadimos campos auxiliares para ordenación y filtrado
+      const albaranesNormalizados = albaranesResponse.data.map((albaran) => ({
         ...albaran,
-        esParcial: albaran.EstadoPedido === 4,
+        // id ya viene del backend, pero lo aseguramos
+        id: albaran.id || `${albaran.ejercicio}-${albaran.serie || ''}-${albaran.numero}`,
+        esParcial:    albaran.esParcial    || albaran.EstadoPedido === 4,
         esVoluminoso: albaran.EsVoluminoso || albaran.EsVoluminosoPedido,
-        repartidorLower: (albaran.repartidorAsignado || '').toLowerCase(),
-        albaranLower: (albaran.albaran || '').toLowerCase(),
-        obraLower: (albaran.NombreObra || albaran.obra || '').toLowerCase(),
-        clienteLower: (albaran.RazonSocial || '').toLowerCase(),
-        fechaSort: albaran.FechaAlbaran ? new Date(albaran.FechaAlbaran).getTime() : 0,
+        // Campos auxiliares para ordenación/filtrado (camelCase)
+        repartidorLower: (albaran.empleadoAsignado || '').toLowerCase(),
+        albaranLower:    (albaran.albaran    || '').toLowerCase(),
+        obraLower:       (albaran.nombreObra || albaran.NombreObra || '').toLowerCase(),
+        clienteLower:    (albaran.cliente    || albaran.RazonSocial || '').toLowerCase(),
+        fechaSort:       albaran.FechaAlbaran ? new Date(albaran.FechaAlbaran).getTime() : 0,
       }));
 
-      setAlbaranes(albaranesConStatus);
-      setRepartidores(repartidoresResponse.data);
+      // FIX 3: normalizar repartidores
+      const repartidoresNormalizados = repartidoresResponse.data.map((rep) => ({
+        id:     rep.id     || rep.CodigoCliente || rep.codigo,
+        nombre: rep.nombre || rep.Nombre        || rep.RazonSocial,
+      }));
+
+      setAlbaranes(albaranesNormalizados);
+      setRepartidores(repartidoresNormalizados);
 
       const initialAsignaciones = {};
-      albaranesConStatus.forEach((albaran) => {
-        const key = `albaran-${albaran.EjercicioAlbaran}-${albaran.SerieAlbaran || ''}-${albaran.NumeroAlbaran}`;
-        initialAsignaciones[key] = albaran.repartidorAsignado || '';
+      albaranesNormalizados.forEach((albaran) => {
+        initialAsignaciones[albaran.id] = albaran.empleadoAsignado || '';
       });
       setAsignaciones(initialAsignaciones);
     } catch (err) {
@@ -607,34 +609,32 @@ function AlbaranesAsignadosScreen() {
   };
 
   const handleAsignarAlbaran = async (albaran) => {
-    const key = `albaran-${albaran.EjercicioAlbaran}-${albaran.SerieAlbaran || ''}-${albaran.NumeroAlbaran}`;
-    const repartidorId = asignaciones[key];
+    const repartidorId = asignaciones[albaran.id];
 
     if (!repartidorId) {
       setError('Selecciona un repartidor');
       return;
     }
-    if (repartidorId === albaran.repartidorAsignado) {
+    if (repartidorId === albaran.empleadoAsignado) {
       setError('Este albarán ya está asignado a este repartidor');
       return;
     }
 
     try {
       const response = await API.post('/asignarAlbaranExistente', {
-        codigoEmpresa: albaran.CodigoEmpresa,
-        ejercicio: albaran.EjercicioAlbaran,
-        serie: albaran.SerieAlbaran,
-        numeroAlbaran: albaran.NumeroAlbaran,
+        // FIX 5: campos camelCase
+        codigoEmpresa: albaran.codigoEmpresa,
+        ejercicio:     albaran.ejercicio,
+        serie:         albaran.serie || '',
+        numeroAlbaran: albaran.numero,
         codigoRepartidor: repartidorId,
       });
 
       if (response.data.success) {
         setAlbaranes((prev) =>
           prev.map((a) =>
-            a.EjercicioAlbaran === albaran.EjercicioAlbaran &&
-            (a.SerieAlbaran || '') === (albaran.SerieAlbaran || '') &&
-            a.NumeroAlbaran === albaran.NumeroAlbaran
-              ? { ...a, repartidorAsignado: repartidorId, repartidorLower: repartidorId.toLowerCase() }
+            a.id === albaran.id
+              ? { ...a, empleadoAsignado: repartidorId, repartidorLower: repartidorId.toLowerCase() }
               : a
           )
         );
@@ -662,13 +662,13 @@ function AlbaranesAsignadosScreen() {
         const matchAlbaran =
           !filtroAlbaran ||
           albaran.albaranLower.includes(filtroAlbaran.toLowerCase()) ||
-          albaran.NumeroAlbaran.toString().includes(filtroAlbaran);
+          (albaran.numero || '').toString().includes(filtroAlbaran);
         const matchCliente = !filtroCliente || albaran.clienteLower.includes(filtroCliente.toLowerCase());
         const matchObra = !filtroObra || albaran.obraLower.includes(filtroObra.toLowerCase());
         const matchRepartidor =
           !filtroRepartidor ||
           (filtroRepartidor === 'sin-asignar'
-            ? !albaran.repartidorAsignado
+            ? !albaran.empleadoAsignado
             : albaran.repartidorLower.includes(filtroRepartidor.toLowerCase()));
         return matchAlbaran && matchCliente && matchObra && matchRepartidor;
       }),
@@ -694,7 +694,8 @@ function AlbaranesAsignadosScreen() {
   };
 
   const resumen = useMemo(() => {
-    const sinAsignar = albaranesFiltrados.filter((item) => !item.repartidorAsignado).length;
+    // FIX 5: usar empleadoAsignado (camelCase)
+    const sinAsignar = albaranesFiltrados.filter((item) => !item.empleadoAsignado).length;
     const parciales = albaranesFiltrados.filter((item) => item.esParcial).length;
     const voluminosos = albaranesFiltrados.filter((item) => item.esVoluminoso).length;
 
@@ -794,27 +795,26 @@ function AlbaranesAsignadosScreen() {
       )}
 
       {paginatedAlbaranes.map((albaran) => {
-        const key = `albaran-${albaran.EjercicioAlbaran}-${albaran.SerieAlbaran || ''}-${albaran.NumeroAlbaran}`;
         return (
           <AlbaranCard
-            key={key}
+            key={albaran.id}
             albaran={albaran}
-            expanded={!!albaranesExpandidos[key]}
-            assignmentOpen={!!editoresAsignacion[key]}
+            expanded={!!albaranesExpandidos[albaran.id]}
+            assignmentOpen={!!editoresAsignacion[albaran.id]}
             onToggle={() =>
               setAlbaranesExpandidos((prev) => ({
                 ...prev,
-                [key]: !prev[key],
+                [albaran.id]: !prev[albaran.id],
               }))
             }
             onToggleAssignment={() =>
               setEditoresAsignacion((prev) => ({
                 ...prev,
-                [key]: !prev[key],
+                [albaran.id]: !prev[albaran.id],
               }))
             }
             repartidores={repartidores}
-            asignacion={asignaciones[key] || ''}
+            asignacion={asignaciones[albaran.id] || ''}
             onAsignacionChange={(cardKey, value) => setAsignaciones((prev) => ({ ...prev, [cardKey]: value }))}
             onAsignar={() => handleAsignarAlbaran(albaran)}
           />

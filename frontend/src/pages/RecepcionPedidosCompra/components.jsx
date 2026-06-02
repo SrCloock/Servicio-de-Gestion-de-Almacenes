@@ -1,5 +1,5 @@
 // components.jsx
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Alert,
   AlertTitle,
@@ -222,7 +222,6 @@ export const ProveedorGroupCard = ({
   expandido,
   onToggle,
   loading,
-  onGenerarAlbaran,
   children
 }) => {
   return (
@@ -249,24 +248,6 @@ export const ProveedorGroupCard = ({
               />
             </div>
           </div>
-
-          <div className="RPC-proveedor-acciones">
-            {grupo.tieneUnidadesParaAlbaran && (
-              <Button
-                variant="contained"
-                color="success"
-                size="small"
-                className="RPC-btn RPC-btn-success RPC-btn-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onGenerarAlbaran();
-                }}
-                disabled={loading}
-              >
-                Generar albarán
-              </Button>
-            )}
-          </div>
         </div>
       </Paper>
 
@@ -284,8 +265,21 @@ export const PedidoCompraCard = ({
   onToggle,
   onGenerarAlbaran,
   onFinalizar,
+  datosPedido,        // { suAlbaranNo, fechaSuAlbaran, fijado }
+  onGuardarDatos,
+  disabledAlbaran,
+  disabledFinalizar,
   children
 }) => {
+  const [suAlbaranNo, setSuAlbaranNo] = useState(datosPedido?.suAlbaranNo || '');
+  const [fechaSuAlbaran, setFechaSuAlbaran] = useState(datosPedido?.fechaSuAlbaran || '');
+
+  const handleGuardar = () => {
+    onGuardarDatos(suAlbaranNo, fechaSuAlbaran);
+  };
+
+  const datosFijados = datosPedido?.fijado || false;
+
   return (
     <Card elevation={1} className="RPC-pedido-item" sx={{ borderRadius: 3, overflow: 'hidden', mb: 2 }}>
       <Paper
@@ -334,7 +328,8 @@ export const PedidoCompraCard = ({
                 e.stopPropagation();
                 onGenerarAlbaran();
               }}
-              disabled={loading}
+              disabled={loading || disabledAlbaran}
+              title={disabledAlbaran ? "Debe guardar los datos del proveedor primero" : ""}
             >
               Albarán
             </Button>
@@ -351,14 +346,62 @@ export const PedidoCompraCard = ({
               e.stopPropagation();
               onFinalizar();
             }}
-            disabled={loading}
+            disabled={loading || disabledFinalizar}
+            title={disabledFinalizar ? "Debe guardar los datos del proveedor primero" : ""}
           >
             Finalizar
           </Button>
         </div>
       </Paper>
 
-      {expandido && <CardContent className="RPC-pedido-detalles">{children}</CardContent>}
+      {expandido && (
+        <CardContent className="RPC-pedido-detalles">
+          {/* Panel de datos obligatorios del pedido */}
+          <Paper elevation={0} sx={{ p: 2, mb: 2, backgroundColor: '#f8f9fa' }}>
+            <Stack spacing={2}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                Datos del Albarán del Proveedor para este pedido
+              </Typography>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <TextField
+                  label="Nº Albarán Proveedor"
+                  type="number"
+                  value={suAlbaranNo}
+                  onChange={(e) => setSuAlbaranNo(e.target.value)}
+                  disabled={datosFijados}
+                  size="small"
+                  fullWidth
+                  required
+                />
+                <TextField
+                  label="Fecha Albarán Proveedor"
+                  type="date"
+                  value={fechaSuAlbaran}
+                  onChange={(e) => setFechaSuAlbaran(e.target.value)}
+                  disabled={datosFijados}
+                  size="small"
+                  fullWidth
+                  required
+                  InputLabelProps={{ shrink: true }}
+                />
+                <Button
+                  variant="contained"
+                  onClick={handleGuardar}
+                  disabled={datosFijados || loading}
+                >
+                  {datosFijados ? '✓ Datos fijados' : 'Guardar'}
+                </Button>
+              </Stack>
+              {!datosFijados && (
+                <Alert severity="warning">
+                  <strong>Obligatorio:</strong> Debe guardar estos datos para poder recepcionar o generar albarán de este pedido.
+                </Alert>
+              )}
+            </Stack>
+          </Paper>
+          {children}
+        </CardContent>
+      )}
     </Card>
   );
 };

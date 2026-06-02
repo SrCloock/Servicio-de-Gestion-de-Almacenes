@@ -3,6 +3,24 @@
 module.exports = function createtraspasosRouter({ sql, getPool }) {
   const router = express.Router();
 
+  // ── Helper: verificar permiso de pantalla ──────────────────────────────
+  async function verificarPermiso(usuario, codigoEmpresa) {
+    const result = await getPool().request()
+      .input('usuario', sql.VarChar, usuario)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT StatusAdministrador, StatusUsuarioAvanzado, StatusVerTraspasosAlmacen
+        FROM Clientes
+        WHERE UsuarioLogicNet = @usuario
+          AND CodigoEmpresa = @codigoEmpresa
+      `);
+    if (result.recordset.length === 0) return false;
+    const u = result.recordset[0];
+    return u.StatusAdministrador === -1 || u.StatusUsuarioAvanzado === -1 || u.StatusVerTraspasosAlmacen === -1;
+  }
+
+
+
   // ============================================================
   // HELPERS
   // ============================================================
@@ -488,6 +506,10 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
     const codigoEmpresa = req.user.CodigoEmpresa;
     const ejercicioActual = new Date().getFullYear();
 
+    if (!(await verificarPermiso(usuario, codigoEmpresa))) {
+      return res.status(403).json({ success: false, mensaje: 'No tienes permiso para realizar traspasos.' });
+    }
+
     console.log('[TRASPASO] Recibido:', { articulo, origenAlmacen, origenUbicacion, destinoAlmacen, destinoUbicacion, cantidad, unidadMedida, partida, codigoTalla, codigoColor });
 
     // Validaciones básicas
@@ -957,17 +979,19 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
           ORDER BY s.UnidadSaldo DESC
         `);
 
+      const ejercicioActualDebug = new Date().getFullYear();
       const stockTotal = await getPool().request()
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('codigoArticulo', sql.VarChar, codigoArticulo)
+        .input('ejercicio', sql.Int, ejercicioActualDebug)
         .query(`
           SELECT CodigoAlmacen, Ubicacion, TipoUnidadMedida_,
-                 SUM(UnidadSaldo) AS StockTotal
+                 UnidadSaldo AS StockTotal
           FROM AcumuladoStock
           WHERE CodigoEmpresa = @codigoEmpresa
             AND CodigoArticulo = @codigoArticulo
             AND Periodo = 99
-          GROUP BY CodigoAlmacen, Ubicacion, TipoUnidadMedida_
+            AND Ejercicio = @ejercicio
         `);
 
       res.json({ success: true, stockUbicacion: stockUbicacion.recordset, stockTotal: stockTotal.recordset });

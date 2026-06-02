@@ -46,6 +46,9 @@ import {
   FaCalendarAlt,
 } from 'react-icons/fa';
 
+// Importar opcionesRangoFechas desde hooksYHelpers
+import { opcionesRangoFechas } from './hooksYHelpers';
+
 // Colores personalizados
 const colors = {
   primary: '#1a365d',
@@ -103,7 +106,8 @@ export const PedidosHeader = ({ title, subtitle }) => {
 };
 
 // ----------------------
-// PedidosFilters (MODIFICADO: AÑADIDA OPCIÓN "TODOS")
+// PedidosFilters
+// FIX: Usa opcionesRangoFechas importadas (incluye "Todos") en lugar de hardcoded
 // ----------------------
 export const PedidosFilters = ({
   filtroBusqueda,
@@ -150,9 +154,12 @@ export const PedidosFilters = ({
               '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: colors.primary },
             }}
           >
-            <MenuItem value="todos">Todos</MenuItem>    {/* ✅ NUEVA OPCIÓN */}
-            <MenuItem value="semana">Una semana</MenuItem>
-            <MenuItem value="dia">Un día</MenuItem>
+            {/* FIX: Opciones dinámicas desde constante exportada, incluye "Todos" */}
+            {opcionesRangoFechas.map((opcion) => (
+              <MenuItem key={opcion.value} value={opcion.value}>
+                {opcion.label}
+              </MenuItem>
+            ))}
           </Select>
         </FormControl>
 
@@ -223,12 +230,13 @@ export const PedidosSummaryBar = ({
 
 // ----------------------
 // PedidosList
+// FIX: Renderiza topPagination y bottomPagination correctamente
 // ----------------------
 export const PedidosList = ({ topPagination, bottomPagination, children }) => (
   <>
-    <Box sx={{ mb: 2 }}>{topPagination}</Box>
+    {topPagination && <Box sx={{ mb: 2 }}>{topPagination}</Box>}
     <Stack spacing={2.5}>{children}</Stack>
-    <Box sx={{ mt: 2 }}>{bottomPagination}</Box>
+    {bottomPagination && <Box sx={{ mt: 2 }}>{bottomPagination}</Box>}
   </>
 );
 

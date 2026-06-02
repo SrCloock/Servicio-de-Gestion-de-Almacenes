@@ -69,7 +69,7 @@ const formatFecha = (fecha) => {
 
 const formatPeso = (peso) => `${(parseFloat(peso) || 0).toFixed(2)} kg`;
 
-// ---------- Componentes internos mejorados ----------
+// ---------- Componentes internos ----------
 
 const AssignmentHeader = ({ title, subtitle, summary, onRefresh, onSave, loading, saveDisabled, saveLabel }) => {
   const theme = useTheme();
@@ -143,7 +143,6 @@ const AssignmentHeader = ({ title, subtitle, summary, onRefresh, onSave, loading
 };
 
 const FiltersPanel = ({ filtros, preparadores, onChange, onClear, onApplyOrder }) => {
-  const theme = useTheme();
   return (
     <Paper elevation={1} sx={{ p: { xs: 2, sm: 3 }, borderRadius: 3, mb: 3 }}>
       <Stack spacing={3}>
@@ -335,7 +334,6 @@ const PaginationControls = ({
 );
 
 const DetailLineItem = ({ linea }) => {
-  const theme = useTheme();
   return (
     <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
       <Stack
@@ -437,6 +435,9 @@ const PedidoCard = ({
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} useFlexGap>
             <Typography variant="body2" color="text.secondary">
+              <strong>Cliente:</strong> {pedido.razonSocial || pedido.RazonSocial || 'Sin cliente'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
               <strong>Contacto:</strong> {pedido.Contacto || 'Sin contacto'}
             </Typography>
             <Typography variant="body2" color="text.secondary">
@@ -532,12 +533,16 @@ const AsignarPedidosScreen = () => {
     if (!canAssignOrders) return;
     try {
       setLoading(true);
+      setError('');
       const [pedidosResponse, prepResponse] = await Promise.all([
-        API.get('/pedidosPendientes', { params: { soloAprobados: false, rango: 'todo' } }),
+        API.get('/pedidosPendientes', { params: { rango: 'todos', soloAsignacion: 'true' } }),
+        // FIX: endpoint correcto para obtener preparadores
         API.get('/empleados/preparadores'),
       ]);
 
       setPedidos(pedidosResponse.data);
+
+      // FIX: /empleados/preparadores ya devuelve {codigo, nombre} directamente
       setPreparadores(prepResponse.data);
 
       const inicialAsignaciones = {};
@@ -546,7 +551,7 @@ const AsignarPedidosScreen = () => {
       });
       setAsignaciones(inicialAsignaciones);
     } catch (err) {
-      setError(`Error al cargar datos: ${err.message}`);
+      setError(`Error al cargar datos: ${err.response?.data?.mensaje || err.message}`);
     } finally {
       setLoading(false);
     }
@@ -612,10 +617,10 @@ const AsignarPedidosScreen = () => {
         Object.entries(asignacionesPorEmpleado).map(([empleadoId, pedidosAsignar]) =>
           API.post('/asignarPedidosAEmpleado', {
             pedidos: pedidosAsignar.map((p) => ({
-              codigoEmpresa: p.codigoEmpresa,
+              codigoEmpresa:   p.codigoEmpresa,
               ejercicioPedido: p.ejercicioPedido,
-              seriePedido: p.seriePedido || '',
-              numeroPedido: p.numeroPedido,
+              seriePedido:     p.seriePedido || '',
+              numeroPedido:    p.numeroPedido,
             })),
             codigoEmpleado: empleadoId || null,
           })
@@ -657,7 +662,8 @@ const AsignarPedidosScreen = () => {
         ) {
           return false;
         }
-        if (filtroCliente && !pedido.razonSocial.toLowerCase().includes(filtroCliente.toLowerCase())) {
+        const razonSocial = pedido.razonSocial || pedido.RazonSocial || '';
+        if (filtroCliente && !razonSocial.toLowerCase().includes(filtroCliente.toLowerCase())) {
           return false;
         }
         if (filtroEmpleadoAsignado !== 'todos') {
@@ -690,7 +696,6 @@ const AsignarPedidosScreen = () => {
       (pedido) => (asignaciones[pedido.numeroPedido] || '') !== (pedido.EmpleadoAsignado || '')
     ).length;
 
-    // Colores tomados del tema
     const colors = {
       primary: theme.palette.primary.main,
       warning: theme.palette.secondary.main,
@@ -698,10 +703,10 @@ const AsignarPedidosScreen = () => {
       blue: '#2563eb',
     };
     return [
-      { label: 'Pedidos visibles', value: pedidosFiltrados.length, icon: <Inventory2Icon />, accent: colors.primary },
-      { label: 'Sin asignar', value: sinAsignar, icon: <PersonOffIcon />, accent: colors.warning },
-      { label: 'Con preparador', value: conAsignacion, icon: <AssignmentIndIcon />, accent: colors.teal },
-      { label: 'Cambios pendientes', value: pendientesGuardar, icon: <FactCheckIcon />, accent: colors.blue },
+      { label: 'Pedidos visibles',   value: pedidosFiltrados.length, icon: <Inventory2Icon />,    accent: colors.primary },
+      { label: 'Sin asignar',        value: sinAsignar,              icon: <PersonOffIcon />,     accent: colors.warning },
+      { label: 'Con preparador',     value: conAsignacion,           icon: <AssignmentIndIcon />, accent: colors.teal },
+      { label: 'Cambios pendientes', value: pendientesGuardar,       icon: <FactCheckIcon />,     accent: colors.blue },
     ];
   }, [pedidosFiltrados, asignaciones, theme]);
 

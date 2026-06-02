@@ -18,11 +18,11 @@ router.post('/marcarPedidoCompletado', async (req, res) => {
       .input('serie', sql.VarChar, serie || '')
       .query(`
         UPDATE CabeceraPedidoCliente
-        SET Estado = 2,  -- 2 = Completado (antes era 2 = Servido)
+        SET Estado = 2,
             FechaCompletado = GETDATE()
         WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioPedido = @ejercicio
           AND NumeroPedido = @numeroPedido
+          AND (EjercicioPedido = @ejercicio OR @ejercicio = 0)
           AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
       `);
 
@@ -40,62 +40,110 @@ router.post('/marcarPedidoCompletado', async (req, res) => {
   }
 });
 
-// ✅ 6.2 OBTENER PEDIDOS COMPLETADOS (CORREGIDO)
+// ✅ 6.2 OBTENER PEDIDOS COMPLETADOS
 router.get('/pedidosCompletados', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
-    return res.status(401).json({ 
-      success: false, 
-      mensaje: 'No autenticado' 
-    });
+    return res.status(401).json({ success: false, mensaje: 'No autenticado' });
   }
   
   const codigoEmpresa = req.user.CodigoEmpresa;
+  const usuarioActual = req.user.UsuarioLogicNet;
+
+  // Solo quien puede ver la pantalla de asignación accede a esta lista
+  const permisoResult = await getPool().request()
+    .input('usuario', sql.VarChar, usuarioActual)
+    .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .query(`
+      SELECT StatusAdministrador, StatusUsuarioAvanzado, StatusVerPedidosAsignados
+      FROM Clientes
+      WHERE UsuarioLogicNet = @usuario AND CodigoEmpresa = @codigoEmpresa
+    `);
+
+  if (permisoResult.recordset.length === 0) {
+    return res.status(403).json({ success: false, mensaje: 'Usuario no encontrado.' });
+  }
+  const perms = permisoResult.recordset[0];
+  const puedeVerTodos = perms.StatusAdministrador === -1 ||
+                        perms.StatusUsuarioAvanzado === -1 ||
+                        perms.StatusVerPedidosAsignados === -1;
+  if (!puedeVerTodos) {
+    return res.status(403).json({ success: false, mensaje: 'No tienes permiso para ver la asignación de pedidos.' });
+  }
   
   try {
+    // Una sola query con LEFT JOIN para evitar N queries paralelas (timeout)
     const result = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(`
         SELECT 
-          p.*,
+          p.NumeroPedido,
+          p.EjercicioPedido,
+          p.SeriePedido,
+          p.CodigoEmpresa,
+          p.CodigoCliente,
+          p.RazonSocial,
+          p.Domicilio,
+          p.Municipio,
+          p.FechaPedido,
+          p.FechaCompletado,
+          p.Estado,
+          p.EmpleadoAsignado,
+          p.NumeroLineas,
+          p.ImporteLiquido,
           (SELECT COUNT(*) FROM LineasPedidoCliente l 
            WHERE l.CodigoEmpresa = p.CodigoEmpresa
-           AND l.EjercicioPedido = p.EjercicioPedido
-           AND l.SeriePedido = p.SeriePedido
-           AND l.NumeroPedido = p.NumeroPedido) AS TotalLineas,
-          p.CodigoEmpleadoAsignado
+             AND l.EjercicioPedido = p.EjercicioPedido
+             AND l.SeriePedido = p.SeriePedido
+             AND l.NumeroPedido = p.NumeroPedido) AS TotalLineas,
+          lin.CodigoArticulo,
+          lin.DescripcionArticulo,
+          lin.UnidadesPedidas
         FROM CabeceraPedidoCliente p
+        LEFT JOIN LineasPedidoCliente lin
+          ON lin.CodigoEmpresa = p.CodigoEmpresa
+          AND lin.EjercicioPedido = p.EjercicioPedido
+          AND lin.SeriePedido = p.SeriePedido
+          AND lin.NumeroPedido = p.NumeroPedido
         WHERE p.CodigoEmpresa = @codigoEmpresa
-          AND p.Estado = 2  -- Completados
-          AND p.CodigoEmpleadoAsignado IS NULL  -- Solo pedidos sin empleado asignado
-        ORDER BY p.FechaPedido DESC
+          AND p.Estado = 2
+          AND p.EmpleadoAsignado IS NULL
+        ORDER BY p.FechaPedido DESC, lin.CodigoArticulo
       `);
 
-    // Obtener detalles de los artículos para cada pedido
-    const pedidosConArticulos = await Promise.all(result.recordset.map(async pedido => {
-      const lineas = await getPool().request()
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .input('ejercicio', sql.SmallInt, pedido.EjercicioPedido)
-        .input('serie', sql.VarChar, pedido.SeriePedido || '')
-        .input('numeroPedido', sql.Int, pedido.NumeroPedido)
-        .query(`
-          SELECT 
-            CodigoArticulo,
-            DescripcionArticulo,
-            UnidadesPedidas
-          FROM LineasPedidoCliente
-          WHERE CodigoEmpresa = @codigoEmpresa
-            AND EjercicioPedido = @ejercicio
-            AND SeriePedido = @serie
-            AND NumeroPedido = @numeroPedido
-        `);
-      
-      return {
-        ...pedido,
-        articulos: lineas.recordset
-      };
-    }));
-    
-    res.json(pedidosConArticulos);
+    // Agrupar líneas por pedido
+    const pedidosMap = new Map();
+    for (const row of result.recordset) {
+      const key = `${row.EjercicioPedido}-${row.SeriePedido || ''}-${row.NumeroPedido}`;
+      if (!pedidosMap.has(key)) {
+        pedidosMap.set(key, {
+          NumeroPedido:      row.NumeroPedido,
+          EjercicioPedido:   row.EjercicioPedido,
+          SeriePedido:       row.SeriePedido,
+          CodigoEmpresa:     row.CodigoEmpresa,
+          CodigoCliente:     row.CodigoCliente,
+          RazonSocial:       row.RazonSocial,
+          Domicilio:         row.Domicilio,
+          Municipio:         row.Municipio,
+          FechaPedido:       row.FechaPedido,
+          FechaCompletado:   row.FechaCompletado,
+          Estado:            row.Estado,
+          EmpleadoAsignado:  row.EmpleadoAsignado,
+          NumeroLineas:      row.NumeroLineas,
+          ImporteLiquido:    row.ImporteLiquido,
+          TotalLineas:       row.TotalLineas,
+          articulos:         []
+        });
+      }
+      if (row.CodigoArticulo) {
+        pedidosMap.get(key).articulos.push({
+          CodigoArticulo:     row.CodigoArticulo,
+          DescripcionArticulo: row.DescripcionArticulo,
+          UnidadesPedidas:    row.UnidadesPedidas
+        });
+      }
+    }
+
+    res.json([...pedidosMap.values()]);
   } catch (err) {
     console.error('[ERROR PEDIDOS COMPLETADOS]', err);
     res.status(500).json({ 
@@ -106,15 +154,12 @@ router.get('/pedidosCompletados', async (req, res) => {
   }
 });
 
-// ✅ 6.3 ASIGNAR PEDIDO Y GENERAR ALBARÁN (ACTUALIZADO)
+// ✅ 6.3 ASIGNAR PEDIDO Y GENERAR ALBARÁN
 router.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
   const { codigoEmpresa, ejercicio, serie, numeroPedido } = req.body;
 
   if (!codigoEmpresa || !ejercicio || !numeroPedido) {
-    return res.status(400).json({ 
-      success: false, 
-      mensaje: 'Faltan datos del pedido.' 
-    });
+    return res.status(400).json({ success: false, mensaje: 'Faltan datos del pedido.' });
   }
 
   const transaction = new sql.Transaction(getPool());
@@ -130,7 +175,7 @@ router.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
       .input('serie', sql.VarChar, serie || '')
       .input('numeroPedido', sql.Int, numeroPedido)
       .query(`
-        SELECT CodigoEmpleadoAsignado
+        SELECT EmpleadoAsignado
         FROM CabeceraPedidoCliente
         WHERE CodigoEmpresa = @codigoEmpresa
           AND EjercicioPedido = @ejercicio
@@ -138,11 +183,11 @@ router.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
           AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
       `);
 
-    if (empleadoResult.recordset.length === 0 || !empleadoResult.recordset[0].CodigoEmpleadoAsignado) {
+    if (empleadoResult.recordset.length === 0 || !empleadoResult.recordset[0].EmpleadoAsignado) {
       throw new Error('El pedido no tiene un empleado asignado');
     }
 
-    const codigoEmpleado = empleadoResult.recordset[0].CodigoEmpleadoAsignado;
+    const codigoEmpleado = empleadoResult.recordset[0].EmpleadoAsignado;
 
     // 2. Obtener el siguiente número de albarán
     const nextAlbaran = await getPool().request()
@@ -188,21 +233,32 @@ router.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
       .input('numeroAlbaran', sql.Int, numeroAlbaran)
       .input('codigoCliente', sql.VarChar, cab.CodigoCliente)
       .input('razonSocial', sql.VarChar, cab.RazonSocial)
-      .input('domicilio', sql.VarChar, cab.Domicilio)
-      .input('municipio', sql.VarChar, cab.Municipio)
+      .input('domicilio', sql.VarChar, cab.Domicilio || '')
+      .input('municipio', sql.VarChar, cab.Municipio || '')
       .input('fecha', sql.DateTime, fechaActual)
       .input('numeroLineas', sql.Int, cab.NumeroLineas || 0)
       .input('importeLiquido', sql.Decimal(18,4), cab.ImporteLiquido || 0)
       .input('codigoEmpleado', sql.VarChar, codigoEmpleado)
+      .input('formaEnvio', sql.SmallInt, cab.FormaEnvio || 3)
+      .input('numeroPedidoOrigen', sql.Int, cab.NumeroPedido)
+      .input('ejercicioPedidoOrigen', sql.SmallInt, cab.EjercicioPedido)
+      .input('seriePedidoOrigen', sql.VarChar, cab.SeriePedido || '')
+      .input('nombreObra', sql.VarChar, cab.NombreObra || '')
+      .input('contacto', sql.VarChar, cab.Contacto || '')
+      .input('telefono', sql.VarChar, cab.Telefono || '')
       .query(`
         INSERT INTO CabeceraAlbaranCliente (
           CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
           CodigoCliente, RazonSocial, Domicilio, Municipio, FechaAlbaran,
-          NumeroLineas, ImporteLiquido, CodigoRepartidor
+          NumeroLineas, ImporteLiquido, EmpleadoAsignado,
+          FormaEnvio, NumeroPedido, EjercicioPedido, SeriePedido,
+          NombreObra, Contacto, Telefono
         ) VALUES (
           @codigoEmpresa, @ejercicio, @serie, @numeroAlbaran,
           @codigoCliente, @razonSocial, @domicilio, @municipio, @fecha,
-          @numeroLineas, @importeLiquido, @codigoEmpleado
+          @numeroLineas, @importeLiquido, @codigoEmpleado,
+          @formaEnvio, @numeroPedidoOrigen, @ejercicioPedidoOrigen, @seriePedidoOrigen,
+          @nombreObra, @contacto, @telefono
         )
       `);
 
@@ -247,7 +303,7 @@ router.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
         `);
     }
 
-    // 5. Marcar el pedido como servido (Estado = 2)
+    // 5. Marcar el pedido como servido
     await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -281,11 +337,10 @@ router.post('/asignarPedidoYGenerarAlbaran', async (req, res) => {
   }
 });
 
-// ✅ 6.4 ASIGNAR/REMOVER EMPLEADO DE MÚLTIPLES PEDIDOS (SOLUCIÓN FINAL)
+// ✅ 6.4 ASIGNAR/REMOVER EMPLEADO DE MÚLTIPLES PEDIDOS
 router.post('/asignarPedidosAEmpleado', async (req, res) => {
   const { pedidos, codigoEmpleado } = req.body;
   
-  // Validación mejorada
   if (!pedidos || !Array.isArray(pedidos)) {
     return res.status(400).json({ 
       success: false, 
@@ -305,9 +360,8 @@ router.post('/asignarPedidosAEmpleado', async (req, res) => {
   try {
     await transaction.begin();
     
-    // SOLUCIÓN: Crear un nuevo Request para cada iteración
     for (const pedido of pedidos) {
-      const request = new sql.Request(transaction); // Nueva instancia por pedido
+      const request = new sql.Request(transaction);
       
       await request
         .input('codigoEmpresa', sql.SmallInt, pedido.codigoEmpresa)
@@ -364,7 +418,7 @@ router.post('/asignar-pedido', async (req, res) => {
       .input('pedidoId', sql.Int, pedidoId)
       .query(`
         UPDATE CabeceraPedidoCliente
-        SET CodigoEmpleadoAsignado = @empleadoId
+        SET EmpleadoAsignado = @empleadoId
         WHERE CodigoEmpresa = @codigoEmpresa
           AND NumeroPedido = @pedidoId
       `);
@@ -388,13 +442,16 @@ router.get('/pedidos-sin-asignar', async (req, res) => {
       .query(`
         SELECT 
           NumeroPedido,
+          EjercicioPedido,
+          SeriePedido,
           RazonSocial,
           FechaPedido,
-          CodigoEmpleadoAsignado
+          EmpleadoAsignado,
+          Estado
         FROM CabeceraPedidoCliente
         WHERE CodigoEmpresa = @codigoEmpresa
-          AND Estado = 0
-          AND CodigoEmpleadoAsignado IS NULL
+          AND (Estado = 0 OR Estado IS NULL)
+          AND (EmpleadoAsignado IS NULL OR EmpleadoAsignado = '')
         ORDER BY FechaPedido DESC
       `);
     res.json(result.recordset);
@@ -408,7 +465,7 @@ router.get('/pedidos-sin-asignar', async (req, res) => {
   }
 });
 
-// ✅ 6.7 OBTENER EMPLEADOS PREPARADORES (VERSIÓN COMPLETA)
+// ✅ 6.7 OBTENER EMPLEADOS PREPARADORES
 router.get('/empleados/preparadores', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autenticado' });
@@ -440,7 +497,6 @@ router.get('/empleados/preparadores', async (req, res) => {
     });
   }
 });
-
 
 
 // ============================================

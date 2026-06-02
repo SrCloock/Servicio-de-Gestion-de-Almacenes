@@ -133,21 +133,20 @@ const Navbar = () => {
   };
 
   const navItems = [
-    { path: '/', label: 'Inicio', icon: <HomeIcon />, visible: true },
-    { path: '/PedidosScreen', label: 'Pedidos', icon: <ClipboardListIcon />, visible: permissions.canViewPedidosScreen },
-    { path: '/pedidos-asignados', label: 'Asignar pedidos', icon: <TruckLoadingIcon />, visible: permissions.canViewAssignedOrders },
-    { path: '/rutas', label: 'Albaranes', icon: <RouteIcon />, visible: permissions.canViewGestionRutas },
-    { path: '/albaranes-asignados', label: 'Asignar albaranes', icon: <FileInvoiceIcon />, visible: permissions.canAssignWaybills },
-    { path: '/traspasos', label: 'Traspaso', icon: <ExchangeAltIcon />, visible: permissions.canViewTransfers },
-    { path: '/inventario', label: 'Inventario', icon: <BoxesIcon />, visible: permissions.canViewInventory },
-    { path: '/recepcion-pedidos-compra', label: 'Recepción', icon: <ShoppingCartIcon />, visible: permissions.canViewInventory },
-    { path: '/gestion-documental', label: 'Documentos', icon: <FileContractIcon />, visible: permissions.canViewDocumentManagement },
+    { path: '/',                         label: 'Inicio',           icon: <HomeIcon />,           visible: true },
+    { path: '/PedidosScreen',            label: 'Pedidos',          icon: <ClipboardListIcon />,  visible: permissions.canViewPedidosScreen },
+    { path: '/pedidos-asignados',        label: 'Asignar pedidos',  icon: <TruckLoadingIcon />,   visible: permissions.canViewAsignacionPedidos },
+    { path: '/rutas',                    label: 'Albaranes',        icon: <RouteIcon />,          visible: permissions.canViewGestionRutas },
+    { path: '/albaranes-asignados',      label: 'Asignar albaranes',icon: <FileInvoiceIcon />,    visible: permissions.canViewAlbaranesAsignadosScreen },
+    { path: '/traspasos',                label: 'Traspaso',         icon: <ExchangeAltIcon />,    visible: permissions.canViewTransfers },
+    { path: '/inventario',               label: 'Inventario',       icon: <BoxesIcon />,          visible: permissions.canViewInventory },
+    { path: '/recepcion-pedidos-compra', label: 'Recepción',        icon: <ShoppingCartIcon />,   visible: permissions.canViewReceiving },
+    { path: '/gestion-documental',       label: 'Documentos',       icon: <FileContractIcon />,   visible: permissions.canViewDocumentManagement },
   ];
 
   const visibleNavItems = navItems.filter((item) => item.visible);
   if (visibleNavItems.length < 2) return null;
 
-  // Renderizado para el rango de solo iconos (distribución uniforme)
   const renderIconsOnly = () => (
     <Stack
       direction="row"
@@ -188,13 +187,8 @@ const Navbar = () => {
                 borderRadius: 1,
                 transition: 'width 0.2s ease',
               },
-              '&:hover': {
-                backgroundColor: 'rgba(255,255,255,0.10)',
-              },
-              '& .MuiButton-startIcon': {
-                marginRight: 0,
-                fontSize: '1.3rem',
-              },
+              '&:hover': { backgroundColor: 'rgba(255,255,255,0.10)' },
+              '& .MuiButton-startIcon': { marginRight: 0, fontSize: '1.3rem' },
               textTransform: 'none',
               whiteSpace: 'nowrap',
             }}
@@ -204,7 +198,6 @@ const Navbar = () => {
     </Stack>
   );
 
-  // Renderizado para el rango con texto+icono (scroll horizontal)
   const renderWithText = () => (
     <Box
       sx={{
@@ -215,9 +208,7 @@ const Navbar = () => {
         '&::before': {
           content: '""',
           position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
+          left: 0, top: 0, bottom: 0,
           width: 32,
           background: `linear-gradient(90deg, ${theme.palette.primary.main} 0%, transparent 100%)`,
           zIndex: 1,
@@ -228,9 +219,7 @@ const Navbar = () => {
         '&::after': {
           content: '""',
           position: 'absolute',
-          right: 0,
-          top: 0,
-          bottom: 0,
+          right: 0, top: 0, bottom: 0,
           width: 32,
           background: `linear-gradient(270deg, ${theme.palette.primary.main} 0%, transparent 100%)`,
           zIndex: 1,
@@ -256,12 +245,7 @@ const Navbar = () => {
         <Stack
           direction="row"
           spacing={0.5}
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            minWidth: 'max-content',
-            px: 0.5,
-          }}
+          sx={{ display: 'inline-flex', alignItems: 'center', minWidth: 'max-content', px: 0.5 }}
         >
           {visibleNavItems.map((item) => (
             <Tooltip key={item.path} title={item.label} placement="bottom">
@@ -292,13 +276,8 @@ const Navbar = () => {
                     borderRadius: 1,
                     transition: 'width 0.2s ease',
                   },
-                  '&:hover': {
-                    backgroundColor: 'rgba(255,255,255,0.10)',
-                  },
-                  '& .MuiButton-startIcon': {
-                    marginRight: 0.5,
-                    fontSize: '1.2rem',
-                  },
+                  '&:hover': { backgroundColor: 'rgba(255,255,255,0.10)' },
+                  '& .MuiButton-startIcon': { marginRight: 0.5, fontSize: '1.2rem' },
                   textTransform: 'none',
                   whiteSpace: 'nowrap',
                 }}
@@ -338,12 +317,8 @@ const Navbar = () => {
               sx={{
                 borderRadius: 1,
                 mb: 0.5,
-                '&.Mui-selected': {
-                  backgroundColor: 'rgba(255,255,255,0.15)',
-                },
-                '&:hover': {
-                  backgroundColor: 'rgba(255,255,255,0.08)',
-                },
+                '&.Mui-selected': { backgroundColor: 'rgba(255,255,255,0.15)' },
+                '&:hover': { backgroundColor: 'rgba(255,255,255,0.08)' },
               }}
             >
               <ListItemIcon sx={{ color: 'inherit', minWidth: 40 }}>
@@ -358,8 +333,8 @@ const Navbar = () => {
   );
 
   const empresaActual = empresas.find((e) => e.CodigoEmpresa === user?.CodigoEmpresa);
-  const empresaDisplay = empresaSoloCodigo 
-    ? user?.CodigoEmpresa 
+  const empresaDisplay = empresaSoloCodigo
+    ? user?.CodigoEmpresa
     : `${user?.CodigoEmpresa} - ${empresaActual?.Empresa || 'Empresa'}`;
 
   return (
@@ -377,23 +352,14 @@ const Navbar = () => {
       >
         {/* Logo */}
         <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
+          sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', flexShrink: 0 }}
           onClick={() => goTo('/')}
         >
           <WarehouseIcon sx={{ mr: hideLogoText ? 0 : 0.75, fontSize: { xs: 20, sm: 22, md: 24 } }} />
           {!hideLogoText && (
             <Typography
               variant="subtitle1"
-              sx={{
-                fontWeight: 700,
-                whiteSpace: 'nowrap',
-                fontSize: { xs: '0.8rem', sm: '0.9rem', md: '1rem' },
-              }}
+              sx={{ fontWeight: 700, whiteSpace: 'nowrap', fontSize: { xs: '0.8rem', sm: '0.9rem', md: '1rem' } }}
             >
               Gestión Almacén
             </Typography>
@@ -402,12 +368,7 @@ const Navbar = () => {
 
         {/* Bloque central */}
         <Box
-          sx={{
-            flexGrow: 1,
-            display: 'flex',
-            justifyContent: isMobile ? 'flex-end' : 'center',
-            minWidth: 0,
-          }}
+          sx={{ flexGrow: 1, display: 'flex', justifyContent: isMobile ? 'flex-end' : 'center', minWidth: 0 }}
         >
           {isMobile ? (
             <IconButton color="inherit" onClick={() => setDrawerOpen(true)}>
@@ -475,12 +436,8 @@ const Navbar = () => {
                     py: 1,
                   }}
                 >
-                  <Typography variant="body2" fontWeight={600}>
-                    {empresa.CodigoEmpresa}
-                  </Typography>
-                  <Typography variant="caption" sx={{ opacity: 0.8 }}>
-                    {empresa.Empresa}
-                  </Typography>
+                  <Typography variant="body2" fontWeight={600}>{empresa.CodigoEmpresa}</Typography>
+                  <Typography variant="caption" sx={{ opacity: 0.8 }}>{empresa.Empresa}</Typography>
                 </MenuItem>
               ))}
             </Menu>

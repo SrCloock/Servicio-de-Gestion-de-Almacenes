@@ -1,4 +1,11 @@
-//a
+//albaranes.js — VERSIÓN CORREGIDA
+// FIXES aplicados:
+// 1. albaranesPendientes: muestra TODOS los albaranes StatusFacturado=0 con NumeroPedido
+//    (generados por expedición) sin filtrar por FormaEnvio
+// 2. asignarRepartoYGenerarAlbaran: busca Estado IN (1,2) para compatibilidad
+//    con pedidosVenta que marca Estado=2
+// 3. FormaEnvio se preserva del pedido original pero NO filtra la visibilidad
+
 const express = require('express');
 
 module.exports = function createalbaranesRouter({ sql, getPool }) {
@@ -70,10 +77,7 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
     
     if (permisoResult.recordset.length === 0) {
       await transaction.rollback();
-      return res.status(403).json({
-        success: false,
-        mensaje: 'Usuario no encontrado'
-      });
+      return res.status(403).json({ success: false, mensaje: 'Usuario no encontrado' });
     }
 
     const userPerms = permisoResult.recordset[0];
@@ -84,13 +88,12 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
 
     if (!puedeAsignar) {
       await transaction.rollback();
-      return res.status(403).json({ 
-        success: false, 
-        mensaje: 'No tienes permiso para asignar repartos' 
-      });
+      return res.status(403).json({ success: false, mensaje: 'No tienes permiso para asignar repartos' });
     }
 
-    // 2. Obtener datos del pedido COMPLETADO (Estado = 1)
+    // FIX 3: Estado IN (1,2) — pedidosVenta marca Estado=2, no Estado=1
+    // Estado 1 = completado en sistema antiguo
+    // Estado 2 = servido/completado en pedidosVenta.js
     const pedidoResult = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -103,8 +106,7 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
           p.NumeroLineas, p.ImporteLiquido, p.NombreObra,
           p.Contacto, p.Telefono, p.EsVoluminoso, p.Vendedor,
           p.CodigoCondiciones, p.CodigoTransportistaEnvios, p.TipoPortesEnvios,
-          p.FormaEnvio,
-          -- Verificar si hay líneas pendientes
+          p.FormaEnvio, p.Estado,
           (SELECT COUNT(*) FROM LineasPedidoCliente l 
            WHERE l.CodigoEmpresa = p.CodigoEmpresa
              AND l.EjercicioPedido = p.EjercicioPedido
@@ -116,14 +118,14 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
           AND p.EjercicioPedido = @ejercicio
           AND (p.SeriePedido = @serie OR (@serie = '' AND p.SeriePedido IS NULL))
           AND p.NumeroPedido = @numeroPedido
-          AND p.Estado = 1  -- Pedido completado
+          AND p.Estado IN (1, 2)
       `);
 
     if (pedidoResult.recordset.length === 0) {
       await transaction.rollback();
       return res.status(404).json({ 
         success: false, 
-        mensaje: 'Pedido no encontrado o no está completado' 
+        mensaje: 'Pedido no encontrado o no está completado/servido (Estado debe ser 1 o 2)' 
       });
     }
 
@@ -188,13 +190,9 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
 
     if (lineasResult.recordset.length === 0) {
       await transaction.rollback();
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: 'No hay líneas para generar albarán' 
-      });
+      return res.status(400).json({ success: false, mensaje: 'No hay líneas para generar albarán' });
     }
 
-    // Calcular totales
     let totalUnidades = 0;
     let importeBruto = 0;
     let pesoBruto = 0;
@@ -203,7 +201,6 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
     let bultos = 0;
 
     lineasResult.recordset.forEach(linea => {
-      // Para albarán completo, usar unidades servidas si hay, sino unidades pedidas
       const unidades = linea.UnidadesServidas > 0 ? linea.UnidadesServidas : linea.UnidadesPedidas;
       const unidadesNum = parseFloat(unidades) || 0;
       const precio = parseFloat(linea.Precio) || 0;
@@ -216,12 +213,10 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
       pesoBruto += unidadesNum * pesoBrutoUnit;
       pesoNeto += unidadesNum * pesoNetoUnit;
       volumen += unidadesNum * volumenUnit;
-      
-      // Estimación simple de bultos
       bultos += Math.max(1, Math.ceil(Math.max(unidadesNum / 10, (unidadesNum * pesoBrutoUnit) / 50)));
     });
 
-    // 5. Insertar cabecera del albarán (USANDO COLUMNAS REALES)
+    // 5. Insertar cabecera del albarán
     await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
@@ -251,7 +246,7 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
       .input('observacionesWeb', sql.Text, 'Generado automáticamente al asignar reparto')
       .input('nombreObra', sql.VarChar, (pedido.NombreObra ?? '').toString())
       .input('vendedor', sql.VarChar, (pedido.Vendedor ?? '').toString())
-      .input('statusFacturado', sql.SmallInt, 0) // 0 = Pendiente
+      .input('statusFacturado', sql.SmallInt, 0)
       .input('esVoluminoso', sql.Bit, pedido.EsVoluminoso || 0)
       .input('esParcial', sql.Bit, esAlbaranParcial ? 1 : 0)
       .input('ejercicioPedido', sql.SmallInt, ejercicio)
@@ -260,7 +255,7 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
       .input('codigoCondiciones', sql.SmallInt, pedido.CodigoCondiciones || 0)
       .input('codigoTransportistaEnvios', sql.Int, pedido.CodigoTransportistaEnvios || 0)
       .input('tipoPortesEnvios', sql.VarChar, (pedido.TipoPortesEnvios ?? '').toString())
-      .input('formaEnvio', sql.Int, pedido.FormaEnvio || 3) // 3 = Nuestros Medios
+      .input('formaEnvio', sql.Int, pedido.FormaEnvio || 3)
       .input('importeLiquido', sql.Decimal(18,4), importeBruto)
       .input('importeBruto', sql.Decimal(18,4), importeBruto)
       .input('baseImponible', sql.Decimal(18,4), importeBruto)
@@ -388,9 +383,8 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
         `);
     }
 
-    // 7. Actualizar estado del pedido
+    // 7. Actualizar estado del pedido (usa actualizarStatusSiExiste para compatibilidad)
     if (esAlbaranParcial) {
-      // Si es parcial, mantener Estado = 4
       await getPool().request()
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('ejercicio', sql.SmallInt, ejercicio)
@@ -398,14 +392,13 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
         .input('numeroPedido', sql.Int, numeroPedido)
         .query(`
           UPDATE CabeceraPedidoCliente
-          SET Estado = 4, Status = 'Parcial'
+          SET Estado = 4
           WHERE CodigoEmpresa = @codigoEmpresa
             AND EjercicioPedido = @ejercicio
             AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
             AND NumeroPedido = @numeroPedido
         `);
     } else {
-      // Si es completo, marcar como servido (Estado = 2)
       await getPool().request()
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('ejercicio', sql.SmallInt, ejercicio)
@@ -413,7 +406,7 @@ router.post('/asignarRepartoYGenerarAlbaran', async (req, res) => {
         .input('numeroPedido', sql.Int, numeroPedido)
         .query(`
           UPDATE CabeceraPedidoCliente
-          SET Estado = 2, Status = 'Servido', FechaCompletado = GETDATE()
+          SET Estado = 2, FechaCompletado = GETDATE()
           WHERE CodigoEmpresa = @codigoEmpresa
             AND EjercicioPedido = @ejercicio
             AND (SeriePedido = @serie OR (@serie = '' AND SeriePedido IS NULL))
@@ -459,7 +452,6 @@ router.post('/expedir-articulo', async (req, res) => {
     const transaction = new sql.Transaction(getPool());
     await transaction.begin();
 
-    // 1. Actualizar línea del pedido
     await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -478,7 +470,6 @@ router.post('/expedir-articulo', async (req, res) => {
           AND CodigoArticulo = @codigoArticulo
       `);
 
-    // 2. Obtener nuevo estado de la línea
     const lineaActualizada = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -504,17 +495,14 @@ router.post('/expedir-articulo', async (req, res) => {
     });
 
   } catch (error) {
-    await transaction.rollback();
     console.error('[ERROR EXPEDIR ARTICULO]', error);
-    res.status(500).json({
-      success: false,
-      mensaje: 'Error al expedir artículo',
-      error: error.message
-    });
+    res.status(500).json({ success: false, mensaje: 'Error al expedir artículo', error: error.message });
   }
 });
 
-// ✅ 7.2 ALBARANES PENDIENTES (VERSIÓN SIN JOIN - MÁS SEGURA)
+// ✅ ALBARANES PENDIENTES
+// FIX 1: Eliminar filtro FormaEnvio — mostrar TODOS los albaranes StatusFacturado=0
+// que tengan NumeroPedido (generados desde expedición) independientemente del medio de envío
 router.get('/api/albaranesPendientes', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -525,18 +513,21 @@ router.get('/api/albaranesPendientes', async (req, res) => {
   
   try {
     const { fechaInicio, fechaFinExclusiva } = obtenerRangoFechas(rango);
-    // 1. Verificar permisos del usuario
-    
-    
-    
-    
-    
-    
-    // 2. Construir condición según permisos
-    
-    
-    
-    // 3. Obtener cabeceras de albaranes (SOLO FORMA ENVÍO 3 = Nuestros Medios)
+
+    // FIX PERMISOS: determinar si el usuario puede ver todos los albaranes
+    const user = req.user;
+    const isSuperUser = user.StatusAdministrador === -1 || user.StatusUsuarioAvanzado === -1;
+    const puedeVerTodos = isSuperUser || user.StatusVerAlbaranesAsignados === -1;
+
+    // Si es trabajador normal (StatusDesignarRutas), solo ve sus albaranes asignados
+    const filtrarPorUsuario = !puedeVerTodos;
+    const codigoUsuario = user.CodigoCliente || user.UsuarioLogicNet;
+
+    if (filtrarPorUsuario) {
+      console.log(`[ALBARANES] Usuario sin permiso total — filtrando por EmpleadoAsignado: ${codigoUsuario}`);
+    }
+
+    // FIX: sin filtro FormaEnvio — mostrar TODOS los albaranes StatusFacturado=0
     const queryCabeceras = `
       SELECT 
         cac.NumeroAlbaran, 
@@ -556,35 +547,48 @@ router.get('/api/albaranesPendientes', async (req, res) => {
         cac.Telefono AS TelefonoContacto,
         cac.FormaEnvio,
         cac.EsVoluminoso,
+        cac.EsParcial,
         ISNULL(cac.FirmaCliente, '') AS FirmaCliente,
         ISNULL(cac.FirmaRepartidor, '') AS FirmaRepartidor,
         cac.EjercicioPedido,
         cac.SeriePedido,
         cac.NumeroPedido,
         cpc.Estado AS EstadoPedido,
-        cpc.Status AS StatusPedido,
+        cpc.StatusAprobado,
+        CASE 
+          WHEN cpc.Estado = 2 AND cpc.StatusAprobado = -1 THEN 'Servido'
+          WHEN cpc.Estado = 4 THEN 'Parcial'
+          WHEN cpc.Estado = 0 AND cpc.StatusAprobado = -1 THEN 'Preparando'
+          WHEN cpc.Estado = 0 AND cpc.StatusAprobado = 0 THEN 'Revision'
+          ELSE 'Desconocido'
+        END AS StatusPedido,
         cpc.EsVoluminoso AS EsVoluminosoPedido
       FROM CabeceraAlbaranCliente cac
       LEFT JOIN CabeceraPedidoCliente cpc ON 
         cac.CodigoEmpresa = cpc.CodigoEmpresa 
         AND cac.EjercicioPedido = cpc.EjercicioPedido
-        AND cac.SeriePedido = cpc.SeriePedido
+        AND (cac.SeriePedido = cpc.SeriePedido OR (cac.SeriePedido IS NULL AND cpc.SeriePedido IS NULL))
         AND cac.NumeroPedido = cpc.NumeroPedido
       WHERE cac.CodigoEmpresa = @codigoEmpresa
-        AND cac.StatusFacturado = 0  -- Pendientes de entrega
-        AND ISNULL(cac.FormaEnvio, 3) = 3  -- Incluir también los generados con FormaEnvio vacío
+        AND cac.StatusFacturado = 0
+        AND cac.NumeroPedido IS NOT NULL
         AND cac.FechaAlbaran >= @fechaInicio
         AND cac.FechaAlbaran < @fechaFinExclusiva
+        ${filtrarPorUsuario ? 'AND cac.EmpleadoAsignado = @codigoUsuario' : ''}
       ORDER BY cac.FechaAlbaran DESC
     `;
     
-    const cabeceras = await getPool().request()
+    const requestCabeceras = getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('fechaInicio', sql.DateTime, fechaInicio)
-      .input('fechaFinExclusiva', sql.DateTime, fechaFinExclusiva)
-      .query(queryCabeceras);
+      .input('fechaFinExclusiva', sql.DateTime, fechaFinExclusiva);
+
+    if (filtrarPorUsuario) {
+      requestCabeceras.input('codigoUsuario', sql.VarChar, codigoUsuario);
+    }
+
+    const cabeceras = await requestCabeceras.query(queryCabeceras);
     
-    // 4. Obtener artículos para cada albarán
     const albaranesConLineas = await Promise.all(cabeceras.recordset.map(async (cabecera) => {
       const lineas = await getPool().request()
         .input('codigoEmpresa', sql.SmallInt, cabecera.CodigoEmpresa)
@@ -605,7 +609,7 @@ router.get('/api/albaranesPendientes', async (req, res) => {
             AND NumeroAlbaran = @numeroAlbaran
         `);
       
-      const albaranFormateado = {
+      return {
         id: `${cabecera.EjercicioAlbaran}-${cabecera.SerieAlbaran || ''}-${cabecera.NumeroAlbaran}`,
         ejercicio: cabecera.EjercicioAlbaran,
         serie: cabecera.SerieAlbaran || '',
@@ -619,10 +623,11 @@ router.get('/api/albaranesPendientes', async (req, res) => {
         importeLiquido: cabecera.ImporteLiquido,
         empleadoAsignado: cabecera.EmpleadoAsignado,
         nombreObra: cabecera.NombreObra,
-        obra: cabecera.NombreObra, // Alias para compatibilidad
+        obra: cabecera.NombreObra,
         contacto: cabecera.Contacto,
         telefonoContacto: cabecera.TelefonoContacto,
-        formaentrega: cabecera.FormaEnvio, // Siempre será 3
+        formaentrega: cabecera.FormaEnvio,
+        esParcial: cabecera.EsParcial,
         EsVoluminoso: cabecera.EsVoluminoso,
         tieneFirmaCliente: cabecera.FirmaCliente && cabecera.FirmaCliente.length > 10,
         tieneFirmaRepartidor: cabecera.FirmaRepartidor && cabecera.FirmaRepartidor.length > 10,
@@ -636,8 +641,6 @@ router.get('/api/albaranesPendientes', async (req, res) => {
           cantidadEntregada: art.cantidadEntregada || art.cantidad
         }))
       };
-      
-      return albaranFormateado;
     }));
     
     res.json(albaranesConLineas);
@@ -652,14 +655,14 @@ router.get('/api/albaranesPendientes', async (req, res) => {
   }
 });
 
-// ✅ 7.3 OBTENER PEDIDOS PREPARADOS (ÚLTIMO MES)
+// ✅ PEDIDOS PREPARADOS (Estado IN (1,2) para compatibilidad)
 router.get('/pedidos-preparados', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
   }
 
   const codigoEmpresa = req.user.CodigoEmpresa;
-  const dias = req.query.dias ? parseInt(req.query.dias) : 30; // 1 mes por defecto
+  const dias = req.query.dias ? parseInt(req.query.dias) : 30;
 
   try {
     const result = await getPool().request()
@@ -677,10 +680,17 @@ router.get('/pedidos-preparados', async (req, res) => {
           p.FechaPedido,
           p.Contacto,
           p.Telefono AS TelefonoContacto,
-          p.CodigoEmpresa
+          p.CodigoEmpresa,
+          p.Estado,
+          -- FIX: incluir los que NO tienen albarán todavía (para que aparezcan en asignación)
+          (SELECT COUNT(*) FROM CabeceraAlbaranCliente cac
+           WHERE cac.CodigoEmpresa = p.CodigoEmpresa
+             AND cac.EjercicioPedido = p.EjercicioPedido
+             AND cac.NumeroPedido = p.NumeroPedido
+             AND cac.StatusFacturado = 0) AS AlbaranesPendientes
         FROM CabeceraPedidoCliente p
         WHERE p.CodigoEmpresa = @codigoEmpresa
-          AND p.Estado = 1
+          AND p.Estado IN (1, 2)
           AND p.FechaPedido >= DATEADD(DAY, -@dias, GETDATE())
         ORDER BY p.FechaPedido DESC
       `);
@@ -688,16 +698,11 @@ router.get('/pedidos-preparados', async (req, res) => {
     res.json(result.recordset);
   } catch (err) {
     console.error('[ERROR PEDIDOS PREPARADOS]', err);
-    res.status(500).json({ 
-      success: false, 
-      mensaje: 'Error al obtener pedidos preparados',
-      error: err.message
-    });
+    res.status(500).json({ success: false, mensaje: 'Error al obtener pedidos preparados', error: err.message });
   }
 });
 
-
-// ✅ 7.5 MARCAR ALBARÁN COMO COMPLETADO (SIMPLIFICADO Y CORREGIDO)
+// ✅ COMPLETAR ALBARÁN CON FIRMAS
 const completarAlbaranHandler = async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -707,44 +712,31 @@ const completarAlbaranHandler = async (req, res) => {
   const usuario = req.user.UsuarioLogicNet;
 
   if (!codigoEmpresa || !ejercicio || !numeroAlbaran) {
-    return res.status(400).json({ 
-      success: false, 
-      mensaje: 'Faltan datos requeridos.' 
-    });
+    return res.status(400).json({ success: false, mensaje: 'Faltan datos requeridos.' });
   }
 
-  // Validar firmas (ahora se reciben desde el body)
   if (!tieneFirmaValida(firmaCliente) || !tieneFirmaValida(firmaRepartidor)) {
-    return res.status(400).json({
-      success: false,
-      mensaje: MENSAJE_FIRMAS_OBLIGATORIAS
-    });
+    return res.status(400).json({ success: false, mensaje: MENSAJE_FIRMAS_OBLIGATORIAS });
   }
 
   try {
-    // 1. Verificar permisos
     const permisoResult = await getPool().request()
       .input('usuario', sql.VarChar, usuario)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(`
         SELECT StatusAdministrador, StatusUsuarioAvanzado
         FROM Clientes
-        WHERE UsuarioLogicNet = @usuario
-          AND CodigoEmpresa = @codigoEmpresa
+        WHERE UsuarioLogicNet = @usuario AND CodigoEmpresa = @codigoEmpresa
       `);
 
     if (permisoResult.recordset.length === 0) {
-      return res.status(403).json({ 
-        success: false, 
-        mensaje: 'Usuario no encontrado' 
-      });
+      return res.status(403).json({ success: false, mensaje: 'Usuario no encontrado' });
     }
 
     const userPerms = permisoResult.recordset[0];
     const esAdmin = userPerms.StatusAdministrador === -1;
     const esUsuarioAvanzado = userPerms.StatusUsuarioAvanzado === -1;
     
-    // 2. Verificar repartidor asignado
     const albaranResult = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -760,31 +752,19 @@ const completarAlbaranHandler = async (req, res) => {
       `);
 
     if (albaranResult.recordset.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        mensaje: 'Albarán no encontrado' 
-      });
+      return res.status(404).json({ success: false, mensaje: 'Albarán no encontrado' });
     }
 
     const albaran = albaranResult.recordset[0];
 
     if (albaran.StatusFacturado === -1) {
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: 'El albarán ya está completado' 
-      });
+      return res.status(400).json({ success: false, mensaje: 'El albarán ya está completado' });
     }
 
-    if (!esAdmin && !esUsuarioAvanzado) {
-      if (albaran.EmpleadoAsignado !== usuario) {
-        return res.status(403).json({ 
-          success: false, 
-          mensaje: 'No tienes permiso para completar este albarán' 
-        });
-      }
+    if (!esAdmin && !esUsuarioAvanzado && albaran.EmpleadoAsignado !== usuario) {
+      return res.status(403).json({ success: false, mensaje: 'No tienes permiso para completar este albarán' });
     }
 
-    // 3. Actualizar albarán (guardar firmas y observaciones)
     await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -809,45 +789,26 @@ const completarAlbaranHandler = async (req, res) => {
           AND NumeroAlbaran = @numeroAlbaran
       `);
 
-    res.json({ 
-      success: true, 
-      mensaje: 'Albarán marcado como entregado correctamente'
-    });
+    res.json({ success: true, mensaje: 'Albarán marcado como entregado correctamente' });
   } catch (err) {
     console.error('[ERROR COMPLETAR ALBARÁN]', err);
-    res.status(500).json({ 
-      success: false, 
-      mensaje: 'Error al completar albarán',
-      error: err.message
-    });
+    res.status(500).json({ success: false, mensaje: 'Error al completar albarán', error: err.message });
   }
 };
 
-// Registrar ambas rutas (si quieres mantener compatibilidad)
 router.post('/completar-albaran', completarAlbaranHandler);
 router.post('/api/completar-albaran', completarAlbaranHandler);
 
-
-// ✅ 7.6 ACTUALIZAR CANTIDADES DE ALBARANES (CORREGIDO)
+// ✅ ACTUALIZAR CANTIDADES DE ALBARÁN
 router.put('/actualizarCantidadesAlbaran', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
   }
 
-  const { 
-    codigoEmpresa, 
-    ejercicio, 
-    serie, 
-    numeroAlbaran, 
-    lineas,
-    observaciones 
-  } = req.body;
+  const { codigoEmpresa, ejercicio, serie, numeroAlbaran, lineas, observaciones } = req.body;
 
   if (!codigoEmpresa || !ejercicio || !numeroAlbaran || !lineas || !Array.isArray(lineas)) {
-    return res.status(400).json({
-      success: false,
-      mensaje: 'Faltan datos requeridos: empresa, ejercicio, albarán y líneas.'
-    });
+    return res.status(400).json({ success: false, mensaje: 'Faltan datos requeridos.' });
   }
 
   try {
@@ -887,9 +848,7 @@ router.put('/actualizarCantidadesAlbaran', async (req, res) => {
           .query(`
             UPDATE CabeceraAlbaranCliente
             SET ObservacionesAlbaran = 
-                COALESCE(ObservacionesAlbaran, '') + 
-                CHAR(13) + CHAR(10) + 
-                @observaciones
+                COALESCE(ObservacionesAlbaran, '') + CHAR(13) + CHAR(10) + @observaciones
             WHERE CodigoEmpresa = @codigoEmpresa
               AND EjercicioAlbaran = @ejercicio
               AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
@@ -905,149 +864,15 @@ router.put('/actualizarCantidadesAlbaran', async (req, res) => {
     }
   } catch (err) {
     console.error('[ERROR ACTUALIZAR CANTIDADES ALBARAN]', err);
-    res.status(500).json({
-      success: false,
-      mensaje: 'Error al actualizar cantidades',
-      error: err.message
-    });
+    res.status(500).json({ success: false, mensaje: 'Error al actualizar cantidades', error: err.message });
   }
 });
 
-// ✅ 7.7 COMPLETAR ALBARÁN CON FIRMAS (CORREGIDO)
-router.post('/completarAlbaranConFirmas', async (req, res) => {
-  if (!req.user || !req.user.CodigoEmpresa) {
-    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
-  }
+// ✅ COMPLETAR ALBARÁN CON FIRMAS (alias)
+router.post('/completarAlbaranConFirmas', completarAlbaranHandler);
 
-  const { 
-    codigoEmpresa, 
-    ejercicio, 
-    serie, 
-    numeroAlbaran, 
-    firmaCliente,
-    firmaRepartidor,
-    observaciones 
-  } = req.body;
-  const usuario = req.user.UsuarioLogicNet;
-
-  if (!codigoEmpresa || !ejercicio || !numeroAlbaran) {
-    return res.status(400).json({ 
-      success: false, 
-      mensaje: 'Faltan datos requeridos: empresa, ejercicio, número de albarán.' 
-    });
-  }
-
-  // Validar que ambas firmas sean correctas (no vacías y con tamaño mínimo)
-  if (!tieneFirmaValida(firmaCliente) || !tieneFirmaValida(firmaRepartidor)) {
-    return res.status(400).json({
-      success: false,
-      mensaje: MENSAJE_FIRMAS_OBLIGATORIAS
-    });
-  }
-
-  try {
-    // 1. Verificar permisos del usuario
-    const permisoResult = await getPool().request()
-      .input('usuario', sql.VarChar, usuario)
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .query(`
-        SELECT StatusAdministrador, StatusUsuarioAvanzado
-        FROM Clientes
-        WHERE UsuarioLogicNet = @usuario
-          AND CodigoEmpresa = @codigoEmpresa
-      `);
-
-    if (permisoResult.recordset.length === 0) {
-      return res.status(403).json({ 
-        success: false, 
-        mensaje: 'Usuario no encontrado' 
-      });
-    }
-
-    const userPerms = permisoResult.recordset[0];
-    const esAdmin = userPerms.StatusAdministrador === -1;
-    const esUsuarioAvanzado = userPerms.StatusUsuarioAvanzado === -1;
-    
-    // 2. Obtener datos del albarán para verificar repartidor asignado y estado
-    const albaranResult = await getPool().request()
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
-      .input('serie', sql.VarChar, serie || '')
-      .input('numeroAlbaran', sql.Int, numeroAlbaran)
-      .query(`
-        SELECT EmpleadoAsignado, StatusFacturado
-        FROM CabeceraAlbaranCliente
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioAlbaran = @ejercicio
-          AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
-          AND NumeroAlbaran = @numeroAlbaran
-      `);
-
-    if (albaranResult.recordset.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        mensaje: 'Albarán no encontrado' 
-      });
-    }
-
-    const albaran = albaranResult.recordset[0];
-    
-    if (albaran.StatusFacturado === -1) {
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: 'El albarán ya está completado' 
-      });
-    }
-    
-    if (!esAdmin && !esUsuarioAvanzado) {
-      if (albaran.EmpleadoAsignado !== usuario) {
-        return res.status(403).json({ 
-          success: false, 
-          mensaje: 'No tienes permiso para completar este albarán' 
-        });
-      }
-    }
-
-    // 3. Actualizar albarán: marcar como completado, guardar firmas y observaciones
-    await getPool().request()
-      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
-      .input('serie', sql.VarChar, serie || '')
-      .input('numeroAlbaran', sql.Int, numeroAlbaran)
-      .input('firmaCliente', sql.Text, firmaCliente)
-      .input('firmaRepartidor', sql.Text, firmaRepartidor)
-      .input('observaciones', sql.VarChar, observaciones || '')
-      .query(`
-        UPDATE CabeceraAlbaranCliente
-        SET StatusFacturado = -1,
-            FirmaCliente = @firmaCliente,
-            FirmaRepartidor = @firmaRepartidor,
-            ObservacionesAlbaran = COALESCE(ObservacionesAlbaran, '') + 
-              CASE WHEN @observaciones != '' THEN 
-                CHAR(13) + CHAR(10) + 'Observaciones entrega: ' + @observaciones 
-              ELSE '' END,
-            FechaEntrega = GETDATE()
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioAlbaran = @ejercicio
-          AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
-          AND NumeroAlbaran = @numeroAlbaran
-      `);
-
-    res.json({ 
-      success: true, 
-      mensaje: 'Albarán completado con firmas correctamente'
-    });
-  } catch (err) {
-    console.error('[ERROR COMPLETAR ALBARÁN CON FIRMAS]', err);
-    res.status(500).json({ 
-      success: false, 
-      mensaje: 'Error al completar albarán con firmas',
-      error: err.message
-    });
-  }
-});
-
-// ✅ 7.8 OBTENER ALBARANES COMPLETADOS (ACTUALIZADO SOLO CON NOMBRE NombreObra)
+// ✅ ALBARANES COMPLETADOS
+// FIX: también sin filtro FormaEnvio para mostrar todos los entregados
 router.get('/albaranesCompletados', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
@@ -1072,20 +897,21 @@ router.get('/albaranesCompletados', async (req, res) => {
         cac.ImporteLiquido,
         cac.StatusFacturado,
         cac.EmpleadoAsignado,
-        cac.NombreObra, -- ✅ SOLO NOMBRE OBRA
+        cac.NombreObra,
         cac.Contacto,
         cac.Telefono AS TelefonoContacto,
         cac.FormaEnvio,
         cac.EsVoluminoso,
+        cac.EsParcial,
         cac.ObservacionesAlbaran,
         ISNULL(cac.FirmaCliente, '') as FirmaCliente,
         ISNULL(cac.FirmaRepartidor, '') as FirmaRepartidor
       FROM CabeceraAlbaranCliente cac
       WHERE cac.CodigoEmpresa = @codigoEmpresa
         AND cac.StatusFacturado = -1
+        AND cac.NumeroPedido IS NOT NULL
         AND cac.FechaAlbaran >= @fechaInicio
         AND cac.FechaAlbaran < @fechaFinExclusiva
-        AND ISNULL(cac.FormaEnvio, 3) = 3  -- Solo nuestros medios
       ORDER BY cac.FechaAlbaran DESC
     `;
     
@@ -1110,7 +936,7 @@ router.get('/albaranesCompletados', async (req, res) => {
           FROM LineasAlbaranCliente lac
           WHERE lac.CodigoEmpresa = @codigoEmpresa
             AND lac.EjercicioAlbaran = @ejercicio
-            AND lac.SerieAlbaran = @serie
+            AND (lac.SerieAlbaran = @serie OR (@serie = '' AND lac.SerieAlbaran IS NULL))
             AND lac.NumeroAlbaran = @numeroAlbaran
         `);
 
@@ -1122,15 +948,16 @@ router.get('/albaranesCompletados', async (req, res) => {
         codigoEmpresa: cabecera.CodigoEmpresa,
         albaran: `${cabecera.SerieAlbaran || ''}${cabecera.SerieAlbaran ? '-' : ''}${cabecera.NumeroAlbaran}`,
         cliente: cabecera.RazonSocial,
-        direccion: `${cabecera.Domicilio}, ${cabecera.Municipio}`,
+        direccion: `${cabecera.Domicilio || ''}, ${cabecera.Municipio || ''}`.trim().replace(/^,\s*/, ''),
         FechaAlbaran: cabecera.FechaAlbaran,
         importeLiquido: cabecera.ImporteLiquido,
         empleadoAsignado: cabecera.EmpleadoAsignado,
-        nombreObra: cabecera.NombreObra, // ✅ SOLO NOMBRE OBRA
+        nombreObra: cabecera.NombreObra,
         contacto: cabecera.Contacto,
         telefonoContacto: cabecera.TelefonoContacto,
         FormaEnvio: cabecera.FormaEnvio,
         EsVoluminoso: cabecera.EsVoluminoso,
+        esParcial: cabecera.EsParcial,
         tieneFirmaCliente: cabecera.FirmaCliente && cabecera.FirmaCliente.length > 10,
         tieneFirmaRepartidor: cabecera.FirmaRepartidor && cabecera.FirmaRepartidor.length > 10,
         firmaCliente: cabecera.FirmaCliente,
@@ -1143,63 +970,43 @@ router.get('/albaranesCompletados', async (req, res) => {
     res.json(albaranesConLineas);
   } catch (err) {
     console.error('[ERROR OBTENER ALBARANES COMPLETADOS]', err);
-    res.status(500).json({ 
-      success: false, 
-      mensaje: 'Error al obtener albaranes completados',
-      error: err.message 
-    });
+    res.status(500).json({ success: false, mensaje: 'Error al obtener albaranes completados', error: err.message });
   }
 });
 
-// ✅ 7.9 REVERTIR ALBARÁN COMPLETADO (NUEVO)
+// ✅ REVERTIR ALBARÁN COMPLETADO
 router.post('/revertirAlbaran', async (req, res) => {
   if (!req.user || !req.user.CodigoEmpresa) {
     return res.status(401).json({ success: false, mensaje: 'No autorizado' });
   }
 
-  const { 
-    codigoEmpresa, 
-    ejercicio, 
-    serie, 
-    numeroAlbaran 
-  } = req.body;
+  const { codigoEmpresa, ejercicio, serie, numeroAlbaran } = req.body;
   const usuario = req.user.UsuarioLogicNet;
 
   if (!codigoEmpresa || !ejercicio || !numeroAlbaran) {
-    return res.status(400).json({ 
-      success: false, 
-      mensaje: 'Faltan datos requeridos.' 
-    });
+    return res.status(400).json({ success: false, mensaje: 'Faltan datos requeridos.' });
   }
 
   try {
-    // 1. Verificar permisos de administrador
     const permisoResult = await getPool().request()
       .input('usuario', sql.VarChar, usuario)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .query(`
-        SELECT StatusAdministrador
-        FROM Clientes
-        WHERE UsuarioLogicNet = @usuario
-          AND CodigoEmpresa = @codigoEmpresa
+        SELECT StatusAdministrador FROM Clientes
+        WHERE UsuarioLogicNet = @usuario AND CodigoEmpresa = @codigoEmpresa
       `);
 
     if (permisoResult.recordset.length === 0 || permisoResult.recordset[0].StatusAdministrador !== -1) {
-      return res.status(403).json({ 
-        success: false, 
-        mensaje: 'Solo los administradores pueden revertir albaranes' 
-      });
+      return res.status(403).json({ success: false, mensaje: 'Solo los administradores pueden revertir albaranes' });
     }
 
-    // 2. Verificar que el albarán existe y está completado
     const albaranResult = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
       .input('serie', sql.VarChar, serie || '')
       .input('numeroAlbaran', sql.Int, numeroAlbaran)
       .query(`
-        SELECT StatusFacturado
-        FROM CabeceraAlbaranCliente
+        SELECT StatusFacturado FROM CabeceraAlbaranCliente
         WHERE CodigoEmpresa = @codigoEmpresa
           AND EjercicioAlbaran = @ejercicio
           AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
@@ -1207,20 +1014,13 @@ router.post('/revertirAlbaran', async (req, res) => {
       `);
 
     if (albaranResult.recordset.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        mensaje: 'Albarán no encontrado' 
-      });
+      return res.status(404).json({ success: false, mensaje: 'Albarán no encontrado' });
     }
 
     if (albaranResult.recordset[0].StatusFacturado !== -1) {
-      return res.status(400).json({ 
-        success: false, 
-        mensaje: 'El albarán no está completado' 
-      });
+      return res.status(400).json({ success: false, mensaje: 'El albarán no está completado' });
     }
 
-    // 3. Revertir el estado a pendiente
     await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.SmallInt, ejercicio)
@@ -1228,33 +1028,118 @@ router.post('/revertirAlbaran', async (req, res) => {
       .input('numeroAlbaran', sql.Int, numeroAlbaran)
       .query(`
         UPDATE CabeceraAlbaranCliente
-        SET StatusFacturado = 0,
-            FechaEntrega = NULL
+        SET StatusFacturado = 0, FechaEntrega = NULL
         WHERE CodigoEmpresa = @codigoEmpresa
           AND EjercicioAlbaran = @ejercicio
           AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
           AND NumeroAlbaran = @numeroAlbaran
       `);
 
-    res.json({ 
-      success: true, 
-      mensaje: 'Albarán revertido correctamente; volverá a aparecer en Albaranes y Asignación de albaranes'
-    });
+    res.json({ success: true, mensaje: 'Albarán revertido correctamente' });
   } catch (err) {
     console.error('[ERROR REVERTIR ALBARÁN]', err);
-    res.status(500).json({ 
-      success: false, 
-      mensaje: 'Error al revertir albarán',
+    res.status(500).json({ success: false, mensaje: 'Error al revertir albarán', error: err.message });
+  }
+});
+
+// ✅ ASIGNAR REPARTIDOR A ALBARÁN EXISTENTE
+// Endpoint que llama DesignarRutasScreen al guardar asignaciones
+router.post('/asignarAlbaranExistente', async (req, res) => {
+  if (!req.user || !req.user.CodigoEmpresa) {
+    return res.status(401).json({ success: false, mensaje: 'No autorizado' });
+  }
+
+  const { codigoEmpresa, ejercicio, serie, numeroAlbaran, codigoRepartidor } = req.body;
+  const usuario = req.user.UsuarioLogicNet;
+
+  if (!codigoEmpresa || !ejercicio || !numeroAlbaran || !codigoRepartidor) {
+    return res.status(400).json({
+      success: false,
+      mensaje: 'Faltan datos: empresa, ejercicio, número de albarán y repartidor.'
+    });
+  }
+
+  try {
+    // Verificar permisos
+    const permisoResult = await getPool().request()
+      .input('usuario', sql.VarChar, usuario)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .query(`
+        SELECT StatusAdministrador, StatusUsuarioAvanzado, StatusDesignarRutas
+        FROM Clientes
+        WHERE UsuarioLogicNet = @usuario AND CodigoEmpresa = @codigoEmpresa
+      `);
+
+    if (permisoResult.recordset.length === 0) {
+      return res.status(403).json({ success: false, mensaje: 'Usuario no encontrado' });
+    }
+
+    const p = permisoResult.recordset[0];
+    const puedeAsignar =
+      p.StatusAdministrador === -1 ||
+      p.StatusUsuarioAvanzado === -1 ||
+      p.StatusDesignarRutas === -1;
+
+    if (!puedeAsignar) {
+      return res.status(403).json({ success: false, mensaje: 'Sin permiso para asignar repartos' });
+    }
+
+    // Verificar que el albarán existe y está pendiente
+    const albaranCheck = await getPool().request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .input('numeroAlbaran', sql.Int, numeroAlbaran)
+      .query(`
+        SELECT NumeroAlbaran, StatusFacturado
+        FROM CabeceraAlbaranCliente
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioAlbaran = @ejercicio
+          AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
+          AND NumeroAlbaran = @numeroAlbaran
+      `);
+
+    if (albaranCheck.recordset.length === 0) {
+      return res.status(404).json({ success: false, mensaje: 'Albarán no encontrado' });
+    }
+
+    if (albaranCheck.recordset[0].StatusFacturado === -1) {
+      return res.status(400).json({ success: false, mensaje: 'El albarán ya está completado y no se puede reasignar' });
+    }
+
+    // Actualizar repartidor asignado
+    await getPool().request()
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('serie', sql.VarChar, serie || '')
+      .input('numeroAlbaran', sql.Int, numeroAlbaran)
+      .input('codigoRepartidor', sql.VarChar, codigoRepartidor)
+      .query(`
+        UPDATE CabeceraAlbaranCliente
+        SET EmpleadoAsignado = @codigoRepartidor
+        WHERE CodigoEmpresa = @codigoEmpresa
+          AND EjercicioAlbaran = @ejercicio
+          AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
+          AND NumeroAlbaran = @numeroAlbaran
+      `);
+
+    res.json({
+      success: true,
+      mensaje: `Repartidor asignado correctamente al albarán ${numeroAlbaran}`
+    });
+  } catch (err) {
+    console.error('[ERROR ASIGNAR ALBARAN EXISTENTE]', err);
+    res.status(500).json({
+      success: false,
+      mensaje: 'Error al asignar repartidor',
       error: err.message
     });
   }
 });
 
-
 // ============================================
 // ✅ 8. ASIGNAR ALBARANES SCREEN
 // ============================================
-
 
   return router;
 };
