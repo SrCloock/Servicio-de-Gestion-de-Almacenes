@@ -112,15 +112,19 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
         SET
           UnidadSaldo      = UnidadSaldo      + @delta,
           UnidadSaldoTipo_ = UnidadSaldoTipo_ + @delta
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND Ejercicio     = @ejercicio
-          AND CodigoAlmacen = @codigoAlmacen
-          AND CodigoArticulo = @codigoArticulo
-          AND Periodo = 99
-          AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
-          AND ISNULL(Partida, '')           = @partida
-          AND ISNULL(CodigoColor_, '')      = @codigoColor
-          AND ISNULL(CodigoTalla01_, '')    = @codigoTalla
+        WHERE IdAcumuladoStock = (
+          SELECT TOP 1 IdAcumuladoStock FROM AcumuladoStock
+          WHERE CodigoEmpresa = @codigoEmpresa
+            AND Ejercicio     = @ejercicio
+            AND CodigoAlmacen = @codigoAlmacen
+            AND CodigoArticulo = @codigoArticulo
+            AND Periodo = 99
+            AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+            AND ISNULL(Partida, '')           = @partida
+            AND ISNULL(CodigoColor_, '')      = @codigoColor
+            AND ISNULL(CodigoTalla01_, '')    = @codigoTalla
+          ORDER BY Ejercicio DESC
+        )
       `);
 
     const filas = updateResult.rowsAffected?.[0] || 0;
@@ -524,6 +528,11 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
       return res.status(400).json({ success: false, mensaje: 'No puedes traspasar a la misma ubicación de origen.' });
     }
 
+    // Almacén R es solo de salida — nunca puede ser destino de un traspaso
+    if (destinoAlmacen === 'R') {
+      return res.status(400).json({ success: false, mensaje: 'El almacén R (recepción) solo puede ser origen, no destino.' });
+    }
+
     // Validar ubicaciones antes de abrir transacción
     const origenValido = await validarUbicacionAlmacen(codigoEmpresa, origenAlmacen, origenUbicacion);
     if (!origenValido) {
@@ -591,27 +600,29 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
       const nuevoStockOrigen = stockActual - cantidadNum;
 
       // ── 2. ACTUALIZAR ORIGEN en AcumuladoStockUbicacion ──────
-      if (nuevoStockOrigen === 0) {
-        // Si queda en 0 y no es la ubicación principal → eliminar
-        // Si es la ubicación principal → dejar en 0 (la limpieza del cron lo gestiona)
-        const esPrincipalResult = await new sql.Request(transaction)
+      // Si el registro origen está en un ejercicio anterior al actual, migramos a ejercicioActual
+      // (DELETE del viejo ejercicio + INSERT/UPDATE en ejercicioActual)
+      const necesitaMigracion = ejercicioOrigen !== ejercicioActual;
+
+      if (necesitaMigracion) {
+        // Eliminar el registro del ejercicio anterior
+        await new sql.Request(transaction)
           .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
           .input('ejercicio', sql.Int, ejercicioOrigen)
           .input('codigoAlmacen', sql.VarChar, origenAlmacen)
-          .input('codigoArticulo', sql.VarChar, articulo)
           .input('ubicacion', sql.VarChar, origenUbicacion)
+          .input('codigoArticulo', sql.VarChar, articulo)
           .input('tipoUnidad', sql.VarChar, stockItem.TipoUnidadMedida_)
           .input('partida', sql.VarChar, stockItem.Partida)
           .input('codigoColor', sql.VarChar, stockItem.CodigoColor_)
           .input('codigoTalla', sql.VarChar, stockItem.CodigoTalla01_)
           .query(`
-            SELECT COUNT(*) AS EsPrincipal
-            FROM AcumuladoStock
+            DELETE FROM AcumuladoStockUbicacion
             WHERE CodigoEmpresa = @codigoEmpresa
               AND Ejercicio = @ejercicio
               AND CodigoAlmacen = @codigoAlmacen
-              AND CodigoArticulo = @codigoArticulo
               AND Ubicacion = @ubicacion
+              AND CodigoArticulo = @codigoArticulo
               AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
               AND ISNULL(Partida, '') = @partida
               AND ISNULL(CodigoColor_, '') = @codigoColor
@@ -619,11 +630,117 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
               AND Periodo = 99
           `);
 
-        const esPrincipal = (esPrincipalResult.recordset[0]?.EsPrincipal || 0) > 0;
-
-        if (esPrincipal) {
-          // Dejar el registro en 0
+        if (nuevoStockOrigen !== 0) {
+          // Insertar en ejercicioActual con el nuevo valor
           await new sql.Request(transaction)
+            .input('nuevoStock', sql.Decimal(18, 4), nuevoStockOrigen)
+            .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+            .input('ejercicio', sql.Int, ejercicioActual)
+            .input('codigoAlmacen', sql.VarChar, origenAlmacen)
+            .input('ubicacion', sql.VarChar, origenUbicacion)
+            .input('codigoArticulo', sql.VarChar, articulo)
+            .input('tipoUnidad', sql.VarChar, stockItem.TipoUnidadMedida_)
+            .input('partida', sql.VarChar, stockItem.Partida)
+            .input('codigoColor', sql.VarChar, stockItem.CodigoColor_)
+            .input('codigoTalla', sql.VarChar, stockItem.CodigoTalla01_)
+            .query(`
+              INSERT INTO AcumuladoStockUbicacion (
+                CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
+                CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
+                UnidadSaldo, UnidadSaldoTipo_, Periodo
+              ) VALUES (
+                @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
+                @codigoArticulo, @tipoUnidad, @partida, @codigoColor, @codigoTalla,
+                @nuevoStock, @nuevoStock, 99
+              )
+            `);
+        }
+        // Si nuevoStockOrigen === 0 y había migración: el DELETE ya eliminó el registro.
+        // El cron de limpieza no necesita intervenir.
+
+      } else {
+        // Mismo ejercicio: comportamiento original
+        if (nuevoStockOrigen === 0) {
+          // Si queda en 0 y no es la ubicación principal → eliminar
+          // Si es la ubicación principal → dejar en 0 (la limpieza del cron lo gestiona)
+          const esPrincipalResult = await new sql.Request(transaction)
+            .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+            .input('codigoAlmacen', sql.VarChar, origenAlmacen)
+            .input('codigoArticulo', sql.VarChar, articulo)
+            .input('ubicacion', sql.VarChar, origenUbicacion)
+            .input('tipoUnidad', sql.VarChar, stockItem.TipoUnidadMedida_)
+            .input('partida', sql.VarChar, stockItem.Partida)
+            .input('codigoColor', sql.VarChar, stockItem.CodigoColor_)
+            .input('codigoTalla', sql.VarChar, stockItem.CodigoTalla01_)
+            .query(`
+              SELECT COUNT(*) AS EsPrincipal
+              FROM AcumuladoStock
+              WHERE CodigoEmpresa = @codigoEmpresa
+                AND CodigoAlmacen = @codigoAlmacen
+                AND CodigoArticulo = @codigoArticulo
+                AND Ubicacion = @ubicacion
+                AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+                AND ISNULL(Partida, '') = @partida
+                AND ISNULL(CodigoColor_, '') = @codigoColor
+                AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+                AND Periodo = 99
+            `);
+
+          const esPrincipal = (esPrincipalResult.recordset[0]?.EsPrincipal || 0) > 0;
+
+          if (esPrincipal) {
+            await new sql.Request(transaction)
+              .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+              .input('ejercicio', sql.Int, ejercicioOrigen)
+              .input('codigoAlmacen', sql.VarChar, origenAlmacen)
+              .input('ubicacion', sql.VarChar, origenUbicacion)
+              .input('codigoArticulo', sql.VarChar, articulo)
+              .input('tipoUnidad', sql.VarChar, stockItem.TipoUnidadMedida_)
+              .input('partida', sql.VarChar, stockItem.Partida)
+              .input('codigoColor', sql.VarChar, stockItem.CodigoColor_)
+              .input('codigoTalla', sql.VarChar, stockItem.CodigoTalla01_)
+              .query(`
+                UPDATE AcumuladoStockUbicacion
+                SET UnidadSaldo = 0, UnidadSaldoTipo_ = 0
+                WHERE CodigoEmpresa = @codigoEmpresa
+                  AND Ejercicio = @ejercicio
+                  AND CodigoAlmacen = @codigoAlmacen
+                  AND Ubicacion = @ubicacion
+                  AND CodigoArticulo = @codigoArticulo
+                  AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+                  AND ISNULL(Partida, '') = @partida
+                  AND ISNULL(CodigoColor_, '') = @codigoColor
+                  AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+                  AND Periodo = 99
+              `);
+          } else {
+            await new sql.Request(transaction)
+              .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+              .input('ejercicio', sql.Int, ejercicioOrigen)
+              .input('codigoAlmacen', sql.VarChar, origenAlmacen)
+              .input('ubicacion', sql.VarChar, origenUbicacion)
+              .input('codigoArticulo', sql.VarChar, articulo)
+              .input('tipoUnidad', sql.VarChar, stockItem.TipoUnidadMedida_)
+              .input('partida', sql.VarChar, stockItem.Partida)
+              .input('codigoColor', sql.VarChar, stockItem.CodigoColor_)
+              .input('codigoTalla', sql.VarChar, stockItem.CodigoTalla01_)
+              .query(`
+                DELETE FROM AcumuladoStockUbicacion
+                WHERE CodigoEmpresa = @codigoEmpresa
+                  AND Ejercicio = @ejercicio
+                  AND CodigoAlmacen = @codigoAlmacen
+                  AND Ubicacion = @ubicacion
+                  AND CodigoArticulo = @codigoArticulo
+                  AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+                  AND ISNULL(Partida, '') = @partida
+                  AND ISNULL(CodigoColor_, '') = @codigoColor
+                  AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+                  AND Periodo = 99
+              `);
+          }
+        } else {
+          await new sql.Request(transaction)
+            .input('nuevoStock', sql.Decimal(18, 4), nuevoStockOrigen)
             .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
             .input('ejercicio', sql.Int, ejercicioOrigen)
             .input('codigoAlmacen', sql.VarChar, origenAlmacen)
@@ -635,32 +752,7 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
             .input('codigoTalla', sql.VarChar, stockItem.CodigoTalla01_)
             .query(`
               UPDATE AcumuladoStockUbicacion
-              SET UnidadSaldo = 0, UnidadSaldoTipo_ = 0
-              WHERE CodigoEmpresa = @codigoEmpresa
-                AND Ejercicio = @ejercicio
-                AND CodigoAlmacen = @codigoAlmacen
-                AND Ubicacion = @ubicacion
-                AND CodigoArticulo = @codigoArticulo
-                AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
-                AND ISNULL(Partida, '') = @partida
-                AND ISNULL(CodigoColor_, '') = @codigoColor
-                AND ISNULL(CodigoTalla01_, '') = @codigoTalla
-                AND Periodo = 99
-            `);
-        } else {
-          // Eliminar ubicación no principal con 0
-          await new sql.Request(transaction)
-            .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-            .input('ejercicio', sql.Int, ejercicioOrigen)
-            .input('codigoAlmacen', sql.VarChar, origenAlmacen)
-            .input('ubicacion', sql.VarChar, origenUbicacion)
-            .input('codigoArticulo', sql.VarChar, articulo)
-            .input('tipoUnidad', sql.VarChar, stockItem.TipoUnidadMedida_)
-            .input('partida', sql.VarChar, stockItem.Partida)
-            .input('codigoColor', sql.VarChar, stockItem.CodigoColor_)
-            .input('codigoTalla', sql.VarChar, stockItem.CodigoTalla01_)
-            .query(`
-              DELETE FROM AcumuladoStockUbicacion
+              SET UnidadSaldo = @nuevoStock, UnidadSaldoTipo_ = @nuevoStock
               WHERE CodigoEmpresa = @codigoEmpresa
                 AND Ejercicio = @ejercicio
                 AND CodigoAlmacen = @codigoAlmacen
@@ -673,32 +765,6 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
                 AND Periodo = 99
             `);
         }
-      } else {
-        await new sql.Request(transaction)
-          .input('nuevoStock', sql.Decimal(18, 4), nuevoStockOrigen)
-          .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-          .input('ejercicio', sql.Int, ejercicioOrigen)
-          .input('codigoAlmacen', sql.VarChar, origenAlmacen)
-          .input('ubicacion', sql.VarChar, origenUbicacion)
-          .input('codigoArticulo', sql.VarChar, articulo)
-          .input('tipoUnidad', sql.VarChar, stockItem.TipoUnidadMedida_)
-          .input('partida', sql.VarChar, stockItem.Partida)
-          .input('codigoColor', sql.VarChar, stockItem.CodigoColor_)
-          .input('codigoTalla', sql.VarChar, stockItem.CodigoTalla01_)
-          .query(`
-            UPDATE AcumuladoStockUbicacion
-            SET UnidadSaldo = @nuevoStock, UnidadSaldoTipo_ = @nuevoStock
-            WHERE CodigoEmpresa = @codigoEmpresa
-              AND Ejercicio = @ejercicio
-              AND CodigoAlmacen = @codigoAlmacen
-              AND Ubicacion = @ubicacion
-              AND CodigoArticulo = @codigoArticulo
-              AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
-              AND ISNULL(Partida, '') = @partida
-              AND ISNULL(CodigoColor_, '') = @codigoColor
-              AND ISNULL(CodigoTalla01_, '') = @codigoTalla
-              AND Periodo = 99
-          `);
       }
 
       // ── 3. ACTUALIZAR DESTINO en AcumuladoStockUbicacion ─────
@@ -730,33 +796,88 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
 
       const stockDestinoActual = parseNumero(stockDestinoResult.recordset[0]?.StockActual) || 0;
       const nuevoStockDestino = stockDestinoActual + cantidadNum;
+      // El ejercicio del registro destino existente (o ejercicioActual si es nuevo)
+      const ejercicioDestino = stockDestinoResult.recordset[0]
+        ? parseInt(stockDestinoResult.recordset[0].Ejercicio, 10) || ejercicioActual
+        : ejercicioActual;
 
       if (stockDestinoResult.recordset.length > 0) {
-        await new sql.Request(transaction)
-          .input('nuevoStock', sql.Decimal(18, 4), nuevoStockDestino)
-          .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-          .input('ejercicio', sql.Int, ejercicioActual)
-          .input('codigoAlmacen', sql.VarChar, destinoAlmacen)
-          .input('ubicacion', sql.VarChar, destinoUbicacion)
-          .input('codigoArticulo', sql.VarChar, articulo)
-          .input('tipoUnidad', sql.VarChar, stockItem.TipoUnidadMedida_)
-          .input('partida', sql.VarChar, stockItem.Partida)
-          .input('codigoColor', sql.VarChar, stockItem.CodigoColor_)
-          .input('codigoTalla', sql.VarChar, stockItem.CodigoTalla01_)
-          .query(`
-            UPDATE AcumuladoStockUbicacion
-            SET UnidadSaldo = @nuevoStock, UnidadSaldoTipo_ = @nuevoStock
-            WHERE CodigoEmpresa = @codigoEmpresa
-              AND Ejercicio = @ejercicio
-              AND CodigoAlmacen = @codigoAlmacen
-              AND Ubicacion = @ubicacion
-              AND CodigoArticulo = @codigoArticulo
-              AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
-              AND ISNULL(Partida, '') = @partida
-              AND ISNULL(CodigoColor_, '') = @codigoColor
-              AND ISNULL(CodigoTalla01_, '') = @codigoTalla
-              AND Periodo = 99
-          `);
+        // Si el registro destino es de un ejercicio anterior: eliminar el viejo y crear en ejercicioActual
+        if (ejercicioDestino !== ejercicioActual) {
+          await new sql.Request(transaction)
+            .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+            .input('ejercicio', sql.Int, ejercicioDestino)
+            .input('codigoAlmacen', sql.VarChar, destinoAlmacen)
+            .input('ubicacion', sql.VarChar, destinoUbicacion)
+            .input('codigoArticulo', sql.VarChar, articulo)
+            .input('tipoUnidad', sql.VarChar, stockItem.TipoUnidadMedida_)
+            .input('partida', sql.VarChar, stockItem.Partida)
+            .input('codigoColor', sql.VarChar, stockItem.CodigoColor_)
+            .input('codigoTalla', sql.VarChar, stockItem.CodigoTalla01_)
+            .query(`
+              DELETE FROM AcumuladoStockUbicacion
+              WHERE CodigoEmpresa = @codigoEmpresa
+                AND Ejercicio = @ejercicio
+                AND CodigoAlmacen = @codigoAlmacen
+                AND Ubicacion = @ubicacion
+                AND CodigoArticulo = @codigoArticulo
+                AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+                AND ISNULL(Partida, '') = @partida
+                AND ISNULL(CodigoColor_, '') = @codigoColor
+                AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+                AND Periodo = 99
+            `);
+          // Insertar en ejercicioActual
+          await new sql.Request(transaction)
+            .input('nuevoStock', sql.Decimal(18, 4), nuevoStockDestino)
+            .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+            .input('ejercicio', sql.Int, ejercicioActual)
+            .input('codigoAlmacen', sql.VarChar, destinoAlmacen)
+            .input('ubicacion', sql.VarChar, destinoUbicacion)
+            .input('codigoArticulo', sql.VarChar, articulo)
+            .input('tipoUnidad', sql.VarChar, stockItem.TipoUnidadMedida_)
+            .input('partida', sql.VarChar, stockItem.Partida)
+            .input('codigoColor', sql.VarChar, stockItem.CodigoColor_)
+            .input('codigoTalla', sql.VarChar, stockItem.CodigoTalla01_)
+            .query(`
+              INSERT INTO AcumuladoStockUbicacion (
+                CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
+                CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
+                UnidadSaldo, UnidadSaldoTipo_, Periodo
+              ) VALUES (
+                @codigoEmpresa, @ejercicio, @codigoAlmacen, @ubicacion,
+                @codigoArticulo, @tipoUnidad, @partida, @codigoColor, @codigoTalla,
+                @nuevoStock, @nuevoStock, 99
+              )
+            `);
+        } else {
+          // Mismo ejercicio: UPDATE normal
+          await new sql.Request(transaction)
+            .input('nuevoStock', sql.Decimal(18, 4), nuevoStockDestino)
+            .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+            .input('ejercicio', sql.Int, ejercicioActual)
+            .input('codigoAlmacen', sql.VarChar, destinoAlmacen)
+            .input('ubicacion', sql.VarChar, destinoUbicacion)
+            .input('codigoArticulo', sql.VarChar, articulo)
+            .input('tipoUnidad', sql.VarChar, stockItem.TipoUnidadMedida_)
+            .input('partida', sql.VarChar, stockItem.Partida)
+            .input('codigoColor', sql.VarChar, stockItem.CodigoColor_)
+            .input('codigoTalla', sql.VarChar, stockItem.CodigoTalla01_)
+            .query(`
+              UPDATE AcumuladoStockUbicacion
+              SET UnidadSaldo = @nuevoStock, UnidadSaldoTipo_ = @nuevoStock
+              WHERE CodigoEmpresa = @codigoEmpresa
+                AND Ejercicio = @ejercicio
+                AND CodigoAlmacen = @codigoAlmacen
+                AND Ubicacion = @ubicacion
+                AND CodigoArticulo = @codigoArticulo
+                AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+                AND ISNULL(Partida, '') = @partida
+                AND ISNULL(CodigoColor_, '') = @codigoColor
+                AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+                AND Periodo = 99
+            `);
+        }
       } else {
         await new sql.Request(transaction)
           .input('nuevoStock', sql.Decimal(18, 4), nuevoStockDestino)
@@ -784,11 +905,11 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
 
       // ── 4. ACTUALIZAR AcumuladoStock — solo si son almacenes distintos ──
       if (!mismoAlmacen) {
-        // Obtener ubicación principal del destino para el INSERT si no existe
         const ubicacionPrincipalDestino = destinoUbicacion !== 'SIN-UBICACION' ? destinoUbicacion : 'SIN-UBICACION';
 
+        // Origen: usar ejercicioActual (el registro ya fue migrado o está en el año actual)
         await aplicarDeltaEnAcumuladoStock(
-          transaction, codigoEmpresa, ejercicioOrigen,
+          transaction, codigoEmpresa, ejercicioActual,
           origenAlmacen, articulo,
           stockItem.TipoUnidadMedida_, stockItem.Partida,
           stockItem.CodigoColor_, stockItem.CodigoTalla01_,
@@ -873,7 +994,9 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
     const { fecha, page = 1, pageSize = 50 } = req.query;
 
     try {
-      const offset = (page - 1) * pageSize;
+      const pageSafeInt = Math.max(parseInt(pageSize, 10) || 50, 1);
+      const pageSafeNum = Math.max(parseInt(page, 10) || 1, 1);
+      const offset = (pageSafeNum - 1) * pageSafeInt;
       let whereClause = `WHERE m.CodigoEmpresa = @codigoEmpresa AND m.TipoMovimiento = 3`;
       const request = getPool().request().input('codigoEmpresa', sql.SmallInt, codigoEmpresa);
 
@@ -924,8 +1047,9 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
           AND u_destino.Ubicacion = m.UbicacionContrapartida
         ${whereClause}
         ORDER BY m.FechaRegistro DESC
-        OFFSET ${offset} ROWS FETCH NEXT ${pageSize} ROWS ONLY
+        OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
       `;
+      request.input('offset', sql.Int, offset).input('pageSize', sql.Int, pageSafeInt);
 
       const result = await request.query(query);
 
@@ -944,7 +1068,7 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
         traspasos: result.recordset,
         pagination: {
           page: parseInt(page),
-          pageSize: parseInt(pageSize),
+          pageSize: pageSafeInt,
           total,
           totalPages: Math.ceil(total / pageSize)
         }

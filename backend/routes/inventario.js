@@ -22,7 +22,6 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
     return transaction ? new sql.Request(transaction) : getPool().request();
   }
 
-  // FIX #1: periodoBase siempre 99, fallback robusto aunque no haya AcumuladoStockUbicacion
   async function obtenerContextoBaseInventario(codigoEmpresa, transaction = null) {
     const ejercicioActual = new Date().getFullYear();
     const result = await getRequest(transaction)
@@ -68,61 +67,9 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
       .input('ejercicioActual', sql.SmallInt, contexto.ejercicioActual);
   }
 
-  // FIX #8: periodoBase siempre 99 hardcodeado en los CTEs (no depende del parámetro para el filtro principal)
-  function getCteInventarioActual() {
-    return `
-      WITH StockUbicacionVersionado AS (
-        SELECT s.*,
-          ROW_NUMBER() OVER (
-            PARTITION BY s.CodigoEmpresa, s.CodigoAlmacen, s.Ubicacion, s.CodigoArticulo,
-              ISNULL(s.TipoUnidadMedida_,''), ISNULL(s.Partida,''),
-              ISNULL(s.CodigoColor_,''), ISNULL(s.CodigoTalla01_,'')
-            ORDER BY CASE WHEN s.Ejercicio = @ejercicioActual THEN 0 ELSE 1 END, s.Ejercicio DESC
-          ) AS rn
-        FROM AcumuladoStockUbicacion s
-        INNER JOIN Ubicaciones uv
-          ON uv.CodigoEmpresa = s.CodigoEmpresa
-          AND uv.CodigoAlmacen = s.CodigoAlmacen
-          AND uv.Ubicacion = s.Ubicacion
-        WHERE s.CodigoEmpresa = @codigoEmpresa
-          AND s.Periodo = 99
-          AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
-          AND (
-            COALESCE(s.UnidadSaldoTipo_, s.UnidadSaldo, 0) <> 0
-            OR EXISTS (
-              SELECT 1 FROM AcumuladoStock acs
-              WHERE acs.CodigoEmpresa = s.CodigoEmpresa
-                AND acs.CodigoArticulo = s.CodigoArticulo
-                AND acs.CodigoAlmacen = s.CodigoAlmacen
-                AND acs.Ubicacion = s.Ubicacion
-                AND acs.Periodo = 99
-                AND acs.Ejercicio IN (@ejercicioBase, @ejercicioActual)
-            )
-          )
-      ),
-      StockUbicacionActual AS (
-        SELECT * FROM StockUbicacionVersionado WHERE rn = 1
-      ),
-      AcumuladoStockVersionado AS (
-        SELECT s.*,
-          ROW_NUMBER() OVER (
-            PARTITION BY s.CodigoEmpresa, s.CodigoAlmacen, s.CodigoArticulo,
-              ISNULL(s.TipoUnidadMedida_,''), ISNULL(s.Partida,''),
-              ISNULL(s.CodigoColor_,''), ISNULL(s.CodigoTalla01_,'')
-            ORDER BY CASE WHEN s.Ejercicio = @ejercicioActual THEN 0 ELSE 1 END, s.Ejercicio DESC
-          ) AS rn
-        FROM AcumuladoStock s
-        WHERE s.CodigoEmpresa = @codigoEmpresa
-          AND s.Periodo = 99
-          AND s.Ejercicio IN (@ejercicioBase, @ejercicioActual)
-      ),
-      AcumuladoStockActual AS (
-        SELECT * FROM AcumuladoStockVersionado WHERE rn = 1
-      )
-    `;
-  }
-
-  function getCteInventarioActualFiltrado(codigoParamsSql) {
+  // Función unificada — sustituye getCteInventarioActual() y getCteInventarioActualFiltrado()
+  // codigoParamsSql: string con placeholders separados por coma, p.ej. "@cod0, @cod1"  (null = sin filtro)
+  function getCteInventarioActual(codigoParamsSql = null) {
     const filtroCodigos = codigoParamsSql
       ? `AND LTRIM(RTRIM(s.CodigoArticulo)) IN (${codigoParamsSql})`
       : '';
@@ -217,7 +164,6 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
     `;
   }
 
-  // FIX #9: limpia todos los ejercicios, no solo el actual
   async function limpiarRegistrosCeroNoPrincipales(codigoEmpresa) {
     const result = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -290,7 +236,103 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
     }
   });
 
-  // FIX #2: aplicarDelta usa UPDATE con TOP 1 para evitar duplicados en AcumuladoStock
+  // Para SIN-UBICACION con múltiples filas en distintos ejercicios:
+  // pone todas las filas a 0 y deja solo una con el valor correcto en el ejercicio actual
+  async function consolidarAcumuladoStockSinUbicacion(
+    codigoEmpresa, ejercicio, articulo, codigoAlmacen,
+    unidadStock, partida, codigoColor, codigoTalla01,
+    nuevaCantidad, transaction
+  ) {
+    const unidadNorm = (unidadStock === 'unidades' ? '' : unidadStock || '');
+
+    // Poner todas las filas a 0
+    await new sql.Request(transaction)
+      .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('codigoArticulo', sql.VarChar, articulo)
+      .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+      .input('tipoUnidad', sql.VarChar, unidadNorm)
+      .input('partida', sql.VarChar, partida || '')
+      .input('codigoColor', sql.VarChar, codigoColor || '')
+      .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+      .query(`
+        UPDATE AcumuladoStock
+        SET UnidadSaldo = 0, UnidadSaldoTipo_ = 0
+        WHERE CodigoEmpresa=@codigoEmpresa
+          AND CodigoArticulo=@codigoArticulo
+          AND CodigoAlmacen=@codigoAlmacen
+          AND Periodo=99
+          AND ISNULL(TipoUnidadMedida_,'')=@tipoUnidad
+          AND ISNULL(Partida,'')=@partida
+          AND ISNULL(CodigoColor_,'')=@codigoColor
+          AND ISNULL(CodigoTalla01_,'')=@codigoTalla
+      `);
+
+    // Si la nueva cantidad es distinta de 0, actualizar la fila del ejercicio más reciente
+    if (Math.abs(nuevaCantidad) > 0.001) {
+      // Primero buscar el IdAcumuladoStock de la fila preferida (ejercicio actual o más reciente)
+      const filaPreferida = await new sql.Request(transaction)
+        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+        .input('ejercicio', sql.Int, ejercicio)
+        .input('codigoArticulo', sql.VarChar, articulo)
+        .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+        .input('tipoUnidad', sql.VarChar, unidadNorm)
+        .input('partida', sql.VarChar, partida || '')
+        .input('codigoColor', sql.VarChar, codigoColor || '')
+        .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+        .query(`
+          SELECT TOP 1 IdAcumuladoStock
+          FROM AcumuladoStock
+          WHERE CodigoEmpresa=@codigoEmpresa
+            AND CodigoAlmacen=@codigoAlmacen
+            AND CodigoArticulo=@codigoArticulo
+            AND Periodo=99
+            AND ISNULL(TipoUnidadMedida_,'')=@tipoUnidad
+            AND ISNULL(Partida,'')=@partida
+            AND ISNULL(CodigoColor_,'')=@codigoColor
+            AND ISNULL(CodigoTalla01_,'')=@codigoTalla
+          ORDER BY CASE WHEN Ejercicio=@ejercicio THEN 0 ELSE 1 END, Ejercicio DESC
+        `);
+
+      const idFila = filaPreferida.recordset[0]?.IdAcumuladoStock;
+      let updated = { rowsAffected: [0] };
+      if (idFila !== undefined && idFila !== null) {
+        updated = await new sql.Request(transaction)
+          .input('idFila', sql.UniqueIdentifier, idFila)
+          .input('valor', sql.Decimal(18, 4), nuevaCantidad)
+          .query(`
+            UPDATE AcumuladoStock
+            SET UnidadSaldo=@valor, UnidadSaldoTipo_=@valor
+            WHERE IdAcumuladoStock=@idFila
+          `);
+      }
+
+      // Si no había ninguna fila (raro), insertar
+      if ((updated.rowsAffected?.[0] || 0) === 0) {
+        await new sql.Request(transaction)
+          .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+          .input('ejercicio', sql.Int, ejercicio)
+          .input('codigoArticulo', sql.VarChar, articulo)
+          .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
+          .input('tipoUnidad', sql.VarChar, unidadNorm)
+          .input('partida', sql.VarChar, partida || '')
+          .input('codigoColor', sql.VarChar, codigoColor || '')
+          .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
+          .input('valor', sql.Decimal(18, 4), nuevaCantidad)
+          .query(`
+            INSERT INTO AcumuladoStock (
+              CodigoEmpresa, Ejercicio, CodigoAlmacen, Ubicacion,
+              CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
+              UnidadSaldo, UnidadSaldoTipo_, Periodo
+            ) VALUES (
+              @codigoEmpresa, @ejercicio, @codigoAlmacen, 'SIN-UBICACION',
+              @codigoArticulo, @tipoUnidad, @partida, @codigoColor, @codigoTalla,
+              @valor, @valor, 99
+            )
+          `);
+      }
+    }
+  }
+
   async function aplicarDeltaEnAcumuladoStock(
     codigoEmpresa, ejercicio, articulo, codigoAlmacen,
     ubicacionPrincipal, unidadStock, partida, codigoColor, codigoTalla01,
@@ -298,7 +340,6 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
   ) {
     const unidadNorm = (unidadStock === 'unidades' ? '' : unidadStock || '');
 
-    // Usar la fila con mayor ejercicio para evitar duplicados
     const updateResult = await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.Int, ejercicio)
@@ -310,24 +351,27 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
       .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
       .input('delta', sql.Decimal(18, 4), delta)
       .query(`
-        UPDATE TOP (1) AcumuladoStock
+        UPDATE AcumuladoStock
         SET UnidadSaldo = UnidadSaldo + @delta,
             UnidadSaldoTipo_ = UnidadSaldoTipo_ + @delta
-        WHERE CodigoEmpresa = @codigoEmpresa
-          AND Ejercicio = @ejercicio
-          AND CodigoArticulo = @codigoArticulo
-          AND CodigoAlmacen = @codigoAlmacen
-          AND Periodo = 99
-          AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
-          AND ISNULL(Partida, '') = @partida
-          AND ISNULL(CodigoColor_, '') = @codigoColor
-          AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+        WHERE IdAcumuladoStock = (
+          SELECT TOP 1 IdAcumuladoStock FROM AcumuladoStock
+          WHERE CodigoEmpresa = @codigoEmpresa
+            AND Ejercicio = @ejercicio
+            AND CodigoArticulo = @codigoArticulo
+            AND CodigoAlmacen = @codigoAlmacen
+            AND Periodo = 99
+            AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+            AND ISNULL(Partida, '') = @partida
+            AND ISNULL(CodigoColor_, '') = @codigoColor
+            AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+          ORDER BY Ejercicio DESC
+        )
       `);
 
     const filasActualizadas = updateResult.rowsAffected?.[0] || 0;
 
     if (filasActualizadas === 0) {
-      // Intentar ejercicio anterior si no existe el actual
       const updatePrevResult = await new sql.Request(transaction)
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
         .input('codigoArticulo', sql.VarChar, articulo)
@@ -338,17 +382,21 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
         .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
         .input('delta', sql.Decimal(18, 4), delta)
         .query(`
-          UPDATE TOP (1) AcumuladoStock
+          UPDATE AcumuladoStock
           SET UnidadSaldo = UnidadSaldo + @delta,
               UnidadSaldoTipo_ = UnidadSaldoTipo_ + @delta
-          WHERE CodigoEmpresa = @codigoEmpresa
-            AND CodigoArticulo = @codigoArticulo
-            AND CodigoAlmacen = @codigoAlmacen
-            AND Periodo = 99
-            AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
-            AND ISNULL(Partida, '') = @partida
-            AND ISNULL(CodigoColor_, '') = @codigoColor
-            AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+          WHERE IdAcumuladoStock = (
+            SELECT TOP 1 IdAcumuladoStock FROM AcumuladoStock
+            WHERE CodigoEmpresa = @codigoEmpresa
+              AND CodigoArticulo = @codigoArticulo
+              AND CodigoAlmacen = @codigoAlmacen
+              AND Periodo = 99
+              AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
+              AND ISNULL(Partida, '') = @partida
+              AND ISNULL(CodigoColor_, '') = @codigoColor
+              AND ISNULL(CodigoTalla01_, '') = @codigoTalla
+            ORDER BY Ejercicio DESC
+          )
         `);
 
       const filasPrev = updatePrevResult.rowsAffected?.[0] || 0;
@@ -757,7 +805,6 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
     }
   });
 
-  // FIX #4: traer todos los almacenes sin lista hardcodeada
   router.get('/inventario/almacenes-ajuste', async (req, res) => {
     const codigoEmpresa = req.user.CodigoEmpresa;
     if (!codigoEmpresa) return res.status(400).json({ success: false, mensaje: 'Código de empresa requerido.' });
@@ -775,7 +822,6 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
     }
   });
 
-  // FIX #5: usar contexto base en lugar de ejercicioActual hardcodeado
   router.get('/stock/por-ubicacion', async (req, res) => {
     const { codigoAlmacen, ubicacion, page = 1, pageSize = 100 } = req.query;
     const codigoEmpresa = req.user.CodigoEmpresa;
@@ -906,22 +952,9 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
         });
       });
 
-      const almacenesResult = await getPool().request()
-        .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .query(`SELECT CodigoAlmacen, Almacen FROM Almacenes WHERE CodigoEmpresa=@codigoEmpresa ORDER BY CodigoAlmacen`);
-
+      // Artículos sin stock en ninguna ubicación → array vacío (no hay Zona descarga ni Infinity)
       codigosArticulos.forEach(codigo => {
-        if (!grouped[codigo] || grouped[codigo].length === 0) {
-          grouped[codigo] = almacenesResult.recordset.map(almacen => ({
-            codigoAlmacen: almacen.CodigoAlmacen,
-            nombreAlmacen: almacen.Almacen || almacen.CodigoAlmacen,
-            ubicacion: 'Zona descarga',
-            descripcionUbicacion: 'Stock disponible para expedición directa',
-            unidadSaldo: Infinity,
-            unidadMedida: 'unidades',
-            partida: null, codigoColor: '', codigoTalla: ''
-          }));
-        }
+        if (!grouped[codigo]) grouped[codigo] = [];
       });
 
       res.json(grouped);
@@ -1053,12 +1086,12 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
               ISNULL(m.CodigoTalla01_,'') AS CodigoTalla01,
               'MOVIMIENTO' AS TipoRegistro,
               CASE
-                WHEN NULLIF(LTRIM(RTRIM(ISNULL(m.UsuarioProceso,''))), '') IS NOT NULL
-                  AND LTRIM(RTRIM(ISNULL(m.UsuarioProceso,''))) <> '0'
-                  THEN LTRIM(RTRIM(m.UsuarioProceso))
+                WHEN NULLIF(LTRIM(RTRIM(ISNULL(m.CodigoCliente,''))), '') IS NOT NULL
+                  AND LTRIM(RTRIM(ISNULL(m.CodigoCliente,''))) <> '0'
+                  THEN LTRIM(RTRIM(m.CodigoCliente))
                 WHEN CHARINDEX(' por ', ISNULL(m.Comentario,'')) > 0
                   THEN LTRIM(RTRIM(SUBSTRING(m.Comentario, CHARINDEX(' por ',m.Comentario)+5, LEN(m.Comentario))))
-                ELSE LTRIM(RTRIM(ISNULL(m.CodigoCliente,'')))
+                ELSE ''
               END AS Usuario,
               CASE
                 WHEN CHARINDEX(' por ', ISNULL(m.Comentario,'')) > 0
@@ -1187,8 +1220,8 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
 
   router.get('/stock/articulos-con-stock', async (req, res) => {
     const codigoEmpresa = req.user.CodigoEmpresa;
-    const page = parseInt(req.query.page) || 1;
-    const pageSize = parseInt(req.query.pageSize) || 50;
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const pageSize = Math.max(parseInt(req.query.pageSize, 10) || 50, 1);
     const searchTerm = req.query.search || '';
     const offset = (page - 1) * pageSize;
     try {
@@ -1207,7 +1240,7 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
         GROUP BY COALESCE(a.CodigoArticulo,s.CodigoArticulo), s.CodigoArticulo, COALESCE(a.DescripcionArticulo,s.CodigoArticulo)
         HAVING SUM(COALESCE(s.UnidadSaldoTipo_,s.UnidadSaldo,0)) > 0
         ORDER BY DescripcionArticulo
-        OFFSET ${offset} ROWS FETCH NEXT ${pageSize} ROWS ONLY
+        OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
       `;
       const countQuery = `
         ${getCteInventarioActual()}
@@ -1223,7 +1256,9 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
       const request = agregarContextoInventario(
         getPool().request()
           .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-          .input('searchTerm', sql.VarChar, `%${searchTerm}%`),
+          .input('searchTerm', sql.VarChar, `%${searchTerm}%`)
+          .input('offset', sql.Int, offset)
+          .input('pageSize', sql.Int, pageSize),
         contexto
       );
       const result = await request.query(query);
@@ -1559,7 +1594,6 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
     }
   });
 
-  // FIX #10: límite máximo de ajustes por llamada
   const MAX_AJUSTES_POR_LLAMADA = 500;
 
   router.post('/inventario/ajustar-completo', async (req, res) => {
@@ -1573,7 +1607,10 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
       return res.status(403).json({ success: false, mensaje: 'No tienes permiso para ajustar inventario.' });
 
     const ejercicio = new Date().getFullYear();
-    const usuarioInventario = req.user.UsuarioLogicNet || req.user.CodigoCliente || req.user.CodigoUsuario || 'desconocido';
+    // CodigoCliente se guarda en el movimiento para trazabilidad
+    const codigoClienteUsuario = req.user.CodigoCliente || '';
+    // UsuarioLogicNet va al comentario (UsuarioProceso es smallint, no lo usamos)
+    const usuarioInventario = req.user.UsuarioLogicNet || req.user.CodigoUsuario || 'desconocido';
 
     if (!ajustes || !Array.isArray(ajustes) || ajustes.length === 0)
       return res.status(400).json({ success: false, mensaje: 'Lista de ajustes vacía o inválida.' });
@@ -1643,7 +1680,7 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
               ubicacionPrincipal, ajusteDestino.unidadStock, ajusteDestino.partida, ajusteDestino.codigoColor, ajusteDestino.codigoTalla01, deltaDestino, transaction);
 
           await registrarMovimientoInventario({
-            codigoEmpresa, ejercicio, usuarioInventario,
+            codigoEmpresa, ejercicio, usuarioInventario, codigoClienteUsuario,
             ajuste: { ...ajusteDestino, nuevaCantidad: cantidadFinalDestino },
             unidades: ajusteDestino.nuevaCantidad,
             comentario: registroDestino ? `Inventario: fusion de variante` : `Inventario: cambio de variante`
@@ -1651,10 +1688,10 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
           continue;
         }
 
-        // FIX #3: si el artículo viene de AcumuladoStock sin fila en AcumuladoStockUbicacion,
-        // la cantidad anterior real está en AcumuladoStock, no en el registro de ubicación
+        // Para SIN-UBICACION siempre calculamos cantidadAnterior con SUM de TODOS los ejercicios
+        // ya que pueden existir filas en múltiples ejercicios que sumen el total real
         let cantidadAnterior = parseFloat(registroOrigen?.UnidadSaldo ?? registroDestino?.UnidadSaldo ?? 0);
-        if (cantidadAnterior === 0 && ajusteDestino.ubicacionStr === 'SIN-UBICACION') {
+        if (ajusteDestino.ubicacionStr === 'SIN-UBICACION') {
           const stockActualResult = await new sql.Request(transaction)
             .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
             .input('codigoArticulo', sql.VarChar, ajusteDestino.articulo)
@@ -1664,7 +1701,7 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
             .input('codigoColor', sql.VarChar, ajusteDestino.codigoColor || '')
             .input('codigoTalla', sql.VarChar, ajusteDestino.codigoTalla01 || '')
             .query(`
-              SELECT TOP 1 SUM(COALESCE(UnidadSaldoTipo_,UnidadSaldo,0)) AS StockActual
+              SELECT SUM(COALESCE(UnidadSaldoTipo_,UnidadSaldo,0)) AS StockActual
               FROM AcumuladoStock
               WHERE CodigoEmpresa=@codigoEmpresa
                 AND CodigoArticulo=@codigoArticulo
@@ -1682,13 +1719,22 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
 
         await upsertAcumuladoStockUbicacion(ajusteDestino, ajusteDestino.nuevaCantidad, codigoEmpresa, ejercicio, transaction);
 
-        if (Math.abs(delta) > 0.001)
+        // SIN-UBICACION puede tener múltiples filas en distintos ejercicios que sumen el total.
+        // En lugar de aplicar un delta (que solo toca una fila), consolidamos todas a 0
+        // y ponemos el valor correcto en una sola fila.
+        if (ajusteDestino.ubicacionStr === 'SIN-UBICACION') {
+          await consolidarAcumuladoStockSinUbicacion(
+            codigoEmpresa, ejercicio, ajusteDestino.articulo, ajusteDestino.codigoAlmacen,
+            ajusteDestino.unidadStock, ajusteDestino.partida, ajusteDestino.codigoColor, ajusteDestino.codigoTalla01,
+            ajusteDestino.nuevaCantidad, transaction
+          );
+        } else if (Math.abs(delta) > 0.001) {
           await aplicarDeltaEnAcumuladoStock(codigoEmpresa, ejercicio, ajusteDestino.articulo, ajusteDestino.codigoAlmacen,
             ubicacionPrincipal, ajusteDestino.unidadStock, ajusteDestino.partida, ajusteDestino.codigoColor, ajusteDestino.codigoTalla01, delta, transaction);
+        }
 
-        // FIX #6: pasar UsuarioProceso al registrar movimiento
         await registrarMovimientoInventario({
-          codigoEmpresa, ejercicio, usuarioInventario,
+          codigoEmpresa, ejercicio, usuarioInventario, codigoClienteUsuario,
           ajuste: ajusteDestino,
           unidades: delta,
           comentario: esEdicion ? 'Inventario: edicion manual' : 'Inventario: nuevo ajuste manual'
@@ -1879,9 +1925,11 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
   async function eliminarCombinacionVigenteAcumuladoStockUbicacion(codigoEmpresa, ajuste, ejercicio, transaction) {
     const ubicacionNorm = ajuste.ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ajuste.ubicacionStr;
     const unidadNorm = (ajuste.unidadStock === 'unidades' ? '' : ajuste.unidadStock || '');
+    // Borramos TODOS los ejercicios para la combinación, no solo el ejercicioActual.
+    // Si estamos en cambio de año el registro puede vivir en ejercicioBase (año anterior)
+    // y filtrar por @ejercicio lo dejaría huérfano sin borrar.
     await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.Int, ejercicio)
       .input('codigoArticulo', sql.VarChar, ajuste.articulo)
       .input('codigoAlmacen', sql.VarChar, ajuste.codigoAlmacen)
       .input('ubicacion', sql.VarChar, ubicacionNorm)
@@ -1891,7 +1939,7 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
       .input('codigoTalla', sql.VarChar, ajuste.codigoTalla01 || '')
       .query(`
         DELETE FROM AcumuladoStockUbicacion
-        WHERE CodigoEmpresa=@codigoEmpresa AND Ejercicio=@ejercicio
+        WHERE CodigoEmpresa=@codigoEmpresa
           AND CodigoArticulo=@codigoArticulo AND CodigoAlmacen=@codigoAlmacen AND Ubicacion=@ubicacion
           AND ISNULL(TipoUnidadMedida_,'')=@tipoUnidad AND ISNULL(Partida,'')=@partida
           AND ISNULL(CodigoColor_,'')=@codigoColor AND ISNULL(CodigoTalla01_,'')=@codigoTalla
@@ -1908,7 +1956,9 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
     return str;
   }
 
-  // FIX #6: añadir UsuarioProceso al INSERT de MovimientoStock
+  // FIX PRINCIPAL: UsuarioProceso es smallint → no se puede usar con string de usuario.
+  // Se guarda el usuario en CodigoCliente (varchar) y en el Comentario.
+  // UsuarioProceso se omite del INSERT.
   async function registrarMovimientoInventario(payload, transaction) {
     const ahora = new Date();
     const periodo = ahora.getMonth() + 1;
@@ -1919,8 +1969,10 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
     const partida = sanitizeString(payload.ajuste.partida || '', 15);
     const codigoColor = sanitizeString(payload.ajuste.codigoColor || '', 10);
     const codigoTalla = sanitizeString(payload.ajuste.codigoTalla01 || '', 10);
-    const codigoUsuario = sanitizeString(payload.usuarioInventario, 20);
+    // CodigoCliente es varchar — guardamos el código del cliente (ej: '0034')
+    const codigoCliente = sanitizeString(payload.codigoClienteUsuario || '', 20);
     const unidades = typeof payload.unidades === 'number' ? payload.unidades : parseFloat(payload.unidades) || 0;
+    // El nombre de usuario va en el comentario para trazabilidad
     let comentarioBase = `${payload.comentario} por ${payload.usuarioInventario}`;
     comentarioBase = sanitizeString(comentarioBase, 0);
     const comentario = comentarioBase.length > 40 ? comentarioBase.slice(0, 37) + '...' : comentarioBase;
@@ -1932,14 +1984,13 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
         .input('periodo', sql.SmallInt, periodo)
         .input('fecha', sql.Date, ahora)
         .input('fechaRegistro', sql.DateTime, ahora)
-        .input('tipoMovimiento', sql.SmallInt, 5)
+        .input('tipoMovimiento', sql.TinyInt, 5)
         .input('codigoArticulo', sql.VarChar(20), codigoArticulo)
         .input('codigoAlmacen', sql.VarChar(4), codigoAlmacen)
         .input('ubicacion', sql.VarChar(15), ubicacion)
         .input('unidades', sql.Decimal(18, 4), unidades)
         .input('comentario', sql.VarChar(40), comentario)
-        .input('codigoCliente', sql.VarChar(20), codigoUsuario)
-        .input('usuarioProceso', sql.VarChar(20), codigoUsuario)
+        .input('codigoCliente', sql.VarChar(20), codigoCliente)
         .input('unidadMedida1', sql.VarChar(10), unidadMedida)
         .input('partida', sql.VarChar(15), partida)
         .input('codigoColor', sql.VarChar(10), codigoColor)
@@ -1947,12 +1998,12 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
         .query(`
           INSERT INTO MovimientoStock (
             CodigoEmpresa, Ejercicio, Periodo, Fecha, FechaRegistro, TipoMovimiento,
-            CodigoArticulo, CodigoAlmacen, Ubicacion, Unidades, Comentario, CodigoCliente,
-            UsuarioProceso, UnidadMedida1_, Partida, CodigoColor_, CodigoTalla01_
+            CodigoArticulo, CodigoAlmacen, Ubicacion, Unidades, Comentario,
+            CodigoCliente, UnidadMedida1_, Partida, CodigoColor_, CodigoTalla01_
           ) VALUES (
             @codigoEmpresa, @ejercicio, @periodo, @fecha, @fechaRegistro, @tipoMovimiento,
-            @codigoArticulo, @codigoAlmacen, @ubicacion, @unidades, @comentario, @codigoCliente,
-            @usuarioProceso, @unidadMedida1, @partida, @codigoColor, @codigoTalla01
+            @codigoArticulo, @codigoAlmacen, @ubicacion, @unidades, @comentario,
+            @codigoCliente, @unidadMedida1, @partida, @codigoColor, @codigoTalla01
           )
         `);
     } catch (error) {

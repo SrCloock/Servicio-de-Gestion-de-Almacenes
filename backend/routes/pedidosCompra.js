@@ -43,33 +43,37 @@ async function obtenerContextoBaseInventario(codigoEmpresa, transaction = null) 
       WITH Contextos AS (
         SELECT
           Ejercicio,
-          Periodo,
           COUNT(*) AS TotalRegistros,
           COUNT(DISTINCT CodigoArticulo) AS TotalArticulos,
           SUM(ABS(COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0))) AS MagnitudStock
         FROM AcumuladoStockUbicacion
         WHERE CodigoEmpresa = @codigoEmpresa
+          AND Periodo = 99
           AND (COALESCE(UnidadSaldoTipo_, 0) <> 0 OR COALESCE(UnidadSaldo, 0) <> 0)
-        GROUP BY Ejercicio, Periodo
+        GROUP BY Ejercicio
+      ),
+      FallbackStock AS (
+        SELECT TOP 1 Ejercicio
+        FROM AcumuladoStock
+        WHERE CodigoEmpresa = @codigoEmpresa AND Periodo = 99
+        ORDER BY Ejercicio DESC
       )
       SELECT TOP 1
-        Ejercicio,
-        Periodo,
-        TotalRegistros,
-        TotalArticulos
-      FROM Contextos
+        COALESCE(c.Ejercicio, f.Ejercicio) AS Ejercicio
+      FROM (SELECT NULL AS dummy) x
+      LEFT JOIN Contextos c ON 1=1
+      LEFT JOIN FallbackStock f ON 1=1
       ORDER BY
-        CASE WHEN Periodo = 99 THEN 0 ELSE 1 END,
-        TotalArticulos DESC,
-        TotalRegistros DESC,
-        MagnitudStock DESC,
-        Ejercicio DESC,
-        Periodo DESC
+        CASE WHEN c.Ejercicio IS NOT NULL THEN 0 ELSE 1 END,
+        c.TotalArticulos DESC,
+        c.TotalRegistros DESC,
+        c.MagnitudStock DESC,
+        c.Ejercicio DESC
     `);
   const contexto = result.recordset[0];
   return {
     ejercicioBase: contexto?.Ejercicio || ejercicioActual,
-    periodoBase: contexto?.Periodo || 99,
+    periodoBase: 99,
     ejercicioActual
   };
 }
@@ -182,7 +186,7 @@ async function sincronizarAcumuladoStockDesdeUbicaciones(ajuste, codigoEmpresa, 
 
   const unidadStockNormalizada = (unidadStock === 'unidades' || !unidadStock) ? '' : unidadStock;
 
-  // Sumar stock total de todas las ubicaciones (periodos 0 y 99)
+  // Sumar stock total de TODAS las ubicaciones (solo periodo 99 — periodo 0 es apertura, no se mezcla)
   const totalResult = await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
     .input('ejercicioBase', sql.SmallInt, contexto.ejercicioBase)
@@ -194,7 +198,7 @@ async function sincronizarAcumuladoStockDesdeUbicaciones(ajuste, codigoEmpresa, 
     .input('codigoColor', sql.VarChar, codigoColor || '')
     .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
     .query(`
-      SELECT SUM(CAST(COALESCE(UnidadSaldo, 0) AS DECIMAL(18,4))) AS TotalStock
+      SELECT SUM(CAST(COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0) AS DECIMAL(18,4))) AS TotalStock
       FROM AcumuladoStockUbicacion
       WHERE CodigoEmpresa = @codigoEmpresa
         AND Ejercicio IN (@ejercicioBase, @ejercicioActual)
@@ -204,15 +208,21 @@ async function sincronizarAcumuladoStockDesdeUbicaciones(ajuste, codigoEmpresa, 
         AND ISNULL(Partida, '') = @partida
         AND ISNULL(CodigoColor_, '') = @codigoColor
         AND ISNULL(CodigoTalla01_, '') = @codigoTalla
-        AND Periodo IN (0, 99)
+        AND Periodo = 99
     `);
 
   const totalStock = safeDecimal(totalResult.recordset[0]?.TotalStock, 0);
 
-  // Eliminar registro antiguo en AcumuladoStock (periodo 99, solo ejercicio actual)
+  // La ubicación principal en AcumuladoStock para el almacén de recepción es siempre R1
+  // (la misma que usa la recepción de pedidos)
+  const ubicacionPrincipal = codigoAlmacen === ALMACEN_RECEPCION_TEMPORAL
+    ? UBICACION_RECEPCION_TEMPORAL
+    : 'SIN-UBICACION';
+
+  // Eliminar todos los registros periodo 99 existentes para esta combinación (todos los ejercicios)
+  // para evitar duplicados de ejercicios anteriores
   await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-    .input('ejercicio', sql.Int, ejercicio)
     .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
     .input('codigoArticulo', sql.VarChar, articulo)
     .input('tipoUnidad', sql.VarChar, unidadStockNormalizada)
@@ -222,7 +232,6 @@ async function sincronizarAcumuladoStockDesdeUbicaciones(ajuste, codigoEmpresa, 
     .query(`
       DELETE FROM AcumuladoStock
       WHERE CodigoEmpresa = @codigoEmpresa
-        AND Ejercicio = @ejercicio
         AND CodigoAlmacen = @codigoAlmacen
         AND CodigoArticulo = @codigoArticulo
         AND ISNULL(TipoUnidadMedida_, '') = @tipoUnidad
@@ -238,7 +247,7 @@ async function sincronizarAcumuladoStockDesdeUbicaciones(ajuste, codigoEmpresa, 
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('ejercicio', sql.Int, ejercicio)
       .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-      .input('ubicacion', sql.VarChar, 'SIN-UBICACION')
+      .input('ubicacion', sql.VarChar, ubicacionPrincipal)
       .input('codigoArticulo', sql.VarChar, articulo)
       .input('tipoUnidad', sql.VarChar, unidadStockNormalizada)
       .input('partida', sql.VarChar, partida || '')
@@ -955,15 +964,47 @@ router.post('/pedidos-compra/:ejercicio/:serie/:numero/recepcionar', async (req,
         if (Math.abs(totalVariantes - unidadesRecepcionar) > 0.001) {
           throw new Error(`Suma de variantes (${totalVariantes}) no coincide con unidades a recepcionar (${unidadesRecepcionar})`);
         }
+
+        // Validar que cada variante no supera las unidades pendientes por color/talla en la tabla de tallas
         for (const variante of variantes) {
           const unidadesVariante = parseFloat(variante.unidades) || 0;
-          if (unidadesVariante > 0) {
-            combinaciones.push({
-              unidades: unidadesVariante,
-              codigoColor: variante.codigoColor || '',
-              codigoTalla: variante.codigoTalla || ''
-            });
+          if (unidadesVariante <= 0) continue;
+
+          // Obtener pendientes por color/talla desde LineasPedidoProveedorTallas
+          if (variante.codigoColor || variante.codigoTalla) {
+            const pendientesVarianteResult = await new sql.Request(transaction)
+              .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+              .input('ejercicio', sql.SmallInt, ejercicio)
+              .input('numero', sql.Int, numero)
+              .input('serie', sql.VarChar, serieParam)
+              .input('movPosicionLinea', sql.VarChar, linea.LineasPosicion || '')
+              .input('codigoColor', sql.VarChar, variante.codigoColor || '')
+              .query(`
+                SELECT UnidadesTotalTallas_
+                FROM LineasPedidoProveedorTallas
+                WHERE CodigoEmpresa = @codigoEmpresa
+                  AND EjercicioPedido = @ejercicio
+                  AND NumeroPedido = @numero
+                  AND (SeriePedido = @serie OR (@serie = '0' AND (SeriePedido IS NULL OR SeriePedido = '' OR SeriePedido = '0')))
+                  AND MovPosicionLinea_ = @movPosicionLinea
+                  AND CodigoColor_ = @codigoColor
+              `);
+            if (pendientesVarianteResult.recordset.length > 0) {
+              const pendientesVariante = parseFloat(pendientesVarianteResult.recordset[0].UnidadesTotalTallas_) || 0;
+              if (unidadesVariante > pendientesVariante) {
+                throw new Error(
+                  `Variante color=${variante.codigoColor || '-'} talla=${variante.codigoTalla || '-'}: ` +
+                  `se intentan recepcionar ${unidadesVariante} pero solo hay ${pendientesVariante} pendientes.`
+                );
+              }
+            }
           }
+
+          combinaciones.push({
+            unidades: unidadesVariante,
+            codigoColor: variante.codigoColor || '',
+            codigoTalla: variante.codigoTalla || ''
+          });
         }
       } else {
         combinaciones.push({
