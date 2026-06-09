@@ -240,47 +240,51 @@ export const validarExpedicionLinea = (linea, expedicion, ubicaciones) => {
  * @param {string} titulo - Título del mensaje
  * @param {string} cuerpo - Cuerpo del mensaje (puede incluir saltos de línea)
  * @param {'success'|'error'|'info'} tipo - Tipo de notificación (influye en el color)
+ * @param {number} duracion - Milisegundos antes de auto-cerrar. 0 = solo cierre manual.
  */
-export const mostrarToastEnPagina = (titulo, cuerpo, tipo = 'info') => {
+export const mostrarToastEnPagina = (titulo, cuerpo, tipo = 'info', duracion = 5000) => {
   const toast = document.createElement('div');
   toast.className = `ps-toast ps-toast-${tipo}`;
-  toast.innerHTML = `
-    <div class="ps-toast-header">
-      <strong>${titulo}</strong>
-      <button class="ps-toast-close">&times;</button>
-    </div>
-    <div class="ps-toast-body">${cuerpo.replace(/\n/g, '<br>')}</div>
-  `;
 
   const bgColor = tipo === 'success' ? '#38a169' : tipo === 'error' ? '#e53e3e' : '#3182ce';
+
+  toast.innerHTML = `
+    <div class="ps-toast-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <strong style="font-size:0.95rem;">${titulo}</strong>
+      <button class="ps-toast-close" style="background:none;border:none;color:white;font-size:1.2rem;cursor:pointer;padding:0 0 0 12px;line-height:1;">&times;</button>
+    </div>
+    <div class="ps-toast-body" style="font-size:0.85rem;opacity:0.92;">${cuerpo.replace(/\n/g, '<br>')}</div>
+  `;
+
   toast.style.cssText = `
     position: fixed;
     top: 20px;
     right: 20px;
     min-width: 300px;
-    max-width: 400px;
+    max-width: 420px;
     background: ${bgColor};
     color: white;
-    padding: 15px;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    padding: 14px 16px;
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
     z-index: 9999;
     animation: slideInNotification 0.3s ease-out;
     font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    border-left: 5px solid rgba(255,255,255,0.4);
   `;
 
-  const closeBtn = toast.querySelector('.ps-toast-close');
-  closeBtn.onclick = () => {
+  const cerrar = () => {
     toast.style.animation = 'slideOutNotification 0.3s ease-out';
     setTimeout(() => toast.remove(), 300);
   };
 
-  setTimeout(() => {
-    if (toast.parentNode) {
-      toast.style.animation = 'slideOutNotification 0.3s ease-out';
-      setTimeout(() => toast.remove(), 300);
-    }
-  }, 5000);
+  toast.querySelector('.ps-toast-close').onclick = cerrar;
+
+  if (duracion > 0) {
+    setTimeout(() => {
+      if (toast.parentNode) cerrar();
+    }, duracion);
+  }
 
   document.body.appendChild(toast);
 };

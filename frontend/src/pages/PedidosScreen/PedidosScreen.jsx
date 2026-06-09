@@ -243,17 +243,19 @@ const PedidosScreen = () => {
           { headers: getAuthHeader() }
         );
         if (response.data.success) {
-          if (response.data.detalles?.albaranProgramado) {
-            setTimeout(
-              () =>
-                mostrarNotificacionNavegador(
-                  response.data.detalles?.pedidoCompletado ? 'Pedido Completado' : 'Expedición Registrada',
-                  response.data.detalles?.pedidoCompletado
-                    ? `El pedido #${pedido.numeroPedido} se ha completado.\nSe genera albarán automáticamente.`
-                    : `Expedición registrada para pedido #${pedido.numeroPedido}.`
-                ),
-              1200
-            );
+          if (response.data.detalles?.albaranGenerado) {
+            const albInfo = response.data.detalles.albaran;
+            const numAlbaran = albInfo
+              ? `${albInfo.serie || ''}${albInfo.numero}`
+              : '—';
+            setTimeout(() => {
+              mostrarToastEnPagina(
+                '✅ Albarán automático generado',
+                `Albarán automático generado #${numAlbaran}\nPedido #${pedido.numeroPedido} servido completamente.`,
+                'success',
+                0 // solo cierre manual
+              );
+            }, 800);
           }
           setPedidos((prev) =>
             prev
@@ -366,6 +368,7 @@ const PedidosScreen = () => {
       const { articulo, color, talla, cantidad, ubicacion, almacen, partida, unidadMedida, movPosicionLinea } =
         datosVariante;
       const { pedido, linea } = detallesModal;
+      setLineasProcesando((prev) => ({ ...prev, [movPosicionLinea]: true }));
       try {
         const response = await API.post(
           '/actualizarLineaPedido',
@@ -388,6 +391,21 @@ const PedidosScreen = () => {
           { headers: getAuthHeader() }
         );
         if (response.data.success) {
+          // Notificación si el pedido quedó completado y se generó albarán
+          if (response.data.detalles?.albaranGenerado) {
+            const albInfo = response.data.detalles.albaran;
+            const numAlbaran = albInfo
+              ? `${albInfo.serie || ''}${albInfo.numero}`
+              : '—';
+            setTimeout(() => {
+              mostrarToastEnPagina(
+                '✅ Albarán automático generado',
+                `Albarán automático generado #${numAlbaran}\nPedido #${pedido.numeroPedido} servido completamente.`,
+                'success',
+                0 // solo cierre manual
+              );
+            }, 800);
+          }
           setPedidos((prev) =>
             prev
               .map((p) => {
@@ -430,6 +448,21 @@ const PedidosScreen = () => {
               })
               .filter(Boolean)
           );
+          // Actualizar stock local de ubicaciones igual que en handleExpedirArticuloOptimizado
+          setUbicaciones((prev) => {
+            const nuevas = { ...prev };
+            const ubicacionActualizada = (nuevas[articulo] || []).map((ubic) =>
+              ubic.ubicacion === ubicacion &&
+              ubic.codigoAlmacen === almacen &&
+              (ubic.partida || '') === (partida || '') &&
+              (ubic.codigoColor || '') === (color || '') &&
+              (ubic.codigoTalla || '') === (talla || '')
+                ? { ...ubic, unidadSaldo: Math.max(0, parseFloat(ubic.unidadSaldo) - cantidad) }
+                : ubic
+            );
+            nuevas[articulo] = ubicacionActualizada;
+            return nuevas;
+          });
           setDetallesModal(null);
           mostrarToastEnPagina(
             'Expedición realizada',
@@ -439,10 +472,13 @@ const PedidosScreen = () => {
         }
       } catch (error) {
         console.error(error);
+        mostrarNotificacionNavegador('Error al Expedir', error.response?.data?.mensaje || error.message, 'error');
         alert('Error al expedir: ' + (error.response?.data?.mensaje || error.message));
+      } finally {
+        setLineasProcesando((prev) => ({ ...prev, [movPosicionLinea]: false }));
       }
     },
-    [detallesModal]
+    [detallesModal, mostrarNotificacionNavegador]
   );
 
   const generarAlbaranParcial = useCallback(
@@ -482,16 +518,36 @@ const PedidosScreen = () => {
           { headers: getAuthHeader() }
         );
         if (response.data.success) {
+          // Marcar las líneas ya albaranadas como servidas (unidadesPendientes = unidadesPedidas)
+          // y eliminar el pedido del estado si ya no tiene pendientes reales
           setPedidos((prev) =>
-            prev.map((p) =>
-              p.numeroPedido === pedido.numeroPedido
-                ? {
-                    ...p,
-                    Estado: response.data.statusPedido === 'Parcial' ? 4 : 2,
-                    Status: response.data.statusPedido,
-                  }
-                : p
-            )
+            prev
+              .map((p) => {
+                if (p.numeroPedido !== pedido.numeroPedido) return p;
+                const articulosActualizados = p.articulos.map((art) => {
+                  const expedida = lineasExpedidas.find(
+                    (l) => l.codigoArticulo === art.codigoArticulo
+                  );
+                  if (!expedida) return art;
+                  // Restar las unidades que acabamos de albaranar
+                  const nuevasPendientes = Math.max(
+                    0,
+                    parseFloat(art.unidadesPendientes) - expedida.cantidad
+                  );
+                  return { ...art, unidadesPendientes: nuevasPendientes };
+                });
+                const tieneLineasPendientes = articulosActualizados.some(
+                  (art) => parseFloat(art.unidadesPendientes) > 0
+                );
+                if (!tieneLineasPendientes) return null;
+                return {
+                  ...p,
+                  Estado: response.data.statusPedido === 'Parcial' ? 4 : 2,
+                  Status: response.data.statusPedido,
+                  articulos: articulosActualizados,
+                };
+              })
+              .filter(Boolean)
           );
           const albaranInfo = response.data.albaran;
           mostrarNotificacionNavegador(
@@ -539,10 +595,10 @@ const PedidosScreen = () => {
         // FIX: si el usuario no es superUser ni tiene permiso de asignación,
         // filtrar por su CodigoCliente (= EmpleadoAsignado en BD)
         const { isSuperUser: superUser } = permissionsRef.current;
-        const debeFiltrарPorEmpleado = !superUser;
+        const debeFiltrarPorEmpleado = !superUser;
 
         const params = { codigoEmpresa, rango: rangoFechasRef.current };
-        if (debeFiltrарPorEmpleado && userRef.current?.UsuarioLogicNet) {
+        if (debeFiltrarPorEmpleado && userRef.current?.UsuarioLogicNet) {
           params.empleadoAsignado = userRef.current.UsuarioLogicNet;
         }
 
@@ -576,7 +632,7 @@ const PedidosScreen = () => {
     return () => {
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-  }, [rangoFechas]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rangoFechas, cargarPedidos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Detectar cámaras
   useEffect(() => {
@@ -768,7 +824,7 @@ const PedidosScreen = () => {
                 onCargarUbicaciones={cargarUbicacionesParaArticulos}
                 lineasContent={
                   <PedidoLineasTable>
-                    {pedido.articulos.map((linea, idx) => (
+                    {pedido.articulos.filter((linea) => parseFloat(linea.unidadesPendientes) > 0).map((linea, idx) => (
                       <LineaPedido
                         key={`${pedido.codigoEmpresa}-${pedido.ejercicioPedido}-${pedido.seriePedido || ''}-${pedido.numeroPedido}-${linea.codigoArticulo}-${idx}`}
                         linea={linea}

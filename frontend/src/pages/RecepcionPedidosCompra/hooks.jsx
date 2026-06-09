@@ -14,6 +14,7 @@ export const usePedidosCompra = (user) => {
   const [pedidosAgrupados, setPedidosAgrupados] = useState({});
   const [detallesPedidos, setDetallesPedidos] = useState({});
   const [loading, setLoading] = useState(false);
+  const [loadingDetalle, setLoadingDetalle] = useState(false); // FIX: loading separado para detalles
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [pagination, setPagination] = useState({
@@ -84,13 +85,14 @@ export const usePedidosCompra = (user) => {
     }
   }, [user, pagination.limit, filtros]);
 
+  // FIX: usa loadingDetalle separado para no pisar el spinner global de cargarPedidos
   const cargarDetallesPedido = useCallback(async (ejercicio, serie, numero, forzarRecarga = false) => {
     const clave = `${ejercicio}_${serie || '0'}_${numero}`;
     if (detallesPedidos[clave] && !forzarRecarga) {
       return detallesPedidos[clave];
     }
 
-    setLoading(true);
+    setLoadingDetalle(true);
     try {
       const serieParam = serie || '0';
       const { data } = await API.get(`/pedidos-compra/${ejercicio}/${serieParam}/${numero}/detalle`);
@@ -105,7 +107,7 @@ export const usePedidosCompra = (user) => {
       setError(`Error cargando detalles: ${getApiErrorMessage(err, 'Error al cargar detalles del pedido')}`);
       return null;
     } finally {
-      setLoading(false);
+      setLoadingDetalle(false);
     }
   }, [detallesPedidos]);
 
@@ -122,6 +124,7 @@ export const usePedidosCompra = (user) => {
     detallesPedidos,
     setDetallesPedidos: actualizarDetallesPedido,
     loading,
+    loadingDetalle,
     error,
     setError,
     success,
@@ -146,17 +149,19 @@ export const useRecepcionModal = ({
 }) => {
   const [modalRecepcion, setModalRecepcion] = useState(false);
   const [lineaARecepcionar, setLineaARecepcionar] = useState(null);
-  const [datosPedidoActual, setDatosPedidoActual] = useState(null); // ✅ almacena datos del pedido (suAlbaranNo, fechaSuAlbaran)
+  const [datosPedidoActual, setDatosPedidoActual] = useState(null);
   const [almacenes, setAlmacenes] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);
   const [selectedAlmacen, setSelectedAlmacen] = useState('');
   const [selectedUbicacion, setSelectedUbicacion] = useState('');
   const [unidadesARecepcionar, setUnidadesARecepcionar] = useState('');
+  // FIX: guardamos el máximo correcto según si es variante/talla o línea general
+  const [maxUnidadesModal, setMaxUnidadesModal] = useState(0);
   const [variantesDistribucion, setVariantesDistribucion] = useState([]);
   const [loadingVariantes, setLoadingVariantes] = useState(false);
   const [loadingRecepcion, setLoadingRecepcion] = useState(false);
 
-  const cargarVariantesArticulo = async (codigoArticulo) => {
+  const cargarVariantesArticulo = async (codigoArticulo, unidadesPendientesActuales) => {
     setLoadingVariantes(true);
     try {
       const { data } = await API.get(`/articulos/${encodeURIComponent(codigoArticulo)}/variantes`);
@@ -169,7 +174,7 @@ export const useRecepcionModal = ({
             nombreTalla: comb.nombreTalla || '',
             grupoTalla: comb.grupoTalla || '',
             unidades: 0,
-            maxUnidades: parseFloat(unidadesARecepcionar) || 0
+            maxUnidades: parseFloat(unidadesPendientesActuales) || 0
           }));
           setVariantesDistribucion(distribucion);
         } else if (data.colores && data.colores.length > 0) {
@@ -180,7 +185,7 @@ export const useRecepcionModal = ({
             nombreTalla: '',
             grupoTalla: '',
             unidades: 0,
-            maxUnidades: parseFloat(unidadesARecepcionar) || 0
+            maxUnidades: parseFloat(unidadesPendientesActuales) || 0
           }));
           setVariantesDistribucion(distribucion);
         } else if (data.tallas && data.tallas.length > 0) {
@@ -191,7 +196,7 @@ export const useRecepcionModal = ({
             nombreTalla: talla.nombre,
             grupoTalla: talla.grupo || '',
             unidades: 0,
-            maxUnidades: parseFloat(unidadesARecepcionar) || 0
+            maxUnidades: parseFloat(unidadesPendientesActuales) || 0
           }));
           setVariantesDistribucion(distribucion);
         }
@@ -203,13 +208,13 @@ export const useRecepcionModal = ({
     }
   };
 
-  // ✅ El método recibe ahora los datos del pedido (suAlbaranNo, fechaSuAlbaran)
   const abrirModalRecepcion = async (linea, pedidoKey, variante = null, talla = null, datosPedido = null) => {
     if (!datosPedido || !datosPedido.fijado) {
       setError('Debe guardar los datos del albarán del proveedor para este pedido antes de recepcionar.');
       return;
     }
 
+    // FIX: calcular el máximo correcto según el contexto (talla > variante > línea)
     let unidadesPendientes;
     if (variante && talla) {
       unidadesPendientes = parseFloat(talla.unidades) || 0;
@@ -225,8 +230,10 @@ export const useRecepcionModal = ({
     }
 
     setLineaARecepcionar({ linea, variante, talla, pedidoKey });
-    setDatosPedidoActual(datosPedido); // ✅ guardamos los datos del pedido
+    setDatosPedidoActual(datosPedido);
     setUnidadesARecepcionar(unidadesPendientes.toString());
+    // FIX: guardar el máximo correcto para el input del modal
+    setMaxUnidadesModal(unidadesPendientes);
     setSelectedAlmacen(ALMACEN_RECEPCION_FIJO);
     setSelectedUbicacion(UBICACION_RECEPCION_FIJA);
     setAlmacenes([{
@@ -271,10 +278,11 @@ export const useRecepcionModal = ({
       if (distribucion.length > 0) {
         setVariantesDistribucion(distribucion);
       } else {
-        await cargarVariantesArticulo(linea.CodigoArticulo);
+        // FIX: pasar unidadesPendientes actuales al cargar variantes desde API
+        await cargarVariantesArticulo(linea.CodigoArticulo, unidadesPendientes);
       }
     } else if (!variante && !talla && linea.tipoVariante !== 'NORMAL') {
-      await cargarVariantesArticulo(linea.CodigoArticulo);
+      await cargarVariantesArticulo(linea.CodigoArticulo, unidadesPendientes);
     }
 
     setModalRecepcion(true);
@@ -286,6 +294,7 @@ export const useRecepcionModal = ({
     setDatosPedidoActual(null);
     setVariantesDistribucion([]);
     setUnidadesARecepcionar('');
+    setMaxUnidadesModal(0);
     setSelectedAlmacen('');
     setSelectedUbicacion('');
   };
@@ -293,7 +302,6 @@ export const useRecepcionModal = ({
   const procesarRecepcionLinea = async () => {
     if (!lineaARecepcionar) return;
 
-    // ✅ Validar que los datos del pedido estén presentes
     if (!datosPedidoActual || !datosPedidoActual.fijado) {
       setError('No se puede recepcionar sin haber guardado los datos del albarán del proveedor para este pedido.');
       return;
@@ -307,6 +315,12 @@ export const useRecepcionModal = ({
     const unidades = parseFloat(unidadesARecepcionar) || 0;
     if (unidades <= 0) {
       setError('Debe especificar unidades a recepcionar');
+      return;
+    }
+
+    // FIX: validar contra el máximo correcto (variante/talla o línea)
+    if (unidades > maxUnidadesModal) {
+      setError(`No puede recepcionar más de ${maxUnidadesModal} unidades`);
       return;
     }
 
@@ -351,7 +365,6 @@ export const useRecepcionModal = ({
           mensajeExito += ` (${variante.nombreColor}${talla ? ' - ' + talla.nombre : ''})`;
         }
 
-        // ✅ Si se genera albarán automático, llamar al endpoint incluyendo los datos del pedido
         if (data.autoGenerarAlbaran) {
           try {
             const { data: albaranData } = await API.post(
@@ -371,12 +384,8 @@ export const useRecepcionModal = ({
         }
 
         setSuccess(mensajeExito);
-
-        // Recargar detalles del pedido
         await cargarDetallesPedido(linea.EjercicioPedido, linea.SeriePedido || '0', linea.NumeroPedido, true);
-        // Recargar lista de pedidos
         await cargarPedidos(pagination.page, true);
-
         cerrarModalRecepcion();
       }
     } catch (err) {
@@ -397,6 +406,7 @@ export const useRecepcionModal = ({
     setSelectedUbicacion,
     unidadesARecepcionar,
     setUnidadesARecepcionar,
+    maxUnidadesModal,
     variantesDistribucion,
     setVariantesDistribucion,
     loadingVariantes,
@@ -419,13 +429,19 @@ export const useAlbaranModal = ({
 }) => {
   const [modalGenerarAlbaran, setModalGenerarAlbaran] = useState(false);
   const [pedidoAAlbaran, setPedidoAAlbaran] = useState(null);
-  const [datosPedidoActual, setDatosPedidoActual] = useState(null); // ✅ almacena datos del pedido
+  const [datosPedidoActual, setDatosPedidoActual] = useState(null);
   const [lineasConRecepcion, setLineasConRecepcion] = useState([]);
   const [totalUnidadesAlbaran, setTotalUnidadesAlbaran] = useState(0);
   const [importeTotalAlbaran, setImporteTotalAlbaran] = useState(0);
   const [loadingAlbaran, setLoadingAlbaran] = useState(false);
 
-  const calcularLineasParaAlbaran = (detalles, pedido) => {
+  // FIX: calcular totales sobre UnidadesPendientes (pendientes de albaranar = recibidas - ya albaranadas)
+  // El backend calcula exactamente las pendientes, pero en el modal mostramos recibidas - pendientes
+  // como estimación visual. Usamos UnidadesPendientes para el denominador de comparación.
+  const calcularLineasParaAlbaran = (detalles) => {
+    // Líneas que tienen unidades recibidas y aún tienen unidades pendientes de recepcionar
+    // (si UnidadesPendientes > 0 significa que aún no se recepcionó todo, pero igual
+    // puede haber unidades recibidas pendientes de albaranar)
     const lineasConUnidadesRecibidas = detalles.lineas.filter(l =>
       parseFloat(l.UnidadesRecibidas) > 0
     );
@@ -433,6 +449,9 @@ export const useAlbaranModal = ({
       setError('No hay líneas con unidades recibidas para generar albarán');
       return false;
     }
+
+    // FIX: totalUnidades muestra las recibidas (el backend filtra las ya albaranadas)
+    // El importe también usa UnidadesRecibidas como base visual (el backend recalcula el real)
     const totalUnidades = lineasConUnidadesRecibidas.reduce((sum, l) =>
       sum + parseFloat(l.UnidadesRecibidas), 0
     );
@@ -445,7 +464,6 @@ export const useAlbaranModal = ({
     return true;
   };
 
-  // ✅ Recibe los datos del pedido como parámetro
   const prepararGenerarAlbaran = async (pedido, datosPedido) => {
     if (!datosPedido || !datosPedido.fijado) {
       setError('Debe guardar los datos del albarán del proveedor para este pedido antes de generar albarán.');
@@ -457,7 +475,8 @@ export const useAlbaranModal = ({
       detalles = await cargarDetallesPedido(pedido.EjercicioPedido, pedido.SeriePedido || '0', pedido.NumeroPedido, false);
       if (!detalles) return;
     }
-    if (calcularLineasParaAlbaran(detalles, pedido)) {
+    // FIX: pasar solo detalles, el pedido no se usa dentro de calcularLineasParaAlbaran
+    if (calcularLineasParaAlbaran(detalles)) {
       setPedidoAAlbaran(pedido);
       setDatosPedidoActual(datosPedido);
       setModalGenerarAlbaran(true);
