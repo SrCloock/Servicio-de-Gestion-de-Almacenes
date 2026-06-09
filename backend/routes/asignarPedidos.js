@@ -1,6 +1,6 @@
 const express = require('express');
 
-module.exports = function createasignarPedidosRouter({ sql, getPool }) {
+module.exports = function createasignarPedidosRouter({ sql, getPool, clienteConfig }) {
   const router = express.Router();
 
 router.post('/marcarPedidoCompletado', async (req, res) => {
@@ -476,13 +476,14 @@ router.get('/empleados/preparadores', async (req, res) => {
   try {
     const result = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('categoriaEmpleado', sql.VarChar, clienteConfig.categoriaEmpleado)
       .query(`
         SELECT 
           UsuarioLogicNet AS codigo, 
           Nombre AS nombre
         FROM Clientes
         WHERE CodigoEmpresa = @codigoEmpresa
-          AND CodigoCategoriaCliente_ = 'emp'
+          AND CodigoCategoriaCliente_ = @categoriaEmpleado
           AND StatusTodosLosPedidos = -1
           AND UsuarioLogicNet IS NOT NULL
       `);

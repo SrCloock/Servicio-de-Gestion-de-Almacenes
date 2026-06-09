@@ -1,7 +1,7 @@
 const express = require('express');
 const cron = require('node-cron');
 
-module.exports = function createinventarioRouter({ sql, getPool }) {
+module.exports = function createinventarioRouter({ sql, getPool, clienteConfig }) {
   const router = express.Router();
 
   async function verificarPermiso(usuario, codigoEmpresa) {
@@ -199,7 +199,7 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
           SELECT DISTINCT CodigoEmpresa FROM Empresas
           WHERE CodigoEmpresa IN (
             SELECT CodigoEmpresa FROM lsysEmpresaAplicacion WHERE CodigoAplicacion = 'CON'
-          ) AND CodigoEmpresa <= 10000
+          ) AND CodigoEmpresa = ${clienteConfig.codigoEmpresa}
         `);
       let totalBorrados = 0;
       for (const empresa of empresasResult.recordset) {
@@ -324,7 +324,7 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
               CodigoArticulo, TipoUnidadMedida_, Partida, CodigoColor_, CodigoTalla01_,
               UnidadSaldo, UnidadSaldoTipo_, Periodo
             ) VALUES (
-              @codigoEmpresa, @ejercicio, @codigoAlmacen, 'SIN-UBICACION',
+              @codigoEmpresa, @ejercicio, @codigoAlmacen, '',
               @codigoArticulo, @tipoUnidad, @partida, @codigoColor, @codigoTalla,
               @valor, @valor, 99
             )
@@ -407,7 +407,7 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
           .input('ejercicio', sql.Int, ejercicio)
           .input('codigoArticulo', sql.VarChar, articulo)
           .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
-          .input('ubicacion', sql.VarChar, ubicacionPrincipal || 'SIN-UBICACION')
+          .input('ubicacion', sql.VarChar, ubicacionPrincipal || '')
           .input('tipoUnidad', sql.VarChar, unidadNorm)
           .input('partida', sql.VarChar, partida || '')
           .input('codigoColor', sql.VarChar, codigoColor || '')
@@ -441,7 +441,7 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
           AND Periodo = 99
         ORDER BY Ejercicio DESC
       `);
-    return result.recordset[0]?.Ubicacion || 'SIN-UBICACION';
+    return result.recordset[0]?.Ubicacion || '';
   }
 
   async function obtenerStockTotalLote(req, res) {
@@ -1646,7 +1646,7 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
             WHERE CodigoEmpresa=@codigoEmpresa AND CodigoAlmacen=@codigoAlmacen AND Ubicacion=@ubicacion
           `);
 
-        if ((ubicacionValidaResult.recordset[0]?.EsValida || 0) === 0 && ajusteDestino.ubicacionStr !== 'SIN-UBICACION')
+        if ((ubicacionValidaResult.recordset[0]?.EsValida || 0) === 0 && ajusteDestino.ubicacionStr !== '')
           throw crearErrorInventario(400, `La ubicación ${ajusteDestino.ubicacionStr} no pertenece al almacén ${ajusteDestino.codigoAlmacen}.`);
 
         const esEdicion = Boolean(ajuste.combinacionOriginal);
@@ -1688,10 +1688,10 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
           continue;
         }
 
-        // Para SIN-UBICACION siempre calculamos cantidadAnterior con SUM de TODOS los ejercicios
+        // Para ubicación vacía siempre calculamos cantidadAnterior con SUM de TODOS los ejercicios
         // ya que pueden existir filas en múltiples ejercicios que sumen el total real
         let cantidadAnterior = parseFloat(registroOrigen?.UnidadSaldo ?? registroDestino?.UnidadSaldo ?? 0);
-        if (ajusteDestino.ubicacionStr === 'SIN-UBICACION') {
+        if (ajusteDestino.ubicacionStr === '') {
           const stockActualResult = await new sql.Request(transaction)
             .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
             .input('codigoArticulo', sql.VarChar, ajusteDestino.articulo)
@@ -1719,10 +1719,10 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
 
         await upsertAcumuladoStockUbicacion(ajusteDestino, ajusteDestino.nuevaCantidad, codigoEmpresa, ejercicio, transaction);
 
-        // SIN-UBICACION puede tener múltiples filas en distintos ejercicios que sumen el total.
+        // Ubicación vacía puede tener múltiples filas en distintos ejercicios que sumen el total.
         // En lugar de aplicar un delta (que solo toca una fila), consolidamos todas a 0
         // y ponemos el valor correcto en una sola fila.
-        if (ajusteDestino.ubicacionStr === 'SIN-UBICACION') {
+        if (ajusteDestino.ubicacionStr === '') {
           await consolidarAcumuladoStockSinUbicacion(
             codigoEmpresa, ejercicio, ajusteDestino.articulo, ajusteDestino.codigoAlmacen,
             ajusteDestino.unidadStock, ajusteDestino.partida, ajusteDestino.codigoColor, ajusteDestino.codigoTalla01,
@@ -1755,12 +1755,15 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
 
   async function upsertAcumuladoStockUbicacion(ajuste, nuevaCantidad, codigoEmpresa, ejercicio, transaction) {
     const { articulo, codigoAlmacen, ubicacionStr, partida, unidadStock, codigoColor, codigoTalla01 } = ajuste;
-    const ubicacionNorm = ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ubicacionStr;
+    const ubicacionNorm = ubicacionStr === 'SIN UBICACIÓN' ? '' : ubicacionStr;
     const unidadNorm = (unidadStock === 'unidades' ? '' : unidadStock || '');
 
+    // DELETE sin filtro de Ejercicio: borra el registro en CUALQUIER ejercicio.
+    // Si filtramos solo por ejercicioActual y el registro vive en ejercicioBase
+    // (cambio de año o BD sucia), el DELETE no lo elimina y el INSERT posterior
+    // crea un duplicado — que es exactamente el problema de descuadres que tenemos.
     await new sql.Request(transaction)
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.Int, ejercicio)
       .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
       .input('codigoArticulo', sql.VarChar, articulo)
       .input('ubicacion', sql.VarChar, ubicacionNorm)
@@ -1770,7 +1773,7 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
       .input('codigoTalla', sql.VarChar, codigoTalla01 || '')
       .query(`
         DELETE FROM AcumuladoStockUbicacion
-        WHERE CodigoEmpresa=@codigoEmpresa AND Ejercicio=@ejercicio AND CodigoAlmacen=@codigoAlmacen
+        WHERE CodigoEmpresa=@codigoEmpresa AND CodigoAlmacen=@codigoAlmacen
           AND CodigoArticulo=@codigoArticulo AND Ubicacion=@ubicacion
           AND ISNULL(TipoUnidadMedida_,'')=@tipoUnidad AND ISNULL(Partida,'')=@partida
           AND ISNULL(CodigoColor_,'')=@codigoColor AND ISNULL(CodigoTalla01_,'')=@codigoTalla
@@ -1870,7 +1873,7 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
       articulo: ajuste.articulo,
       descripcionArticulo: ajuste.descripcionArticulo || '',
       codigoAlmacen: ajuste.codigoAlmacen,
-      ubicacionStr: ajuste.ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : (ajuste.ubicacionStr || 'SIN-UBICACION'),
+      ubicacionStr: ajuste.ubicacionStr === 'SIN UBICACIÓN' ? '' : (ajuste.ubicacionStr || ''),
       partida: ajuste.partida || '',
       unidadStock: (!ajuste.unidadStock || ajuste.unidadStock === 'unidades') ? '' : ajuste.unidadStock,
       nuevaCantidad: parseFloat(ajuste.nuevaCantidad) || 0,
@@ -1923,7 +1926,7 @@ module.exports = function createinventarioRouter({ sql, getPool }) {
   }
 
   async function eliminarCombinacionVigenteAcumuladoStockUbicacion(codigoEmpresa, ajuste, ejercicio, transaction) {
-    const ubicacionNorm = ajuste.ubicacionStr === 'SIN UBICACIÓN' ? 'SIN-UBICACION' : ajuste.ubicacionStr;
+    const ubicacionNorm = ajuste.ubicacionStr === 'SIN UBICACIÓN' ? '' : ajuste.ubicacionStr;
     const unidadNorm = (ajuste.unidadStock === 'unidades' ? '' : ajuste.unidadStock || '');
     // Borramos TODOS los ejercicios para la combinación, no solo el ejercicioActual.
     // Si estamos en cambio de año el registro puede vivir en ejercicioBase (año anterior)

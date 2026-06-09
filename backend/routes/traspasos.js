@@ -1,6 +1,6 @@
 ﻿const express = require('express');
 
-module.exports = function createtraspasosRouter({ sql, getPool }) {
+module.exports = function createtraspasosRouter({ sql, getPool, clienteConfig }) {
   const router = express.Router();
 
   // ── Helper: verificar permiso de pantalla ──────────────────────────────
@@ -53,29 +53,33 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
       .input('codigoArticulo', sql.VarChar, codigoArticulo)
       .query(`
-        WITH Contextos AS (
-          SELECT
-            Ejercicio,
+        WITH ContextosUbicacion AS (
+          SELECT Ejercicio,
             COUNT(*) AS TotalRegistros,
             COUNT(DISTINCT CONCAT(
-              ISNULL(CodigoAlmacen, ''), '|',
-              ISNULL(Ubicacion, ''), '|',
-              ISNULL(TipoUnidadMedida_, ''), '|',
-              ISNULL(Partida, ''), '|',
-              ISNULL(CodigoColor_, ''), '|',
-              ISNULL(CodigoTalla01_, '')
+              ISNULL(CodigoAlmacen, ''), '|', ISNULL(Ubicacion, ''), '|',
+              ISNULL(TipoUnidadMedida_, ''), '|', ISNULL(Partida, ''), '|',
+              ISNULL(CodigoColor_, ''), '|', ISNULL(CodigoTalla01_, '')
             )) AS TotalOrigenes,
             SUM(ABS(COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0))) AS MagnitudStock
           FROM AcumuladoStockUbicacion
-          WHERE CodigoEmpresa = @codigoEmpresa
-            AND CodigoArticulo = @codigoArticulo
-            AND Periodo = 99
-            AND (COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0) <> 0)
+          WHERE CodigoEmpresa = @codigoEmpresa AND CodigoArticulo = @codigoArticulo
+            AND Periodo = 99 AND (COALESCE(UnidadSaldoTipo_, UnidadSaldo, 0) <> 0)
           GROUP BY Ejercicio
+        ),
+        FallbackStock AS (
+          SELECT TOP 1 Ejercicio FROM AcumuladoStock
+          WHERE CodigoEmpresa = @codigoEmpresa AND CodigoArticulo = @codigoArticulo
+            AND Periodo = 99
+          ORDER BY Ejercicio DESC
         )
-        SELECT TOP 1 Ejercicio, TotalRegistros, TotalOrigenes
-        FROM Contextos
-        ORDER BY Ejercicio DESC, TotalOrigenes DESC, TotalRegistros DESC, MagnitudStock DESC
+        SELECT TOP 1 COALESCE(cu.Ejercicio, fs.Ejercicio) AS Ejercicio
+        FROM (SELECT NULL AS dummy) x
+        LEFT JOIN ContextosUbicacion cu ON 1=1
+        LEFT JOIN FallbackStock fs ON 1=1
+        ORDER BY
+          CASE WHEN cu.Ejercicio IS NOT NULL THEN 0 ELSE 1 END,
+          cu.TotalOrigenes DESC, cu.TotalRegistros DESC, cu.MagnitudStock DESC, cu.Ejercicio DESC
       `);
 
     const contexto = result.recordset[0];
@@ -137,7 +141,7 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
         .input('ejercicio', sql.Int, ejercicio)
         .input('codigoAlmacen', sql.VarChar, codigoAlmacen)
         .input('codigoArticulo', sql.VarChar, codigoArticulo)
-        .input('ubicacion', sql.VarChar, ubicacionPrincipal || 'SIN-UBICACION')
+        .input('ubicacion', sql.VarChar, ubicacionPrincipal || '')
         .input('tipoUnidad', sql.VarChar, tipoUnidadMedida || '')
         .input('partida', sql.VarChar, partida || '')
         .input('codigoColor', sql.VarChar, codigoColor || '')
@@ -163,8 +167,8 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
   // VALIDAR UBICACIÓN PERTENECE AL ALMACÉN
   // ============================================================
   async function validarUbicacionAlmacen(codigoEmpresa, codigoAlmacen, ubicacion, transaction = null) {
-    // SIN-UBICACION es una pseudo-ubicación virtual, siempre válida
-    if (!ubicacion || ubicacion === 'SIN-UBICACION' || ubicacion === 'SIN UBICACIÓN') {
+    // Ubicación vacía es un artefacto de datos (error humano), se permite pasar sin validar contra tabla Ubicaciones
+    if (!ubicacion || ubicacion === 'SIN-UBICACION' || ubicacion === 'SIN UBICACIÓN' || ubicacion === '') {
       return true;
     }
 
@@ -196,7 +200,10 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
           SELECT CodigoAlmacen, Almacen
           FROM Almacenes
           WHERE CodigoEmpresa = @codigoEmpresa
-            AND CodigoAlmacen IN ('CEN', 'BCN', 'N5', 'N1', 'PK', '5', '000', 'SEC', 'R')
+            ${clienteConfig.almacenesPermitidos.length > 0
+              ? `AND CodigoAlmacen IN (${clienteConfig.almacenesPermitidos.map(a => `'${a}'`).join(', ')})`
+              : '-- sin filtro de almacenes: se muestran todos'
+            }
         `);
       res.json(result.recordset);
     } catch (err) {
@@ -905,7 +912,7 @@ module.exports = function createtraspasosRouter({ sql, getPool }) {
 
       // ── 4. ACTUALIZAR AcumuladoStock — solo si son almacenes distintos ──
       if (!mismoAlmacen) {
-        const ubicacionPrincipalDestino = destinoUbicacion !== 'SIN-UBICACION' ? destinoUbicacion : 'SIN-UBICACION';
+        const ubicacionPrincipalDestino = (destinoUbicacion && destinoUbicacion !== 'SIN-UBICACION') ? destinoUbicacion : '';
 
         // Origen: usar ejercicioActual (el registro ya fue migrado o está en el año actual)
         await aplicarDeltaEnAcumuladoStock(

@@ -1,6 +1,6 @@
 const express = require('express');
 
-module.exports = function createpedidosVentaRouter({ sql, getPool }) {
+module.exports = function createpedidosVentaRouter({ sql, getPool, clienteConfig }) {
   const router = express.Router();
 
 router.get('/pedidosPendientes', async (req, res) => {
@@ -54,14 +54,8 @@ router.get('/pedidosPendientes', async (req, res) => {
     fechaInicio.setHours(0, 0, 0, 0);
     fechaFinExclusiva.setHours(0, 0, 0, 0);
     
-    // 3. Mapeo de formas de entrega
-    const formasEntregaMap = {
-      1: 'Recogida Guadalhorce',
-      3: 'Nuestros Medios',
-      4: 'Agencia',
-      5: 'Directo Fabrica',
-      6: 'Pedido Express'
-    };
+    // 3. Mapeo de formas de entrega (desde config del cliente)
+    const formasEntregaMap = clienteConfig.formasEnvio;
 
     // 4. Construir consulta base
     let sqlQuery = `
@@ -127,7 +121,7 @@ router.get('/pedidosPendientes', async (req, res) => {
       WHERE c.Estado IN (0, 4)
         AND c.CodigoEmpresa = @codigoEmpresa
         AND l.UnidadesPendientes > 0
-        AND c.SeriePedido NOT IN ('X', 'R')
+        AND c.SeriePedido NOT IN (${clienteConfig.seriesPedidoExcluidas.map(s => `'${s}'`).join(', ')})
         AND c.FechaPedido >= @fechaInicio 
         AND c.FechaPedido < @fechaFinExclusiva
     `;
@@ -461,13 +455,17 @@ router.post('/actualizarLineaPedido', async (req, res) => {
   // Campos obligatorios
   const camposRequeridos = [
     'codigoEmpresa', 'ejercicio', 'numeroPedido',
-    'codigoArticulo', 'cantidadExpedida', 'ubicacion', 'almacen',
+    'codigoArticulo', 'cantidadExpedida', 'almacen',
     'movPosicionLinea'
   ];
   for (const campo of camposRequeridos) {
     if (!datosLinea[campo]) {
       return res.status(400).json({ success: false, mensaje: `Campo requerido: ${campo}` });
     }
+  }
+  // ubicacion puede ser '' (sin ubicación asignada) — se valida por separado
+  if (datosLinea.ubicacion === undefined || datosLinea.ubicacion === null) {
+    return res.status(400).json({ success: false, mensaje: 'Campo requerido: ubicacion' });
   }
 
   const truncarString = (valor, longitudMaxima) => {
@@ -552,8 +550,8 @@ router.post('/actualizarLineaPedido', async (req, res) => {
     let partidaFinal = partida;
 
     // 2. VERIFICAR STOCK
-    // 'SIN-UBICACION' es stock en AcumuladoStock sin desglose por ubicación → leer de AcumuladoStock
-    const esSinUbicacion = datosLinea.ubicacion === 'SIN-UBICACION';
+    // Ubicación vacía o legacy 'SIN-UBICACION' = stock sin desglose por ubicación → leer de AcumuladoStock
+    const esSinUbicacion = !datosLinea.ubicacion || datosLinea.ubicacion === '' || datosLinea.ubicacion === 'SIN-UBICACION';
 
     if (esSinUbicacion) {
         // Stock sin ubicación: leer desde AcumuladoStock (tabla resumen)
@@ -831,7 +829,7 @@ router.post('/actualizarLineaPedido', async (req, res) => {
             FROM LineasPedidoCliente l
             WHERE l.CodigoEmpresa = @codigoEmpresa
               AND l.EjercicioPedido = @ejercicio
-              AND l.SeriePedido = @serie
+              AND (l.SeriePedido = @serie OR (@serie = '' AND l.SeriePedido IS NULL))
               AND l.NumeroPedido = @numeroPedido
               AND l.UnidadesPendientes > 0
           ) THEN 0 ELSE 1 END AS PedidoCompletado,
@@ -840,6 +838,7 @@ router.post('/actualizarLineaPedido', async (req, res) => {
           c.FormaEnvio,
           c.CodigoCliente,
           c.RazonSocial,
+          c.RazonSocial2,
           c.Domicilio,
           c.Municipio,
           c.CodigoPostal,
@@ -851,12 +850,61 @@ router.post('/actualizarLineaPedido', async (req, res) => {
           c.Telefono,
           c.Contacto,
           c.ObservacionesWeb,
+          c.ObservacionesAlbaran,
           c.NombreObra,
           c.Vendedor,
           c.EsVoluminoso,
           c.CodigoCondiciones,
           c.CodigoTransportistaEnvios,
-          c.TipoPortesEnvios
+          c.TipoPortesEnvios,
+          c.CifDni,
+          c.CifEuropeo,
+          c.SuPedido,
+          c.FechaEntrega,
+          c.CodigoZona,
+          c.CodigoCanal,
+          c.GrupoIva,
+          c.IndicadorIva,
+          c.TarifaPrecio,
+          c.TarifaDescuento,
+          c.[%Descuento],
+          c.[%ProntoPago],
+          c.[%Rappel],
+          c.[%Comision],
+          c.FormadePago,
+          c.CodigoComisionista,
+          c.CodigoComisionista2_,
+          c.CodigoJefeVenta_,
+          c.CodigoJefeZona_,
+          c.CodigoDivisa,
+          c.CodigoDefinicion_,
+          c.CodigoContable,
+          c.RemesaHabitual,
+          c.CodigoBanco,
+          c.CodigoAgencia,
+          c.IdDelegacion,
+          c.SiglaNacion,
+          c.CodigoMunicipio,
+          c.CodigoProvincia,
+          c.NumeroPlazos,
+          c.DiasPrimerPlazo,
+          c.DiasEntrePlazos,
+          c.CodigoTransaccion,
+          c.CodigoTipoEfecto,
+          c.DomicilioEnvio,
+          c.DomicilioFactura,
+          c.DomicilioRecibo,
+          c.DC,
+          c.CCC,
+          c.IBAN,
+          c.CodigoTerritorio,
+          c.IvaIncluido,
+          c.AlbaranValorado,
+          c.PeriodicidadFacturas,
+          c.AgruparAlbaranes,
+          c.CopiasAlbaran,
+          c.CopiasFactura,
+          c.GenerarFactura
         FROM CabeceraPedidoCliente c
         WHERE c.CodigoEmpresa = @codigoEmpresa
           AND c.EjercicioPedido = @ejercicio
@@ -1049,6 +1097,8 @@ async function actualizarStatusSiExiste(transactionOrNull, codigoEmpresa, ejerci
 // ============================================================
 async function actualizarAcumuladoStockParaArticulo(transaction, codigoEmpresa, codigoAlmacen, codigoArticulo, unidadMedida, partida, codigoColor, codigoTalla, ubicacion) {
   const ejercicioActual = new Date().getFullYear();
+  // Normalizar ubicacion: 'SIN-UBICACION' o 'SIN UBICACIÓN' → '' (cadena vacía es el estándar en BD)
+  const ubicacionNorm = (!ubicacion || ubicacion === 'SIN-UBICACION' || ubicacion === 'SIN UBICACIÓN') ? '' : ubicacion;
   // El ejercicioBase se obtiene igual que en el resto de módulos
   const ctxResult = await new sql.Request(transaction)
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
@@ -1120,7 +1170,7 @@ async function actualizarAcumuladoStockParaArticulo(transaction, codigoEmpresa, 
         .input('partida', sql.VarChar, partida || '')
         .input('codigoColor', sql.VarChar, codigoColor || '')
         .input('codigoTalla', sql.VarChar, codigoTalla || '')
-        .input('ubicacion', sql.VarChar, ubicacion)
+        .input('ubicacion', sql.VarChar, ubicacionNorm)
         .input('stockTotal', sql.Decimal(18,4), stockTotal)
         .query(`
           INSERT INTO AcumuladoStock (
@@ -1250,26 +1300,49 @@ async function generarAlbaranDentroDeTransaccion(infoPedido, transaction) {
   const numeroAlbaran = nextAlbaranResult.recordset[0].SiguienteNumero;
 
   // 5. Insertar cabecera
+  const horasAlbAux = fechaActual.getHours();
+  const minutosAlbAux = fechaActual.getMinutes().toString().padStart(2, '0');
+  const horaAlbaranDecimalAux = parseFloat(`${horasAlbAux}.${minutosAlbAux}`);
+  const fechaEntregaAlbAux = pedido.FechaEntrega ? new Date(pedido.FechaEntrega) : fechaActual;
+
   await req()
     .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+    .input('idDelegacion', sql.SmallInt, pedido.IdDelegacion || 1)
     .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
     .input('serieAlbaran', sql.VarChar, serie)
     .input('numeroAlbaran', sql.Int, numeroAlbaran)
     .input('codigoCliente', sql.VarChar, (pedido.CodigoCliente ?? '').toString())
     .input('razonSocial', sql.VarChar, (pedido.RazonSocial ?? '').toString())
+    .input('razonSocial2', sql.VarChar, (pedido.RazonSocial2 ?? '').toString())
+    .input('razonSocialEnvios', sql.VarChar, (pedido.RazonSocial ?? '').toString())
     .input('domicilio', sql.VarChar, (pedido.Domicilio ?? '').toString())
+    .input('domicilioEnvios', sql.VarChar, (pedido.Domicilio ?? '').toString())
     .input('municipio', sql.VarChar, (pedido.Municipio ?? '').toString())
+    .input('municipioEnvios', sql.VarChar, (pedido.Municipio ?? '').toString())
     .input('provincia', sql.VarChar, (pedido.Provincia ?? '').toString())
+    .input('provinciaEnvios', sql.VarChar, (pedido.Provincia ?? '').toString())
     .input('codigoPostal', sql.VarChar, (pedido.CodigoPostal ?? '').toString())
+    .input('codigoPostalEnvios', sql.VarChar, (pedido.CodigoPostal ?? '').toString())
     .input('codigoNacion', sql.SmallInt, pedido.CodigoNacion || 1)
+    .input('codigoNacionEnvios', sql.SmallInt, pedido.CodigoNacion || 1)
+    .input('siglaNacion', sql.VarChar, (pedido.SiglaNacion ?? 'ES').toString())
+    .input('codigoMunicipio', sql.Int, pedido.CodigoMunicipio || 0)
+    .input('codigoMunicipioEnvios', sql.Int, pedido.CodigoMunicipio || 0)
+    .input('codigoProvincia', sql.SmallInt, pedido.CodigoProvincia || 0)
+    .input('codigoProvinciaEnvios', sql.SmallInt, pedido.CodigoProvincia || 0)
+    .input('cifDni', sql.VarChar, (pedido.CifDni ?? '').toString())
+    .input('cifEuropeo', sql.VarChar, (pedido.CifEuropeo ?? '').toString())
+    .input('suPedido', sql.VarChar, (pedido.SuPedido ?? '').toString())
+    .input('telefono', sql.VarChar, (pedido.Telefono ?? '').toString())
+    .input('telefonoEnvios', sql.VarChar, (pedido.Telefono ?? '').toString())
+    .input('contacto', sql.VarChar, (pedido.Contacto ?? '').toString())
     .input('fechaAlbaran', sql.DateTime, fechaActual)
     .input('fechaCreacion', sql.DateTime, fechaActual)
-    .input('fechaEntrega', sql.DateTime, fechaActual)
+    .input('fechaEntrega', sql.DateTime, fechaEntregaAlbAux)
     .input('numeroLineas', sql.SmallInt, lineasNuevas.length)
     .input('empleadoAsignado', sql.VarChar, (pedido.EmpleadoAsignado ?? '').toString())
-    .input('telefono', sql.VarChar, (pedido.Telefono ?? '').toString())
-    .input('contacto', sql.VarChar, (pedido.Contacto ?? '').toString())
     .input('observacionesWeb', sql.Text, (pedido.ObservacionesWeb ?? '').toString())
+    .input('observacionesAlbaran', sql.VarChar, (pedido.ObservacionesAlbaran ?? '').toString())
     .input('nombreObra', sql.VarChar, (pedido.NombreObra ?? '').toString())
     .input('vendedor', sql.VarChar, (pedido.Vendedor ?? '').toString())
     .input('statusFacturado', sql.SmallInt, 0)
@@ -1279,9 +1352,49 @@ async function generarAlbaranDentroDeTransaccion(infoPedido, transaction) {
     .input('seriePedido', sql.VarChar, serie)
     .input('numeroPedido', sql.Int, numeroPedido)
     .input('codigoCondiciones', sql.SmallInt, pedido.CodigoCondiciones || 0)
+    .input('formaDePago', sql.VarChar, (pedido.FormadePago ?? '').toString())
+    .input('numeroPlazos', sql.SmallInt, pedido.NumeroPlazos || 1)
+    .input('diasPrimerPlazo', sql.SmallInt, pedido.DiasPrimerPlazo || 0)
+    .input('diasEntrePlazos', sql.SmallInt, pedido.DiasEntrePlazos || 0)
     .input('codigoTransportistaEnvios', sql.Int, pedido.CodigoTransportistaEnvios || 0)
     .input('tipoPortesEnvios', sql.VarChar, (pedido.TipoPortesEnvios ?? '').toString())
+    .input('codigoTransaccion', sql.SmallInt, pedido.CodigoTransaccion || 1)
+    .input('codigoTipoEfecto', sql.SmallInt, pedido.CodigoTipoEfecto || 0)
+    .input('domicilioEnvioFlag', sql.SmallInt, pedido.DomicilioEnvio || 0)
+    .input('domicilioFacturaFlag', sql.SmallInt, pedido.DomicilioFactura || 0)
+    .input('domicilioReciboFlag', sql.SmallInt, pedido.DomicilioRecibo || 0)
+    .input('dc', sql.VarChar, (pedido.DC ?? '').toString())
+    .input('ccc', sql.VarChar, (pedido.CCC ?? '').toString())
+    .input('iban', sql.VarChar, (pedido.IBAN ?? '').toString())
+    .input('codigoTerritorio', sql.SmallInt, pedido.CodigoTerritorio || 0)
+    .input('ivaIncluido', sql.SmallInt, pedido.IvaIncluido || 0)
     .input('formaEnvio', sql.Int, pedido.FormaEnvio || 3)
+    .input('codigoZona', sql.VarChar, (pedido.CodigoZona ?? '').toString())
+    .input('codigoCanal', sql.SmallInt, pedido.CodigoCanal || 0)
+    .input('grupoIva', sql.TinyInt, pedido.GrupoIva || 1)
+    .input('indicadorIva', sql.VarChar, (pedido.IndicadorIva ?? 'D').toString())
+    .input('tarifaPrecio', sql.SmallInt, pedido.TarifaPrecio || 0)
+    .input('tarifaDescuento', sql.SmallInt, pedido.TarifaDescuento || 0)
+    .input('pctDescuento', sql.Decimal(18,4), parseFloat(pedido['%Descuento']) || 0)
+    .input('pctProntoPago', sql.Decimal(18,4), parseFloat(pedido['%ProntoPago']) || 0)
+    .input('pctRappel', sql.Decimal(18,4), parseFloat(pedido['%Rappel']) || 0)
+    .input('pctComision', sql.Decimal(18,4), parseFloat(pedido['%Comision']) || 0)
+    .input('codigoComisionista', sql.VarChar, (pedido.CodigoComisionista ?? '').toString())
+    .input('codigoComisionista2', sql.VarChar, (pedido.CodigoComisionista2_ ?? '').toString())
+    .input('codigoJefeVenta', sql.VarChar, (pedido.CodigoJefeVenta_ ?? '').toString())
+    .input('codigoJefeZona', sql.VarChar, (pedido.CodigoJefeZona_ ?? '').toString())
+    .input('codigoDivisa', sql.VarChar, (pedido.CodigoDivisa ?? '').toString())
+    .input('codigoDefinicion', sql.VarChar, (pedido.CodigoDefinicion_ ?? '').toString())
+    .input('codigoContable', sql.VarChar, (pedido.CodigoContable ?? '').toString())
+    .input('remesaHabitual', sql.VarChar, (pedido.RemesaHabitual ?? '').toString())
+    .input('codigoBanco', sql.VarChar, (pedido.CodigoBanco ?? '').toString())
+    .input('codigoAgencia', sql.VarChar, (pedido.CodigoAgencia ?? '').toString())
+    .input('albaranValorado', sql.SmallInt, pedido.AlbaranValorado || 0)
+    .input('periodicidadFacturas', sql.SmallInt, pedido.PeriodicidadFacturas || 0)
+    .input('agruparAlbaranes', sql.SmallInt, pedido.AgruparAlbaranes || 0)
+    .input('copiasAlbaran', sql.SmallInt, pedido.CopiasAlbaran || 0)
+    .input('copiasFactura', sql.SmallInt, pedido.CopiasFactura || 0)
+    .input('generarFactura', sql.SmallInt, pedido.GenerarFactura || 0)
     .input('importeLiquido', sql.Decimal(18,4), importeBruto)
     .input('importeBruto', sql.Decimal(18,4), importeBruto)
     .input('baseImponible', sql.Decimal(18,4), importeBruto)
@@ -1289,33 +1402,67 @@ async function generarAlbaranDentroDeTransaccion(infoPedido, transaction) {
     .input('pesoBruto', sql.Decimal(18,4), pesoBruto)
     .input('pesoNeto', sql.Decimal(18,4), pesoNeto)
     .input('volumen', sql.Decimal(18,4), volumen)
-    .input('horaAlbaran', sql.Decimal(6,2), parseFloat(`${fechaActual.getHours()}.${fechaActual.getMinutes()}`))
+    .input('horaAlbaran', sql.Decimal(6,2), horaAlbaranDecimalAux)
     .query(`
       INSERT INTO CabeceraAlbaranCliente (
-        CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
-        CodigoCliente, RazonSocial, RazonSocialEnvios,
+        CodigoEmpresa, IdDelegacion, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+        CodigoCliente, RazonSocial, RazonSocial2, RazonSocialEnvios,
         Domicilio, DomicilioEnvios, Municipio, MunicipioEnvios,
         Provincia, ProvinciaEnvios, CodigoPostal, CodigoPostalEnvios,
-        CodigoNacion, CodigoNacionEnvios, Telefono, TelefonoEnvios,
-        Contacto, FechaAlbaran, FechaCreacion, FechaEntrega,
-        NumeroLineas, EmpleadoAsignado, ObservacionesWeb, NombreObra,
+        CodigoNacion, CodigoNacionEnvios, SiglaNacion,
+        CodigoMunicipio, CodigoMunicipioEnvios,
+        CodigoProvincia, CodigoProvinciaEnvios,
+        CifDni, CifEuropeo, SuPedido,
+        Telefono, TelefonoEnvios, Contacto,
+        FechaAlbaran, FechaCreacion, FechaEntrega,
+        NumeroLineas, EmpleadoAsignado,
+        ObservacionesWeb, ObservacionesAlbaran, NombreObra,
         Vendedor, StatusFacturado, EsVoluminoso, EsParcial,
         EjercicioPedido, SeriePedido, NumeroPedido,
-        CodigoCondiciones, CodigoTransportistaEnvios, TipoPortesEnvios,
-        FormaEnvio, ImporteLiquido, ImporteBruto, BaseImponible,
+        CodigoCondiciones, FormadePago, NumeroPlazos, DiasPrimerPlazo, DiasEntrePlazos,
+        CodigoTransportistaEnvios, TipoPortesEnvios,
+        CodigoTransaccion, CodigoTipoEfecto,
+        DomicilioEnvio, DomicilioFactura, DomicilioRecibo,
+        DC, CCC, IBAN, CodigoTerritorio, IvaIncluido,
+        FormaEnvio, CodigoZona, CodigoCanal,
+        GrupoIva, IndicadorIva, TarifaPrecio, TarifaDescuento,
+        [%Descuento], [%ProntoPago], [%Rappel], [%Comision],
+        CodigoComisionista, CodigoComisionista2_, CodigoJefeVenta_, CodigoJefeZona_,
+        CodigoDivisa, CodigoDefinicion_, CodigoContable, RemesaHabitual,
+        CodigoBanco, CodigoAgencia,
+        AlbaranValorado, PeriodicidadFacturas, AgruparAlbaranes,
+        CopiasAlbaran, CopiasFactura, GenerarFactura,
+        ImporteLiquido, ImporteBruto, BaseImponible,
         Bultos, PesoBruto_, PesoNeto_, Volumen_, HoraAlbaran
       ) VALUES (
-        @codigoEmpresa, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
-        @codigoCliente, @razonSocial, @razonSocial,
-        @domicilio, @domicilio, @municipio, @municipio,
-        @provincia, @provincia, @codigoPostal, @codigoPostal,
-        @codigoNacion, @codigoNacion, @telefono, @telefono,
-        @contacto, @fechaAlbaran, @fechaCreacion, @fechaEntrega,
-        @numeroLineas, @empleadoAsignado, @observacionesWeb, @nombreObra,
+        @codigoEmpresa, @idDelegacion, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
+        @codigoCliente, @razonSocial, @razonSocial2, @razonSocialEnvios,
+        @domicilio, @domicilioEnvios, @municipio, @municipioEnvios,
+        @provincia, @provinciaEnvios, @codigoPostal, @codigoPostalEnvios,
+        @codigoNacion, @codigoNacionEnvios, @siglaNacion,
+        @codigoMunicipio, @codigoMunicipioEnvios,
+        @codigoProvincia, @codigoProvinciaEnvios,
+        @cifDni, @cifEuropeo, @suPedido,
+        @telefono, @telefonoEnvios, @contacto,
+        @fechaAlbaran, @fechaCreacion, @fechaEntrega,
+        @numeroLineas, @empleadoAsignado,
+        @observacionesWeb, @observacionesAlbaran, @nombreObra,
         @vendedor, @statusFacturado, @esVoluminoso, @esParcial,
         @ejercicioPedido, @seriePedido, @numeroPedido,
-        @codigoCondiciones, @codigoTransportistaEnvios, @tipoPortesEnvios,
-        @formaEnvio, @importeLiquido, @importeBruto, @baseImponible,
+        @codigoCondiciones, @formaDePago, @numeroPlazos, @diasPrimerPlazo, @diasEntrePlazos,
+        @codigoTransportistaEnvios, @tipoPortesEnvios,
+        @codigoTransaccion, @codigoTipoEfecto,
+        @domicilioEnvioFlag, @domicilioFacturaFlag, @domicilioReciboFlag,
+        @dc, @ccc, @iban, @codigoTerritorio, @ivaIncluido,
+        @formaEnvio, @codigoZona, @codigoCanal,
+        @grupoIva, @indicadorIva, @tarifaPrecio, @tarifaDescuento,
+        @pctDescuento, @pctProntoPago, @pctRappel, @pctComision,
+        @codigoComisionista, @codigoComisionista2, @codigoJefeVenta, @codigoJefeZona,
+        @codigoDivisa, @codigoDefinicion, @codigoContable, @remesaHabitual,
+        @codigoBanco, @codigoAgencia,
+        @albaranValorado, @periodicidadFacturas, @agruparAlbaranes,
+        @copiasAlbaran, @copiasFactura, @generarFactura,
+        @importeLiquido, @importeBruto, @baseImponible,
         @bultos, @pesoBruto, @pesoNeto, @volumen, @horaAlbaran
       )
     `);
@@ -1342,9 +1489,12 @@ async function generarAlbaranDentroDeTransaccion(infoPedido, transaction) {
       .input('codigoArticulo', sql.VarChar, linea.CodigoArticulo || '')
       .input('descripcionArticulo', sql.VarChar, linea.DescripcionArticulo || '')
       .input('descripcion2Articulo', sql.VarChar, linea.Descripcion2Articulo || '')
+      .input('codigodelCliente', sql.VarChar, (pedido.CodigoCliente ?? '').toString())
       .input('unidades', sql.Decimal(18,4), u)
       .input('unidadesServidas', sql.Decimal(18,4), u)
       .input('precio', sql.Decimal(18,4), p)
+      .input('precioTotal', sql.Decimal(18,4), importeBrutoLinea)
+      .input('tarifaPrecioLin', sql.SmallInt, pedido.TarifaPrecio || 0)
       .input('codigoAlmacen', sql.VarChar, linea.CodigoAlmacen || '')
       .input('partida', sql.VarChar, linea.Partida || '')
       .input('unidadMedida1_', sql.VarChar, linea.UnidadMedida1_ || '')
@@ -1353,13 +1503,27 @@ async function generarAlbaranDentroDeTransaccion(infoPedido, transaction) {
       .input('ejercicioPedido', sql.SmallInt, ejercicio)
       .input('seriePedido', sql.VarChar, serie)
       .input('numeroPedido', sql.Int, numeroPedido)
+      .input('suPedido', sql.VarChar, (pedido.SuPedido ?? '').toString())
+      .input('codigoDefinicion', sql.VarChar, (pedido.CodigoDefinicion_ ?? '').toString())
+      .input('codigoTransaccion', sql.SmallInt, pedido.CodigoTransaccion || 1)
+      .input('statusStock', sql.SmallInt, -1)
+      .input('statusEstadis', sql.SmallInt, 0)
+      .input('acumulaEstadistica', sql.SmallInt, -1)
+      .input('bloqueoRebaje', sql.SmallInt, 0)
+      .input('ivaIncluido', sql.SmallInt, pedido.IvaIncluido || 0)
       .input('grupoIva', sql.TinyInt, linea.GrupoIva || 1)
       .input('porcentajeIva', sql.Decimal(18,4), ivaPct)
+      .input('codigoComisionista', sql.VarChar, (pedido.CodigoComisionista ?? '').toString())
+      .input('codigoComisionista2', sql.VarChar, (pedido.CodigoComisionista2_ ?? '').toString())
+      .input('codigoJefeVenta', sql.VarChar, (pedido.CodigoJefeVenta_ ?? '').toString())
+      .input('codigoJefeZona', sql.VarChar, (pedido.CodigoJefeZona_ ?? '').toString())
       .input('importeLiquido', sql.Decimal(18,4), importeBrutoLinea)
+      .input('importeNeto', sql.Decimal(18,4), importeBrutoLinea)
       .input('importeBruto', sql.Decimal(18,4), importeBrutoLinea)
       .input('baseImponible', sql.Decimal(18,4), importeBrutoLinea)
       .input('baseIva', sql.Decimal(18,4), importeBrutoLinea)
       .input('cuotaIva', sql.Decimal(18,4), cuotaIva)
+      .input('totalIva', sql.Decimal(18,4), cuotaIva)
       .input('pesoBrutoUnitario_', sql.Decimal(18,4), parseFloat(linea.PesoBrutoUnitario_) || 0)
       .input('pesoNetoUnitario_', sql.Decimal(18,4), parseFloat(linea.PesoNetoUnitario_) || 0)
       .input('volumenUnitario_', sql.Decimal(18,4), parseFloat(linea.VolumenUnitario_) || 0)
@@ -1368,36 +1532,45 @@ async function generarAlbaranDentroDeTransaccion(infoPedido, transaction) {
       .input('volumen_', sql.Decimal(18,4), volumenLinea)
       .input('codigoFamilia', sql.VarChar, linea.CodigoFamilia || '')
       .input('codigoSubfamilia', sql.VarChar, linea.CodigoSubfamilia || '')
+      .input('fechaAlbaran', sql.DateTime, fechaActual)
       .input('fechaRegistro', sql.DateTime, fechaActual)
       .query(`
         INSERT INTO LineasAlbaranCliente (
           CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
           Orden, LineasPosicion,
           CodigoArticulo, DescripcionArticulo, Descripcion2Articulo,
-          Unidades, UnidadesServidas, Precio,
+          CodigodelCliente,
+          Unidades, UnidadesServidas, Precio, PrecioTotal, TarifaPrecioLin,
           CodigoAlmacen, Partida,
           UnidadMedida1_, UnidadMedida2_, FactorConversion_,
           EjercicioPedido, SeriePedido, NumeroPedido,
-          GrupoIva, [%Iva],
-          ImporteLiquido, ImporteBruto, BaseImponible, BaseIva, CuotaIva,
+          SuPedido, CodigoDefinicion_, CodigoTransaccion,
+          StatusStock, StatusEstadis, AcumulaEstadistica_, BloqueoRebaje_,
+          IvaIncluido, GrupoIva, [%Iva],
+          CodigoComisionista, CodigoComisionista2_, CodigoJefeVenta_, CodigoJefeZona_,
+          ImporteLiquido, ImporteNeto, ImporteBruto, BaseImponible, BaseIva, CuotaIva, TotalIva,
           PesoBrutoUnitario_, PesoNetoUnitario_, VolumenUnitario_,
           PesoBruto_, PesoNeto_, Volumen_,
           CodigoFamilia, CodigoSubfamilia,
-          FechaRegistro
+          FechaAlbaran, FechaRegistro
         ) VALUES (
           @codigoEmpresa, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
           @orden, @lineasPosicion,
           @codigoArticulo, @descripcionArticulo, @descripcion2Articulo,
-          @unidades, @unidadesServidas, @precio,
+          @codigodelCliente,
+          @unidades, @unidadesServidas, @precio, @precioTotal, @tarifaPrecioLin,
           @codigoAlmacen, @partida,
           @unidadMedida1_, @unidadMedida2_, @factorConversion_,
           @ejercicioPedido, @seriePedido, @numeroPedido,
-          @grupoIva, @porcentajeIva,
-          @importeLiquido, @importeBruto, @baseImponible, @baseIva, @cuotaIva,
+          @suPedido, @codigoDefinicion, @codigoTransaccion,
+          @statusStock, @statusEstadis, @acumulaEstadistica, @bloqueoRebaje,
+          @ivaIncluido, @grupoIva, @porcentajeIva,
+          @codigoComisionista, @codigoComisionista2, @codigoJefeVenta, @codigoJefeZona,
+          @importeLiquido, @importeNeto, @importeBruto, @baseImponible, @baseIva, @cuotaIva, @totalIva,
           @pesoBrutoUnitario_, @pesoNetoUnitario_, @volumenUnitario_,
           @pesoBruto_, @pesoNeto_, @volumen_,
           @codigoFamilia, @codigoSubfamilia,
-          @fechaRegistro
+          @fechaAlbaran, @fechaRegistro
         )
       `);
   }
@@ -1516,7 +1689,7 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
       .input('serie', sql.VarChar, infoPedido.serie || '')
       .query(`
         SELECT ISNULL(MAX(NumeroAlbaran), 0) + 1 AS SiguienteNumero
-        FROM CabeceraAlbaranCliente
+        FROM CabeceraAlbaranCliente WITH (UPDLOCK, HOLDLOCK)
         WHERE CodigoEmpresa = @codigoEmpresa
           AND EjercicioAlbaran = @ejercicio
           AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
@@ -1525,13 +1698,20 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
     log(`Nuevo número de albarán: ${numeroAlbaran}`);
 
     // 5. Insertar cabecera del albarán (nuevo request)
+    const horasAlbAuto = fechaActual.getHours();
+    const minutosAlbAuto = fechaActual.getMinutes().toString().padStart(2, '0');
+    const horaAlbaranDecimalAuto = parseFloat(`${horasAlbAuto}.${minutosAlbAuto}`);
+    const fechaEntregaAuto = infoPedido.pedidoInfo.FechaEntrega ? new Date(infoPedido.pedidoInfo.FechaEntrega) : fechaActual;
+
     await req()
       .input('codigoEmpresa', sql.SmallInt, infoPedido.codigoEmpresa)
+      .input('idDelegacion', sql.SmallInt, infoPedido.pedidoInfo.IdDelegacion || 1)
       .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
       .input('serieAlbaran', sql.VarChar, infoPedido.serie || '')
       .input('numeroAlbaran', sql.Int, numeroAlbaran)
       .input('codigoCliente', sql.VarChar, (infoPedido.pedidoInfo.CodigoCliente || '').toString())
       .input('razonSocial', sql.VarChar, (infoPedido.pedidoInfo.RazonSocial || '').toString())
+      .input('razonSocial2', sql.VarChar, (infoPedido.pedidoInfo.RazonSocial2 || '').toString())
       .input('razonSocialEnvios', sql.VarChar, (infoPedido.pedidoInfo.RazonSocial || '').toString())
       .input('domicilio', sql.VarChar, (infoPedido.pedidoInfo.Domicilio || '').toString())
       .input('domicilioEnvios', sql.VarChar, (infoPedido.pedidoInfo.Domicilio || '').toString())
@@ -1543,15 +1723,24 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
       .input('codigoPostalEnvios', sql.VarChar, (infoPedido.pedidoInfo.CodigoPostal || '').toString())
       .input('codigoNacion', sql.SmallInt, infoPedido.pedidoInfo.CodigoNacion || 1)
       .input('codigoNacionEnvios', sql.SmallInt, infoPedido.pedidoInfo.CodigoNacion || 1)
-      .input('fechaAlbaran', sql.DateTime, fechaActual)
-      .input('fechaCreacion', sql.DateTime, fechaActual)
-      .input('fechaEntrega', sql.DateTime, fechaActual)
-      .input('numeroLineas', sql.SmallInt, lineasNuevas.length)
-      .input('empleadoAsignado', sql.VarChar, (infoPedido.pedidoInfo.EmpleadoAsignado || '').toString())
+      .input('siglaNacion', sql.VarChar, (infoPedido.pedidoInfo.SiglaNacion ?? 'ES').toString())
+      .input('codigoMunicipio', sql.Int, infoPedido.pedidoInfo.CodigoMunicipio || 0)
+      .input('codigoMunicipioEnvios', sql.Int, infoPedido.pedidoInfo.CodigoMunicipio || 0)
+      .input('codigoProvincia', sql.SmallInt, infoPedido.pedidoInfo.CodigoProvincia || 0)
+      .input('codigoProvinciaEnvios', sql.SmallInt, infoPedido.pedidoInfo.CodigoProvincia || 0)
+      .input('cifDni', sql.VarChar, (infoPedido.pedidoInfo.CifDni ?? '').toString())
+      .input('cifEuropeo', sql.VarChar, (infoPedido.pedidoInfo.CifEuropeo ?? '').toString())
+      .input('suPedido', sql.VarChar, (infoPedido.pedidoInfo.SuPedido ?? '').toString())
       .input('telefono', sql.VarChar, (infoPedido.pedidoInfo.Telefono || '').toString())
       .input('telefonoEnvios', sql.VarChar, (infoPedido.pedidoInfo.Telefono || '').toString())
       .input('contacto', sql.VarChar, (infoPedido.pedidoInfo.Contacto || '').toString())
-      .input('observacionesWeb', sql.Text, `${(infoPedido.pedidoInfo.ObservacionesWeb || '').toString()} | Albarán automático post-expedición`)
+      .input('fechaAlbaran', sql.DateTime, fechaActual)
+      .input('fechaCreacion', sql.DateTime, fechaActual)
+      .input('fechaEntrega', sql.DateTime, fechaEntregaAuto)
+      .input('numeroLineas', sql.SmallInt, lineasNuevas.length)
+      .input('empleadoAsignado', sql.VarChar, (infoPedido.pedidoInfo.EmpleadoAsignado || '').toString())
+      .input('observacionesWeb', sql.Text, (infoPedido.pedidoInfo.ObservacionesWeb || '').toString())
+      .input('observacionesAlbaran', sql.VarChar, (infoPedido.pedidoInfo.ObservacionesAlbaran || '').toString())
       .input('nombreObra', sql.VarChar, (infoPedido.pedidoInfo.NombreObra || '').toString())
       .input('vendedor', sql.VarChar, (infoPedido.pedidoInfo.Vendedor || '').toString())
       .input('statusFacturado', sql.SmallInt, 0)
@@ -1561,9 +1750,49 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
       .input('seriePedido', sql.VarChar, infoPedido.serie || '')
       .input('numeroPedido', sql.Int, infoPedido.numeroPedido)
       .input('codigoCondiciones', sql.SmallInt, infoPedido.pedidoInfo.CodigoCondiciones || 0)
+      .input('formaDePago', sql.VarChar, (infoPedido.pedidoInfo.FormadePago ?? '').toString())
+      .input('numeroPlazos', sql.SmallInt, infoPedido.pedidoInfo.NumeroPlazos || 1)
+      .input('diasPrimerPlazo', sql.SmallInt, infoPedido.pedidoInfo.DiasPrimerPlazo || 0)
+      .input('diasEntrePlazos', sql.SmallInt, infoPedido.pedidoInfo.DiasEntrePlazos || 0)
       .input('codigoTransportistaEnvios', sql.Int, infoPedido.pedidoInfo.CodigoTransportistaEnvios || 0)
       .input('tipoPortesEnvios', sql.VarChar, (infoPedido.pedidoInfo.TipoPortesEnvios || '').toString())
+      .input('codigoTransaccion', sql.SmallInt, infoPedido.pedidoInfo.CodigoTransaccion || 1)
+      .input('codigoTipoEfecto', sql.SmallInt, infoPedido.pedidoInfo.CodigoTipoEfecto || 0)
+      .input('domicilioEnvioFlag', sql.SmallInt, infoPedido.pedidoInfo.DomicilioEnvio || 0)
+      .input('domicilioFacturaFlag', sql.SmallInt, infoPedido.pedidoInfo.DomicilioFactura || 0)
+      .input('domicilioReciboFlag', sql.SmallInt, infoPedido.pedidoInfo.DomicilioRecibo || 0)
+      .input('dc', sql.VarChar, (infoPedido.pedidoInfo.DC ?? '').toString())
+      .input('ccc', sql.VarChar, (infoPedido.pedidoInfo.CCC ?? '').toString())
+      .input('iban', sql.VarChar, (infoPedido.pedidoInfo.IBAN ?? '').toString())
+      .input('codigoTerritorio', sql.SmallInt, infoPedido.pedidoInfo.CodigoTerritorio || 0)
+      .input('ivaIncluido', sql.SmallInt, infoPedido.pedidoInfo.IvaIncluido || 0)
       .input('formaEnvio', sql.Int, infoPedido.pedidoInfo.FormaEnvio || 3)
+      .input('codigoZona', sql.VarChar, (infoPedido.pedidoInfo.CodigoZona ?? '').toString())
+      .input('codigoCanal', sql.SmallInt, infoPedido.pedidoInfo.CodigoCanal || 0)
+      .input('grupoIva', sql.TinyInt, infoPedido.pedidoInfo.GrupoIva || 1)
+      .input('indicadorIva', sql.VarChar, (infoPedido.pedidoInfo.IndicadorIva ?? 'D').toString())
+      .input('tarifaPrecio', sql.SmallInt, infoPedido.pedidoInfo.TarifaPrecio || 0)
+      .input('tarifaDescuento', sql.SmallInt, infoPedido.pedidoInfo.TarifaDescuento || 0)
+      .input('pctDescuento', sql.Decimal(18,4), parseFloat(infoPedido.pedidoInfo['%Descuento']) || 0)
+      .input('pctProntoPago', sql.Decimal(18,4), parseFloat(infoPedido.pedidoInfo['%ProntoPago']) || 0)
+      .input('pctRappel', sql.Decimal(18,4), parseFloat(infoPedido.pedidoInfo['%Rappel']) || 0)
+      .input('pctComision', sql.Decimal(18,4), parseFloat(infoPedido.pedidoInfo['%Comision']) || 0)
+      .input('codigoComisionista', sql.VarChar, (infoPedido.pedidoInfo.CodigoComisionista ?? '').toString())
+      .input('codigoComisionista2', sql.VarChar, (infoPedido.pedidoInfo.CodigoComisionista2_ ?? '').toString())
+      .input('codigoJefeVenta', sql.VarChar, (infoPedido.pedidoInfo.CodigoJefeVenta_ ?? '').toString())
+      .input('codigoJefeZona', sql.VarChar, (infoPedido.pedidoInfo.CodigoJefeZona_ ?? '').toString())
+      .input('codigoDivisa', sql.VarChar, (infoPedido.pedidoInfo.CodigoDivisa ?? '').toString())
+      .input('codigoDefinicion', sql.VarChar, (infoPedido.pedidoInfo.CodigoDefinicion_ ?? '').toString())
+      .input('codigoContable', sql.VarChar, (infoPedido.pedidoInfo.CodigoContable ?? '').toString())
+      .input('remesaHabitual', sql.VarChar, (infoPedido.pedidoInfo.RemesaHabitual ?? '').toString())
+      .input('codigoBanco', sql.VarChar, (infoPedido.pedidoInfo.CodigoBanco ?? '').toString())
+      .input('codigoAgencia', sql.VarChar, (infoPedido.pedidoInfo.CodigoAgencia ?? '').toString())
+      .input('albaranValorado', sql.SmallInt, infoPedido.pedidoInfo.AlbaranValorado || 0)
+      .input('periodicidadFacturas', sql.SmallInt, infoPedido.pedidoInfo.PeriodicidadFacturas || 0)
+      .input('agruparAlbaranes', sql.SmallInt, infoPedido.pedidoInfo.AgruparAlbaranes || 0)
+      .input('copiasAlbaran', sql.SmallInt, infoPedido.pedidoInfo.CopiasAlbaran || 0)
+      .input('copiasFactura', sql.SmallInt, infoPedido.pedidoInfo.CopiasFactura || 0)
+      .input('generarFactura', sql.SmallInt, infoPedido.pedidoInfo.GenerarFactura || 0)
       .input('importeLiquido', sql.Decimal(18,4), importeBruto)
       .input('importeBruto', sql.Decimal(18,4), importeBruto)
       .input('baseImponible', sql.Decimal(18,4), importeBruto)
@@ -1571,34 +1800,68 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
       .input('pesoBruto', sql.Decimal(18,4), pesoBruto)
       .input('pesoNeto', sql.Decimal(18,4), pesoNeto)
       .input('volumen', sql.Decimal(18,4), volumen)
-      .input('horaAlbaran', sql.Decimal(6,2), parseFloat(`${fechaActual.getHours()}.${fechaActual.getMinutes()}`))
+      .input('horaAlbaran', sql.Decimal(6,2), horaAlbaranDecimalAuto)
       .query(`
         INSERT INTO CabeceraAlbaranCliente (
-          CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
-          CodigoCliente, RazonSocial, RazonSocialEnvios,
+          CodigoEmpresa, IdDelegacion, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+          CodigoCliente, RazonSocial, RazonSocial2, RazonSocialEnvios,
           Domicilio, DomicilioEnvios, Municipio, MunicipioEnvios,
           Provincia, ProvinciaEnvios, CodigoPostal, CodigoPostalEnvios,
-          CodigoNacion, CodigoNacionEnvios, Telefono, TelefonoEnvios,
-          Contacto, FechaAlbaran, FechaCreacion, FechaEntrega,
-          NumeroLineas, EmpleadoAsignado, ObservacionesWeb, NombreObra,
+          CodigoNacion, CodigoNacionEnvios, SiglaNacion,
+          CodigoMunicipio, CodigoMunicipioEnvios,
+          CodigoProvincia, CodigoProvinciaEnvios,
+          CifDni, CifEuropeo, SuPedido,
+          Telefono, TelefonoEnvios, Contacto,
+          FechaAlbaran, FechaCreacion, FechaEntrega,
+          NumeroLineas, EmpleadoAsignado,
+          ObservacionesWeb, ObservacionesAlbaran, NombreObra,
           Vendedor, StatusFacturado, EsVoluminoso, EsParcial,
           EjercicioPedido, SeriePedido, NumeroPedido,
-          CodigoCondiciones, CodigoTransportistaEnvios, TipoPortesEnvios,
-          FormaEnvio, ImporteLiquido, ImporteBruto, BaseImponible,
+          CodigoCondiciones, FormadePago, NumeroPlazos, DiasPrimerPlazo, DiasEntrePlazos,
+          CodigoTransportistaEnvios, TipoPortesEnvios,
+          CodigoTransaccion, CodigoTipoEfecto,
+          DomicilioEnvio, DomicilioFactura, DomicilioRecibo,
+          DC, CCC, IBAN, CodigoTerritorio, IvaIncluido,
+          FormaEnvio, CodigoZona, CodigoCanal,
+          GrupoIva, IndicadorIva, TarifaPrecio, TarifaDescuento,
+          [%Descuento], [%ProntoPago], [%Rappel], [%Comision],
+          CodigoComisionista, CodigoComisionista2_, CodigoJefeVenta_, CodigoJefeZona_,
+          CodigoDivisa, CodigoDefinicion_, CodigoContable, RemesaHabitual,
+          CodigoBanco, CodigoAgencia,
+          AlbaranValorado, PeriodicidadFacturas, AgruparAlbaranes,
+          CopiasAlbaran, CopiasFactura, GenerarFactura,
+          ImporteLiquido, ImporteBruto, BaseImponible,
           Bultos, PesoBruto_, PesoNeto_, Volumen_,
           HoraAlbaran
         ) VALUES (
-          @codigoEmpresa, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
-          @codigoCliente, @razonSocial, @razonSocialEnvios,
+          @codigoEmpresa, @idDelegacion, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
+          @codigoCliente, @razonSocial, @razonSocial2, @razonSocialEnvios,
           @domicilio, @domicilioEnvios, @municipio, @municipioEnvios,
           @provincia, @provinciaEnvios, @codigoPostal, @codigoPostalEnvios,
-          @codigoNacion, @codigoNacionEnvios, @telefono, @telefonoEnvios,
-          @contacto, @fechaAlbaran, @fechaCreacion, @fechaEntrega,
-          @numeroLineas, @empleadoAsignado, @observacionesWeb, @nombreObra,
+          @codigoNacion, @codigoNacionEnvios, @siglaNacion,
+          @codigoMunicipio, @codigoMunicipioEnvios,
+          @codigoProvincia, @codigoProvinciaEnvios,
+          @cifDni, @cifEuropeo, @suPedido,
+          @telefono, @telefonoEnvios, @contacto,
+          @fechaAlbaran, @fechaCreacion, @fechaEntrega,
+          @numeroLineas, @empleadoAsignado,
+          @observacionesWeb, @observacionesAlbaran, @nombreObra,
           @vendedor, @statusFacturado, @esVoluminoso, @esParcial,
           @ejercicioPedido, @seriePedido, @numeroPedido,
-          @codigoCondiciones, @codigoTransportistaEnvios, @tipoPortesEnvios,
-          @formaEnvio, @importeLiquido, @importeBruto, @baseImponible,
+          @codigoCondiciones, @formaDePago, @numeroPlazos, @diasPrimerPlazo, @diasEntrePlazos,
+          @codigoTransportistaEnvios, @tipoPortesEnvios,
+          @codigoTransaccion, @codigoTipoEfecto,
+          @domicilioEnvioFlag, @domicilioFacturaFlag, @domicilioReciboFlag,
+          @dc, @ccc, @iban, @codigoTerritorio, @ivaIncluido,
+          @formaEnvio, @codigoZona, @codigoCanal,
+          @grupoIva, @indicadorIva, @tarifaPrecio, @tarifaDescuento,
+          @pctDescuento, @pctProntoPago, @pctRappel, @pctComision,
+          @codigoComisionista, @codigoComisionista2, @codigoJefeVenta, @codigoJefeZona,
+          @codigoDivisa, @codigoDefinicion, @codigoContable, @remesaHabitual,
+          @codigoBanco, @codigoAgencia,
+          @albaranValorado, @periodicidadFacturas, @agruparAlbaranes,
+          @copiasAlbaran, @copiasFactura, @generarFactura,
+          @importeLiquido, @importeBruto, @baseImponible,
           @bultos, @pesoBruto, @pesoNeto, @volumen,
           @horaAlbaran
         )
@@ -1627,9 +1890,12 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
         .input('codigoArticulo', sql.VarChar, (linea.CodigoArticulo || '').toString())
         .input('descripcionArticulo', sql.VarChar, (linea.DescripcionArticulo || '').toString())
         .input('descripcion2Articulo', sql.VarChar, (linea.Descripcion2Articulo || '').toString())
+        .input('codigodelCliente', sql.VarChar, (infoPedido.pedidoInfo.CodigoCliente || '').toString())
         .input('unidades', sql.Decimal(18,4), unidades)
         .input('unidadesServidas', sql.Decimal(18,4), unidades)
         .input('precio', sql.Decimal(18,4), precio)
+        .input('precioTotal', sql.Decimal(18,4), importeBrutoLinea)
+        .input('tarifaPrecioLin', sql.SmallInt, infoPedido.pedidoInfo.TarifaPrecio || 0)
         .input('codigoAlmacen', sql.VarChar, (linea.CodigoAlmacen || '').toString())
         .input('partida', sql.VarChar, (linea.Partida || '').toString())
         .input('unidadMedida1_', sql.VarChar, (linea.UnidadMedida1_ || '').toString())
@@ -1638,13 +1904,27 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
         .input('ejercicioPedido', sql.SmallInt, infoPedido.ejercicio)
         .input('seriePedido', sql.VarChar, infoPedido.serie || '')
         .input('numeroPedido', sql.Int, infoPedido.numeroPedido)
+        .input('suPedido', sql.VarChar, (infoPedido.pedidoInfo.SuPedido ?? '').toString())
+        .input('codigoDefinicion', sql.VarChar, (infoPedido.pedidoInfo.CodigoDefinicion_ ?? '').toString())
+        .input('codigoTransaccion', sql.SmallInt, infoPedido.pedidoInfo.CodigoTransaccion || 1)
+        .input('statusStock', sql.SmallInt, -1)
+        .input('statusEstadis', sql.SmallInt, 0)
+        .input('acumulaEstadistica', sql.SmallInt, -1)
+        .input('bloqueoRebaje', sql.SmallInt, 0)
+        .input('ivaIncluido', sql.SmallInt, infoPedido.pedidoInfo.IvaIncluido || 0)
         .input('grupoIva', sql.TinyInt, linea.GrupoIva || 1)
         .input('porcentajeIva', sql.Decimal(18,4), ivaPorcentaje)
+        .input('codigoComisionista', sql.VarChar, (infoPedido.pedidoInfo.CodigoComisionista ?? '').toString())
+        .input('codigoComisionista2', sql.VarChar, (infoPedido.pedidoInfo.CodigoComisionista2_ ?? '').toString())
+        .input('codigoJefeVenta', sql.VarChar, (infoPedido.pedidoInfo.CodigoJefeVenta_ ?? '').toString())
+        .input('codigoJefeZona', sql.VarChar, (infoPedido.pedidoInfo.CodigoJefeZona_ ?? '').toString())
         .input('importeLiquido', sql.Decimal(18,4), importeBrutoLinea)
+        .input('importeNeto', sql.Decimal(18,4), importeBrutoLinea)
         .input('importeBruto', sql.Decimal(18,4), importeBrutoLinea)
         .input('baseImponible', sql.Decimal(18,4), baseIvaLinea)
         .input('baseIva', sql.Decimal(18,4), baseIvaLinea)
         .input('cuotaIva', sql.Decimal(18,4), cuotaIvaLinea)
+        .input('totalIva', sql.Decimal(18,4), cuotaIvaLinea)
         .input('pesoBrutoUnitario_', sql.Decimal(18,4), parseFloat(linea.PesoBrutoUnitario_) || 0)
         .input('pesoNetoUnitario_', sql.Decimal(18,4), parseFloat(linea.PesoNetoUnitario_) || 0)
         .input('volumenUnitario_', sql.Decimal(18,4), parseFloat(linea.VolumenUnitario_) || 0)
@@ -1653,36 +1933,45 @@ async function generarAlbaranAutomaticoEnSegundoPlano(infoPedido) {
         .input('volumen_', sql.Decimal(18,4), volumenLinea)
         .input('codigoFamilia', sql.VarChar, (linea.CodigoFamilia || '').toString())
         .input('codigoSubfamilia', sql.VarChar, (linea.CodigoSubfamilia || '').toString())
+        .input('fechaAlbaran', sql.DateTime, fechaActual)
         .input('fechaRegistro', sql.DateTime, fechaActual)
         .query(`
           INSERT INTO LineasAlbaranCliente (
             CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
             Orden, LineasPosicion,
             CodigoArticulo, DescripcionArticulo, Descripcion2Articulo,
-            Unidades, UnidadesServidas, Precio,
+            CodigodelCliente,
+            Unidades, UnidadesServidas, Precio, PrecioTotal, TarifaPrecioLin,
             CodigoAlmacen, Partida,
             UnidadMedida1_, UnidadMedida2_, FactorConversion_,
             EjercicioPedido, SeriePedido, NumeroPedido,
-            GrupoIva, [%Iva],
-            ImporteLiquido, ImporteBruto, BaseImponible, BaseIva, CuotaIva,
+            SuPedido, CodigoDefinicion_, CodigoTransaccion,
+            StatusStock, StatusEstadis, AcumulaEstadistica_, BloqueoRebaje_,
+            IvaIncluido, GrupoIva, [%Iva],
+            CodigoComisionista, CodigoComisionista2_, CodigoJefeVenta_, CodigoJefeZona_,
+            ImporteLiquido, ImporteNeto, ImporteBruto, BaseImponible, BaseIva, CuotaIva, TotalIva,
             PesoBrutoUnitario_, PesoNetoUnitario_, VolumenUnitario_,
             PesoBruto_, PesoNeto_, Volumen_,
             CodigoFamilia, CodigoSubfamilia,
-            FechaRegistro
+            FechaAlbaran, FechaRegistro
           ) VALUES (
             @codigoEmpresa, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
             @orden, @lineasPosicion,
             @codigoArticulo, @descripcionArticulo, @descripcion2Articulo,
-            @unidades, @unidadesServidas, @precio,
+            @codigodelCliente,
+            @unidades, @unidadesServidas, @precio, @precioTotal, @tarifaPrecioLin,
             @codigoAlmacen, @partida,
             @unidadMedida1_, @unidadMedida2_, @factorConversion_,
             @ejercicioPedido, @seriePedido, @numeroPedido,
-            @grupoIva, @porcentajeIva,
-            @importeLiquido, @importeBruto, @baseImponible, @baseIva, @cuotaIva,
+            @suPedido, @codigoDefinicion, @codigoTransaccion,
+            @statusStock, @statusEstadis, @acumulaEstadistica, @bloqueoRebaje,
+            @ivaIncluido, @grupoIva, @porcentajeIva,
+            @codigoComisionista, @codigoComisionista2, @codigoJefeVenta, @codigoJefeZona,
+            @importeLiquido, @importeNeto, @importeBruto, @baseImponible, @baseIva, @cuotaIva, @totalIva,
             @pesoBrutoUnitario_, @pesoNetoUnitario_, @volumenUnitario_,
             @pesoBruto_, @pesoNeto_, @volumen_,
             @codigoFamilia, @codigoSubfamilia,
-            @fechaRegistro
+            @fechaAlbaran, @fechaRegistro
           )
         `);
     }
@@ -1843,7 +2132,7 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
       .input('serie', sql.VarChar, serie || '')
       .query(`
         SELECT ISNULL(MAX(NumeroAlbaran), 0) + 1 AS SiguienteNumero
-        FROM CabeceraAlbaranCliente
+        FROM CabeceraAlbaranCliente WITH (UPDLOCK, HOLDLOCK)
         WHERE CodigoEmpresa = @codigoEmpresa
           AND EjercicioAlbaran = @ejercicio
           AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
@@ -1874,35 +2163,51 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
     }
 
     // Insertar cabecera (igual que en generarAlbaranParcial)
+    const horasAutoC = fechaActual.getHours();
+    const minutosAutoC = fechaActual.getMinutes().toString().padStart(2, '0');
+    const horaAlbaranAutoC = parseFloat(`${horasAutoC}.${minutosAutoC}`);
+    const fechaEntregaAutoC = pedido.FechaEntrega ? new Date(pedido.FechaEntrega) : fechaActual;
+
     await req()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
+      .input('idDelegacion', sql.SmallInt, pedido.IdDelegacion || 1)
       .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
       .input('serieAlbaran', sql.VarChar, serie || '')
       .input('numeroAlbaran', sql.Int, numeroAlbaran)
-      .input('codigoCliente', sql.VarChar, pedido.CodigoCliente || '')
-      .input('razonSocial', sql.VarChar, pedido.RazonSocial || '')
-      .input('razonSocialEnvios', sql.VarChar, pedido.RazonSocial || '')
-      .input('domicilio', sql.VarChar, pedido.Domicilio || '')
-      .input('domicilioEnvios', sql.VarChar, pedido.Domicilio || '')
-      .input('municipio', sql.VarChar, pedido.Municipio || '')
-      .input('municipioEnvios', sql.VarChar, pedido.Municipio || '')
-      .input('provincia', sql.VarChar, pedido.Provincia || '')
-      .input('provinciaEnvios', sql.VarChar, pedido.Provincia || '')
-      .input('codigoPostal', sql.VarChar, pedido.CodigoPostal || '')
-      .input('codigoPostalEnvios', sql.VarChar, pedido.CodigoPostal || '')
+      .input('codigoCliente', sql.VarChar, (pedido.CodigoCliente ?? '').toString())
+      .input('razonSocial', sql.VarChar, (pedido.RazonSocial ?? '').toString())
+      .input('razonSocial2', sql.VarChar, (pedido.RazonSocial2 ?? '').toString())
+      .input('razonSocialEnvios', sql.VarChar, (pedido.RazonSocial ?? '').toString())
+      .input('domicilio', sql.VarChar, (pedido.Domicilio ?? '').toString())
+      .input('domicilioEnvios', sql.VarChar, (pedido.Domicilio ?? '').toString())
+      .input('municipio', sql.VarChar, (pedido.Municipio ?? '').toString())
+      .input('municipioEnvios', sql.VarChar, (pedido.Municipio ?? '').toString())
+      .input('provincia', sql.VarChar, (pedido.Provincia ?? '').toString())
+      .input('provinciaEnvios', sql.VarChar, (pedido.Provincia ?? '').toString())
+      .input('codigoPostal', sql.VarChar, (pedido.CodigoPostal ?? '').toString())
+      .input('codigoPostalEnvios', sql.VarChar, (pedido.CodigoPostal ?? '').toString())
       .input('codigoNacion', sql.SmallInt, pedido.CodigoNacion || 1)
       .input('codigoNacionEnvios', sql.SmallInt, pedido.CodigoNacion || 1)
+      .input('siglaNacion', sql.VarChar, (pedido.SiglaNacion ?? 'ES').toString())
+      .input('codigoMunicipio', sql.Int, pedido.CodigoMunicipio || 0)
+      .input('codigoMunicipioEnvios', sql.Int, pedido.CodigoMunicipio || 0)
+      .input('codigoProvincia', sql.SmallInt, pedido.CodigoProvincia || 0)
+      .input('codigoProvinciaEnvios', sql.SmallInt, pedido.CodigoProvincia || 0)
+      .input('cifDni', sql.VarChar, (pedido.CifDni ?? '').toString())
+      .input('cifEuropeo', sql.VarChar, (pedido.CifEuropeo ?? '').toString())
+      .input('suPedido', sql.VarChar, (pedido.SuPedido ?? '').toString())
+      .input('telefono', sql.VarChar, (pedido.Telefono ?? '').toString())
+      .input('telefonoEnvios', sql.VarChar, (pedido.Telefono ?? '').toString())
+      .input('contacto', sql.VarChar, (pedido.Contacto ?? '').toString())
       .input('fechaAlbaran', sql.DateTime, fechaActual)
       .input('fechaCreacion', sql.DateTime, fechaActual)
-      .input('fechaEntrega', sql.DateTime, fechaActual)
+      .input('fechaEntrega', sql.DateTime, fechaEntregaAutoC)
       .input('numeroLineas', sql.SmallInt, lineasParaNuevoAlbaran.length)
-      .input('empleadoAsignado', sql.VarChar, pedido.EmpleadoAsignado || usuario)
-      .input('telefono', sql.VarChar, pedido.Telefono || '')
-      .input('telefonoEnvios', sql.VarChar, pedido.Telefono || '')
-      .input('contacto', sql.VarChar, pedido.Contacto || '')
-      .input('observacionesWeb', sql.Text, (pedido.ObservacionesWeb || '') + ' | Albarán automático post-expedición')
-      .input('nombreObra', sql.VarChar, pedido.NombreObra || '')
-      .input('vendedor', sql.VarChar, pedido.Vendedor || '')
+      .input('empleadoAsignado', sql.VarChar, (pedido.EmpleadoAsignado ?? usuario).toString())
+      .input('observacionesWeb', sql.Text, (pedido.ObservacionesWeb ?? '').toString())
+      .input('observacionesAlbaran', sql.VarChar, (pedido.ObservacionesAlbaran ?? '').toString())
+      .input('nombreObra', sql.VarChar, (pedido.NombreObra ?? '').toString())
+      .input('vendedor', sql.VarChar, (pedido.Vendedor ?? '').toString())
       .input('statusFacturado', sql.SmallInt, 0)
       .input('esVoluminoso', sql.Bit, pedido.EsVoluminoso || 0)
       .input('esParcial', sql.Bit, 0)
@@ -1910,9 +2215,49 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
       .input('seriePedido', sql.VarChar, serie || '')
       .input('numeroPedido', sql.Int, numeroPedido)
       .input('codigoCondiciones', sql.SmallInt, pedido.CodigoCondiciones || 0)
+      .input('formaDePago', sql.VarChar, (pedido.FormadePago ?? '').toString())
+      .input('numeroPlazos', sql.SmallInt, pedido.NumeroPlazos || 1)
+      .input('diasPrimerPlazo', sql.SmallInt, pedido.DiasPrimerPlazo || 0)
+      .input('diasEntrePlazos', sql.SmallInt, pedido.DiasEntrePlazos || 0)
       .input('codigoTransportistaEnvios', sql.Int, pedido.CodigoTransportistaEnvios || 0)
-      .input('tipoPortesEnvios', sql.VarChar, pedido.TipoPortesEnvios || '')
+      .input('tipoPortesEnvios', sql.VarChar, (pedido.TipoPortesEnvios ?? '').toString())
+      .input('codigoTransaccion', sql.SmallInt, pedido.CodigoTransaccion || 1)
+      .input('codigoTipoEfecto', sql.SmallInt, pedido.CodigoTipoEfecto || 0)
+      .input('domicilioEnvioFlag', sql.SmallInt, pedido.DomicilioEnvio || 0)
+      .input('domicilioFacturaFlag', sql.SmallInt, pedido.DomicilioFactura || 0)
+      .input('domicilioReciboFlag', sql.SmallInt, pedido.DomicilioRecibo || 0)
+      .input('dc', sql.VarChar, (pedido.DC ?? '').toString())
+      .input('ccc', sql.VarChar, (pedido.CCC ?? '').toString())
+      .input('iban', sql.VarChar, (pedido.IBAN ?? '').toString())
+      .input('codigoTerritorio', sql.SmallInt, pedido.CodigoTerritorio || 0)
+      .input('ivaIncluido', sql.SmallInt, pedido.IvaIncluido || 0)
       .input('formaEnvio', sql.Int, pedido.FormaEnvio || 3)
+      .input('codigoZona', sql.VarChar, (pedido.CodigoZona ?? '').toString())
+      .input('codigoCanal', sql.SmallInt, pedido.CodigoCanal || 0)
+      .input('grupoIva', sql.TinyInt, pedido.GrupoIva || 1)
+      .input('indicadorIva', sql.VarChar, (pedido.IndicadorIva ?? 'D').toString())
+      .input('tarifaPrecio', sql.SmallInt, pedido.TarifaPrecio || 0)
+      .input('tarifaDescuento', sql.SmallInt, pedido.TarifaDescuento || 0)
+      .input('pctDescuento', sql.Decimal(18,4), parseFloat(pedido['%Descuento']) || 0)
+      .input('pctProntoPago', sql.Decimal(18,4), parseFloat(pedido['%ProntoPago']) || 0)
+      .input('pctRappel', sql.Decimal(18,4), parseFloat(pedido['%Rappel']) || 0)
+      .input('pctComision', sql.Decimal(18,4), parseFloat(pedido['%Comision']) || 0)
+      .input('codigoComisionista', sql.VarChar, (pedido.CodigoComisionista ?? '').toString())
+      .input('codigoComisionista2', sql.VarChar, (pedido.CodigoComisionista2_ ?? '').toString())
+      .input('codigoJefeVenta', sql.VarChar, (pedido.CodigoJefeVenta_ ?? '').toString())
+      .input('codigoJefeZona', sql.VarChar, (pedido.CodigoJefeZona_ ?? '').toString())
+      .input('codigoDivisa', sql.VarChar, (pedido.CodigoDivisa ?? '').toString())
+      .input('codigoDefinicion', sql.VarChar, (pedido.CodigoDefinicion_ ?? '').toString())
+      .input('codigoContable', sql.VarChar, (pedido.CodigoContable ?? '').toString())
+      .input('remesaHabitual', sql.VarChar, (pedido.RemesaHabitual ?? '').toString())
+      .input('codigoBanco', sql.VarChar, (pedido.CodigoBanco ?? '').toString())
+      .input('codigoAgencia', sql.VarChar, (pedido.CodigoAgencia ?? '').toString())
+      .input('albaranValorado', sql.SmallInt, pedido.AlbaranValorado || 0)
+      .input('periodicidadFacturas', sql.SmallInt, pedido.PeriodicidadFacturas || 0)
+      .input('agruparAlbaranes', sql.SmallInt, pedido.AgruparAlbaranes || 0)
+      .input('copiasAlbaran', sql.SmallInt, pedido.CopiasAlbaran || 0)
+      .input('copiasFactura', sql.SmallInt, pedido.CopiasFactura || 0)
+      .input('generarFactura', sql.SmallInt, pedido.GenerarFactura || 0)
       .input('importeLiquido', sql.Decimal(18,4), importeBruto)
       .input('importeBruto', sql.Decimal(18,4), importeBruto)
       .input('baseImponible', sql.Decimal(18,4), importeBruto)
@@ -1920,36 +2265,68 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
       .input('pesoBruto', sql.Decimal(18,4), pesoBruto)
       .input('pesoNeto', sql.Decimal(18,4), pesoNeto)
       .input('volumen', sql.Decimal(18,4), volumen)
-      .input('horaAlbaran', sql.Decimal(6,2), parseFloat(`${fechaActual.getHours()}.${fechaActual.getMinutes()}`))
+      .input('horaAlbaran', sql.Decimal(6,2), horaAlbaranAutoC)
       .query(`
         INSERT INTO CabeceraAlbaranCliente (
-          CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
-          CodigoCliente, RazonSocial, RazonSocialEnvios,
+          CodigoEmpresa, IdDelegacion, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+          CodigoCliente, RazonSocial, RazonSocial2, RazonSocialEnvios,
           Domicilio, DomicilioEnvios, Municipio, MunicipioEnvios,
           Provincia, ProvinciaEnvios, CodigoPostal, CodigoPostalEnvios,
-          CodigoNacion, CodigoNacionEnvios, Telefono, TelefonoEnvios,
-          Contacto, FechaAlbaran, FechaCreacion, FechaEntrega,
-          NumeroLineas, EmpleadoAsignado, ObservacionesWeb, NombreObra,
+          CodigoNacion, CodigoNacionEnvios, SiglaNacion,
+          CodigoMunicipio, CodigoMunicipioEnvios,
+          CodigoProvincia, CodigoProvinciaEnvios,
+          CifDni, CifEuropeo, SuPedido,
+          Telefono, TelefonoEnvios, Contacto,
+          FechaAlbaran, FechaCreacion, FechaEntrega,
+          NumeroLineas, EmpleadoAsignado,
+          ObservacionesWeb, ObservacionesAlbaran, NombreObra,
           Vendedor, StatusFacturado, EsVoluminoso, EsParcial,
           EjercicioPedido, SeriePedido, NumeroPedido,
-          CodigoCondiciones, CodigoTransportistaEnvios, TipoPortesEnvios,
-          FormaEnvio, ImporteLiquido, ImporteBruto, BaseImponible,
-          Bultos, PesoBruto_, PesoNeto_, Volumen_,
-          HoraAlbaran
+          CodigoCondiciones, FormadePago, NumeroPlazos, DiasPrimerPlazo, DiasEntrePlazos,
+          CodigoTransportistaEnvios, TipoPortesEnvios,
+          CodigoTransaccion, CodigoTipoEfecto,
+          DomicilioEnvio, DomicilioFactura, DomicilioRecibo,
+          DC, CCC, IBAN, CodigoTerritorio, IvaIncluido,
+          FormaEnvio, CodigoZona, CodigoCanal,
+          GrupoIva, IndicadorIva, TarifaPrecio, TarifaDescuento,
+          [%Descuento], [%ProntoPago], [%Rappel], [%Comision],
+          CodigoComisionista, CodigoComisionista2_, CodigoJefeVenta_, CodigoJefeZona_,
+          CodigoDivisa, CodigoDefinicion_, CodigoContable, RemesaHabitual,
+          CodigoBanco, CodigoAgencia,
+          AlbaranValorado, PeriodicidadFacturas, AgruparAlbaranes,
+          CopiasAlbaran, CopiasFactura, GenerarFactura,
+          ImporteLiquido, ImporteBruto, BaseImponible,
+          Bultos, PesoBruto_, PesoNeto_, Volumen_, HoraAlbaran
         ) VALUES (
-          @codigoEmpresa, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
-          @codigoCliente, @razonSocial, @razonSocialEnvios,
+          @codigoEmpresa, @idDelegacion, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
+          @codigoCliente, @razonSocial, @razonSocial2, @razonSocialEnvios,
           @domicilio, @domicilioEnvios, @municipio, @municipioEnvios,
           @provincia, @provinciaEnvios, @codigoPostal, @codigoPostalEnvios,
-          @codigoNacion, @codigoNacionEnvios, @telefono, @telefonoEnvios,
-          @contacto, @fechaAlbaran, @fechaCreacion, @fechaEntrega,
-          @numeroLineas, @empleadoAsignado, @observacionesWeb, @nombreObra,
+          @codigoNacion, @codigoNacionEnvios, @siglaNacion,
+          @codigoMunicipio, @codigoMunicipioEnvios,
+          @codigoProvincia, @codigoProvinciaEnvios,
+          @cifDni, @cifEuropeo, @suPedido,
+          @telefono, @telefonoEnvios, @contacto,
+          @fechaAlbaran, @fechaCreacion, @fechaEntrega,
+          @numeroLineas, @empleadoAsignado,
+          @observacionesWeb, @observacionesAlbaran, @nombreObra,
           @vendedor, @statusFacturado, @esVoluminoso, @esParcial,
           @ejercicioPedido, @seriePedido, @numeroPedido,
-          @codigoCondiciones, @codigoTransportistaEnvios, @tipoPortesEnvios,
-          @formaEnvio, @importeLiquido, @importeBruto, @baseImponible,
-          @bultos, @pesoBruto, @pesoNeto, @volumen,
-          @horaAlbaran
+          @codigoCondiciones, @formaDePago, @numeroPlazos, @diasPrimerPlazo, @diasEntrePlazos,
+          @codigoTransportistaEnvios, @tipoPortesEnvios,
+          @codigoTransaccion, @codigoTipoEfecto,
+          @domicilioEnvioFlag, @domicilioFacturaFlag, @domicilioReciboFlag,
+          @dc, @ccc, @iban, @codigoTerritorio, @ivaIncluido,
+          @formaEnvio, @codigoZona, @codigoCanal,
+          @grupoIva, @indicadorIva, @tarifaPrecio, @tarifaDescuento,
+          @pctDescuento, @pctProntoPago, @pctRappel, @pctComision,
+          @codigoComisionista, @codigoComisionista2, @codigoJefeVenta, @codigoJefeZona,
+          @codigoDivisa, @codigoDefinicion, @codigoContable, @remesaHabitual,
+          @codigoBanco, @codigoAgencia,
+          @albaranValorado, @periodicidadFacturas, @agruparAlbaranes,
+          @copiasAlbaran, @copiasFactura, @generarFactura,
+          @importeLiquido, @importeBruto, @baseImponible,
+          @bultos, @pesoBruto, @pesoNeto, @volumen, @horaAlbaran
         )
       `);
 
@@ -1973,65 +2350,91 @@ router.post('/generarAlbaranAutoCompletado', async (req, res) => {
         .input('numeroAlbaran', sql.Int, numeroAlbaran)
         .input('orden', sql.SmallInt, i + 1)
         .input('lineasPosicion', sql.UniqueIdentifier, linea.LineasPosicion || null)
-        .input('codigoArticulo', sql.VarChar, linea.CodigoArticulo || '')
-        .input('descripcionArticulo', sql.VarChar, linea.DescripcionArticulo || '')
-        .input('descripcion2Articulo', sql.VarChar, linea.Descripcion2Articulo || '')
+        .input('codigoArticulo', sql.VarChar, (linea.CodigoArticulo ?? '').toString())
+        .input('descripcionArticulo', sql.VarChar, (linea.DescripcionArticulo ?? '').toString())
+        .input('descripcion2Articulo', sql.VarChar, (linea.Descripcion2Articulo ?? '').toString())
+        .input('codigodelCliente', sql.VarChar, (pedido.CodigoCliente ?? '').toString())
         .input('unidades', sql.Decimal(18,4), unidades)
         .input('unidadesServidas', sql.Decimal(18,4), unidades)
         .input('precio', sql.Decimal(18,4), precio)
-        .input('codigoAlmacen', sql.VarChar, linea.CodigoAlmacen || '')
-        .input('partida', sql.VarChar, linea.Partida || '')
-        .input('unidadMedida1_', sql.VarChar, linea.UnidadMedida1_ || '')
-        .input('unidadMedida2_', sql.VarChar, linea.UnidadMedida2_ || '')
+        .input('precioTotal', sql.Decimal(18,4), importeBrutoLinea)
+        .input('tarifaPrecioLin', sql.SmallInt, pedido.TarifaPrecio || 0)
+        .input('codigoAlmacen', sql.VarChar, (linea.CodigoAlmacen ?? '').toString())
+        .input('partida', sql.VarChar, (linea.Partida ?? '').toString())
+        .input('unidadMedida1_', sql.VarChar, (linea.UnidadMedida1_ ?? '').toString())
+        .input('unidadMedida2_', sql.VarChar, (linea.UnidadMedida2_ ?? '').toString())
         .input('factorConversion_', sql.Decimal(18,4), linea.FactorConversion_ || 1)
         .input('ejercicioPedido', sql.SmallInt, ejercicio)
         .input('seriePedido', sql.VarChar, serie || '')
         .input('numeroPedido', sql.Int, numeroPedido)
+        .input('suPedido', sql.VarChar, (pedido.SuPedido ?? '').toString())
+        .input('codigoDefinicion', sql.VarChar, (pedido.CodigoDefinicion_ ?? '').toString())
+        .input('codigoTransaccion', sql.SmallInt, pedido.CodigoTransaccion || 1)
+        .input('statusStock', sql.SmallInt, -1)
+        .input('statusEstadis', sql.SmallInt, 0)
+        .input('acumulaEstadistica', sql.SmallInt, -1)
+        .input('bloqueoRebaje', sql.SmallInt, 0)
+        .input('ivaIncluido', sql.SmallInt, pedido.IvaIncluido || 0)
         .input('grupoIva', sql.TinyInt, linea.GrupoIva || 1)
         .input('porcentajeIva', sql.Decimal(18,4), ivaPorcentaje)
+        .input('codigoComisionista', sql.VarChar, (pedido.CodigoComisionista ?? '').toString())
+        .input('codigoComisionista2', sql.VarChar, (pedido.CodigoComisionista2_ ?? '').toString())
+        .input('codigoJefeVenta', sql.VarChar, (pedido.CodigoJefeVenta_ ?? '').toString())
+        .input('codigoJefeZona', sql.VarChar, (pedido.CodigoJefeZona_ ?? '').toString())
         .input('importeLiquido', sql.Decimal(18,4), importeBrutoLinea)
+        .input('importeNeto', sql.Decimal(18,4), importeBrutoLinea)
         .input('importeBruto', sql.Decimal(18,4), importeBrutoLinea)
         .input('baseImponible', sql.Decimal(18,4), baseIvaLinea)
         .input('baseIva', sql.Decimal(18,4), baseIvaLinea)
         .input('cuotaIva', sql.Decimal(18,4), cuotaIvaLinea)
+        .input('totalIva', sql.Decimal(18,4), cuotaIvaLinea)
         .input('pesoBrutoUnitario_', sql.Decimal(18,4), parseFloat(linea.PesoBrutoUnitario_) || 0)
         .input('pesoNetoUnitario_', sql.Decimal(18,4), parseFloat(linea.PesoNetoUnitario_) || 0)
         .input('volumenUnitario_', sql.Decimal(18,4), parseFloat(linea.VolumenUnitario_) || 0)
         .input('pesoBruto_', sql.Decimal(18,4), pesoBrutoLinea)
         .input('pesoNeto_', sql.Decimal(18,4), pesoNetoLinea)
         .input('volumen_', sql.Decimal(18,4), volumenLinea)
-        .input('codigoFamilia', sql.VarChar, linea.CodigoFamilia || '')
-        .input('codigoSubfamilia', sql.VarChar, linea.CodigoSubfamilia || '')
+        .input('codigoFamilia', sql.VarChar, (linea.CodigoFamilia ?? '').toString())
+        .input('codigoSubfamilia', sql.VarChar, (linea.CodigoSubfamilia ?? '').toString())
+        .input('fechaAlbaran', sql.DateTime, fechaActual)
         .input('fechaRegistro', sql.DateTime, fechaActual)
         .query(`
           INSERT INTO LineasAlbaranCliente (
             CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
             Orden, LineasPosicion,
             CodigoArticulo, DescripcionArticulo, Descripcion2Articulo,
-            Unidades, UnidadesServidas, Precio,
+            CodigodelCliente,
+            Unidades, UnidadesServidas, Precio, PrecioTotal, TarifaPrecioLin,
             CodigoAlmacen, Partida,
             UnidadMedida1_, UnidadMedida2_, FactorConversion_,
             EjercicioPedido, SeriePedido, NumeroPedido,
-            GrupoIva, [%Iva],
-            ImporteLiquido, ImporteBruto, BaseImponible, BaseIva, CuotaIva,
+            SuPedido, CodigoDefinicion_, CodigoTransaccion,
+            StatusStock, StatusEstadis, AcumulaEstadistica_, BloqueoRebaje_,
+            IvaIncluido, GrupoIva, [%Iva],
+            CodigoComisionista, CodigoComisionista2_, CodigoJefeVenta_, CodigoJefeZona_,
+            ImporteLiquido, ImporteNeto, ImporteBruto, BaseImponible, BaseIva, CuotaIva, TotalIva,
             PesoBrutoUnitario_, PesoNetoUnitario_, VolumenUnitario_,
             PesoBruto_, PesoNeto_, Volumen_,
             CodigoFamilia, CodigoSubfamilia,
-            FechaRegistro
+            FechaAlbaran, FechaRegistro
           ) VALUES (
             @codigoEmpresa, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
             @orden, @lineasPosicion,
             @codigoArticulo, @descripcionArticulo, @descripcion2Articulo,
-            @unidades, @unidadesServidas, @precio,
+            @codigodelCliente,
+            @unidades, @unidadesServidas, @precio, @precioTotal, @tarifaPrecioLin,
             @codigoAlmacen, @partida,
             @unidadMedida1_, @unidadMedida2_, @factorConversion_,
             @ejercicioPedido, @seriePedido, @numeroPedido,
-            @grupoIva, @porcentajeIva,
-            @importeLiquido, @importeBruto, @baseImponible, @baseIva, @cuotaIva,
+            @suPedido, @codigoDefinicion, @codigoTransaccion,
+            @statusStock, @statusEstadis, @acumulaEstadistica, @bloqueoRebaje,
+            @ivaIncluido, @grupoIva, @porcentajeIva,
+            @codigoComisionista, @codigoComisionista2, @codigoJefeVenta, @codigoJefeZona,
+            @importeLiquido, @importeNeto, @importeBruto, @baseImponible, @baseIva, @cuotaIva, @totalIva,
             @pesoBrutoUnitario_, @pesoNetoUnitario_, @volumenUnitario_,
             @pesoBruto_, @pesoNeto_, @volumen_,
             @codigoFamilia, @codigoSubfamilia,
-            @fechaRegistro
+            @fechaAlbaran, @fechaRegistro
           )
         `);
     }
@@ -2117,12 +2520,29 @@ router.post('/generarAlbaranParcial', async (req, res) => {
       .input('numeroPedido', sql.Int, numeroPedido)
       .query(`
         SELECT 
-          CodigoCliente, RazonSocial, Domicilio, Municipio, 
+          CodigoCliente, RazonSocial, RazonSocial2, Domicilio, Municipio, 
           ImporteLiquido, EmpleadoAsignado, Telefono, Contacto,
-          ObservacionesWeb, NombreObra, Vendedor, EsVoluminoso,
+          ObservacionesWeb, ObservacionesPedido, ObservacionesAlbaran,
+          NombreObra, Vendedor, EsVoluminoso,
           Estado, StatusAprobado, FormaEnvio,
           CodigoCondiciones, CodigoTransportistaEnvios, TipoPortesEnvios,
-          CodigoPostal, Provincia, CodigoNacion
+          CodigoPostal, Provincia, CodigoNacion,
+          CifDni, CifEuropeo, SuPedido, FechaPedido, FechaEntrega,
+          CodigoZona, CodigoCanal, GrupoIva, IndicadorIva,
+          TarifaPrecio, TarifaDescuento,
+          [%Descuento], [%ProntoPago],
+          FormadePago, CodigoComisionista, CodigoDivisa,
+          CodigoDefinicion_, CodigoContable, RemesaHabitual,
+          CodigoBanco, CodigoAgencia,
+          IdDelegacion, SiglaNacion, CodigoMunicipio, CodigoProvincia,
+          NumeroPlazos, DiasPrimerPlazo, DiasEntrePlazos,
+          CodigoTransaccion, CodigoTipoEfecto,
+          DomicilioEnvio, DomicilioFactura, DomicilioRecibo,
+          DC, CCC, IBAN, CodigoTerritorio, IvaIncluido,
+          AlbaranValorado, PeriodicidadFacturas, AgruparAlbaranes,
+          CopiasAlbaran, CopiasFactura, GenerarFactura,
+          [%Rappel], [%Comision],
+          CodigoComisionista2_, CodigoJefeVenta_, CodigoJefeZona_
         FROM CabeceraPedidoCliente
         WHERE CodigoEmpresa = @codigoEmpresa
           AND EjercicioPedido = @ejercicio
@@ -2140,6 +2560,7 @@ router.post('/generarAlbaranParcial', async (req, res) => {
 
     const pedido = pedidoResult.recordset[0];
     const fechaActual = new Date();
+    const ejercicioAlbaran = fechaActual.getFullYear();
 
     // 3. Obtener albaranes anteriores para este pedido
     const albaranesAnterioresResult = await getPool().request()
@@ -2289,26 +2710,33 @@ router.post('/generarAlbaranParcial', async (req, res) => {
     // 7. Generar número de albarán
     const nextAlbaran = await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicio', sql.SmallInt, ejercicio)
+      .input('ejercicioAlbaranNum', sql.SmallInt, ejercicioAlbaran)
       .input('serie', sql.VarChar, serie || '')
       .query(`
         SELECT ISNULL(MAX(NumeroAlbaran), 0) + 1 AS SiguienteNumero
-        FROM CabeceraAlbaranCliente
+        FROM CabeceraAlbaranCliente WITH (UPDLOCK, HOLDLOCK)
         WHERE CodigoEmpresa = @codigoEmpresa
-          AND EjercicioAlbaran = @ejercicio
+          AND EjercicioAlbaran = @ejercicioAlbaranNum
           AND (SerieAlbaran = @serie OR (@serie = '' AND SerieAlbaran IS NULL))
       `);
 
     const numeroAlbaran = nextAlbaran.recordset[0].SiguienteNumero;
 
     // 8. Insertar cabecera del albarán
+    const horasAlb = fechaActual.getHours();
+    const minutosAlb = fechaActual.getMinutes().toString().padStart(2, '0');
+    const horaAlbaranDecimal = parseFloat(`${horasAlb}.${minutosAlb}`);
+    const fechaEntregaPedido = pedido.FechaEntrega ? new Date(pedido.FechaEntrega) : fechaActual;
+
     await getPool().request()
       .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-      .input('ejercicioAlbaran', sql.SmallInt, ejercicio)
+      .input('idDelegacion', sql.SmallInt, pedido.IdDelegacion || 1)
+      .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
       .input('serieAlbaran', sql.VarChar, serie || '')
       .input('numeroAlbaran', sql.Int, numeroAlbaran)
       .input('codigoCliente', sql.VarChar, (pedido.CodigoCliente ?? '').toString())
       .input('razonSocial', sql.VarChar, (pedido.RazonSocial ?? '').toString())
+      .input('razonSocial2', sql.VarChar, (pedido.RazonSocial2 ?? '').toString())
       .input('razonSocialEnvios', sql.VarChar, (pedido.RazonSocial ?? '').toString())
       .input('domicilio', sql.VarChar, (pedido.Domicilio ?? '').toString())
       .input('domicilioEnvios', sql.VarChar, (pedido.Domicilio ?? '').toString())
@@ -2320,15 +2748,24 @@ router.post('/generarAlbaranParcial', async (req, res) => {
       .input('codigoPostalEnvios', sql.VarChar, (pedido.CodigoPostal ?? '').toString())
       .input('codigoNacion', sql.SmallInt, pedido.CodigoNacion || 1)
       .input('codigoNacionEnvios', sql.SmallInt, pedido.CodigoNacion || 1)
+      .input('siglaNacion', sql.VarChar, (pedido.SiglaNacion ?? 'ES').toString())
+      .input('codigoMunicipio', sql.Int, pedido.CodigoMunicipio || 0)
+      .input('codigoMunicipioEnvios', sql.Int, pedido.CodigoMunicipio || 0)
+      .input('codigoProvincia', sql.SmallInt, pedido.CodigoProvincia || 0)
+      .input('codigoProvinciaEnvios', sql.SmallInt, pedido.CodigoProvincia || 0)
+      .input('cifDni', sql.VarChar, (pedido.CifDni ?? '').toString())
+      .input('cifEuropeo', sql.VarChar, (pedido.CifEuropeo ?? '').toString())
+      .input('suPedido', sql.VarChar, (pedido.SuPedido ?? '').toString())
+      .input('telefonoEnvios', sql.VarChar, (pedido.Telefono ?? '').toString())
+      .input('telefono', sql.VarChar, (pedido.Telefono ?? '').toString())
+      .input('contacto', sql.VarChar, (pedido.Contacto ?? '').toString())
       .input('fechaAlbaran', sql.DateTime, fechaActual)
       .input('fechaCreacion', sql.DateTime, fechaActual)
-      .input('fechaEntrega', sql.DateTime, fechaActual)
+      .input('fechaEntrega', sql.DateTime, fechaEntregaPedido)
       .input('numeroLineas', sql.SmallInt, lineasConUnidadesNoFacturadas.length)
       .input('empleadoAsignado', sql.VarChar, (pedido.EmpleadoAsignado ?? usuario).toString())
-      .input('telefono', sql.VarChar, (pedido.Telefono ?? '').toString())
-      .input('telefonoEnvios', sql.VarChar, (pedido.Telefono ?? '').toString())
-      .input('contacto', sql.VarChar, (pedido.Contacto ?? '').toString())
       .input('observacionesWeb', sql.Text, (pedido.ObservacionesWeb ?? '').toString())
+      .input('observacionesAlbaran', sql.VarChar, (pedido.ObservacionesAlbaran ?? '').toString())
       .input('nombreObra', sql.VarChar, (pedido.NombreObra ?? '').toString())
       .input('vendedor', sql.VarChar, (pedido.Vendedor ?? '').toString())
       .input('statusFacturado', sql.SmallInt, 0)
@@ -2338,9 +2775,49 @@ router.post('/generarAlbaranParcial', async (req, res) => {
       .input('seriePedido', sql.VarChar, serie || '')
       .input('numeroPedido', sql.Int, numeroPedido)
       .input('codigoCondiciones', sql.SmallInt, pedido.CodigoCondiciones || 0)
+      .input('formaDePago', sql.VarChar, (pedido.FormadePago ?? '').toString())
+      .input('numeroPlazos', sql.SmallInt, pedido.NumeroPlazos || 1)
+      .input('diasPrimerPlazo', sql.SmallInt, pedido.DiasPrimerPlazo || 0)
+      .input('diasEntrePlazos', sql.SmallInt, pedido.DiasEntrePlazos || 0)
       .input('codigoTransportistaEnvios', sql.Int, pedido.CodigoTransportistaEnvios || 0)
       .input('tipoPortesEnvios', sql.VarChar, (pedido.TipoPortesEnvios ?? '').toString())
+      .input('codigoTransaccion', sql.SmallInt, pedido.CodigoTransaccion || 1)
+      .input('codigoTipoEfecto', sql.SmallInt, pedido.CodigoTipoEfecto || 0)
+      .input('domicilioEnvioFlag', sql.SmallInt, pedido.DomicilioEnvio || 0)
+      .input('domicilioFacturaFlag', sql.SmallInt, pedido.DomicilioFactura || 0)
+      .input('domicilioReciboFlag', sql.SmallInt, pedido.DomicilioRecibo || 0)
+      .input('dc', sql.VarChar, (pedido.DC ?? '').toString())
+      .input('ccc', sql.VarChar, (pedido.CCC ?? '').toString())
+      .input('iban', sql.VarChar, (pedido.IBAN ?? '').toString())
+      .input('codigoTerritorio', sql.SmallInt, pedido.CodigoTerritorio || 0)
+      .input('ivaIncluido', sql.SmallInt, pedido.IvaIncluido || 0)
       .input('formaEnvio', sql.Int, pedido.FormaEnvio || 3)
+      .input('codigoZona', sql.VarChar, (pedido.CodigoZona ?? '').toString())
+      .input('codigoCanal', sql.SmallInt, pedido.CodigoCanal || 0)
+      .input('grupoIva', sql.TinyInt, pedido.GrupoIva || 1)
+      .input('indicadorIva', sql.VarChar, (pedido.IndicadorIva ?? 'D').toString())
+      .input('tarifaPrecio', sql.SmallInt, pedido.TarifaPrecio || 0)
+      .input('tarifaDescuento', sql.SmallInt, pedido.TarifaDescuento || 0)
+      .input('pctDescuento', sql.Decimal(18,4), parseFloat(pedido['%Descuento']) || 0)
+      .input('pctProntoPago', sql.Decimal(18,4), parseFloat(pedido['%ProntoPago']) || 0)
+      .input('pctRappel', sql.Decimal(18,4), parseFloat(pedido['%Rappel']) || 0)
+      .input('pctComision', sql.Decimal(18,4), parseFloat(pedido['%Comision']) || 0)
+      .input('codigoComisionista', sql.VarChar, (pedido.CodigoComisionista ?? '').toString())
+      .input('codigoComisionista2', sql.VarChar, (pedido.CodigoComisionista2_ ?? '').toString())
+      .input('codigoJefeVenta', sql.VarChar, (pedido.CodigoJefeVenta_ ?? '').toString())
+      .input('codigoJefeZona', sql.VarChar, (pedido.CodigoJefeZona_ ?? '').toString())
+      .input('codigoDivisa', sql.VarChar, (pedido.CodigoDivisa ?? '').toString())
+      .input('codigoDefinicion', sql.VarChar, (pedido.CodigoDefinicion_ ?? '').toString())
+      .input('codigoContable', sql.VarChar, (pedido.CodigoContable ?? '').toString())
+      .input('remesaHabitual', sql.VarChar, (pedido.RemesaHabitual ?? '').toString())
+      .input('codigoBanco', sql.VarChar, (pedido.CodigoBanco ?? '').toString())
+      .input('codigoAgencia', sql.VarChar, (pedido.CodigoAgencia ?? '').toString())
+      .input('albaranValorado', sql.SmallInt, pedido.AlbaranValorado || 0)
+      .input('periodicidadFacturas', sql.SmallInt, pedido.PeriodicidadFacturas || 0)
+      .input('agruparAlbaranes', sql.SmallInt, pedido.AgruparAlbaranes || 0)
+      .input('copiasAlbaran', sql.SmallInt, pedido.CopiasAlbaran || 0)
+      .input('copiasFactura', sql.SmallInt, pedido.CopiasFactura || 0)
+      .input('generarFactura', sql.SmallInt, pedido.GenerarFactura || 0)
       .input('importeLiquido', sql.Decimal(18,4), importeBruto)
       .input('importeBruto', sql.Decimal(18,4), importeBruto)
       .input('baseImponible', sql.Decimal(18,4), importeBruto)
@@ -2348,34 +2825,68 @@ router.post('/generarAlbaranParcial', async (req, res) => {
       .input('pesoBruto', sql.Decimal(18,4), pesoBruto)
       .input('pesoNeto', sql.Decimal(18,4), pesoNeto)
       .input('volumen', sql.Decimal(18,4), volumen)
-      .input('horaAlbaran', sql.Decimal(6,2), parseFloat(`${fechaActual.getHours()}.${fechaActual.getMinutes()}`))
+      .input('horaAlbaran', sql.Decimal(6,2), horaAlbaranDecimal)
       .query(`
         INSERT INTO CabeceraAlbaranCliente (
-          CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
-          CodigoCliente, RazonSocial, RazonSocialEnvios,
+          CodigoEmpresa, IdDelegacion, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
+          CodigoCliente, RazonSocial, RazonSocial2, RazonSocialEnvios,
           Domicilio, DomicilioEnvios, Municipio, MunicipioEnvios,
           Provincia, ProvinciaEnvios, CodigoPostal, CodigoPostalEnvios,
-          CodigoNacion, CodigoNacionEnvios, Telefono, TelefonoEnvios,
-          Contacto, FechaAlbaran, FechaCreacion, FechaEntrega,
-          NumeroLineas, EmpleadoAsignado, ObservacionesWeb, NombreObra,
+          CodigoNacion, CodigoNacionEnvios, SiglaNacion,
+          CodigoMunicipio, CodigoMunicipioEnvios,
+          CodigoProvincia, CodigoProvinciaEnvios,
+          CifDni, CifEuropeo, SuPedido,
+          Telefono, TelefonoEnvios, Contacto,
+          FechaAlbaran, FechaCreacion, FechaEntrega,
+          NumeroLineas, EmpleadoAsignado,
+          ObservacionesWeb, ObservacionesAlbaran, NombreObra,
           Vendedor, StatusFacturado, EsVoluminoso, EsParcial,
           EjercicioPedido, SeriePedido, NumeroPedido,
-          CodigoCondiciones, CodigoTransportistaEnvios, TipoPortesEnvios,
-          FormaEnvio, ImporteLiquido, ImporteBruto, BaseImponible,
+          CodigoCondiciones, FormadePago, NumeroPlazos, DiasPrimerPlazo, DiasEntrePlazos,
+          CodigoTransportistaEnvios, TipoPortesEnvios,
+          CodigoTransaccion, CodigoTipoEfecto,
+          DomicilioEnvio, DomicilioFactura, DomicilioRecibo,
+          DC, CCC, IBAN, CodigoTerritorio, IvaIncluido,
+          FormaEnvio, CodigoZona, CodigoCanal,
+          GrupoIva, IndicadorIva, TarifaPrecio, TarifaDescuento,
+          [%Descuento], [%ProntoPago], [%Rappel], [%Comision],
+          CodigoComisionista, CodigoComisionista2_, CodigoJefeVenta_, CodigoJefeZona_,
+          CodigoDivisa, CodigoDefinicion_, CodigoContable, RemesaHabitual,
+          CodigoBanco, CodigoAgencia,
+          AlbaranValorado, PeriodicidadFacturas, AgruparAlbaranes,
+          CopiasAlbaran, CopiasFactura, GenerarFactura,
+          ImporteLiquido, ImporteBruto, BaseImponible,
           Bultos, PesoBruto_, PesoNeto_, Volumen_,
           HoraAlbaran
         ) VALUES (
-          @codigoEmpresa, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
-          @codigoCliente, @razonSocial, @razonSocialEnvios,
+          @codigoEmpresa, @idDelegacion, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
+          @codigoCliente, @razonSocial, @razonSocial2, @razonSocialEnvios,
           @domicilio, @domicilioEnvios, @municipio, @municipioEnvios,
           @provincia, @provinciaEnvios, @codigoPostal, @codigoPostalEnvios,
-          @codigoNacion, @codigoNacionEnvios, @telefono, @telefonoEnvios,
-          @contacto, @fechaAlbaran, @fechaCreacion, @fechaEntrega,
-          @numeroLineas, @empleadoAsignado, @observacionesWeb, @nombreObra,
+          @codigoNacion, @codigoNacionEnvios, @siglaNacion,
+          @codigoMunicipio, @codigoMunicipioEnvios,
+          @codigoProvincia, @codigoProvinciaEnvios,
+          @cifDni, @cifEuropeo, @suPedido,
+          @telefono, @telefonoEnvios, @contacto,
+          @fechaAlbaran, @fechaCreacion, @fechaEntrega,
+          @numeroLineas, @empleadoAsignado,
+          @observacionesWeb, @observacionesAlbaran, @nombreObra,
           @vendedor, @statusFacturado, @esVoluminoso, @esParcial,
           @ejercicioPedido, @seriePedido, @numeroPedido,
-          @codigoCondiciones, @codigoTransportistaEnvios, @tipoPortesEnvios,
-          @formaEnvio, @importeLiquido, @importeBruto, @baseImponible,
+          @codigoCondiciones, @formaDePago, @numeroPlazos, @diasPrimerPlazo, @diasEntrePlazos,
+          @codigoTransportistaEnvios, @tipoPortesEnvios,
+          @codigoTransaccion, @codigoTipoEfecto,
+          @domicilioEnvioFlag, @domicilioFacturaFlag, @domicilioReciboFlag,
+          @dc, @ccc, @iban, @codigoTerritorio, @ivaIncluido,
+          @formaEnvio, @codigoZona, @codigoCanal,
+          @grupoIva, @indicadorIva, @tarifaPrecio, @tarifaDescuento,
+          @pctDescuento, @pctProntoPago, @pctRappel, @pctComision,
+          @codigoComisionista, @codigoComisionista2, @codigoJefeVenta, @codigoJefeZona,
+          @codigoDivisa, @codigoDefinicion, @codigoContable, @remesaHabitual,
+          @codigoBanco, @codigoAgencia,
+          @albaranValorado, @periodicidadFacturas, @agruparAlbaranes,
+          @copiasAlbaran, @copiasFactura, @generarFactura,
+          @importeLiquido, @importeBruto, @baseImponible,
           @bultos, @pesoBruto, @pesoNeto, @volumen,
           @horaAlbaran
         )
@@ -2403,7 +2914,7 @@ router.post('/generarAlbaranParcial', async (req, res) => {
 
       await getPool().request()
         .input('codigoEmpresa', sql.SmallInt, codigoEmpresa)
-        .input('ejercicioAlbaran', sql.SmallInt, ejercicio)
+        .input('ejercicioAlbaran', sql.SmallInt, ejercicioAlbaran)
         .input('serieAlbaran', sql.VarChar, serie || '')
         .input('numeroAlbaran', sql.Int, numeroAlbaran)
         .input('orden', sql.SmallInt, index + 1)
@@ -2411,9 +2922,12 @@ router.post('/generarAlbaranParcial', async (req, res) => {
         .input('codigoArticulo', sql.VarChar, (linea.CodigoArticulo ?? '').toString())
         .input('descripcionArticulo', sql.VarChar, (linea.DescripcionArticulo ?? '').toString())
         .input('descripcion2Articulo', sql.VarChar, (linea.Descripcion2Articulo ?? '').toString())
+        .input('codigodelCliente', sql.VarChar, (pedido.CodigoCliente ?? '').toString())
         .input('unidades', sql.Decimal(18,4), unidadesNoFacturadas)
         .input('unidadesServidas', sql.Decimal(18,4), unidadesNoFacturadas)
         .input('precio', sql.Decimal(18,4), precio)
+        .input('precioTotal', sql.Decimal(18,4), importeBrutoLinea)
+        .input('tarifaPrecioLin', sql.SmallInt, pedido.TarifaPrecio || 0)
         .input('codigoAlmacen', sql.VarChar, (linea.CodigoAlmacen ?? '').toString())
         .input('partida', sql.VarChar, (linea.Partida ?? '').toString())
         .input('unidadMedida1_', sql.VarChar, (linea.UnidadMedida1_ ?? '').toString())
@@ -2422,13 +2936,27 @@ router.post('/generarAlbaranParcial', async (req, res) => {
         .input('ejercicioPedido', sql.SmallInt, ejercicio)
         .input('seriePedido', sql.VarChar, serie || '')
         .input('numeroPedido', sql.Int, numeroPedido)
+        .input('suPedido', sql.VarChar, (pedido.SuPedido ?? '').toString())
+        .input('codigoDefinicion', sql.VarChar, (pedido.CodigoDefinicion_ ?? '').toString())
+        .input('codigoTransaccion', sql.SmallInt, pedido.CodigoTransaccion || 1)
+        .input('statusStock', sql.SmallInt, -1)
+        .input('statusEstadis', sql.SmallInt, 0)
+        .input('acumulaEstadistica', sql.SmallInt, -1)
+        .input('bloqueoRebaje', sql.SmallInt, 0)
+        .input('ivaIncluido', sql.SmallInt, pedido.IvaIncluido || 0)
         .input('grupoIva', sql.TinyInt, linea.GrupoIva || 1)
         .input('porcentajeIva', sql.Decimal(18,4), ivaPorcentaje)
+        .input('codigoComisionista', sql.VarChar, (pedido.CodigoComisionista ?? '').toString())
+        .input('codigoComisionista2', sql.VarChar, (pedido.CodigoComisionista2_ ?? '').toString())
+        .input('codigoJefeVenta', sql.VarChar, (pedido.CodigoJefeVenta_ ?? '').toString())
+        .input('codigoJefeZona', sql.VarChar, (pedido.CodigoJefeZona_ ?? '').toString())
         .input('importeLiquido', sql.Decimal(18,4), importeLiquidoLinea)
+        .input('importeNeto', sql.Decimal(18,4), importeBrutoLinea)
         .input('importeBruto', sql.Decimal(18,4), importeBrutoLinea)
         .input('baseImponible', sql.Decimal(18,4), baseIvaLinea)
         .input('baseIva', sql.Decimal(18,4), baseIvaLinea)
         .input('cuotaIva', sql.Decimal(18,4), cuotaIvaLinea)
+        .input('totalIva', sql.Decimal(18,4), cuotaIvaLinea)
         .input('pesoBrutoUnitario_', sql.Decimal(18,4), pesoBrutoUnit)
         .input('pesoNetoUnitario_', sql.Decimal(18,4), pesoNetoUnit)
         .input('volumenUnitario_', sql.Decimal(18,4), volumenUnit)
@@ -2437,36 +2965,45 @@ router.post('/generarAlbaranParcial', async (req, res) => {
         .input('volumen_', sql.Decimal(18,4), volumenLinea)
         .input('codigoFamilia', sql.VarChar, (linea.CodigoFamilia ?? '').toString())
         .input('codigoSubfamilia', sql.VarChar, (linea.CodigoSubfamilia ?? '').toString())
+        .input('fechaAlbaran', sql.DateTime, fechaActual)
         .input('fechaRegistro', sql.DateTime, fechaActual)
         .query(`
           INSERT INTO LineasAlbaranCliente (
             CodigoEmpresa, EjercicioAlbaran, SerieAlbaran, NumeroAlbaran,
             Orden, LineasPosicion,
             CodigoArticulo, DescripcionArticulo, Descripcion2Articulo,
-            Unidades, UnidadesServidas, Precio,
+            CodigodelCliente,
+            Unidades, UnidadesServidas, Precio, PrecioTotal, TarifaPrecioLin,
             CodigoAlmacen, Partida,
             UnidadMedida1_, UnidadMedida2_, FactorConversion_,
             EjercicioPedido, SeriePedido, NumeroPedido,
-            GrupoIva, [%Iva],
-            ImporteLiquido, ImporteBruto, BaseImponible, BaseIva, CuotaIva,
+            SuPedido, CodigoDefinicion_, CodigoTransaccion,
+            StatusStock, StatusEstadis, AcumulaEstadistica_, BloqueoRebaje_,
+            IvaIncluido, GrupoIva, [%Iva],
+            CodigoComisionista, CodigoComisionista2_, CodigoJefeVenta_, CodigoJefeZona_,
+            ImporteLiquido, ImporteNeto, ImporteBruto, BaseImponible, BaseIva, CuotaIva, TotalIva,
             PesoBrutoUnitario_, PesoNetoUnitario_, VolumenUnitario_,
             PesoBruto_, PesoNeto_, Volumen_,
             CodigoFamilia, CodigoSubfamilia,
-            FechaRegistro
+            FechaAlbaran, FechaRegistro
           ) VALUES (
             @codigoEmpresa, @ejercicioAlbaran, @serieAlbaran, @numeroAlbaran,
             @orden, @lineasPosicion,
             @codigoArticulo, @descripcionArticulo, @descripcion2Articulo,
-            @unidades, @unidadesServidas, @precio,
+            @codigodelCliente,
+            @unidades, @unidadesServidas, @precio, @precioTotal, @tarifaPrecioLin,
             @codigoAlmacen, @partida,
             @unidadMedida1_, @unidadMedida2_, @factorConversion_,
             @ejercicioPedido, @seriePedido, @numeroPedido,
-            @grupoIva, @porcentajeIva,
-            @importeLiquido, @importeBruto, @baseImponible, @baseIva, @cuotaIva,
+            @suPedido, @codigoDefinicion, @codigoTransaccion,
+            @statusStock, @statusEstadis, @acumulaEstadistica, @bloqueoRebaje,
+            @ivaIncluido, @grupoIva, @porcentajeIva,
+            @codigoComisionista, @codigoComisionista2, @codigoJefeVenta, @codigoJefeZona,
+            @importeLiquido, @importeNeto, @importeBruto, @baseImponible, @baseIva, @cuotaIva, @totalIva,
             @pesoBrutoUnitario_, @pesoNetoUnitario_, @volumenUnitario_,
             @pesoBruto_, @pesoNeto_, @volumen_,
             @codigoFamilia, @codigoSubfamilia,
-            @fechaRegistro
+            @fechaAlbaran, @fechaRegistro
           )
         `);
     }

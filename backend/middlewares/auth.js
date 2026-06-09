@@ -1,8 +1,9 @@
-module.exports = function createAuthMiddleware() {
+module.exports = function createAuthMiddleware({ clienteConfig }) {
   return (req, res, next) => {
     const publicPaths = [
       '/login',
       '/',
+      '/api/config',
       '/api/diagnostic',
       '/diagnostic',
       '/favicon.ico',
@@ -37,24 +38,38 @@ module.exports = function createAuthMiddleware() {
       return next();
     }
 
-    const usuario = req.headers.usuario;
+    const usuario      = req.headers.usuario;
     const codigoempresa = req.headers.codigoempresa;
 
     if (!usuario || !codigoempresa) {
-      console.error('Faltan cabeceras de autenticacion:', {
-        path: req.path,
-        method: req.method,
-        origin: req.headers.origin
-      });
+      console.error('Faltan cabeceras de autenticacion:', { path: req.path, method: req.method });
       return res.status(401).json({
         success: false,
         mensaje: 'Faltan cabeceras de autenticación (usuario y codigoempresa)'
       });
     }
 
+    const codigoEmpresaUsuario = parseInt(codigoempresa, 10) || 0;
+
+    // ── VALIDACIÓN CLAVE ───────────────────────────────────────
+    // El CodigoEmpresa del usuario debe coincidir con el configurado
+    // en cliente.js. Si no coincide, el usuario no pertenece a esta
+    // instalación y se rechaza la petición.
+    if (codigoEmpresaUsuario !== clienteConfig.codigoEmpresa) {
+      console.error(
+        `[AUTH] Empresa rechazada: usuario=${usuario} ` +
+        `empresa_usuario=${codigoEmpresaUsuario} ` +
+        `empresa_config=${clienteConfig.codigoEmpresa}`
+      );
+      return res.status(401).json({
+        success: false,
+        mensaje: 'No autorizado: tu usuario no pertenece a esta empresa.'
+      });
+    }
+
     req.user = {
       UsuarioLogicNet: usuario,
-      CodigoEmpresa: parseInt(codigoempresa, 10) || 0
+      CodigoEmpresa:   codigoEmpresaUsuario
     };
 
     next();
